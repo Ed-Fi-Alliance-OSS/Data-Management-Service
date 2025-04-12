@@ -22,6 +22,11 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
         // Clone to not mutate the original schema
         var coreApiSchema = apiSchemaNodes.CoreApiSchemaRootNode.DeepClone();
 
+        // [DMS-597] Workaround for DMS-630 EducationContent should list its namespace property in the ApiSchema.json securityElements
+        coreApiSchema["projectSchema"]!["resourceSchemas"]!["educationContents"]!["securityElements"]![
+            "Namespace"
+        ] = new JsonArray("$.namespace");
+
         List<JsonNode> coreResources = coreApiSchema
             .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
             .SelectNodesFromPropertyValues();

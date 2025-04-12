@@ -120,6 +120,12 @@ internal class ResourceActionAuthorizationMiddleware(
 
             IReadOnlyList<string> resourceActionAuthStrategies = authorizedAction
                 .AuthorizationStrategies.Select(auth => auth.Name)
+                .Select(authStrategyName =>
+                    // Use NoFurtherAuth if the configured strategy is Relationships* because they aren't finished yet
+                    authStrategyName.StartsWith("Relationships")
+                        ? "NoFurtherAuthorizationRequired"
+                        : authStrategyName
+                )
                 .ToList();
 
             if (resourceActionAuthStrategies.Count == 0)

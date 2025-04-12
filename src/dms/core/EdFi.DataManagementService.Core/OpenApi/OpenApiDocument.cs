@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
@@ -208,6 +209,95 @@ public class OpenApiDocument(ILogger _logger)
                 _logger
             )
             .DeepClone();
+
+        #region [DMS-597] Workaround for DMS-628 Descriptor schemas should have `Descriptor` suffix
+        if (documentSection == DocumentSection.Descriptor)
+        {
+            var openApiJsonSpec = openApiSpecification.ToJsonString();
+            foreach (var schema in openApiSpecification["components"]!["schemas"]!.AsObject())
+            {
+                openApiJsonSpec = openApiJsonSpec.Replace(schema.Key, $"{schema.Key}Descriptor");
+            }
+
+            openApiSpecification = JsonNode.Parse(openApiJsonSpec)!;
+        }
+        #endregion
+
+        #region [DMS-597] Workaround for DMS-633 SchoolYearType shouldn't be inlined
+        if (documentSection == DocumentSection.Resource)
+        {
+            var resourceWithInlinedSchoolYearType = openApiSpecification["components"]!["schemas"]!
+                .AsObject()
+                .Select(schema =>
+                {
+                    var properties = schema.Value!["properties"]!
+                        .AsObject()
+                        .Where(property =>
+                            property.Key == "schoolYearTypeReference" && property.Value!["properties"] != null
+                        )
+                        .ToList();
+
+                    return (schema, properties);
+                })
+                .Where(schema => schema.properties.Any())
+                .ToList();
+
+            foreach (var resource in resourceWithInlinedSchoolYearType)
+            {
+                foreach (var property in resource.properties)
+                {
+                    resource.schema.Value!["properties"]![property.Key] = JsonNode.Parse(
+                        $"{{ \"$ref\": \"#/components/schemas/EdFi_SchoolYearTypeReference\" }}");
+                }
+            }
+        }
+        #endregion
+
+        #region Workaround for DMS-627 Array references should not be partially inlined
+        if (documentSection == DocumentSection.Resource)
+        {
+            var resourceWithArrayReferences = openApiSpecification["components"]!["schemas"]!
+                .AsObject()
+                .Select(schema =>
+                {
+                    var properties = schema.Value!["properties"]!
+                        .AsObject()
+                        .Where(property =>
+                            property.Value!["type"]?.GetValue<string>() == "array"
+                            && property.Value["items"]!["$ref"] == null
+                        )
+                        .ToList();
+
+                    return (schema, properties);
+                })
+                .Where(schema => schema.properties.Any())
+                .ToList();
+
+            foreach (var resource in resourceWithArrayReferences)
+            {
+                foreach (var referenceProperty in resource.properties)
+                {
+                    var newRefName =
+                        resource.schema.Key.Replace("EdFi_", "")
+                        + referenceProperty.Value!["items"]!["properties"]!.AsObject().ToArray()[0].Value![
+                            "$ref"
+                        ]!
+                            .GetValue<string>()
+                            .Replace("#/components/schemas/", "")
+                            .Replace("_Reference", "")
+                            .Replace("EdFi_", "");
+
+                    openApiSpecification["components"]!["schemas"]![newRefName] = referenceProperty.Value![
+                        "items"
+                    ]!.DeepClone();
+
+                    resource.schema.Value!["properties"]![referenceProperty.Key]!["items"] = JsonNode.Parse(
+                        $"{{ \"$ref\": \"#/components/schemas/{newRefName}\" }}"
+                    );
+                }
+            }
+        }
+        #endregion
 
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
