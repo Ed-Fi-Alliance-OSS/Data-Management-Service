@@ -194,7 +194,7 @@ public class OpenApiDocument(ILogger _logger)
     public enum DocumentSection
     {
         Resource,
-        Descriptor
+        Descriptor,
     }
 
     /// <summary>
@@ -214,9 +214,13 @@ public class OpenApiDocument(ILogger _logger)
         if (documentSection == DocumentSection.Descriptor)
         {
             var openApiJsonSpec = openApiSpecification.ToJsonString();
-            foreach (var schema in openApiSpecification["components"]!["schemas"]!.AsObject())
+            foreach (
+                var schemaKey in openApiSpecification["components"]!["schemas"]!
+                    .AsObject()
+                    .Select(schema => schema.Key)
+            )
             {
-                openApiJsonSpec = openApiJsonSpec.Replace(schema.Key, $"{schema.Key}Descriptor");
+                openApiJsonSpec = openApiJsonSpec.Replace(schemaKey, $"{schemaKey}Descriptor");
             }
 
             openApiSpecification = JsonNode.Parse(openApiJsonSpec)!;
@@ -247,7 +251,8 @@ public class OpenApiDocument(ILogger _logger)
                 foreach (var property in resource.properties)
                 {
                     resource.schema.Value!["properties"]![property.Key] = JsonNode.Parse(
-                        $"{{ \"$ref\": \"#/components/schemas/EdFi_SchoolYearTypeReference\" }}");
+                        $"{{ \"$ref\": \"#/components/schemas/EdFi_SchoolYearTypeReference\" }}"
+                    );
                 }
             }
         }
