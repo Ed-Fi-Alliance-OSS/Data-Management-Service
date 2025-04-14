@@ -344,11 +344,14 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
             JsonElement? studentSchoolAuthorizationEducationOrganizationIds = null;
 
-            if (upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.IsStudentAuthorizationSecurable)
+            if (
+                upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo is
+                { IsStudentAuthorizationSecurable: true, StudentUniqueId: not null }
+            )
             {
                 studentSchoolAuthorizationEducationOrganizationIds =
                     await _sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
-                        upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.StudentUniqueId ?? "",
+                        upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.StudentUniqueId,
                         connection,
                         transaction,
                         upsertRequest.TraceId
