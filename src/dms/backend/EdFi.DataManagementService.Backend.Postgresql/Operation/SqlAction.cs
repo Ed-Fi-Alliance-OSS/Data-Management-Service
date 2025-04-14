@@ -714,4 +714,58 @@ public class SqlAction() : ISqlAction
             ? null
             : JsonSerializer.Deserialize<JsonElement>((string)result);
     }
+
+    public async Task<int> InsertStudentSecurableDocument(
+        string studentUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"INSERT INTO dms.studentsecurabledocument(
+	            studentuniqueid, studentsecurabledocumentid, studentsecurabledocumentpartitionkey)
+	          VALUES ($1, $2, $3);",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = studentUniqueId },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<int> UpdateStudentSecurableDocument(
+        string studentUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"UPDATE dms.studentsecurabledocument
+	            SET studentuniqueid = $1
+                WHERE studentsecurabledocumentid = $2 AND studentsecurabledocumentpartitionkey = $3",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = studentUniqueId },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
 }

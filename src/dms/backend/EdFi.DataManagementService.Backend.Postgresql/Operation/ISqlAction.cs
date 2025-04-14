@@ -163,4 +163,20 @@ public interface ISqlAction
         NpgsqlTransaction transaction,
         TraceId traceId
     );
+
+    public Task<int> InsertStudentSecurableDocument(
+        string studentUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<int> UpdateStudentSecurableDocument(
+        string studentUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 }

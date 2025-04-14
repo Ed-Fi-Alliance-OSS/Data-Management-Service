@@ -170,6 +170,20 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
         }
 
+        if (
+            upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo is
+            { IsStudentAuthorizationSecurable: true, StudentUniqueId: not null }
+        )
+        {
+            await _sqlAction.InsertStudentSecurableDocument(
+                upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.StudentUniqueId,
+                newDocumentId,
+                documentPartitionKey,
+                connection,
+                transaction
+            );
+        }
+
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId.Value);
         return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
     }
@@ -237,6 +251,20 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 upsertRequest.ResourceInfo.ResourceName.Value,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentId,
+                documentId,
+                documentPartitionKey,
+                connection,
+                transaction
+            );
+        }
+
+        if (
+            upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo is
+            { IsStudentAuthorizationSecurable: true, StudentUniqueId: not null }
+        )
+        {
+            await _sqlAction.UpdateStudentSecurableDocument(
+                upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.StudentUniqueId,
                 documentId,
                 documentPartitionKey,
                 connection,

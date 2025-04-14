@@ -11,3 +11,5 @@ CREATE TABLE dms.StudentSecurableDocument(
     CONSTRAINT FK_StudentSecurableDocument_Document FOREIGN KEY (StudentSecurableDocumentId, StudentSecurableDocumentPartitionKey)
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
+
+CREATE UNIQUE INDEX UX_StudentSecurableDocument_StudentSecurableDocumentId ON dms.StudentSecurableDocument (StudentUniqueId);
