@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.ApiSchemaDownloader.Services;
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Security;
@@ -14,7 +13,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -84,42 +82,6 @@ public class MetadataModuleTests
         {
             _jsonContent?["discovery"]?.ToString().Should().Be("http://localhost/metadata/xsdFiles");
         }
-    }
-
-    private IApiSchemaDownloader _downloader = null!;
-    private ILogger<ApiSchemaDownloader.Services.ApiSchemaDownloader> _fakeLogger = null!;
-    private string _outputDirectory = null!;
-
-    [SetUp]
-    public async Task SetUp()
-    {
-        _fakeLogger = A.Fake<ILogger<ApiSchemaDownloader.Services.ApiSchemaDownloader>>();
-
-        _downloader = new ApiSchemaDownloader.Services.ApiSchemaDownloader(_fakeLogger);
-
-        var projectDirectory = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "../../../"));
-        _outputDirectory = Path.Combine(projectDirectory, "../../EdFi.DataStandard52.ApiSchema/");
-        Directory.CreateDirectory(_outputDirectory);
-
-        string packageId = "EdFi.DataStandard52.ApiSchema";
-        string packageVersion = "1.0.169";
-        string feedUrl =
-            "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
-
-        await _downloader.DownloadNuGetPackageAsync(
-                            packageId,
-                            packageVersion,
-                            feedUrl,
-                            _outputDirectory
-                        );
-
-        packageId = "EdFi.TPDM.ApiSchema";
-        await _downloader.DownloadNuGetPackageAsync(
-                    packageId,
-                    packageVersion,
-                    feedUrl,
-                    _outputDirectory
-                );
     }
 
     [Test]
