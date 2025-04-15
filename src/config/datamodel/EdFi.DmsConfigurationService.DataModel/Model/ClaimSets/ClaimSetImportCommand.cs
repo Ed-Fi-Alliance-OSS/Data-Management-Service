@@ -8,7 +8,6 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public class ClaimSetImportCommand : IClaimSetCommand
 {
     public required string Name { get; set; }
-    public required List<ResourceClaim> ResourceClaims { get; set; }
 
     public class Validator(IClaimSetDataProvider claimSetDataProvider)
         : ClaimSetCommandValidator<ClaimSetImportCommand>(

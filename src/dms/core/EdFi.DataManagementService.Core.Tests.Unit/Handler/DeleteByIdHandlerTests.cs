@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Security;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -25,7 +26,12 @@ public class DeleteByIdHandlerTests
 {
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
-        return new DeleteByIdHandler(documentStoreRepository, NullLogger.Instance, ResiliencePipeline.Empty);
+        return new DeleteByIdHandler(
+            documentStoreRepository,
+            NullLogger.Instance,
+            ResiliencePipeline.Empty,
+            new NoAuthorizationServiceFactory()
+        );
     }
 
     internal static ResourceSchema GetResourceSchema()
@@ -61,6 +67,11 @@ public class DeleteByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
             IPipelineStep deleteByIdHandler = Handler(new Repository());
             _context.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_context, NullNext);
@@ -90,6 +101,12 @@ public class DeleteByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+
             IPipelineStep deleteByIdHandler = Handler(new Repository());
             _context.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_context, NullNext);
@@ -121,6 +138,12 @@ public class DeleteByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+
             IPipelineStep deleteByIdHandler = Handler(new Repository());
             _context.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_context, NullNext);
@@ -153,6 +176,11 @@ public class DeleteByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
             IPipelineStep deleteByIdHandler = Handler(new Repository());
             _context.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_context, NullNext);
@@ -184,6 +212,11 @@ public class DeleteByIdHandlerTests
         [SetUp]
         public async Task Setup()
         {
+            var projectSchemaNode = new JsonObject
+            {
+                ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
+            };
+            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
             IPipelineStep deleteByIdHandler = Handler(new Repository());
             _context.ResourceSchema = GetResourceSchema();
             await deleteByIdHandler.Execute(_context, NullNext);

@@ -27,5 +27,9 @@ public record DocumentSummary(
     /// <summary>
     /// The correlation id of the last insert or update
     /// </summary>
-    string LastModifiedTraceId
+    string LastModifiedTraceId,
+    /// <summary>
+    /// The id of the document in the database
+    /// </summary>
+    long? DocumentId
 );

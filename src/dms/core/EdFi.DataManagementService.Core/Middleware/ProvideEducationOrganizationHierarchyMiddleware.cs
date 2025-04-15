@@ -54,21 +54,21 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
                 context.ResourceSchema.ResourceName,
                 context.FrontendRequest.TraceId.Value
             );
-            return new EducationOrganizationHierarchyInfo(false, default, []);
+            return new EducationOrganizationHierarchyInfo(false, default, default);
         }
 
         long educationOrganizationId = ExtractEducationOrganizationId(context);
-        long[] parentIds = FindParentEducationOrganizationIds(context);
+        long? parentId = FindParentEducationOrganizationId(context);
 
         _logger.LogDebug(
-            "Resource {ResourceName} with Id: {Id} IS in EducationOrganizationHierarchy and has parentIds: [{ParentIds}] - {TraceId}",
+            "Resource {ResourceName} with Id: {Id} IS in EducationOrganizationHierarchy and has parentId: [{ParentIds}] - {TraceId}",
             context.ResourceSchema.ResourceName.Value,
             educationOrganizationId,
-            string.Join(',', parentIds),
+            string.Join(',', parentId),
             context.FrontendRequest.TraceId.Value
         );
 
-        return new EducationOrganizationHierarchyInfo(true, educationOrganizationId, parentIds);
+        return new EducationOrganizationHierarchyInfo(true, educationOrganizationId, parentId);
     }
 
     private long ExtractEducationOrganizationId(PipelineContext context)
@@ -81,11 +81,11 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
         return long.Parse(documentIdentity.DocumentIdentityElements[0].IdentityValue);
     }
 
-    private static long[] FindParentEducationOrganizationIds(PipelineContext context)
+    private static long? FindParentEducationOrganizationId(PipelineContext context)
     {
         if (context.DocumentSecurityElements?.EducationOrganization == null)
         {
-            return [];
+            return default;
         }
 
         var parentTypes = context.ProjectSchema.EducationOrganizationHierarchy[
@@ -95,6 +95,7 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
         return context
             .DocumentSecurityElements.EducationOrganization.Where(e => parentTypes.Contains(e.ResourceName))
             .Select(e => e.Id.Value)
-            .ToArray();
+            .Distinct()
+            .FirstOrDefault();
     }
 }

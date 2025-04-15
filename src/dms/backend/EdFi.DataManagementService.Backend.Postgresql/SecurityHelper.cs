@@ -19,13 +19,45 @@ internal static class SecurityHelper
         return JsonSerializer.Deserialize<JsonElement>(
             new JsonObject
             {
-                ["Namespace"] = new JsonArray([.. documentSecurityElements.Namespace]),
+                ["Namespace"] = new JsonArray(
+                    documentSecurityElements.Namespace.Select(ns => JsonValue.Create(ns)).ToArray()
+                ),
                 ["EducationOrganization"] = new JsonArray(
                     documentSecurityElements
-                        .EducationOrganization.Select(eo => JsonValue.Create(eo.Id.Value))
-                        .ToArray<JsonNode?>()
+                        .EducationOrganization.Select(eo => new JsonObject
+                        {
+                            ["Id"] = JsonValue.Create(eo.Id.Value),
+                            ["ResourceName"] = JsonValue.Create(eo.ResourceName.Value),
+                        })
+                        .ToArray()
                 ),
-            }
+            }.ToJsonString()
         );
+    }
+
+    /// <summary>
+    /// Converts a JsonElement to DocumentSecurityElements
+    /// </summary>
+    public static DocumentSecurityElements ToDocumentSecurityElements(this JsonElement jsonElement)
+    {
+        var jsonObject = JsonNode.Parse(jsonElement.GetRawText())!.AsObject();
+
+        var namespaces =
+            jsonObject["Namespace"]?.AsArray().Select(ns => ns!.GetValue<string>()).ToArray() ?? [];
+
+        var educationOrganizations =
+            jsonObject["EducationOrganization"]
+                ?.AsArray()
+                .Select(eo => new EducationOrganizationSecurityElement(
+                    new ResourceName(eo!["ResourceName"]!.GetValue<string>()),
+                    new EducationOrganizationId(eo["Id"]!.GetValue<long>())
+                ))
+                .ToArray() ?? [];
+
+        var studentIds =
+            jsonObject["StudentId"]?.AsArray().Select(id => new StudentId(id!.GetValue<string>())).ToArray()
+            ?? [];
+
+        return new DocumentSecurityElements(namespaces, educationOrganizations, studentIds);
     }
 }

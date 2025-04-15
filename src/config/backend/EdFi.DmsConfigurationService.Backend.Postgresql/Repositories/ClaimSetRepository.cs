@@ -89,18 +89,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         }
     }
 
-    private static string SerializeResourceClaim(List<ResourceClaim>? resourceClaims)
-    {
-        return JsonSerializer.Serialize(
-            resourceClaims,
-            new JsonSerializerOptions
-            {
-                WriteIndented = false,
-                DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            }
-        );
-    }
-
     public async Task<ClaimSetInsertResult> InsertClaimSet(ClaimSetInsertCommand command)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -110,8 +98,8 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string sql = """
-                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, ResourceClaims)
-                   VALUES(@ClaimSetName, @IsSystemReserved, @ResourceClaims::jsonb)
+                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
+                   VALUES(@ClaimSetName, @IsSystemReserved)
                    RETURNING Id;
                 """;
 
@@ -119,7 +107,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = SerializeResourceClaim(command.ResourceClaims),
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
@@ -127,7 +114,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
 
             return new ClaimSetInsertResult.Success(id);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_claimsetname"))
+        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("idx_claimsetname"))
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -146,18 +133,14 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string baseSql = """
+            string sql = """
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
                         FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
-                    {0}
                 FROM dmscs.ClaimSet c
                 ORDER BY c.Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
-
-            string resourceClaimsColumn = verbose ? ", ResourceClaims::TEXT AS ResourceClaims" : "";
-            string sql = string.Format(baseSql, resourceClaimsColumn);
 
             var claimSets = await connection.QueryAsync(sql, param: query);
 
@@ -170,7 +153,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                         Name = row.claimsetname,
                         IsSystemReserved = row.issystemreserved,
                         Applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
-                        ResourceClaims = JsonDocument.Parse(row.resourceclaims).RootElement,
                     })
                     .ToList();
                 return new ClaimSetQueryResult.Success(verboseResponses);
@@ -199,17 +181,13 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string baseSql = """
+            string sql = """
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
                         FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
-                    {0}
                 FROM dmscs.ClaimSet c
                 WHERE c.Id = @Id
                 """;
-
-            string resourceClaimsColumn = verbose ? ", ResourceClaims" : "";
-            string sql = string.Format(baseSql, resourceClaimsColumn);
 
             var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id });
 
@@ -226,7 +204,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                     Name = result.claimsetname,
                     IsSystemReserved = result.issystemreserved,
                     Applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
-                    ResourceClaims = verbose ? JsonDocument.Parse(result.resourceclaims).RootElement : null,
                 });
 
                 return new ClaimSetGetResult.Success(returnClaimSet.Single());
@@ -257,7 +234,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         {
             string sql = """
                 UPDATE dmscs.ClaimSet
-                SET ClaimSetName=@ClaimSetName, IsSystemReserved=@IsSystemReserved, ResourceClaims=@ResourceClaims::jsonb
+                SET ClaimSetName=@ClaimSetName, IsSystemReserved=@IsSystemReserved
                 WHERE Id = @Id;
                 """;
 
@@ -266,7 +243,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 command.Id,
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = SerializeResourceClaim(command.ResourceClaims),
             };
 
             int affectedRows = await connection.ExecuteAsync(sql, parameters);
@@ -314,7 +290,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string sql = """
-                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved, c.ResourceClaims
+                SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
                         FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
                 FROM dmscs.ClaimSet c
@@ -333,7 +309,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 Name = result.claimsetname,
                 IsSystemReserved = result.issystemreserved,
                 Applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
-                ResourceClaims = JsonDocument.Parse(result.resourceclaims).RootElement,
             });
 
             return new ClaimSetExportResult.Success(returnClaimSet.Single());
@@ -354,8 +329,8 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string sql = """
-                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, ResourceClaims)
-                   VALUES(@ClaimSetName, @IsSystemReserved, @ResourceClaims::jsonb)
+                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
+                   VALUES(@ClaimSetName, @IsSystemReserved)
                    RETURNING Id;
                 """;
 
@@ -363,7 +338,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = false,
-                ResourceClaims = SerializeResourceClaim(command.ResourceClaims),
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
@@ -371,7 +345,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
 
             return new ClaimSetImportResult.Success(id);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_claimsetname"))
+        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("idx_claimsetname"))
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -393,7 +367,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         try
         {
             string selectSql = """
-                SELECT ClaimSetName, IsSystemReserved, ResourceClaims::TEXT AS ResourceClaims
+                SELECT ClaimSetName, IsSystemReserved
                 FROM dmscs.ClaimSet
                 WHERE Id = @OriginalId;
                 """;
@@ -409,11 +383,9 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 return new ClaimSetCopyResult.FailureNotFound();
             }
 
-            var resourceClaimsJson = JsonDocument.Parse((string)originalClaimSet.resourceclaims).RootElement;
-
             string insertSql = """
-                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, ResourceClaims)
-                VALUES (@ClaimSetName, @IsSystemReserved, @ResourceClaims::jsonb)
+                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
+                VALUES (@ClaimSetName, @IsSystemReserved)
                 RETURNING Id;
                 """;
 
@@ -423,7 +395,6 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 {
                     ClaimSetName = command.Name,
                     IsSystemReserved = (bool)originalClaimSet.issystemreserved,
-                    ResourceClaims = resourceClaimsJson.GetRawText(),
                 },
                 transaction
             );

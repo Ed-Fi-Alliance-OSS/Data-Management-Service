@@ -5,26 +5,27 @@
 
 services:
   keycloak:
-    hostname: dms-keycloak
+    image: quay.io/keycloak/keycloak:26.1@sha256:044a457e04987e1fff756be3d2fa325a4ef420fa356b7034ecc9f1b693c32761
     container_name: dms-keycloak
-    image: quay.io/keycloak/keycloak:25.0@sha256:410fce4b9b40e1f4e7f90b44acedbaa6d935bacea432a6884769067b253d46fb
+    volumes:
+      - dms-keycloak:/var/lib/keycloak/data
     environment:
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8045}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: true
-    command:
-      - start-dev
     ports:
-      - ${KEYCLOAK_PORT:-8045}:8080
-    volumes:
-      - dms-keycloak:/var/lib/keycloak/data
+      - '127.0.0.1:${KEYCLOAK_PORT:-8045}:8080'
     networks:
       - dms
+    command:
+      - start-dev
+    hostname: dms-keycloak
+networks:
+  dms:
+    external: true
 
 volumes:
   dms-keycloak:
 
-networks:
-  dms:
-    external: true
+

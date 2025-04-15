@@ -85,7 +85,7 @@ public class AuthorizationTests
         public void SetUp()
         {
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(1));
+                .Returns(new VendorInsertResult.Success(1, true));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
                 .Returns(
@@ -184,7 +184,7 @@ public class AuthorizationTests
         public void SetUp()
         {
             A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
-                .Returns(new VendorInsertResult.Success(1));
+                .Returns(new VendorInsertResult.Success(1, false));
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
                 .Returns(

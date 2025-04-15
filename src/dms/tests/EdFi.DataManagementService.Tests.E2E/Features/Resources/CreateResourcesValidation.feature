@@ -9,6 +9,7 @@ Feature: Resources "Create" Operation validations
                   | uri://ed-fi.org/StateAbbreviationDescriptor#TX                                             |
                   | uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider |
                   | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary                                         |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School                             |
 
     Rule: Resources
 
@@ -786,3 +787,43 @@ Feature: Resources "Create" Operation validations
                       "namespace": "uri://ed-fi.org"
                   }
                   """
+    @addwait
+    Scenario: 30 Insert the same school after deletion
+        When a POST request is made to "/ed-fi/schools" with
+          """
+                {
+               "schoolId":255901001,
+               "nameOfInstitution":"Test school",
+               "gradeLevels":[    
+                  {
+                     "gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                  }
+               ],
+               "educationOrganizationCategories":[
+                  {
+                     "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                  }
+               ]
+            }
+          """
+       Then it should respond with 201
+       When a DELETE request is made to "/ed-fi/schools/{id}"
+       Then it should respond with 204
+       When a POST request is made to "/ed-fi/schools" with
+          """
+                {
+               "schoolId":255901001,
+               "nameOfInstitution":"Test school",
+               "gradeLevels":[    
+                  {
+                     "gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                  }
+               ],
+               "educationOrganizationCategories":[
+                  {
+                     "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                  }
+               ]
+            }
+          """
+          Then it should respond with 201

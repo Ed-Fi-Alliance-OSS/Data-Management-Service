@@ -26,6 +26,7 @@ public static class PostgresqlServiceExtensions
     {
         services.AddSingleton((sp) => NpgsqlDataSource.Create(connectionString));
         services.AddSingleton<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
+        services.AddSingleton<IAuthorizationRepository, PostgresqlAuthorizationRepository>();
         services.AddSingleton<IGetDocumentById, GetDocumentById>();
         services.AddSingleton<IQueryDocument, QueryDocument>();
         services.AddSingleton<IUpdateDocumentById, UpdateDocumentById>();
@@ -39,9 +40,7 @@ public static class PostgresqlServiceExtensions
     /// The Postgresql backend query handler configuration
     /// This can only be used with PostgreSQL also as the backend datastore
     /// </summary>
-    public static IServiceCollection AddPostgresqlQueryHandler(
-        this IServiceCollection services
-    )
+    public static IServiceCollection AddPostgresqlQueryHandler(this IServiceCollection services)
     {
         services.AddSingleton<IQueryHandler, PostgresqlDocumentStoreRepository>();
         return services;

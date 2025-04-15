@@ -137,7 +137,7 @@ public static partial class QueryOpenSearch
                 .AuthorizationStrategyEvaluators.Select(strategyEvaluator =>
                 {
                     IEnumerable<JsonObject> namespaceFilters = strategyEvaluator
-                        .Filters.Where(f => f.FilterPath == "Namespace")
+                        .Filters.Where(f => f.FilterPath == SecurityElementNameConstants.Namespace)
                         .Select(filter => new JsonObject
                         {
                             ["match_phrase"] = new JsonObject
@@ -147,12 +147,14 @@ public static partial class QueryOpenSearch
                         });
 
                     IEnumerable<JsonObject> edOrgFilters = strategyEvaluator
-                        .Filters.Where(f => f.FilterPath == "EducationOrganization")
+                        .Filters.Where(f =>
+                            f.FilterPath == SecurityElementNameConstants.EducationOrganization
+                        )
                         .Select(filter => new JsonObject
                         {
                             ["terms"] = new JsonObject
                             {
-                                [$"securityelements.{filter.FilterPath}"] = new JsonObject
+                                [$"securityelements.{filter.FilterPath}.Id"] = new JsonObject
                                 {
                                     ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
                                     ["id"] = filter.Value,

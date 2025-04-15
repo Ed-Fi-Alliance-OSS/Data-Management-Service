@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
@@ -80,29 +79,16 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
         try
         {
-            // If this update is part of RelationshipWithEdOrg strategy, verify the access to the hierarchy.
-            if (updateRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
+            ResourceAuthorizationResult getAuthorizationResult =
+                await updateRequest.ResourceAuthorizationHandler.Authorize(
+                    updateRequest.DocumentSecurityElements,
+                    OperationType.Update,
+                    updateRequest.TraceId
+                );
+
+            if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
             {
-                long[] educationOrganizationSecurityElements =
-                    await _sqlAction.GetAncestorEducationOrganizationIdsForUpsert(
-                        updateRequest
-                            .DocumentSecurityElements.EducationOrganization.Select(e => e.Id.Value)
-                            .ToArray(),
-                        connection,
-                        transaction,
-                        updateRequest.TraceId
-                    );
-
-                ResourceAuthorizationResult getAuthorizationResult =
-                    updateRequest.ResourceAuthorizationHandler.Authorize(
-                        updateRequest.DocumentSecurityElements.Namespace,
-                        educationOrganizationSecurityElements
-                    );
-
-                if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
-                {
-                    return new UpdateResult.UpdateFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
-                }
+                return new UpdateResult.UpdateFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
             UpdateDocumentValidationResult validationResult = await _sqlAction.UpdateDocumentValidation(
@@ -191,13 +177,16 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     .ResourceInfo
                     .EducationOrganizationHierarchyInfo
                     .IsInEducationOrganizationHierarchy
+                && documentFromDb.Id != null
             )
             {
                 await _sqlAction.UpdateEducationOrganizationHierarchy(
                     updateRequest.ResourceInfo.ProjectName.Value,
                     updateRequest.ResourceInfo.ResourceName.Value,
                     updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
-                    updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                    updateRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentId,
+                    documentFromDb.Id.Value,
+                    documentFromDb.DocumentPartitionKey,
                     connection,
                     transaction
                 );

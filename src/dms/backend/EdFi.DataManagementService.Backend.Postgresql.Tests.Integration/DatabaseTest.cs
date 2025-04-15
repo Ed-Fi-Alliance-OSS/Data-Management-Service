@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Security;
 using ImpromptuInterface;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -166,22 +167,23 @@ public abstract class DatabaseTest : DatabaseTestBase
 
     protected static ResourceInfo CreateResourceInfo(
         string resourceName,
+        string projectName = "ProjectName",
         bool allowIdentityUpdates = false,
         bool isInEducationOrganizationHierarchy = false,
         long educationOrganizationId = 0,
-        long[]? parentEducationOrganizationIds = null
+        long? parentEducationOrganizationId = null
     )
     {
         return new(
             ResourceVersion: new("5.0.0"),
             AllowIdentityUpdates: allowIdentityUpdates,
-            ProjectName: new("ProjectName"),
+            ProjectName: new(projectName),
             ResourceName: new(resourceName),
             IsDescriptor: false,
             EducationOrganizationHierarchyInfo: new(
                 isInEducationOrganizationHierarchy,
                 educationOrganizationId,
-                parentEducationOrganizationIds ?? []
+                parentEducationOrganizationId
             )
         );
     }
@@ -258,8 +260,9 @@ public abstract class DatabaseTest : DatabaseTestBase
         DocumentSecurityElements? documentSecurityElements = null,
         bool isInEducationOrganizationHierarchy = false,
         long educationOrganizationId = 0,
-        long[]? parentEducationOrganizationIds = null,
-        TraceId? traceId = null
+        long? parentEducationOrganizationId = null,
+        TraceId? traceId = null,
+        string projectName = "ProjectName"
     )
     {
         if (documentSecurityElements == null)
@@ -275,10 +278,11 @@ public abstract class DatabaseTest : DatabaseTestBase
             {
                 ResourceInfo = CreateResourceInfo(
                     resourceName,
+                    projectName,
                     allowIdentityUpdates,
                     isInEducationOrganizationHierarchy,
                     educationOrganizationId,
-                    parentEducationOrganizationIds ?? []
+                    parentEducationOrganizationId
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,
@@ -292,7 +296,11 @@ public abstract class DatabaseTest : DatabaseTestBase
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
                 DocumentSecurityElements = documentSecurityElements,
-                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
+                    new NoAuthorizationServiceFactory(),
+                    NullLogger.Instance
+                ),
             }
         ).ActLike<IUpsertRequest>();
     }
@@ -318,7 +326,11 @@ public abstract class DatabaseTest : DatabaseTestBase
         bool allowIdentityUpdates = false,
         DocumentIdentityElement[]? documentIdentityElements = null,
         DocumentSecurityElements? documentSecurityElements = null,
-        TraceId? traceId = null
+        bool isInEducationOrganizationHierarchy = false,
+        long educationOrganizationId = 0,
+        long? parentEducationOrganizationId = null,
+        TraceId? traceId = null,
+        string projectName = "ProjectName"
     )
     {
         if (documentSecurityElements == null)
@@ -333,7 +345,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         return (
             new
             {
-                ResourceInfo = CreateResourceInfo(resourceName, allowIdentityUpdates),
+                ResourceInfo = CreateResourceInfo(
+                    resourceName,
+                    projectName,
+                    allowIdentityUpdates,
+                    isInEducationOrganizationHierarchy,
+                    educationOrganizationId,
+                    parentEducationOrganizationId
+                ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,
                     documentReferences,
@@ -346,7 +365,11 @@ public abstract class DatabaseTest : DatabaseTestBase
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
                 DocumentSecurityElements = documentSecurityElements,
-                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
+                    new NoAuthorizationServiceFactory(),
+                    NullLogger.Instance
+                ),
             }
         ).ActLike<IUpdateRequest>();
     }
@@ -368,7 +391,11 @@ public abstract class DatabaseTest : DatabaseTestBase
                 ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
-                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
+                    new NoAuthorizationServiceFactory(),
+                    NullLogger.Instance
+                ),
             }
         ).ActLike<IGetRequest>();
     }
@@ -398,7 +425,8 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static IDeleteRequest CreateDeleteRequest(
         string resourceName,
         Guid documentUuidGuid,
-        TraceId? traceId = null
+        TraceId? traceId = null,
+        bool deleteInEdOrgHierarchy = false
     )
     {
         if (traceId == null)
@@ -411,7 +439,12 @@ public abstract class DatabaseTest : DatabaseTestBase
                 ResourceInfo = CreateResourceInfo(resourceName),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
-                ResourceAuthorizationHandler = new ResourceAuthorizationHandler([], NullLogger.Instance),
+                ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
+                    new NoAuthorizationServiceFactory(),
+                    NullLogger.Instance
+                ),
+                DeleteInEdOrgHierarchy = deleteInEdOrgHierarchy,
             }
         ).ActLike<IDeleteRequest>();
     }

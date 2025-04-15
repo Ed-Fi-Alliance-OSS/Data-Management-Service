@@ -9,5 +9,9 @@ CREATE TABLE dms.EducationOrganizationHierarchy(
     ResourceName VARCHAR(256) NOT NULL,
     EducationOrganizationId BIGINT NOT NULL,
     ParentId BIGINT REFERENCES dms.EducationOrganizationHierarchy(Id) ON DELETE CASCADE,
+    DocumentId BIGINT NOT NULL,
+    DocumentPartitionKey SMALLINT NOT NULL,
     UNIQUE (ProjectName, ResourceName, EducationOrganizationId, ParentId)
 );
+
+CREATE UNIQUE INDEX UX_EducationOrganizationHierarchy_EducationOrganizationId ON dms.EducationOrganizationHierarchy (EducationOrganizationId);

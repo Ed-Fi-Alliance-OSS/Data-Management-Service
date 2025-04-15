@@ -160,7 +160,9 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 upsertRequest.ResourceInfo.ProjectName.Value,
                 upsertRequest.ResourceInfo.ResourceName.Value,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
-                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentId,
+                newDocumentId,
+                documentPartitionKey,
                 connection,
                 transaction
             );
@@ -231,7 +233,9 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 upsertRequest.ResourceInfo.ProjectName.Value,
                 upsertRequest.ResourceInfo.ResourceName.Value,
                 upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
-                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentIds,
+                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentId,
+                documentId,
+                documentPartitionKey,
                 connection,
                 transaction
             );
@@ -295,27 +299,16 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 return new UpsertResult.UpsertFailureWriteConflict();
             }
 
-            if (upsertRequest.ResourceAuthorizationHandler.IsRelationshipWithEdOrg)
-            {
-                long[] ancestorEdOrgIds = await _sqlAction.GetAncestorEducationOrganizationIdsForUpsert(
-                    upsertRequest
-                        .DocumentSecurityElements.EducationOrganization.Select(e => e.Id.Value)
-                        .ToArray(),
-                    connection,
-                    transaction,
+            ResourceAuthorizationResult getAuthorizationResult =
+                await upsertRequest.ResourceAuthorizationHandler.Authorize(
+                    upsertRequest.DocumentSecurityElements,
+                    OperationType.Upsert,
                     upsertRequest.TraceId
                 );
 
-                ResourceAuthorizationResult getAuthorizationResult =
-                    upsertRequest.ResourceAuthorizationHandler.Authorize(
-                        upsertRequest.DocumentSecurityElements.Namespace,
-                        ancestorEdOrgIds
-                    );
-
-                if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
-                {
-                    return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.RelationshipErrorMessages);
-                }
+            if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
             // Either get the existing document uuid or use the new one provided

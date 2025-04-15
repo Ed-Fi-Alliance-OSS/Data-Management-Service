@@ -3,9 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Core.Security;
+namespace EdFi.DataManagementService.Core.External.Backend;
 
-/// <summary>
-/// Represents the authorization validation result
-/// </summary>
-public record AuthorizationResult(bool IsAuthorized, string ErrorMessage = "");
+public enum OperationType
+{
+    Upsert,
+    Update,
+    Get,
+    Delete,
+}

@@ -120,15 +120,6 @@ public class ClaimSetModuleTests
                             Id = 1,
                             Name = "ClaimSet with ResourceClaims",
                             IsSystemReserved = true,
-                            ResourceClaims = JsonDocument
-                                .Parse(
-                                    """
-                                        {
-                                            "Resource": "Value"
-                                        }
-                                    """
-                                )
-                                .RootElement,
                         }
                     )
                 );
@@ -168,18 +159,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "id": 1,
-                        "name": "Test-11",
-                        "resourceClaims": [
-                         {
-                            "name": "Test ResourceClaim",
-                            "actions": [
-                              {
-                                "name": "Create",
-                                "enabled": true
-                              }
-                            ]
-                            }
-                        ]
+                        "name": "Test-11"
                     }
                     """,
                     Encoding.UTF8,
@@ -206,18 +186,7 @@ public class ClaimSetModuleTests
                 new StringContent(
                     """
                     {
-                        "name" : "Testing-Import-for-ClaimSet",
-                        "resourceClaims" : [
-                            {
-                                "name": "Test ResourceClaim",
-                                "actions": [
-                                  {
-                                    "name": "Create",
-                                    "enabled": true
-                                  }
-                                ]
-                            }
-                        ]
+                        "name" : "Testing-Import-for-ClaimSet"
                     }
                     """,
                     Encoding.UTF8,
@@ -372,8 +341,7 @@ public class ClaimSetModuleTests
                   "validationErrors": {
                     "Name": [
                       "The claim set name must be less than 256 characters."
-                    ],
-                    "ResourceClaims":["Resource claims are required."]
+                    ]
                   },
                   "errors": []
                 }

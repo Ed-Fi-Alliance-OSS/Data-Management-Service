@@ -130,7 +130,9 @@ public interface ISqlAction
         string projectName,
         string resourceName,
         long educationOrganizationId,
-        long[] parentEducationOrganizationIds,
+        long? parentEducationOrganizationId,
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -139,7 +141,9 @@ public interface ISqlAction
         string projectName,
         string resourceName,
         long educationOrganizationId,
-        long[] parentEducationOrganizationIds,
+        long? parentEducationOrganizationId,
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
@@ -147,23 +151,9 @@ public interface ISqlAction
     public Task<int> DeleteEducationOrganizationHierarchy(
         string projectName,
         string resourceName,
-        long educationOrganizationId,
+        long documentId,
+        short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
-    );
-
-    public Task<long[]> GetAncestorEducationOrganizationIds(
-        PartitionKey documentPartitionKey,
-        DocumentUuid documentUuid,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
-    );
-
-    public Task<long[]> GetAncestorEducationOrganizationIdsForUpsert(
-        long[] educationOrganizationIds,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        TraceId traceId
     );
 }

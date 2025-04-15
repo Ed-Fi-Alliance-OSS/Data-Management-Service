@@ -13,5 +13,5 @@ public record ResourceAuthorizationResult
 {
     public record Authorized() : ResourceAuthorizationResult();
 
-    public record NotAuthorized(string[] ErrorMessages, string[] RelationshipErrorMessages) : ResourceAuthorizationResult();
+    public record NotAuthorized(string[] ErrorMessages) : ResourceAuthorizationResult();
 }
