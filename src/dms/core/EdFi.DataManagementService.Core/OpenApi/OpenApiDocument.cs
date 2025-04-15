@@ -210,7 +210,7 @@ public class OpenApiDocument(ILogger _logger)
             )
             .DeepClone();
 
-        #region [DMS-597] Workaround for DMS-628 Descriptor schemas should have `Descriptor` suffix
+        #region [DMS-597] Workaround for DMS-628 Descriptor OpenApi Schemas should have the 'Descriptor' suffix
         if (documentSection == DocumentSection.Descriptor)
         {
             var openApiJsonSpec = openApiSpecification.ToJsonString();
@@ -227,15 +227,16 @@ public class OpenApiDocument(ILogger _logger)
         }
         #endregion
 
-        #region [DMS-597] Workaround for DMS-633 SchoolYearType shouldn't be inlined
+        #region [DMS-597] Workaround for DMS-633 SchoolYearType shouldn't be inlined in the OpenApi spec
         if (documentSection == DocumentSection.Resource)
         {
             var resourceWithInlinedSchoolYearType = openApiSpecification["components"]!["schemas"]!
                 .AsObject()
                 .Select(schema =>
                 {
-                    var properties = schema.Value!["properties"]!
-                        .AsObject()
+                    var properties = schema
+                        .Value!["properties"]
+                        ?.AsObject()
                         .Where(property =>
                             property.Key == "schoolYearTypeReference" && property.Value!["properties"] != null
                         )
@@ -243,12 +244,12 @@ public class OpenApiDocument(ILogger _logger)
 
                     return (schema, properties);
                 })
-                .Where(schema => schema.properties.Any())
+                .Where(schema => schema.properties?.Any() == true)
                 .ToList();
 
             foreach (var resource in resourceWithInlinedSchoolYearType)
             {
-                foreach (var property in resource.properties)
+                foreach (var property in resource.properties!)
                 {
                     resource.schema.Value!["properties"]![property.Key] = JsonNode.Parse(
                         $"{{ \"$ref\": \"#/components/schemas/EdFi_SchoolYearTypeReference\" }}"
@@ -258,15 +259,16 @@ public class OpenApiDocument(ILogger _logger)
         }
         #endregion
 
-        #region Workaround for DMS-627 Array references should not be partially inlined
+        #region [DMS-597] Workaround for DMS-627 Array references should not be partially inlined in the OpenApi spec
         if (documentSection == DocumentSection.Resource)
         {
             var resourceWithArrayReferences = openApiSpecification["components"]!["schemas"]!
                 .AsObject()
                 .Select(schema =>
                 {
-                    var properties = schema.Value!["properties"]!
-                        .AsObject()
+                    var properties = schema
+                        .Value!["properties"]
+                        ?.AsObject()
                         .Where(property =>
                             property.Value!["type"]?.GetValue<string>() == "array"
                             && property.Value["items"]!["$ref"] == null
@@ -275,12 +277,12 @@ public class OpenApiDocument(ILogger _logger)
 
                     return (schema, properties);
                 })
-                .Where(schema => schema.properties.Any())
+                .Where(schema => schema.properties?.Any() == true)
                 .ToList();
 
             foreach (var resource in resourceWithArrayReferences)
             {
-                foreach (var referenceProperty in resource.properties)
+                foreach (var referenceProperty in resource.properties!)
                 {
                     var newRefName =
                         resource.schema.Key.Replace("EdFi_", "")

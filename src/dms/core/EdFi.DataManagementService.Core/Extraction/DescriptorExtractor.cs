@@ -64,10 +64,9 @@ internal static class DescriptorExtractor
                 // One descriptor reference per Uri
                 DocumentIdentityElement documentIdentityElement = new(
                     DocumentIdentity.DescriptorIdentityJsonPath,
-                    // [DMS-597] Workaround for DMS-631 CodeValue should be case insensitive when referencing a Descriptor
-                    descriptorUri.value == "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale Score" ?
-                        descriptorUri.value.Replace(
-                            "Score", "score")
+                    // [DMS-597] Workaround for DMS-631 When referencing a Descriptor the CodeValue should be case insensitive
+                    descriptorUri.value == "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale Score"
+                        ? descriptorUri.value.Replace("Score", "score")
                         : descriptorUri.value
                 );
                 DocumentIdentity documentIdentity = new([documentIdentityElement]);

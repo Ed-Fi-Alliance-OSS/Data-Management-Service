@@ -372,22 +372,22 @@ public class OpenApiDocumentTests
                 {
                   "components": {
                     "schemas": {
-                      "EdFi_AbsenceEventCategory": {
+                      "EdFi_AbsenceEventCategoryDescriptor": {
                         "description": "An Ed-Fi Descriptor",
                         "properties": {},
                         "type": "string"
                       },
-                      "EdFi_AcademicHonorCategory": {
+                      "EdFi_AcademicHonorCategoryDescriptor": {
                         "description": "An Ed-Fi Descriptor",
                         "properties": {},
                         "type": "string"
                       },
-                      "EdFi_AcademicSubject": {
+                      "EdFi_AcademicSubjectDescriptor": {
                         "description": "An Ed-Fi Descriptor",
                         "properties": {},
                         "type": "string"
                       },
-                      "EdFi_Accommodation": {
+                      "EdFi_AccommodationDescriptor": {
                         "description": "An Ed-Fi Descriptor",
                         "properties": {},
                         "type": "string"
@@ -660,22 +660,22 @@ public class OpenApiDocumentTests
         {
             string expectedResult = """
             {
-              "EdFi_AbsenceEventCategory": {
+              "EdFi_AbsenceEventCategoryDescriptor": {
                 "description": "An Ed-Fi Descriptor",
                 "properties": {},
                 "type": "string"
               },
-              "EdFi_AcademicHonorCategory": {
+              "EdFi_AcademicHonorCategoryDescriptor": {
                 "description": "An Ed-Fi Descriptor",
                 "properties": {},
                 "type": "string"
               },
-              "EdFi_AcademicSubject": {
+              "EdFi_AcademicSubjectDescriptor": {
                 "description": "An Ed-Fi Descriptor",
                 "properties": {},
                 "type": "string"
               },
-              "EdFi_Accommodation": {
+              "EdFi_AccommodationDescriptor": {
                 "description": "An Ed-Fi Descriptor",
                 "properties": {},
                 "type": "string"

@@ -6,12 +6,14 @@
 using System.Diagnostics;
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -20,7 +22,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ResourceActionAuthorizationMiddleware(
     IClaimSetCacheService _claimSetCacheService,
-    ILogger _logger
+    ILogger _logger,
+    bool disablePersonAuthorizationStrategies = true
 ) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -121,8 +124,9 @@ internal class ResourceActionAuthorizationMiddleware(
             IReadOnlyList<string> resourceActionAuthStrategies = authorizedAction
                 .AuthorizationStrategies.Select(auth => auth.Name)
                 .Select(authStrategyName =>
-                    // Use NoFurtherAuth if the configured strategy is Relationships* because they aren't finished yet
-                    authStrategyName.StartsWith("Relationships")
+                    disablePersonAuthorizationStrategies
+                    && authStrategyName.StartsWith("RelationshipsWith")
+                    && authStrategyName != "RelationshipsWithEdOrgsOnly"
                         ? "NoFurtherAuthorizationRequired"
                         : authStrategyName
                 )

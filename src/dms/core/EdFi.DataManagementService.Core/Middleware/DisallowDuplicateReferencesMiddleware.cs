@@ -15,20 +15,26 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
 {
-    private static readonly Regex _numericIndexRegex =
-        new(pattern: @"\[\d+\]", options: RegexOptions.Compiled);
+    private static readonly Regex _numericIndexRegex = new(
+        pattern: @"\[\d+\]",
+        options: RegexOptions.Compiled
+    );
 
-    private static readonly Regex _arrayNameRegex =
-        new(pattern: @"\$\.(\w+)\[(\d+)\]", options: RegexOptions.Compiled);
+    private static readonly Regex _arrayNameRegex = new(
+        pattern: @"\$\.(\w+)\[(\d+)\]",
+        options: RegexOptions.Compiled
+    );
 
     // [DMS-597] Workaround for DMS-632 Duplicate array items validation considers all the references instead of only the ones part of identity
-    private static readonly HashSet<ResourceName> _problematicResources = new(new ResourceName[]
-    {
-        new("StudentAssessment"),
-        new("StudentEducationOrganizationAssociation"),
-        new("StudentAssessmentRegistration"),
-        new("AssessmentAdministrationParticipation")
-    });
+    private static readonly HashSet<ResourceName> _problematicResources = new(
+        new ResourceName[]
+        {
+            new("StudentAssessment"),
+            new("StudentEducationOrganizationAssociation"),
+            new("StudentAssessmentRegistration"),
+            new("AssessmentAdministrationParticipation"),
+        }
+    );
 
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -41,7 +47,10 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         // Find duplicates in document references
         // [DMS-597] Workaround for DMS-632 Duplicate array items validation considers all the references instead of only the ones part of identity
-        if (context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1) && !_problematicResources.Contains(context.ResourceInfo.ResourceName))
+        if (
+            context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1)
+            && !_problematicResources.Contains(context.ResourceInfo.ResourceName)
+        )
         {
             // if duplicates are found, they should be reported
             ValidateDuplicates(
@@ -74,7 +83,10 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             }
 
             // [DMS-597] Workaround for DMS-632 Duplicate array items validation considers all the references instead of only the ones part of identity
-            if (combinedIds.GroupBy(d => d).Any(g => g.Count() > 1) && !_problematicResources.Contains(context.ResourceInfo.ResourceName))
+            if (
+                combinedIds.GroupBy(d => d).Any(g => g.Count() > 1)
+                && !_problematicResources.Contains(context.ResourceInfo.ResourceName)
+            )
             {
                 // if duplicates are found, they should be reported
                 ValidateDuplicates(
