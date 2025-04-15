@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Configuration;
@@ -124,82 +125,42 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
         }
         else
         {
-            Assembly coreAssembly =
-                Assembly.GetAssembly(typeof(DataStandard52.ApiSchema.Marker))
-                ?? throw new InvalidOperationException(
-                    "Could not load assembly-bundled ApiSchema file for Core"
-                );
 
-            JsonNode coreApiSchemaNode = coreAssembly
-                .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema.json"))
-                .Select(resourceName =>
-                {
-                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, coreAssembly);
-                    return coreSchemaNode;
-                })
-                .Single();
+            JsonNode coreApiSchemaNode = new JsonObject();
+            JsonNode[] extensionApiSchemaNodes = Array.Empty<JsonNode>();
 
-            if (coreApiSchemaNode == null)
+            var projectDirectory = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
+            string apiSchemaPath = Path.GetFullPath(projectDirectory);
+            var assemblies = Directory.GetFiles(apiSchemaPath, "*.ApiSchema.dll", SearchOption.AllDirectories);
+            var apiSchemaAssemblyLoadContext = new ApiSchemaAssemblyLoadContext();
+            foreach (var assemblyPath in assemblies)
             {
-                throw new InvalidOperationException("Core ApiSchema not found in the assembly.");
+                var assembly = apiSchemaAssemblyLoadContext.LoadFromAssemblyPath(assemblyPath);
+
+                var manifestResourceNames = assembly.GetManifestResourceNames();
+
+                var coreSchemaResourceName = Array.Find(
+                    manifestResourceNames,
+                    str => str.EndsWith("ApiSchema.json")
+                );
+
+                var extensionSchemaResourceName = Array.Find(
+                    manifestResourceNames,
+                    str => str.Contains(".ApiSchema-") && str.EndsWith("EXTENSION.json")
+                );
+
+                if (coreSchemaResourceName != null)
+                {
+                    _logger.LogInformation("Loading {CoreSchemaResourceName} from assembly", coreSchemaResourceName);
+                    coreApiSchemaNode = LoadFromAssembly(coreSchemaResourceName, assembly);
+                }
+                else if (extensionSchemaResourceName != null)
+                {
+                    _logger.LogInformation("Loading {ExtensionSchemaResourceName} from assembly", extensionSchemaResourceName);
+                    var extensionNodes = LoadFromAssembly(extensionSchemaResourceName, assembly);
+                    extensionApiSchemaNodes = extensionApiSchemaNodes.Concat(new[] { extensionNodes }).ToArray();
+                }
             }
-
-            Assembly tpdmAssembly =
-                Assembly.GetAssembly(typeof(TPDM.ApiSchema.Marker))
-                ?? throw new InvalidOperationException(
-                    "Could not load assembly-bundled ApiSchema file for TPDM"
-                );
-
-            JsonNode[] tpdmExtensionApiSchemaNodes = tpdmAssembly
-                .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema-TPDM-EXTENSION.json"))
-                .Select(resourceName =>
-                {
-                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, tpdmAssembly);
-                    return coreSchemaNode;
-                }).ToArray();
-
-            Assembly homographAssembly =
-                Assembly.GetAssembly(typeof(Homograph.ApiSchema.Marker))
-                ?? throw new InvalidOperationException(
-                    "Could not load assembly-bundled ApiSchema file for Homograph"
-                );
-
-            JsonNode[] homographExtensionApiSchemaNodes = homographAssembly
-                .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema-Homograph-EXTENSION.json"))
-                .Select(resourceName =>
-                {
-                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, homographAssembly);
-                    return coreSchemaNode;
-                }).ToArray();
-
-            Assembly sampleAssembly =
-                Assembly.GetAssembly(typeof(Sample.ApiSchema.Marker))
-                ?? throw new InvalidOperationException(
-                    "Could not load assembly-bundled ApiSchema file for Sample"
-                );
-
-            JsonNode[] sampleExtensionApiSchemaNodes = sampleAssembly
-                .GetManifestResourceNames()
-                .Where(str => str.EndsWith("ApiSchema-Sample-EXTENSION.json"))
-                .Select(resourceName =>
-                {
-                    JsonNode coreSchemaNode = LoadFromAssembly(resourceName, sampleAssembly);
-                    return coreSchemaNode;
-                }).ToArray();
-
-            JsonNode[] extensionApiSchemaNodes = tpdmExtensionApiSchemaNodes
-                .Concat(homographExtensionApiSchemaNodes)
-                .Concat(sampleExtensionApiSchemaNodes)
-                .ToArray();
-
-            extensionApiSchemaNodes =
-                extensionApiSchemaNodes.Length > 0
-                    ? extensionApiSchemaNodes
-                    : throw new InvalidOperationException("ApiSchema-EXTENSION not found in the assembly.");
-
             return new ApiSchemaNodes(coreApiSchemaNode, extensionApiSchemaNodes);
         }
     });
@@ -210,5 +171,13 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
     public ApiSchemaNodes GetApiSchemaNodes()
     {
         return _apiSchemaNodes.Value;
+    }
+
+    /// <summary>
+    /// Returns ApiSchemaAssemblyLoadContext for loading Assembly Context
+    /// </summary>
+    private sealed class ApiSchemaAssemblyLoadContext : AssemblyLoadContext
+    {
+        public ApiSchemaAssemblyLoadContext() : base(isCollectible: true) { }
     }
 }

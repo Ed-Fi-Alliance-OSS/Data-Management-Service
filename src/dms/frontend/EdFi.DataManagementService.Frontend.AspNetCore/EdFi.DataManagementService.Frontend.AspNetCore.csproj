@@ -12,8 +12,6 @@
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
     <PackageReference Include="EdFi.DataStandard52.ApiSchema" />
     <PackageReference Include="EdFi.TPDM.ApiSchema" />
-    <PackageReference Include="EdFi.Homograph.ApiSchema" />
-    <PackageReference Include="EdFi.Sample.ApiSchema" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.CodeAnalysis" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">

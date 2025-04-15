@@ -21,7 +21,7 @@ file.
 | AllowIdentityUpdateOverrides | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                                                           |
 | MaskRequestBodyInLogs        | Controls whether to mask HTTP request bodies in log statements to avoid potentially logging PII. This setting only applies to `DEBUG` logging where requests are logged.                                  |
 | UseApiSchemaPath             | When set to `true`, the application will use the `UseApiSchemaPath` configuration to load core data standard and extension artifacts. The `ApiSchemaDownloader` CLI can be used to download and extract the published `ApiSchema` packages. |
-| ApiSchemaPath                | Specifies the path to the folder where both core and extension artifacts are downloaded using the `ApiSchemaDownloader` CLI. |
+| ApiSchemaPath                | Specifies the directory where core and extension ApiSchema.json files are located. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages. |
 
 ## ConnectionStrings
 
