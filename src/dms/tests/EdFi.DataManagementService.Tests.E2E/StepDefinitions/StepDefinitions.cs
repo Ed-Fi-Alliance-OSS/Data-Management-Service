@@ -32,6 +32,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _referencedResourceId = string.Empty;
         private string _dmsToken = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
+        private Dictionary<string, string> _relationshipIds = [];
 
         #region Given
 
@@ -169,6 +170,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         OkCreated,
                         $"POST request for {entityType} failed:\n{response.TextAsync().Result}"
                     );
+                // add to relationshipIds
             }
 
             return _apiResponses;

@@ -73,9 +73,13 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource) : I
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-        await reader.ReadAsync();
-        return await reader.GetFieldValueAsync<JsonElement>(
-            reader.GetOrdinal("StudentSchoolAuthorizationEducationOrganizationIds")
-        );
+        JsonElement response = new();
+        while (await reader.ReadAsync())
+        {
+            response = await reader.GetFieldValueAsync<JsonElement>(
+                reader.GetOrdinal("StudentSchoolAuthorizationEducationOrganizationIds")
+            );
+        }
+        return response;
     }
 }

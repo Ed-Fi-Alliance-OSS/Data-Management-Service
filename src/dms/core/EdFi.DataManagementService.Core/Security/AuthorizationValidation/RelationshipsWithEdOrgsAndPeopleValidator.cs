@@ -41,9 +41,22 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
             }
 
             var studentUniqueId = securityElements.Student[0].Value;
+
+            long[]? educationOrgIds = [];
+
             var associatedEducationOrgIdsJson =
                 await authorizationRepository.GetEducationOrganizationsForStudent(studentUniqueId);
-            var educationOrgIds = JsonSerializer.Deserialize<long[]>(associatedEducationOrgIdsJson);
+
+            bool isEmpty =
+                associatedEducationOrgIdsJson.ValueKind == JsonValueKind.Null
+                || associatedEducationOrgIdsJson.ValueKind == JsonValueKind.Undefined
+                || associatedEducationOrgIdsJson.ValueKind == JsonValueKind.Object
+                    && associatedEducationOrgIdsJson.GetRawText() == "{}"
+                || associatedEducationOrgIdsJson.ValueKind == JsonValueKind.Array
+                    && associatedEducationOrgIdsJson.GetArrayLength() == 0;
+            educationOrgIds = isEmpty
+                ? []
+                : JsonSerializer.Deserialize<long[]>(associatedEducationOrgIdsJson);
 
             var authorizedEdOrgIds = authorizationFilters
                 .Select(f => long.TryParse(f.Value, out var id) ? (long?)id : null)
@@ -62,7 +75,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                     authorizationFilters.Select(x => $"'{x.Value}'")
                 );
                 string error =
-                    $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and the resource item's 'StudentUniqueId' value.";
+                    $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'.";
                 return new ResourceAuthorizationResult.NotAuthorized([error]);
             }
         }
