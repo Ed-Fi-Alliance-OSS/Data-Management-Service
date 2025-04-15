@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ResourceActionAuthorizationMiddleware(
     IClaimSetCacheService _claimSetCacheService,
     ILogger _logger,
-    bool disablePersonAuthorizationStrategies = true
+    bool disablePersonAuthorizationStrategies = false
 ) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
