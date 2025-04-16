@@ -446,16 +446,7 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
             studentUniqueId: studentUniqueId,
             projectName: "Ed-Fi"
         );
-
-        try
-        {
-            return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
+        return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
     }
 
     private async Task<UpdateResult> UpdateStudentSchoolAssociation(

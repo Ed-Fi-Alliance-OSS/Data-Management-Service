@@ -147,6 +147,26 @@ Authorization: bearer {{dmsToken}}
     ]
 }
 
+### Create School
+# @name createSchool2
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+
+{
+    "schoolId": 6001011,
+    "nameOfInstitution": "Westside High School",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade"
+        }
+    ]
+}
+
 ### Create Student
 # @name createStudent
 POST {{dataApi}}/ed-fi/students
@@ -203,18 +223,35 @@ Authorization: bearer {{dmsToken}}
     }
 }
 
+### Create StudentSchoolAssociation
+POST {{dataApi}}/ed-fi/studentSchoolAssociations
+Authorization: bearer {{dmsToken}}
+
+{
+    "entryDate": "2021-08-23",
+    "entryGradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade",
+    "schoolReference": {
+      "schoolId": 6001011
+    },
+    "studentReference": {
+      "studentUniqueId": "604824"
+    }
+}
+
 ### GET StudentSchoolAssociation
 # @name getStudentSchoolAssociation
 GET {{createStudentSchoolAssociation.response.headers.location}}
 Authorization: bearer {{dmsToken}}
 
+@studentSchoolAssociationId = {{getStudentSchoolAssociation.response.body.id}}
+
 ### Update StudentSchoolAssociation
-# @name createStudentSchoolAssociation
+# @name updateStudentSchoolAssociation
 PUT {{createStudentSchoolAssociation.response.headers.location}}
 Authorization: bearer {{dmsToken}}
 
 {
-    "id": "{{getStudentSchoolAssociation.response.body.id}}",
+    "id": "{{studentSchoolAssociationId}}",
     "entryDate": "2021-08-23",
     "entryGradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade",
     "schoolReference": {
@@ -250,6 +287,10 @@ Authorization: bearer {{dmsToken}}
       "studentUniqueId": "604823"
     }
 }
+
+### @name getStudentHealths
+GET {{createStudentHealths.response.headers.location}}
+Authorization: bearer {{dmsToken}}
 
 ###
 DELETE {{createStudentHealths.response.headers.location}}
