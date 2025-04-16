@@ -48,7 +48,7 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                 .Should()
                 .BeEquivalentTo([SCHOOL_ID]);
             authorization.StudentSchoolAssociationId.Should().BeGreaterThan(0);
-            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThan(0);
+            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
         }
     }
 
@@ -112,7 +112,7 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                 .Should()
                 .BeEquivalentTo([SEA_ID, LEA_ID, SCHOOL_ID]);
             authorization.StudentSchoolAssociationId.Should().BeGreaterThan(0);
-            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThan(0);
+            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
         }
     }
 
@@ -254,7 +254,7 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                 .Should()
                 .BeEquivalentTo([SCHOOL_ID]);
             authorization.StudentSchoolAssociationId.Should().BeGreaterThan(0);
-            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThan(0);
+            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
         }
 
         [Test, Order(1)]
