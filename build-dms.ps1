@@ -269,10 +269,10 @@ function E2ETests {
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            ./start-local-dms.ps1 -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-local-dms.ps1 -SearchEngine "ElasticSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -SearchEngine "ElasticSearch" -EnableConfig -d -v
+            ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -EnableConfig -d -v
+            ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -EnableConfig -d -v
+            ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -EnableConfig -d -v
+            ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -EnableConfig -d -v
         }
         finally {
             Pop-Location
