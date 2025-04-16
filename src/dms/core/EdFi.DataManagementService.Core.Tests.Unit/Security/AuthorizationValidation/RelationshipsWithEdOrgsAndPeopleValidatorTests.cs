@@ -105,7 +105,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "No relationships have been established between the caller's education organization id claims ('255901') and the resource item's 'StudentUniqueId' value."
+                        "No relationships have been established between the caller's education organization id claims ('255901') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
                     );
             }
         }
@@ -218,7 +218,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "No relationships have been established between the caller's education organization id claims ('255903') and the resource item's 'StudentUniqueId' value."
+                        "No relationships have been established between the caller's education organization id claims ('255903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
                     );
             }
         }

@@ -72,9 +72,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
         }
 
         [Test]
-        public void It_has_extracted_the_StudentUniqueId()
+        public void It_has_StudentUniqueId_as_securable_key()
         {
-            context.AuthorizationSecurableInfo[0].Should().Be("12345");
             context
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
@@ -130,123 +129,9 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
         }
 
         [Test]
-        public void It_does_not_extract_StudentUniqueId()
+        public void It_does_not_have_securable_key()
         {
-            context.AuthorizationSecurableInfo[0].Should().BeNull();
-        }
-    }
-
-    [TestFixture]
-    public class Given_a_document_with_multiple_StudentUniqueId_paths
-        : ProvideAuthorizationSecurableInfoMiddlewareTests
-    {
-        private PipelineContext context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
-                .WithStartProject()
-                .WithStartResource("Student")
-                .WithStudentAuthorizationSecurablePaths(["$.studentUniqueId", "$.alternateStudentUniqueId"]) // Multiple paths specified
-                .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
-                .WithDocumentPathScalar("AlternateStudentUniqueId", "$.alternateStudentUniqueId")
-                .WithEndDocumentPathsMapping()
-                .WithEndResource()
-                .WithEndProject()
-                .ToApiSchemaDocuments();
-
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "students");
-
-            string body = """{"studentUniqueId": "12345", "alternateStudentUniqueId": "12345"}""";
-
-            context = new(
-                new(
-                    Body: body,
-                    QueryParameters: [],
-                    Path: "/ed-fi/students",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
-                ),
-                RequestMethod.POST
-            )
-            {
-                ResourceSchema = resourceSchema,
-                ParsedBody = JsonNode.Parse(body)!,
-            };
-
-            await BuildMiddleware().Execute(context, NullNext);
-        }
-
-        [Test]
-        public void It_has_extracted_the_StudentUniqueId()
-        {
-            context.AuthorizationSecurableInfo[0].Should().Be("12345");
-        }
-    }
-
-    [TestFixture]
-    public class Given_an_invalid_document_with_multiple_StudentUniqueId_paths_and_different_ids
-        : ProvideAuthorizationSecurableInfoMiddlewareTests
-    {
-        private PipelineContext context = No.PipelineContext();
-
-        [SetUp]
-        public void Setup()
-        {
-            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
-                .WithStartProject()
-                .WithStartResource("Student")
-                .WithStudentAuthorizationSecurablePaths(["$.studentUniqueId", "$.alternateStudentUniqueId"]) // Multiple paths specified
-                .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
-                .WithDocumentPathScalar("AlternateStudentUniqueId", "$.alternateStudentUniqueId")
-                .WithEndDocumentPathsMapping()
-                .WithEndResource()
-                .WithEndProject()
-                .ToApiSchemaDocuments();
-
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "students");
-
-            string body = """{"studentUniqueId": "12345", "alternateStudentUniqueId": "67890"}""";
-
-            context = new(
-                new(
-                    Body: body,
-                    QueryParameters: [],
-                    Path: "/ed-fi/students",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
-                ),
-                RequestMethod.POST
-            )
-            {
-                ResourceSchema = resourceSchema,
-                ParsedBody = JsonNode.Parse(body)!,
-            };
-        }
-
-        [Test]
-        public void It_throws_an_exception_due_to_multiple_StudentUniqueId_paths()
-        {
-            Action action = () => BuildMiddleware().Execute(context, NullNext).GetAwaiter().GetResult();
-            _ = action
-                .Should()
-                .Throw<InvalidOperationException>()
-                .WithMessage(
-                    "More than one distinct StudentUniqueId found on StudentAuthorizationSecurable document."
-                );
+            context.AuthorizationSecurableInfo.Should().BeEmpty();
         }
     }
 }
