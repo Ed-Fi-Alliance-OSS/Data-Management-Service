@@ -234,3 +234,23 @@ Authorization: bearer {{dmsToken}}
 
 ### Verify StudentSchoolAssociationAuthorization Table
 ### SELECT * FROM dms.studentschoolassociationauthorization;
+
+
+### Create StudentHealths
+# @name createStudentHealths
+POST {{dataApi}}/ed-fi/studentHealths
+Authorization: bearer {{dmsToken}}
+
+{
+    "asOfDate": "2021-08-23",
+    "educationOrganizationReference": {
+      "educationOrganizationId": 6001010
+    },
+    "studentReference": {
+      "studentUniqueId": "604823"
+    }
+}
+
+###
+DELETE {{createStudentHealths.response.headers.location}}
+Authorization: bearer {{dmsToken}}
