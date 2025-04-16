@@ -22,6 +22,14 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
         // Clone to not mutate the original schema
         var coreApiSchema = apiSchemaNodes.CoreApiSchemaRootNode.DeepClone();
 
+        // [DMS-597] Workaround for DMS-630 Non-part-of-identity Namespace fields should also be securityElements
+        var educationContentsNamespaceSecurityElementsNode = coreApiSchema["projectSchema"]
+            ?["resourceSchemas"]
+            ?["educationContents"]
+            ?["securityElements"]
+            ?["Namespace"];
+        educationContentsNamespaceSecurityElementsNode?.ReplaceWith(new JsonArray("$.namespace"));
+
         List<JsonNode> coreResources = coreApiSchema
             .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
             .SelectNodesFromPropertyValues();

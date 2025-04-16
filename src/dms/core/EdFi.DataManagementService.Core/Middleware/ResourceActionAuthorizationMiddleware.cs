@@ -20,7 +20,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ResourceActionAuthorizationMiddleware(
     IClaimSetCacheService _claimSetCacheService,
-    ILogger _logger
+    ILogger _logger,
+    bool disablePersonAuthorizationStrategies = false
 ) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -120,6 +121,13 @@ internal class ResourceActionAuthorizationMiddleware(
 
             IReadOnlyList<string> resourceActionAuthStrategies = authorizedAction
                 .AuthorizationStrategies.Select(auth => auth.Name)
+                .Select(authStrategyName =>
+                    disablePersonAuthorizationStrategies
+                    && authStrategyName.StartsWith("RelationshipsWith")
+                    && authStrategyName != "RelationshipsWithEdOrgsOnly"
+                        ? "NoFurtherAuthorizationRequired"
+                        : authStrategyName
+                )
                 .ToList();
 
             if (resourceActionAuthStrategies.Count == 0)
