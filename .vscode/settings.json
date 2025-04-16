@@ -63,10 +63,6 @@
     {
       "language": "yaml",
       "mapTo": "python"
-    },
-    {
-      "language": "dockercompose",
-      "mapTo": "python"
     }
   ],
   "psi-header.changes-tracking": {
