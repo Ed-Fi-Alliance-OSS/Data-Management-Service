@@ -48,8 +48,4 @@ if [ "$USE_API_SCHEMA_PATH" = true ]; then
     dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${Homograph_PACKAGE} -d ${API_SCHEMA_PATH} -v ${Homograph_PACKAGE_VERSION}
 fi
 
-echo "Calling EdFi.DataManagementService.Frontend.BulkLoader in ${Bulk_Load_Source_Path}"
-dotnet /app/BulkLoader/EdFi.DataManagementService.Frontend.BulkLoader.dll -b ${Bulk_Load_Source_Path}
-
-echo "Calling EdFi.DataManagementService.Frontend.AspNetCore"
 dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll
