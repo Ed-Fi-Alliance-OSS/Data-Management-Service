@@ -42,21 +42,9 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
 
             var studentUniqueId = securityElements.Student[0].Value;
 
-            long[]? educationOrgIds = [];
-
-            var associatedEducationOrgIdsJson =
-                await authorizationRepository.GetEducationOrganizationsForStudent(studentUniqueId);
-
-            bool isEmpty =
-                associatedEducationOrgIdsJson.ValueKind == JsonValueKind.Null
-                || associatedEducationOrgIdsJson.ValueKind == JsonValueKind.Undefined
-                || associatedEducationOrgIdsJson.ValueKind == JsonValueKind.Object
-                    && associatedEducationOrgIdsJson.GetRawText() == "{}"
-                || associatedEducationOrgIdsJson.ValueKind == JsonValueKind.Array
-                    && associatedEducationOrgIdsJson.GetArrayLength() == 0;
-            educationOrgIds = isEmpty
-                ? []
-                : JsonSerializer.Deserialize<long[]>(associatedEducationOrgIdsJson);
+            var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStudent(
+                studentUniqueId
+            );
 
             var authorizedEdOrgIds = authorizationFilters
                 .Select(f => long.TryParse(f.Value, out var id) ? (long?)id : null)

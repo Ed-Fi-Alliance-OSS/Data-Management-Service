@@ -156,4 +156,16 @@ public interface ISqlAction
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
+
+    public Task<long[]> GetAncestorEducationOrganizationIds(
+        long[] educationOrganizationIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<JsonElement?> GetStudentSchoolAuthorizationEducationOrganizationIds(
+        string studentUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
 }

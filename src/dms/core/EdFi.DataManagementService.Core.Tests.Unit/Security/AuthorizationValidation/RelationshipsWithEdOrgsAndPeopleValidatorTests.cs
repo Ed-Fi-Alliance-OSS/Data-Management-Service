@@ -82,8 +82,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 SecurityElementNameConstants.StudentUniqueId
             );
 
-            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
-                .Returns(JsonSerializer.SerializeToElement(Array.Empty<long>()));
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345")).Returns([]);
 
             _expectedResult = await _validator.ValidateAuthorization(
                 securityElements,
@@ -129,7 +128,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
             );
 
             A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
-                .Returns(JsonSerializer.SerializeToElement(new[] { 255901L }));
+                .Returns([255901L]);
 
             _expectedResult = await _validator.ValidateAuthorization(
                 securityElements,
@@ -160,7 +159,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
             var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
 
             A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
-                .Returns(JsonSerializer.SerializeToElement(new[] { 255901L }));
+                .Returns([255901L]);
 
             _expectedResult = await _validator.ValidateAuthorization(
                 securityElements,
@@ -196,7 +195,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
             );
 
             A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
-                .Returns(JsonSerializer.SerializeToElement(new[] { 255901L }));
+                .Returns([255901L]);
 
             _expectedResult = await _validator.ValidateAuthorization(
                 securityElements,

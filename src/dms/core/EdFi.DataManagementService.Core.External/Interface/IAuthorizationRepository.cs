@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
-
 namespace EdFi.DataManagementService.Core.External.Interface;
 
 /// <summary>
@@ -13,5 +11,5 @@ namespace EdFi.DataManagementService.Core.External.Interface;
 public interface IAuthorizationRepository
 {
     public Task<long[]> GetAncestorEducationOrganizationIds(long[] educationOrganizationIds);
-    public Task<JsonElement> GetEducationOrganizationsForStudent(string studentUniqueId);
+    public Task<long[]> GetEducationOrganizationsForStudent(string studentUniqueId);
 }
