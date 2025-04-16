@@ -64,11 +64,11 @@ if ($EnableConfig) {
 if ($d) {
     if ($v) {
         Write-Output "Shutting down with volume delete"
-        docker compose $files -p dms-local down -v
+        docker compose $files --env-file $EnvironmentFile -p dms-local down -v
     }
     else {
         Write-Output "Shutting down"
-        docker compose $files -p dms-local down
+        docker compose $files --env-file $EnvironmentFile -p dms-local down
     }
 }
 else {

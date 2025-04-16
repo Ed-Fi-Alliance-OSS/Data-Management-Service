@@ -7,8 +7,8 @@ services:
   dms:
     image: edfialliance/data-management-service:${DMS_IMAGE_TAG:-pre}
     environment:
-      ASPNETCORE_HTTP_PORTS: ${ASPNETCORE_HTTP_PORTS:-8080}
-      OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://localhost:8045/realms/edfi/protocol/openid-connect/token}
+      ASPNETCORE_HTTP_PORTS: ${DMS_HTTP_PORTS:-8080}
+      OAUTH_TOKEN_ENDPOINT: ${OAUTH_TOKEN_ENDPOINT:-http://host.docker.internal:8080/oauth/token}
       NEED_DATABASE_SETUP: ${NEED_DATABASE_SETUP:-true}
       BYPASS_STRING_COERCION: ${BYPASS_STRING_COERCION:-false}
       LOG_LEVEL: ${LOG_LEVEL:-DEBUG}
@@ -29,10 +29,9 @@ services:
       SAMPLING_DURATION_SECONDS: ${SAMPLING_DURATION_SECONDS:-10}
       MINIMUM_THROUGHPUT: ${MINIMUM_THROUGHPUT:-2}
       BREAK_DURATION_SECONDS: ${BREAK_DURATION_SECONDS:-30}
-      OPENSEARCH_URL: ${OPENSEARCH_URL:-http://dms-opensearch:9200}
-      IDENTITY_SERVICE_ROLE: ${IDENTITY_SERVICE_ROLE:-dms-client}
-      IDENTITY_AUTHORITY: ${IDENTITY_AUTHORITY:-http://dms-keycloak:8080/realms/dms}
+      OPENSEARCH_URL: ${OPENSEARCH_URL:-http://dms-search:9200}
       IDENTITY_CLIENT_ROLE: ${IDENTITY_CLIENT_ROLE:-dms-client}
+      IDENTITY_AUTHORITY: ${IDENTITY_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
       IDENTITY_AUDIENCE: ${IDENTITY_AUDIENCE:-account}
       IDENTITY_REQUIRE_HTTPS_METADATA: ${IDENTITY_REQUIRE_HTTPS_METADATA:-false}
       IDENTITY_ROLE_CLAIM_TYPE: ${IDENTITY_ROLE_CLAIM_TYPE:-http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role}
@@ -44,7 +43,7 @@ services:
       USE_API_SCHEMA_PATH: ${USE_API_SCHEMA_PATH:-false}
       API_SCHEMA_PATH: ${API_SCHEMA_PATH:-}
     ports:
-      - '127.0.0.1:8080:8080'
+      - '127.0.0.1:${DMS_HTTP_PORTS}:${DMS_HTTP_PORTS}'
     networks:
       - dms
     restart: unless-stopped

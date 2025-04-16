@@ -19,7 +19,7 @@ param (
 
     # Enable KafkaUI and OpenSearch Dashboard
     [Switch]
-    $EnableOpenSearchUI,
+    $EnableSearchEngineUI,
 
     # Search engine type ("OpenSearch" or "ElasticSearch")
     [string]
@@ -60,15 +60,18 @@ if ($EnableConfig) {
 if ($d) {
     if ($v) {
         Write-Output "Shutting down with volume delete"
-        docker compose $files down -v
+        docker compose $files --env-file $EnvironmentFile -p dms-published down -v
     }
     else {
         Write-Output "Shutting down"
-        docker compose $files down
+        docker compose $files --env-file $EnvironmentFile -p dms-published down
     }
 }
 else {
-    docker network create dms
+    $existingNetwork = docker network ls --filter name="dms" -q
+    if (! $existingNetwork) {
+        docker network create dms
+    }
 
     Write-Output "Starting published DMS"
     docker compose $files --env-file $EnvironmentFile -p dms-published up -d
