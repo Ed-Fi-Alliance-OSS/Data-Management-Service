@@ -32,7 +32,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _referencedResourceId = string.Empty;
         private string _dmsToken = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
-        private Dictionary<string, string> _relationshipIds = [];
+        private Dictionary<string, string> _relationships = [];
 
         #region Given
 
@@ -170,7 +170,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                         OkCreated,
                         $"POST request for {entityType} failed:\n{response.TextAsync().Result}"
                     );
-                // add to relationshipIds
+
+                // Add to relationship list
+                AddRelationships(_scenarioContext.ScenarioInfo.Tags, response, entityType);
             }
 
             return _apiResponses;
@@ -388,6 +390,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
 
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
+        }
+
+        [When("a relationship with {string} is deleted")]
+        public async Task WhenARelationShipDeleted(string relationshipKey)
+        {
+            var baseUrl = $"data/ed-fi/";
+            var id = _relationships[relationshipKey];
+            var url = $"{baseUrl}{relationshipKey}/{id}";
+            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
+                url,
+                new() { Headers = GetHeaders() }
+            )!;
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
@@ -804,6 +818,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             if (waitTags != null && waitTags.Contains("addwait") && _openSearchEnabled)
             {
                 Thread.Sleep(5000);
+            }
+        }
+
+        private void AddRelationships(string[]? relationTags, IAPIResponse apiResponse, string entityType)
+        {
+            if (relationTags != null && relationTags.Contains("addrelationships"))
+            {
+                var id = extractDataFromResponseAndReturnIdIfAvailable(apiResponse);
+                _relationships.Add(entityType, id);
             }
         }
 
