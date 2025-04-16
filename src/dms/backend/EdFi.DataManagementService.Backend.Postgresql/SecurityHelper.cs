@@ -57,12 +57,12 @@ internal static class SecurityHelper
                 ))
                 .ToArray() ?? [];
 
-        var studentUsi =
+        var studentUniqueId =
             jsonObject["Student"]
                 ?.AsArray()
                 .Select(id => new StudentUniqueId(id!.GetValue<string>()))
                 .ToArray() ?? [];
 
-        return new DocumentSecurityElements(namespaces, educationOrganizations, studentUsi);
+        return new DocumentSecurityElements(namespaces, educationOrganizations, studentUniqueId);
     }
 }
