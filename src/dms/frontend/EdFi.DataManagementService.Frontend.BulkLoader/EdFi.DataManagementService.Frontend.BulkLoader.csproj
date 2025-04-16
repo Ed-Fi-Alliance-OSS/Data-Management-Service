@@ -8,20 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-        <Content Include="Sample\SchoolYearTypes.json">
-          <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-          <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
-          <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-      </Content>
-  </ItemGroup>
-    <ItemGroup>
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.OpenSearch\EdFi.DataManagementService.Backend.OpenSearch.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Frontend.AspNetCore\EdFi.DataManagementService.Frontend.AspNetCore.csproj" />
-  
+
     </ItemGroup>
 
     <ItemGroup>
