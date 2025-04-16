@@ -19,7 +19,7 @@ param (
 
     # Enable KafkaUI and OpenSearch Dashboard
     [Switch]
-    $EnableOpenSearchUI,
+    $EnableSearchEngineUI,
 
     # Search engine type ("OpenSearch" or "ElasticSearch")
     [string]
@@ -68,7 +68,10 @@ if ($d) {
     }
 }
 else {
-    docker network create dms
+    $existingNetwork = docker network ls --filter name="dms" -q
+    if (! $existingNetwork) {
+        docker network create dms
+    }
 
     Write-Output "Starting published DMS"
     docker compose $files --env-file $EnvironmentFile -p dms-published up -d
