@@ -28,6 +28,15 @@ BEGIN
             NEW.Id,
             NEW.DocumentPartitionKey
         );
+
+        UPDATE dms.Document
+        SET StudentSchoolAuthorizationEdOrgIds = (
+            SELECT jsonb_agg(EducationOrganizationId)
+            FROM dms.GetEducationOrganizationAncestors((NEW.EdfiDoc->'schoolReference'->>'schoolId')::BIGINT)
+        )
+        WHERE
+            Id = NEW.Id AND
+            DocumentPartitionKey = NEW.DocumentPartitionKey;
     ELSIF (TG_OP = 'UPDATE') THEN
         UPDATE dms.StudentSchoolAssociationAuthorization
         SET
@@ -40,6 +49,15 @@ BEGIN
         WHERE
             StudentSchoolAssociationId = NEW.Id AND
             StudentSchoolAssociationPartitionKey = NEW.DocumentPartitionKey;
+
+        UPDATE dms.Document
+        SET StudentSchoolAuthorizationEdOrgIds = (
+            SELECT jsonb_agg(EducationOrganizationId)
+            FROM dms.GetEducationOrganizationAncestors((NEW.EdfiDoc->'schoolReference'->>'schoolId')::BIGINT)
+        )
+        WHERE
+            Id = NEW.Id AND
+            DocumentPartitionKey = NEW.DocumentPartitionKey;
     END IF;
     RETURN NULL;
 END;
@@ -48,7 +66,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS StudentSchoolAssociationAuthorizationTrigger ON dms.Document;
 
 CREATE TRIGGER StudentSchoolAssociationAuthorizationTrigger
-AFTER INSERT OR UPDATE ON dms.Document
+AFTER INSERT OR UPDATE OF EdFiDoc ON dms.Document
     FOR EACH ROW
     WHEN (NEW.ProjectName = 'Ed-Fi' AND NEW.ResourceName = 'StudentSchoolAssociation')
     EXECUTE PROCEDURE dms.StudentSchoolAssociationAuthorizationTriggerFunction();

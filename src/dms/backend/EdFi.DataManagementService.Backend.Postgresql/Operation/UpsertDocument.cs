@@ -63,11 +63,10 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     )
     {
         short documentPartitionKey = PartitionKeyFor(upsertRequest.DocumentUuid).Value;
-        long newDocumentId;
 
         // First insert into Documents
         upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
-        newDocumentId = await _sqlAction.InsertDocumentAndAlias(
+        long newDocumentId = await _sqlAction.InsertDocumentAndAlias(
             new(
                 DocumentPartitionKey: documentPartitionKey,
                 DocumentUuid: upsertRequest.DocumentUuid.Value,

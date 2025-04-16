@@ -12,4 +12,4 @@ CREATE TABLE dms.StudentSecurableDocument(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX UX_StudentSecurableDocument_StudentSecurableDocumentId ON dms.StudentSecurableDocument (StudentUniqueId);
+CREATE INDEX IX_StudentSecurableDocument_StudentSecurableDocumentId ON dms.StudentSecurableDocument (StudentUniqueId);

@@ -264,12 +264,9 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
 
             // Assert
             documents.Should().NotBeNull();
-            documents.Should().HaveCount(1);
+            documents.Should().HaveCount(2);
 
-            var document = documents[0];
-            document.StudentUniqueId.Should().Be("0123");
-            document.StudentSecurableDocumentId.Should().BeGreaterThan(0);
-            document.StudentSecurableDocumentPartitionKey.Should().BeGreaterThan(0);
+            documents.TrueForAll(d => d.StudentUniqueId == "0123").Should().BeTrue();
         }
 
         [Test]
@@ -396,6 +393,8 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                 }
             }
             """,
+            isStudentAuthorizationSecurable: true,
+            studentUniqueId: studentUniqueId,
             projectName: "Ed-Fi"
         );
 
@@ -429,7 +428,15 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
             projectName: "Ed-Fi"
         );
 
-        return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+        try
+        {
+            return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            throw;
+        }
     }
 
     private async Task<UpdateResult> UpdateStudentSchoolAssociation(
