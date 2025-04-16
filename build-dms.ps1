@@ -101,6 +101,7 @@ $clisRoot = "$solutionRoot/clis"
 $projectName = "EdFi.DataManagementService.Frontend.AspNetCore"
 $installerProjectName = "EdFi.DataManagementService.Backend.Installer"
 $schemaDownloaderProjectName = "EdFi.DataManagementService.ApiSchemaDownloader"
+$bulkLoaderProjectName = "EdFi.DataManagementService.Frontend.BulkLoader"
 $packageName = "EdFi.DataManagementService"
 $testResults = "$PSScriptRoot/TestResults"
 #Coverage
@@ -169,6 +170,14 @@ function PublishCliApiDownloader {
         $schemaDownloaderProject = "$clisRoot/$schemaDownloaderProjectName/"
         $outputPath = "$schemaDownloaderProject/publish"
         dotnet publish $schemaDownloaderProject -c $Configuration -o $outputPath --nologo
+    }
+}
+
+function PublishCliBulkLoader {
+    Invoke-Execute {
+        $bulkLoaderProject = "$clisRoot/$bulkLoaderProjectName/"
+        $outputPath = "$bulkLoaderProject/publish"
+        dotnet publish $bulkLoaderProject -c $Configuration -o $outputPath --nologo
     }
 }
 
@@ -357,6 +366,7 @@ function Invoke-Publish {
     Invoke-Step { PublishApi }
     Invoke-Step { PublishBackendInstaller }
     Invoke-Step { PublishCliApiDownloader }
+    Invoke-Step { PublishCliBulkLoader }
 }
 
 function Invoke-Clean {

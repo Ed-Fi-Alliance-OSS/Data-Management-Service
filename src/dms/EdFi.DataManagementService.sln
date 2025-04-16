@@ -52,6 +52,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.Postgresql.Tests.Integration", "backend\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj", "{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Frontend.BulkLoader", "frontend\EdFi.DataManagementService.Frontend.BulkLoader\EdFi.DataManagementService.Frontend.BulkLoader.csproj", "{7564EA1B-39D8-5D37-2D49-DB001CEBF3FE}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -126,6 +128,10 @@ Global
 		{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7564EA1B-39D8-5D37-2D49-DB001CEBF3FE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7564EA1B-39D8-5D37-2D49-DB001CEBF3FE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7564EA1B-39D8-5D37-2D49-DB001CEBF3FE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7564EA1B-39D8-5D37-2D49-DB001CEBF3FE}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -148,6 +154,7 @@ Global
 		{CEACE0CE-FE27-4039-9F30-F585B418FCEB} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
 		{116E8864-FF2F-B2C0-8009-741468CA9346} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
 		{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC} = {75AE8F7B-B980-48AE-8518-073830FA6471}
+		{7564EA1B-39D8-5D37-2D49-DB001CEBF3FE} = {5B7BB270-905C-4D2F-BD3C-3374707FE1E3}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {CAB3D5DE-BC6C-44FD-831C-9C7BE3935343}

@@ -1,0 +1,239 @@
+{
+    "schoolYearTypes": [
+        {
+            "schoolYear": 1991,
+            "schoolYearDescription": "1990-1991",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 1992,
+            "schoolYearDescription": "1991-1992",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 1993,
+            "schoolYearDescription": "1992-1993",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 1994,
+            "schoolYearDescription": "1993-1994",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 1995,
+            "schoolYearDescription": "1994-1995",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 1996,
+            "schoolYearDescription": "1995-1996",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 1997,
+            "schoolYearDescription": "1996-1997",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 1998,
+            "schoolYearDescription": "1997-1998",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 1999,
+            "schoolYearDescription": "1998-1999",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2000,
+            "schoolYearDescription": "1999-2000",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2001,
+            "schoolYearDescription": "2000-2001",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2002,
+            "schoolYearDescription": "2001-2002",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2003,
+            "schoolYearDescription": "2002-2003",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2004,
+            "schoolYearDescription": "2003-2004",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2005,
+            "schoolYearDescription": "2004-2005",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2006,
+            "schoolYearDescription": "2005-2006",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2007,
+            "schoolYearDescription": "2006-2007",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2008,
+            "schoolYearDescription": "2007-2008",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2009,
+            "schoolYearDescription": "2008-2009",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2010,
+            "schoolYearDescription": "2009-2010",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2011,
+            "schoolYearDescription": "2010-2011",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2012,
+            "schoolYearDescription": "2011-2012",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2013,
+            "schoolYearDescription": "2012-2013",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2014,
+            "schoolYearDescription": "2013-2014",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2015,
+            "schoolYearDescription": "2014-2015",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2016,
+            "schoolYearDescription": "2015-2016",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2017,
+            "schoolYearDescription": "2016-2017",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2018,
+            "schoolYearDescription": "2017-2018",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2019,
+            "schoolYearDescription": "2018-2019",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2020,
+            "schoolYearDescription": "2019-2020",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2021,
+            "schoolYearDescription": "2020-2021",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2022,
+            "schoolYearDescription": "2021-2022",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2023,
+            "schoolYearDescription": "2022-2023",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2024,
+            "schoolYearDescription": "2023-2024",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2025,
+            "schoolYearDescription": "2024-2025",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2026,
+            "schoolYearDescription": "2025-2026",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2027,
+            "schoolYearDescription": "2026-2027",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2028,
+            "schoolYearDescription": "2027-2028",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2029,
+            "schoolYearDescription": "2028-2029",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2030,
+            "schoolYearDescription": "2029-2030",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2031,
+            "schoolYearDescription": "2030-2031",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2032,
+            "schoolYearDescription": "2031-2032",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2033,
+            "schoolYearDescription": "2032-2033",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2034,
+            "schoolYearDescription": "2033-2034",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2035,
+            "schoolYearDescription": "2034-2035",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2036,
+            "schoolYearDescription": "2035-2036",
+            "currentschoolYear": false
+        },
+        {
+            "schoolYear": 2037,
+            "schoolYearDescription": "2036-2037",
+            "currentschoolYear": false
+        }
+    ]
+}

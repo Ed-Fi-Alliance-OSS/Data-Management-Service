@@ -117,6 +117,19 @@ INSERT INTO dmscs.claimshierarchy(
         "name": "http://ed-fi.org/identity/claims/ed-fi/schoolYearType",
         "claimSets": [
           {
+            "name": "BootstrapDescriptorsandEdOrgs",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          },
+          {
             "name": "E2E-NameSpaceBasedClaimSet",
             "actions": [
               {
