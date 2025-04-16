@@ -257,7 +257,7 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
             authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThan(0);
         }
 
-        [Test]
+        [Test, Order(1)]
         public async Task Then_StudentSecurableDocuments_Should_Be_Populated()
         {
             var documents = await GetAllStudentSecurableDocuments();
@@ -269,13 +269,32 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
             documents.TrueForAll(d => d.StudentUniqueId == "0123").Should().BeTrue();
         }
 
-        [Test]
+        [Test, Order(2)]
         public async Task Then_Document_StudentSchoolAuthorizationEdOrgIds_Should_Be_Populated()
         {
             string idsString = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
                 ((UpsertResult.InsertSuccess)studentSecurableDocumentResult).NewDocumentUuid.Value
             );
             ParseEducationOrganizationIds(idsString).Should().BeEquivalentTo([SCHOOL_ID]);
+        }
+
+        [Test, Order(3)]
+        public async Task Then_Deleting_StudentSecurableDocument_Should_Cascade()
+        {
+            Guid studentSecurableDocumentId = ((UpsertResult.InsertSuccess)studentSecurableDocumentResult)
+                .NewDocumentUuid
+                .Value;
+            IDeleteRequest deleteRequest = CreateDeleteRequest(
+                "CourseTranscript",
+                studentSecurableDocumentId
+            );
+            await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
+
+            var documents = await GetAllStudentSecurableDocuments();
+
+            // Assert
+            documents.Should().NotBeNull();
+            documents.Should().HaveCount(1);
         }
     }
 
