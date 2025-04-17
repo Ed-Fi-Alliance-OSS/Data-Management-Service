@@ -171,7 +171,9 @@ public abstract class DatabaseTest : DatabaseTestBase
         bool allowIdentityUpdates = false,
         bool isInEducationOrganizationHierarchy = false,
         long educationOrganizationId = 0,
-        long? parentEducationOrganizationId = null
+        long? parentEducationOrganizationId = default,
+        bool isStudentAuthorizationSecurable = false,
+        string? studentUniqueId = default
     )
     {
         return new(
@@ -184,7 +186,10 @@ public abstract class DatabaseTest : DatabaseTestBase
                 isInEducationOrganizationHierarchy,
                 educationOrganizationId,
                 parentEducationOrganizationId
-            )
+            ),
+            AuthorizationSecurableInfo: isStudentAuthorizationSecurable
+                ? [new AuthorizationSecurableInfo(SecurityElementNameConstants.StudentUniqueId)]
+                : []
         );
     }
 
@@ -262,7 +267,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         long educationOrganizationId = 0,
         long? parentEducationOrganizationId = null,
         TraceId? traceId = null,
-        string projectName = "ProjectName"
+        string projectName = "ProjectName",
+        bool isStudentAuthorizationSecurable = false
     )
     {
         if (documentSecurityElements == null)
@@ -282,7 +288,8 @@ public abstract class DatabaseTest : DatabaseTestBase
                     allowIdentityUpdates,
                     isInEducationOrganizationHierarchy,
                     educationOrganizationId,
-                    parentEducationOrganizationId
+                    parentEducationOrganizationId,
+                    isStudentAuthorizationSecurable
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,

@@ -38,6 +38,9 @@ public class SqlAction() : ISqlAction
             SecurityElements: await reader.GetFieldValueAsync<JsonElement>(
                 reader.GetOrdinal("SecurityElements")
             ),
+            StudentSchoolAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
+                reader.GetOrdinal("StudentSchoolAuthorizationEdOrgIds")
+            ),
             CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
             LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
@@ -222,12 +225,12 @@ public class SqlAction() : ISqlAction
         await using var command = new NpgsqlCommand(
             @"
             WITH Documents AS (
-            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, LastModifiedTraceId)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, StudentSchoolAuthorizationEdOrgIds, LastModifiedTraceId)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
               RETURNING Id
             )
             INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
-              SELECT $10, $11, Id, $1 FROM Documents RETURNING DocumentId;
+              SELECT $11, $12, Id, $1 FROM Documents RETURNING DocumentId;
             ",
             connection,
             transaction
@@ -243,6 +246,12 @@ public class SqlAction() : ISqlAction
                 new() { Value = document.ProjectName },
                 new() { Value = document.EdfiDoc },
                 new() { Value = document.SecurityElements },
+                new()
+                {
+                    Value = document.StudentSchoolAuthorizationEdOrgIds.HasValue
+                        ? document.StudentSchoolAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
                 new() { Value = document.LastModifiedTraceId },
                 new() { Value = referentialPartitionKey },
                 new() { Value = referentialId },
@@ -747,5 +756,59 @@ public class SqlAction() : ISqlAction
         return result == DBNull.Value || result == null
             ? null
             : JsonSerializer.Deserialize<JsonElement>((string)result);
+    }
+
+    public async Task<int> InsertStudentSecurableDocument(
+        string studentUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"INSERT INTO dms.studentsecurabledocument(
+	            studentuniqueid, studentsecurabledocumentid, studentsecurabledocumentpartitionkey)
+	          VALUES ($1, $2, $3);",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = studentUniqueId },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<int> UpdateStudentSecurableDocument(
+        string studentUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"UPDATE dms.studentsecurabledocument
+	            SET studentuniqueid = $1
+                WHERE studentsecurabledocumentid = $2 AND studentsecurabledocumentpartitionkey = $3",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = studentUniqueId },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
     }
 }

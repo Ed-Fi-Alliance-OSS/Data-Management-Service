@@ -7591,6 +7591,51 @@ INSERT INTO dmscs.claimshierarchy(
     },
     "claimSets": [
       {
+        "name": "E2E-NoFurtherAuthRequiredClaimSet",
+        "actions": [
+            {
+            "name": "Create",
+            "authorizationStrategyOverrides": [
+                {
+                "name": "NoFurtherAuthorizationRequired"
+                }
+            ]
+            },
+            {
+            "name": "Read",
+            "authorizationStrategyOverrides": [
+                {
+                "name": "NoFurtherAuthorizationRequired"
+                }
+            ]
+            },
+            {
+            "name": "Update",
+            "authorizationStrategyOverrides": [
+                {
+                "name": "NoFurtherAuthorizationRequired"
+                }
+            ]
+            },
+            {
+            "name": "Delete",
+            "authorizationStrategyOverrides": [
+                {
+                "name": "NoFurtherAuthorizationRequired"
+                }
+            ]
+            },
+            {
+            "name": "ReadChanges",
+            "authorizationStrategyOverrides": [
+                {
+                "name": "NoFurtherAuthorizationRequired"
+                }
+            ]
+            }
+        ]
+      },
+      {
         "name": "EdFiSandbox",
         "actions": [
           {

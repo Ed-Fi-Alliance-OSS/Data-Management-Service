@@ -5,7 +5,9 @@
 
 using EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
@@ -47,7 +49,7 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                 .Should()
                 .BeEquivalentTo([SCHOOL_ID]);
             authorization.StudentSchoolAssociationId.Should().BeGreaterThan(0);
-            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThan(0);
+            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
         }
     }
 
@@ -111,7 +113,7 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                 .Should()
                 .BeEquivalentTo([SEA_ID, LEA_ID, SCHOOL_ID]);
             authorization.StudentSchoolAssociationId.Should().BeGreaterThan(0);
-            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThan(0);
+            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
         }
     }
 
@@ -219,6 +221,142 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
         }
     }
 
+    [TestFixture]
+    public class Given_An_Upsert_Of_One_StudentSecurableDocument : StudentSchoolAssociationAuthorizationTests
+    {
+        private UpsertResult studentSecurableDocumentResult;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            var edOrgResult = await UpsertEducationOrganization("School", SCHOOL_ID, null);
+            var ssaResult = await UpsertStudentSchoolAssociation(SCHOOL_ID, "0123");
+            studentSecurableDocumentResult = await UpsertStudentSecurableDocument("0123");
+
+            edOrgResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+            ssaResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+            studentSecurableDocumentResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+        }
+
+        [Test, Order(1)]
+        public async Task Then_StudentSchoolAssociationAuthorization_Should_Be_Populated()
+        {
+            // Act
+            var authorizations = await GetAllStudentSchoolAssociationAuthorizations();
+
+            // Assert
+            authorizations.Should().NotBeNull();
+            authorizations.Should().HaveCount(1);
+
+            var authorization = authorizations[0];
+            authorization.StudentUniqueId.Should().Be("0123");
+            authorization.HierarchySchoolId.Should().Be(SCHOOL_ID);
+            ParseEducationOrganizationIds(authorization.StudentSchoolAuthorizationEducationOrganizationIds)
+                .Should()
+                .BeEquivalentTo([SCHOOL_ID]);
+            authorization.StudentSchoolAssociationId.Should().BeGreaterThan(0);
+            authorization.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+        }
+
+        [Test, Order(2)]
+        public async Task Then_StudentSecurableDocuments_Should_Be_Populated()
+        {
+            var documents = await GetAllStudentSecurableDocuments();
+
+            // Assert
+            documents.Should().NotBeNull();
+            documents.Should().HaveCount(2);
+
+            documents.TrueForAll(d => d.StudentUniqueId == "0123").Should().BeTrue();
+        }
+
+        [Test, Order(3)]
+        public async Task Then_Document_StudentSchoolAuthorizationEdOrgIds_Should_Be_Populated()
+        {
+            string idsString = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
+                ((UpsertResult.InsertSuccess)studentSecurableDocumentResult).NewDocumentUuid.Value
+            );
+            ParseEducationOrganizationIds(idsString).Should().BeEquivalentTo([SCHOOL_ID]);
+        }
+
+        [Test, Order(4)]
+        public async Task Then_Deleting_StudentSecurableDocument_Should_Cascade()
+        {
+            Guid studentSecurableDocumentId = ((UpsertResult.InsertSuccess)studentSecurableDocumentResult)
+                .NewDocumentUuid
+                .Value;
+            IDeleteRequest deleteRequest = CreateDeleteRequest(
+                "CourseTranscript",
+                studentSecurableDocumentId
+            );
+            await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
+
+            var documents = await GetAllStudentSecurableDocuments();
+
+            // Assert
+            documents.Should().NotBeNull();
+            documents.Should().HaveCount(1);
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Upsert_Of_School_Hierarchy_With_StudentSecurableDocument_With_Move_One_StudentSchoolAssociation
+        : StudentSchoolAssociationAuthorizationTests
+    {
+        private readonly Guid _documentUuid = Guid.NewGuid();
+        private readonly Guid _referentialId = Guid.NewGuid();
+        private Guid _studentSecurableDocumentUuid;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            await UpsertEducationOrganization("StateEducationAgency", SEA_ID, null);
+            await UpsertEducationOrganization("LocalEducationAgency", LEA_ID, SEA_ID);
+            await UpsertEducationOrganization("School", SCHOOL_ID, LEA_ID);
+            await UpsertEducationOrganization("School", 77, null);
+
+            UpsertResult.InsertSuccess ssdResult = (UpsertResult.InsertSuccess)
+                await UpsertStudentSecurableDocument("0123");
+            _studentSecurableDocumentUuid = ssdResult.NewDocumentUuid.Value;
+
+            await UpsertStudentSchoolAssociation(_documentUuid, _referentialId, SCHOOL_ID, "0123");
+        }
+
+        [Test, Order(1)]
+        public async Task Then__SSA_DocumentStudentSchoolAuthorizationEdOrgIds_Should_Have_EdOrg_Hierarchy()
+        {
+            string documentEdOrgIds = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
+                _studentSecurableDocumentUuid
+            );
+
+            ParseEducationOrganizationIds(documentEdOrgIds)
+                .Should()
+                .BeEquivalentTo([SEA_ID, LEA_ID, SCHOOL_ID]);
+        }
+
+        [Test, Order(2)]
+        public async Task Then_Moving_SSA_DocumentStudentSchoolAuthorizationEdOrgIds_Should_Have_New_EdOrg()
+        {
+            await UpdateStudentSchoolAssociation(_documentUuid, _referentialId, 77, "0123");
+            string documentEdOrgIds = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
+                _studentSecurableDocumentUuid
+            );
+
+            ParseEducationOrganizationIds(documentEdOrgIds).Should().BeEquivalentTo([77]);
+        }
+
+        [Test, Order(3)]
+        public async Task Then_Moving_SSA_To_New_Student_DocumentStudentSchoolAuthorizationEdOrgIds_Should_Have_No_EdOrg()
+        {
+            await UpdateStudentSchoolAssociation(_documentUuid, _referentialId, 77, "9999");
+            string documentEdOrgIds = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
+                _studentSecurableDocumentUuid
+            );
+
+            ParseEducationOrganizationIds(documentEdOrgIds).Should().BeEmpty();
+        }
+    }
+
     private class StudentSchoolAssociationAuthorization
     {
         public required string StudentUniqueId { get; set; }
@@ -226,6 +364,13 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
         public required string StudentSchoolAuthorizationEducationOrganizationIds { get; set; }
         public long StudentSchoolAssociationId { get; set; }
         public short StudentSchoolAssociationPartitionKey { get; set; }
+    }
+
+    private class StudentSecurableDocument
+    {
+        public required string StudentUniqueId { get; set; }
+        public long StudentSecurableDocumentId { get; set; }
+        public short StudentSecurableDocumentPartitionKey { get; set; }
     }
 
     private async Task<UpsertResult> UpsertEducationOrganization(
@@ -326,9 +471,53 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                 }
             }
             """,
+            isStudentAuthorizationSecurable: true,
+            documentSecurityElements: new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("School"),
+                        new EducationOrganizationId(schoolId)
+                    ),
+                ],
+                [new StudentUniqueId(studentUniqueId)]
+            ),
             projectName: "Ed-Fi"
         );
 
+        return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+    }
+
+    private async Task<UpsertResult> UpsertStudentSecurableDocument(string studentUniqueId)
+    {
+        return await UpsertStudentSecurableDocument(Guid.NewGuid(), Guid.NewGuid(), studentUniqueId);
+    }
+
+    private async Task<UpsertResult> UpsertStudentSecurableDocument(
+        Guid documentUuid,
+        Guid referentialId,
+        string studentUniqueId
+    )
+    {
+        IUpsertRequest upsertRequest = CreateUpsertRequest(
+            "CourseTranscript",
+            documentUuid,
+            referentialId,
+            $$"""
+            {
+                "studentReference": {
+                  "studentUniqueId": "{{studentUniqueId}}"
+                }
+            }
+            """,
+            isStudentAuthorizationSecurable: true,
+            documentSecurityElements: new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId(studentUniqueId)]
+            ),
+            projectName: "Ed-Fi"
+        );
         return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
     }
 
@@ -387,6 +576,48 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                     .ToString()!,
                 StudentSchoolAssociationId = (long)reader["StudentSchoolAssociationId"],
                 StudentSchoolAssociationPartitionKey = (short)reader["StudentSchoolAssociationPartitionKey"],
+            };
+            results.Add(authorization);
+        }
+
+        return results;
+    }
+
+    private async Task<string> GetDocumentStudentSchoolAuthorizationEdOrgIds(Guid documentUuid)
+    {
+        await using NpgsqlCommand command = new(
+            "SELECT StudentSchoolAuthorizationEdOrgIds FROM dms.Document WHERE DocumentUuid = $1;",
+            Connection!,
+            Transaction!
+        )
+        {
+            Parameters = { new() { Value = documentUuid } },
+        };
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return reader["StudentSchoolAuthorizationEdOrgIds"].ToString()!;
+        }
+
+        throw new InvalidOperationException("No matching document found.");
+    }
+
+    private async Task<List<StudentSecurableDocument>> GetAllStudentSecurableDocuments()
+    {
+        var command = Connection!.CreateCommand();
+        command.Transaction = Transaction;
+        command.CommandText = "SELECT * FROM dms.studentsecurabledocument";
+
+        var results = new List<StudentSecurableDocument>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var authorization = new StudentSecurableDocument
+            {
+                StudentUniqueId = reader["StudentUniqueId"].ToString()!,
+                StudentSecurableDocumentId = (long)reader["StudentSecurableDocumentId"],
+                StudentSecurableDocumentPartitionKey = (short)reader["StudentSecurableDocumentPartitionKey"],
             };
             results.Add(authorization);
         }

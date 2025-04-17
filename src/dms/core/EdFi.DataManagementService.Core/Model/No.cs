@@ -72,7 +72,8 @@ internal static class No
         IsDescriptor: false,
         ResourceVersion: new SemVer(""),
         AllowIdentityUpdates: false,
-        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, default)
+        EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, default),
+        AuthorizationSecurableInfo: []
     );
 
     /// <summary>
