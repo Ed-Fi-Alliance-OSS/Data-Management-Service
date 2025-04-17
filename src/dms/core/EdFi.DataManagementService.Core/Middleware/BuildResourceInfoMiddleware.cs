@@ -29,7 +29,7 @@ internal class BuildResourceInfoMiddleware(ILogger _logger, List<string> _allowI
             AllowIdentityUpdates: context.ResourceSchema.AllowIdentityUpdates
                 || _allowIdentityUpdateOverrides.Contains(context.ResourceSchema.ResourceName.Value),
             EducationOrganizationHierarchyInfo: context.EducationOrganizationHierarchyInfo,
-            StudentAuthorizationSecurableInfo: context.StudentAuthorizationSecurableInfo
+            AuthorizationSecurableInfo: context.AuthorizationSecurableInfo
         );
 
         await next();

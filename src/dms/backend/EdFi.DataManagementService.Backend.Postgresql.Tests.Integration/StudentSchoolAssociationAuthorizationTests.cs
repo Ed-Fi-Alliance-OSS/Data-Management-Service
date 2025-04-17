@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -413,7 +414,16 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
             }
             """,
             isStudentAuthorizationSecurable: true,
-            studentUniqueId: studentUniqueId,
+            documentSecurityElements: new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("School"),
+                        new EducationOrganizationId(schoolId)
+                    ),
+                ],
+                [new StudentUniqueId(studentUniqueId)]
+            ),
             projectName: "Ed-Fi"
         );
 
@@ -443,7 +453,11 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
             }
             """,
             isStudentAuthorizationSecurable: true,
-            studentUniqueId: studentUniqueId,
+            documentSecurityElements: new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId(studentUniqueId)]
+            ),
             projectName: "Ed-Fi"
         );
         return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);

@@ -73,7 +73,7 @@ internal static class No
         ResourceVersion: new SemVer(""),
         AllowIdentityUpdates: false,
         EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, default),
-        StudentAuthorizationSecurableInfo: new StudentAuthorizationSecurableInfo(false, default)
+        AuthorizationSecurableInfo: []
     );
 
     /// <summary>

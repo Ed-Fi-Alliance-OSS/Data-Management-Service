@@ -170,12 +170,13 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         }
 
         if (
-            upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo is
-            { IsStudentAuthorizationSecurable: true, StudentUniqueId: not null }
+            upsertRequest
+                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
+                .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
         )
         {
             await _sqlAction.InsertStudentSecurableDocument(
-                upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.StudentUniqueId,
+                upsertRequest.DocumentSecurityElements.Student[0].Value,
                 newDocumentId,
                 documentPartitionKey,
                 connection,
@@ -258,12 +259,13 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         }
 
         if (
-            upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo is
-            { IsStudentAuthorizationSecurable: true, StudentUniqueId: not null }
+            upsertRequest
+                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
+                .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
         )
         {
             await _sqlAction.UpdateStudentSecurableDocument(
-                upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.StudentUniqueId,
+                upsertRequest.DocumentSecurityElements.Student[0].Value,
                 documentId,
                 documentPartitionKey,
                 connection,
@@ -344,16 +346,16 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             JsonElement? studentSchoolAuthorizationEducationOrganizationIds = null;
 
             if (
-                upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo is
-                { IsStudentAuthorizationSecurable: true, StudentUniqueId: not null }
+                upsertRequest
+                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
+                    .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
             )
             {
                 studentSchoolAuthorizationEducationOrganizationIds =
                     await _sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
-                        upsertRequest.ResourceInfo.StudentAuthorizationSecurableInfo.StudentUniqueId,
+                        upsertRequest.DocumentSecurityElements.Student[0].Value,
                         connection,
-                        transaction,
-                        upsertRequest.TraceId
+                        transaction
                     );
             }
 
