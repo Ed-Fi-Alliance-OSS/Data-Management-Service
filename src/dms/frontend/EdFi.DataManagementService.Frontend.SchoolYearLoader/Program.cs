@@ -58,6 +58,11 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                         logger.LogCritical("Error: EndYear must be a positive integer.");
                         throw new InvalidOperationException("Error: EndYear must be a positive integer.");
                     }
+                    if (options.CurrentSchoolYear <= 0)
+                    {
+                        logger.LogCritical("Error: CurrentSchoolYear must be a positive integer.");
+                        throw new InvalidOperationException("Error: CurrentSchoolYear must be a positive integer.");
+                    }
                     IConfiguration config = host.Services.GetRequiredService<IConfiguration>();
 
                     var apiService = host.Services.GetRequiredService<IApiService>();
@@ -71,7 +76,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                         throw new InvalidOperationException("ConfigurationServiceSettings cannot be null.");
                     }
 
-                    await SchoolYearProcessor.ProcessSchoolYearTypesAsync(logger, apiService, options.StartYear, options.EndYear);
+                    await SchoolYearProcessor.ProcessSchoolYearTypesAsync(logger, apiService, options.StartYear, options.EndYear, options.CurrentSchoolYear);
                 });
                 await host.RunAsync();
                 return 0;

@@ -18,18 +18,15 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
             ILogger _logger,
             IApiService apiService,
             int startYear,
-            int endYear)
+            int endYear,
+            int currentSchoolYear)
         {
-
-            int currentYear = DateTime.UtcNow.Month > 6
-                ? DateTime.UtcNow.Year + 1
-                : DateTime.UtcNow.Year;
 
             var schoolYearTypes = Enumerable.Range(startYear, endYear - startYear + 1)
                 .Select(year => new SchoolYearType
                 {
                     schoolYear = year,
-                    currentSchoolYear = year == currentYear,
+                    currentSchoolYear = year == currentSchoolYear,
                     schoolYearDescription = $"{year - 1}-{year}"
                 })
                 .ToList();

@@ -14,5 +14,8 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
 
         [Option('e', "endYear", Required = true, HelpText = "End year of the school term.")]
         public int EndYear { get; set; }
+
+        [Option('c', "currentSchoolYear", Required = true, HelpText = "Current School Year.")]
+        public int CurrentSchoolYear { get; set; }
     }
 }

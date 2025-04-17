@@ -44,6 +44,7 @@ services:
       API_SCHEMA_PATH: ${API_SCHEMA_PATH:-}
       START_YEAR: ${START_YEAR:-}
       END_YEAR: ${END_YEAR:-}
+      CURRENT_SCHOOL_YEAR: ${CURRENT_SCHOOL_YEAR:-}
     ports:
       - '127.0.0.1:${DMS_HTTP_PORTS}:${DMS_HTTP_PORTS}'
     networks:
