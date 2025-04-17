@@ -35,9 +35,7 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "published-dms.yml",
-    "-f",
-    "keycloak.yml"
+    "published-dms.yml"
 )
 
 if ($SearchEngine -eq "ElasticSearch") {
@@ -73,6 +71,26 @@ else {
         docker network create dms
     }
 
+    Write-Output "Starting Keycloak first..."
+    docker compose -f keycloak.yml -env-file $EnvironmentFile -p dms-published up -d
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
+    }
+
+    Write-Output "Waiting for Keycloak to initialize..."
+    Start-Sleep 20
+
+    Write-Output "Running setup-keycloak.ps1 scripts..."
+    Start-Sleep 5
+    # Create client with default edfi_admin_api/full_access scope
+    ./setup-keycloak.ps1
+
+    # Create client with edfi_admin_api/readonly_access scope
+    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+
+    # Create client with edfi_admin_api/authMetadata_readonly_access scope
+    ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+
     Write-Output "Starting published DMS"
     docker compose $files --env-file $EnvironmentFile -p dms-published up -d
 
@@ -83,13 +101,4 @@ else {
     Start-Sleep 20
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 
-    Start-Sleep 5
-    # Create client with default edfi_admin_api/full_access scope
-    ./setup-keycloak.ps1
-
-    # Create client with edfi_admin_api/readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
-
-    # Create client with edfi_admin_api/authMetadata_readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
 }
