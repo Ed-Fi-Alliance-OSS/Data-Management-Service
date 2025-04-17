@@ -6,9 +6,6 @@
 namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
-/// Metadata about whether a document is considered "student authorization securable".
+/// Metadata about whether a document is considered securable with other resource.
 /// </summary>
-public record StudentAuthorizationSecurableInfo(
-    bool IsStudentAuthorizationSecurable,
-    string? StudentUniqueId
-);
+public record AuthorizationSecurableInfo(string SecurableKey);

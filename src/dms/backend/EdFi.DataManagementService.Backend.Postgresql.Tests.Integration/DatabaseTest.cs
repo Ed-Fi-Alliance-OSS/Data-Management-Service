@@ -298,6 +298,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 DocumentSecurityElements = documentSecurityElements,
                 ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
                     [],
+                    [],
                     new NoAuthorizationServiceFactory(),
                     NullLogger.Instance
                 ),
@@ -367,6 +368,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 DocumentSecurityElements = documentSecurityElements,
                 ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
                     [],
+                    [],
                     new NoAuthorizationServiceFactory(),
                     NullLogger.Instance
                 ),
@@ -392,6 +394,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
                     [],
                     new NoAuthorizationServiceFactory(),
                     NullLogger.Instance
@@ -440,6 +443,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 ResourceAuthorizationHandler = new ResourceAuthorizationHandler(
+                    [],
                     [],
                     new NoAuthorizationServiceFactory(),
                     NullLogger.Instance

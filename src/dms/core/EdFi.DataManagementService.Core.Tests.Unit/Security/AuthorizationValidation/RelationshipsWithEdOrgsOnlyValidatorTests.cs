@@ -29,8 +29,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements([], [], []),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299501")],
-                OperationType.Get,
-                new TraceId("trace-id")
+                [],
+                OperationType.Get
             );
         }
 
@@ -61,13 +61,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         [SetUp]
         public async Task Setup()
         {
-            A.CallTo(
-                    () =>
-                        _authorizationRepository.GetAncestorEducationOrganizationIds(
-                            A<long[]>.Ignored,
-                            A<TraceId>.Ignored
-                        )
-                )
+            A.CallTo(() => _authorizationRepository.GetAncestorEducationOrganizationIds(A<long[]>.Ignored))
                 .Returns([255901L]);
             var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
             _expectedResult = await validator.ValidateAuthorization(
@@ -82,8 +76,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "255901")],
-                OperationType.Get,
-                new TraceId("trace-id")
+                [],
+                OperationType.Get
             );
         }
 
@@ -104,13 +98,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         [SetUp]
         public async Task Setup()
         {
-            A.CallTo(
-                    () =>
-                        _authorizationRepository.GetAncestorEducationOrganizationIds(
-                            A<long[]>.Ignored,
-                            A<TraceId>.Ignored
-                        )
-                )
+            A.CallTo(() => _authorizationRepository.GetAncestorEducationOrganizationIds(A<long[]>.Ignored))
                 .Returns([289766L]);
             var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
             _expectedResult = await validator.ValidateAuthorization(
@@ -125,8 +113,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "2455")],
-                OperationType.Get,
-                new TraceId("trace-id")
+                [],
+                OperationType.Get
             );
         }
 
@@ -156,13 +144,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         [SetUp]
         public async Task Setup()
         {
-            A.CallTo(
-                    () =>
-                        _authorizationRepository.GetAncestorEducationOrganizationIds(
-                            A<long[]>.Ignored,
-                            A<TraceId>.Ignored
-                        )
-                )
+            A.CallTo(() => _authorizationRepository.GetAncestorEducationOrganizationIds(A<long[]>.Ignored))
                 .Returns([233L, 244L]);
 
             var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
@@ -182,8 +164,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "567")],
-                OperationType.Upsert,
-                new TraceId("trace-id")
+                [],
+                OperationType.Upsert
             );
         }
 
@@ -213,13 +195,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         [SetUp]
         public async Task Setup()
         {
-            A.CallTo(
-                    () =>
-                        _authorizationRepository.GetAncestorEducationOrganizationIds(
-                            A<long[]>.Ignored,
-                            A<TraceId>.Ignored
-                        )
-                )
+            A.CallTo(() => _authorizationRepository.GetAncestorEducationOrganizationIds(A<long[]>.Ignored))
                 .Returns([299L, 255901L]);
             var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
             _expectedResult = await validator.ValidateAuthorization(
@@ -234,8 +210,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299")],
-                OperationType.Get,
-                new TraceId("trace-id")
+                [],
+                OperationType.Get
             );
         }
 

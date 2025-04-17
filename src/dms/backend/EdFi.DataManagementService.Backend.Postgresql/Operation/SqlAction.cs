@@ -677,4 +677,75 @@ public class SqlAction() : ISqlAction
         await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
+
+    public async Task<long[]> GetAncestorEducationOrganizationIds(
+        long[] educationOrganizationIds,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $"""
+                WITH RECURSIVE ParentHierarchy(Id, EducationOrganizationId, ParentId) AS (
+                SELECT h.Id, h.EducationOrganizationId, h.ParentId
+                FROM dms.EducationOrganizationHierarchy h
+                WHERE h.EducationOrganizationId = ANY($1)
+
+                UNION ALL
+
+                SELECT parent.Id, parent.EducationOrganizationId, parent.ParentId
+                FROM dms.EducationOrganizationHierarchy parent
+                JOIN ParentHierarchy child ON parent.Id = child.ParentId
+                )
+                SELECT EducationOrganizationId
+                FROM ParentHierarchy
+                ORDER BY EducationOrganizationId
+                {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};
+            """,
+            connection,
+            transaction
+        )
+        {
+            Parameters = { new() { Value = educationOrganizationIds } },
+        };
+        await command.PrepareAsync();
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        List<long> edOrgIds = [];
+
+        while (await reader.ReadAsync())
+        {
+            edOrgIds.Add(reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")));
+        }
+
+        return edOrgIds.Distinct().ToArray();
+    }
+
+    public async Task<JsonElement?> GetStudentSchoolAuthorizationEducationOrganizationIds(
+        string studentUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $"""
+                SELECT StudentSchoolAuthorizationEducationOrganizationIds
+                FROM dms.StudentSchoolAssociationAuthorization
+                WHERE StudentUniqueId = $1
+            """,
+            connection,
+            transaction
+        )
+        {
+            Parameters = { new() { Value = studentUniqueId } },
+        };
+
+        await command.PrepareAsync();
+        object? result = await command.ExecuteScalarAsync();
+
+        return result == DBNull.Value || result == null
+            ? null
+            : JsonSerializer.Deserialize<JsonElement>((string)result);
+    }
 }

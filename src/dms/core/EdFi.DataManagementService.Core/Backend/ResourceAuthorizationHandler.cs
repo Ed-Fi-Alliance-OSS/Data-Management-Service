@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// </summary>
 public class ResourceAuthorizationHandler(
     AuthorizationStrategyEvaluator[] authorizationStrategyEvaluators,
+    AuthorizationSecurableInfo[] authorizationSecurableInfos,
     IAuthorizationServiceFactory authorizationServiceFactory,
     ILogger logger
 ) : IResourceAuthorizationHandler
@@ -45,8 +46,8 @@ public class ResourceAuthorizationHandler(
             var authResult = await validator.ValidateAuthorization(
                 documentSecurityElements,
                 evaluator.Filters,
-                operationType,
-                traceId
+                authorizationSecurableInfos,
+                operationType
             );
 
             if (evaluator.Operator == FilterOperator.And)

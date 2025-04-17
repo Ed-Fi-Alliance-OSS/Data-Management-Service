@@ -112,8 +112,9 @@ internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _
     /// </summary>
     public IReadOnlyList<AuthorizationPathway> AuthorizationPathways { get; set; } = No.AuthorizationPathways;
 
+    /// <summary>
     /// Student Authorization Securable info for the submitted document
     /// </summary>
-    public StudentAuthorizationSecurableInfo StudentAuthorizationSecurableInfo { get; set; } =
-        No.StudentAuthorizationSecurableInfo;
+    public AuthorizationSecurableInfo[] AuthorizationSecurableInfo { get; set; } =
+        No.AuthorizationSecurableInfo;
 }

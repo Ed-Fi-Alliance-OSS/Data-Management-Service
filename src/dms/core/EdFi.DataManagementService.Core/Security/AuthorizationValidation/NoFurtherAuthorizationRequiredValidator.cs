@@ -19,8 +19,8 @@ public class NoFurtherAuthorizationRequiredValidator : IAuthorizationValidator
     public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
-        OperationType operationType,
-        TraceId traceId
+        AuthorizationSecurableInfo[] authorizationSecurableInfos,
+        OperationType operationType
     )
     {
         return await Task.FromResult(new ResourceAuthorizationResult.Authorized());

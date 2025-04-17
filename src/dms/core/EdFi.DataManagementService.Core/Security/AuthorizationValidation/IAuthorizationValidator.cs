@@ -16,7 +16,7 @@ public interface IAuthorizationValidator
     Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
-        OperationType operationType,
-        TraceId traceId
+        AuthorizationSecurableInfo[] authorizationSecurableInfos,
+        OperationType operationType
     );
 }

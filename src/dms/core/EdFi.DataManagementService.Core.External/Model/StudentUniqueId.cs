@@ -6,6 +6,6 @@
 namespace EdFi.DataManagementService.Core.External.Model;
 
 /// <summary>
-/// A string type branded as a StudentId, which is a unit of security authorization.
+/// A string type branded as a StudentUniqueId, which is a unit of security authorization.
 /// </summary>
-public record struct StudentId(string Value);
+public record struct StudentUniqueId(string Value);

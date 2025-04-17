@@ -20,8 +20,8 @@ public class NamespaceBasedValidator : IAuthorizationValidator
     public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
-        OperationType operationType,
-        TraceId traceId
+        AuthorizationSecurableInfo[] authorizationSecurableInfos,
+        OperationType operationType
     )
     {
         string[]? namespacesFromRequest = securityElements.Namespace;

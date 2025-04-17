@@ -133,10 +133,12 @@ internal static class No
         );
 
     /// <summary>
-    /// The null object for StudentAuthorizationSecurableInfo
+    /// The null object for AuthorizationSecurableInfo
     /// </summary>
-    public static readonly StudentAuthorizationSecurableInfo StudentAuthorizationSecurableInfo =
-        new StudentAuthorizationSecurableInfo(IsStudentAuthorizationSecurable: false, StudentUniqueId: "");
+    public static readonly AuthorizationSecurableInfo[] AuthorizationSecurableInfo =
+    [
+        new AuthorizationSecurableInfo(""),
+    ];
 
     /// <summary>
     /// A constructor of a PipelineContext initialized with null objects

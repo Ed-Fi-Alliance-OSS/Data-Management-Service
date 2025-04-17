@@ -37,6 +37,7 @@ internal class GetByIdHandler(
                     ResourceInfo: context.ResourceInfo,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         context.AuthorizationStrategyEvaluators,
+                        context.AuthorizationSecurableInfo,
                         authorizationServiceFactory,
                         _logger
                     ),

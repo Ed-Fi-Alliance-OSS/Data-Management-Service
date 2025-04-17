@@ -21,8 +21,8 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
     public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
         AuthorizationFilter[] authorizationFilters,
-        OperationType operationType,
-        TraceId traceId
+        AuthorizationSecurableInfo[] authorizationSecurableInfos,
+        OperationType operationType
     )
     {
         List<EducationOrganizationId> edOrgsFromRequest = securityElements
@@ -40,7 +40,7 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
         var edOrgIdValues = edOrgsFromRequest.Select(e => e.Value).ToArray();
 
         var ancestorEducationOrganizationIds =
-            await authorizationRepository.GetAncestorEducationOrganizationIds(edOrgIdValues, traceId);
+            await authorizationRepository.GetAncestorEducationOrganizationIds(edOrgIdValues);
 
         bool isAuthorized = authorizationFilters
             .Select(filter => long.TryParse(filter.Value, out var edOrgId) ? edOrgId : (long?)null)
