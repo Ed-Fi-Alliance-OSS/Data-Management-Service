@@ -8,7 +8,7 @@ set -e
 set +x
 
 envsubst < /app/appsettings.template.json > /app/appsettings.json
-
+envsubst < /app/appsettings.template.json > /app/SchoolYearLoader/appsettings.json
 # Safely extract a few environment variables from the admin connection string
 host=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
 port=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
@@ -41,11 +41,14 @@ if [ "$USE_API_SCHEMA_PATH" = true ]; then
     echo "Downloading Package ${TPDM_PACKAGE}..."
     dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${TPDM_PACKAGE} -d ${API_SCHEMA_PATH} -v ${TPDM_PACKAGE_VERSION}
 
-    echo "Downloading Package ${Sample_PACKAGE}..."
-    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${Sample_PACKAGE} -d ${API_SCHEMA_PATH} -v ${Sample_PACKAGE_VERSION}
+    echo "Downloading Package ${SAMPLE_PACKAGE}..."
+    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${SAMPLE_PACKAGE} -d ${API_SCHEMA_PATH} -v ${SAMPLE_PACKAGE_VERSION}
 
-    echo "Downloading Package ${Homograph_PACKAGE}..."
-    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${Homograph_PACKAGE} -d ${API_SCHEMA_PATH} -v ${Homograph_PACKAGE_VERSION}
+    echo "Downloading Package ${HOMOGRAPH_PACKAGE}..."
+    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${HOMOGRAPH_PACKAGE} -d ${API_SCHEMA_PATH} -v ${HOMOGRAPH_PACKAGE_VERSION}
 fi
+
+echo "Running EdFi.DataManagementService.Frontend.SchoolYearLoader Cli START_YEAR=${START_YEAR}  END_YEAR=${END_YEAR} CURRENT_SCHOOL_YEAR=${CURRENT_SCHOOL_YEAR"
+dotnet /app/SchoolYearLoader/EdFi.DataManagementService.Frontend.SchoolYearLoader.dll --startYear ${START_YEAR} --endYear ${END_YEAR} --currentSchoolYear  ${CURRENT_SCHOOL_YEAR}
 
 dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll
