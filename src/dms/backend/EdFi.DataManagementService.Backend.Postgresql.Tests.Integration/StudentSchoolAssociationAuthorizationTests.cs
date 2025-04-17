@@ -344,6 +344,17 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
 
             ParseEducationOrganizationIds(documentEdOrgIds).Should().BeEquivalentTo([77]);
         }
+
+        [Test, Order(3)]
+        public async Task Then_Moving_SSA_To_New_Student_DocumentStudentSchoolAuthorizationEdOrgIds_Should_Have_No_EdOrg()
+        {
+            await UpdateStudentSchoolAssociation(_documentUuid, _referentialId, 77, "9999");
+            string documentEdOrgIds = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
+                _studentSecurableDocumentUuid
+            );
+
+            ParseEducationOrganizationIds(documentEdOrgIds).Should().BeEmpty();
+        }
     }
 
     private class StudentSchoolAssociationAuthorization
