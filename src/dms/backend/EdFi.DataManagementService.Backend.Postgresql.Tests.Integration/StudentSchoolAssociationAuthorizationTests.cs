@@ -299,6 +299,53 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
         }
     }
 
+    [TestFixture]
+    public class Given_An_Upsert_Of_School_Hierarchy_With_StudentSecurableDocument_With_Move_One_StudentSchoolAssociation
+        : StudentSchoolAssociationAuthorizationTests
+    {
+        private readonly Guid _documentUuid = Guid.NewGuid();
+        private readonly Guid _referentialId = Guid.NewGuid();
+        private Guid _studentSecurableDocumentUuid;
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            await UpsertEducationOrganization("StateEducationAgency", SEA_ID, null);
+            await UpsertEducationOrganization("LocalEducationAgency", LEA_ID, SEA_ID);
+            await UpsertEducationOrganization("School", SCHOOL_ID, LEA_ID);
+            await UpsertEducationOrganization("School", 77, null);
+
+            UpsertResult.InsertSuccess ssdResult = (UpsertResult.InsertSuccess)
+                await UpsertStudentSecurableDocument("0123");
+            _studentSecurableDocumentUuid = ssdResult.NewDocumentUuid.Value;
+
+            await UpsertStudentSchoolAssociation(_documentUuid, _referentialId, SCHOOL_ID, "0123");
+        }
+
+        [Test, Order(1)]
+        public async Task Then__SSA_DocumentStudentSchoolAuthorizationEdOrgIds_Should_Have_EdOrg_Hierarchy()
+        {
+            string documentEdOrgIds = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
+                _studentSecurableDocumentUuid
+            );
+
+            ParseEducationOrganizationIds(documentEdOrgIds)
+                .Should()
+                .BeEquivalentTo([SEA_ID, LEA_ID, SCHOOL_ID]);
+        }
+
+        [Test, Order(2)]
+        public async Task Then_Moving_SSA_DocumentStudentSchoolAuthorizationEdOrgIds_Should_Have_New_EdOrg()
+        {
+            await UpdateStudentSchoolAssociation(_documentUuid, _referentialId, 77, "0123");
+            string documentEdOrgIds = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
+                _studentSecurableDocumentUuid
+            );
+
+            ParseEducationOrganizationIds(documentEdOrgIds).Should().BeEquivalentTo([77]);
+        }
+    }
+
     private class StudentSchoolAssociationAuthorization
     {
         public required string StudentUniqueId { get; set; }
