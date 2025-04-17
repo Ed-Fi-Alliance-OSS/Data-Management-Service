@@ -5,7 +5,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace EdFi.DataManagementService.Frontend.BulkLoader.Model
+namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Model
 {
     public class SchoolYearType
     {
@@ -19,9 +19,4 @@ namespace EdFi.DataManagementService.Frontend.BulkLoader.Model
         public bool currentSchoolYear { get; set; }
     }
 
-    public class SchoolYearTypesWrapper
-    {
-        [JsonPropertyName("schoolYearTypes")]
-        public List<SchoolYearType> SchoolYearTypes { get; set; } = new();
-    }
 }

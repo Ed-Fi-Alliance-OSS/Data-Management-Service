@@ -1,0 +1,8 @@
+{
+    "profiles": {
+        "EdFi.DataManagementService.Frontend.SchoolYearLoader": {
+            "commandName": "Project",
+            "commandLineArgs": "--startYear 1991 --endYear 2037"
+        }
+    }
+}

@@ -6,32 +6,36 @@
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Frontend.BulkLoader.Model;
+using EdFi.DataManagementService.Frontend.SchoolYearLoader.Model;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace EdFi.DataManagementService.Frontend.BulkLoader.Processor
+namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
 {
     public static class SchoolYearProcessor
     {
-        public static async Task ProcessSchoolYearTypesAsync(ILogger _logger,
-            SchoolYearTypesWrapper model,
+        public static async Task ProcessSchoolYearTypesAsync(
+            ILogger _logger,
             IApiService apiService,
-            string token)
+            string token,
+            int startYear,
+            int endYear)
         {
-            if (model?.SchoolYearTypes == null || model.SchoolYearTypes.Count == 0)
-            {
-                _logger.LogError(" No school year types found in the JSON");
-                throw new InvalidOperationException("No school year types found in the JSON.");
-            }
 
             int currentYear = DateTime.UtcNow.Month > 6
                 ? DateTime.UtcNow.Year + 1
                 : DateTime.UtcNow.Year;
 
-            model.SchoolYearTypes.ForEach(s => s.currentSchoolYear = s.schoolYear == currentYear);
+            var schoolYearTypes = Enumerable.Range(startYear, endYear - startYear + 1)
+                .Select(year => new SchoolYearType
+                {
+                    schoolYear = year,
+                    currentSchoolYear = year == currentYear,
+                    schoolYearDescription = $"{year - 1}-{year}"
+                })
+                .ToList();
 
-            foreach (var item in model.SchoolYearTypes)
+            foreach (var item in schoolYearTypes)
             {
                 var payload = JsonSerializer.Serialize(item, new JsonSerializerOptions
                 {
@@ -60,12 +64,14 @@ namespace EdFi.DataManagementService.Frontend.BulkLoader.Processor
                         response.StatusCode);
                     throw new InvalidOperationException($"Failed to upsert school year type {item.schoolYear}");
                 }
+
                 _logger.LogInformation(
                     "Successfully upserted school year type {SchoolYear} with status code {StatusCode}",
                     item.schoolYear,
                     response.StatusCode);
-                Console.WriteLine($"Successfully upserted school year type  {item.schoolYear} with status code {response.StatusCode}");
+                Console.WriteLine($"Successfully upserted school year type {item.schoolYear} with status code {response.StatusCode}");
             }
         }
+
     }
 }

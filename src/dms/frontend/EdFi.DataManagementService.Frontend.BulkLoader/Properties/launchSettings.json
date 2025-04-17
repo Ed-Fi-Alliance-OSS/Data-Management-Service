@@ -1,8 +1,0 @@
-{
-    "profiles": {
-        "EdFi.DataManagementService.Frontend.BulkLoader": {
-            "commandName": "Project",
-            "commandLineArgs": "--bulkLoadSourcePath \"$(ProjectDir)\\Sample\\SchoolYearTypes.json\""
-        }
-    }
-}
