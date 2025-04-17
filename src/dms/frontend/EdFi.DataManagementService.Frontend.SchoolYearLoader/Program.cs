@@ -7,12 +7,12 @@ using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Configuration;
-using EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor;
 using Microsoft.Extensions.Logging;
 using CommandLine;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Caching.Memory;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor;
 
 namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
 {
