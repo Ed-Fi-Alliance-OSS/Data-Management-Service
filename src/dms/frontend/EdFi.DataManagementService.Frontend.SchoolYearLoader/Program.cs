@@ -13,6 +13,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Caching.Memory;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor;
+using Microsoft.Extensions.Options;
+using EdFi.DataManagementService.Frontend.SchoolYearLoader.Configuration;
 
 namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
 {
@@ -27,7 +29,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
            })
            .ConfigureServices((context, services) =>
            {
-               ConfigureServices.AddServices(context.Configuration, services);
+               HostBuilderExtensions.AddServices(context.Configuration, services);
            })
            .ConfigureLogging(logging =>
            {
@@ -51,14 +53,14 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                     if (options.StartYear <= 0)
                     {
                         logger.LogCritical("Error: StartYear must be a positive integer.");
+                        throw new InvalidOperationException("Error: StartYear must be a positive integer.");
                     }
                     if (options.EndYear <= 0)
                     {
                         logger.LogCritical("Error: EndYear must be a positive integer.");
+                        throw new InvalidOperationException("Error: EndYear must be a positive integer.");
                     }
                     IConfiguration config = host.Services.GetRequiredService<IConfiguration>();
-                    var _apiSchemaProvider = host.Services.GetRequiredService<IApiSchemaProvider>();
-                    _apiSchemaProvider.GetApiSchemaNodes();
 
                     var apiService = host.Services.GetRequiredService<IApiService>();
                     var tokenHandler = host.Services.GetRequiredService<IConfigurationServiceTokenHandler>();

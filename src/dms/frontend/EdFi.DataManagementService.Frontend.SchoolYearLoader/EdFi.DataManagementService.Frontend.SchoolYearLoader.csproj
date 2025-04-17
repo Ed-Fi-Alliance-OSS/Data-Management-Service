@@ -30,6 +30,8 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="EdFi.DataStandard52.ApiSchema" />
+        <PackageReference Include="EdFi.TPDM.ApiSchema" />
         <PackageReference Include="CommandLineParser" />
         <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" />

@@ -3,21 +3,25 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.SchoolYearLoader.Configuration;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
+using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
 {
-    public static class ConfigureServices
+    public static class HostBuilderExtensions
     {
         public static void AddServices(IConfiguration configuration, IServiceCollection services)
         {
@@ -26,7 +30,16 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
             services.AddDmsDefaultConfiguration(
                 logger,
                 configuration.GetSection("CircuitBreaker")
-            );
+            )
+            .AddTransient<IOAuthManager, OAuthManager>()
+            .Configure<DatabaseOptions>(configuration.GetSection("DatabaseOptions"))
+            .Configure<AppSettings>(configuration.GetSection("AppSettings"))
+            .Configure<CoreAppSettings>(configuration.GetSection("AppSettings"))
+            .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
+            .Configure<ConnectionStrings>(configuration.GetSection("ConnectionStrings"))
+            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>()
+            .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
+
 
             ConfigureDatastore(configuration, services, logger);
             ConfigureQueryHandler(configuration, services, logger);

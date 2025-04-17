@@ -98,6 +98,8 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
     /// </summary>
     private readonly Lazy<ApiSchemaNodes> _apiSchemaNodes = new(() =>
     {
+        _logger.LogInformation("Lazy<ApiSchemaNodes> initialization started...");
+
         if (appSettings.Value.UseApiSchemaPath)
         {
             string apiSchemaPath =
