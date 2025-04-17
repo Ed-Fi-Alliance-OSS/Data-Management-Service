@@ -10,9 +10,9 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
     public class CommandLineOverrides
     {
         [Option('s', "startYear", Required = true, HelpText = "Start year of the school term.")]
-        public required int StartYear { get; set; }
+        public int StartYear { get; set; }
 
         [Option('e', "endYear", Required = true, HelpText = "End year of the school term.")]
-        public required int EndYear { get; set; }
+        public int EndYear { get; set; }
     }
 }

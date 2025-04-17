@@ -5,15 +5,12 @@
 
 using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
-using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using CommandLine;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Caching.Memory;
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor;
-using Microsoft.Extensions.Options;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Configuration;
 
 namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
@@ -25,6 +22,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
             var host = new HostBuilder()
            .ConfigureAppConfiguration((hostingContext, config) =>
            {
+               config.SetBasePath(AppContext.BaseDirectory);
                config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
            })
            .ConfigureServices((context, services) =>
@@ -63,7 +61,6 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                     IConfiguration config = host.Services.GetRequiredService<IConfiguration>();
 
                     var apiService = host.Services.GetRequiredService<IApiService>();
-                    var tokenHandler = host.Services.GetRequiredService<IConfigurationServiceTokenHandler>();
                     var configurationServiceSettings = config
                         .GetSection("ConfigurationServiceSettings")
                         .Get<ConfigurationServiceSettings>();
@@ -74,17 +71,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                         throw new InvalidOperationException("ConfigurationServiceSettings cannot be null.");
                     }
 
-                    var token = await tokenHandler.GetTokenAsync(clientId: configurationServiceSettings.ClientId,
-                                                                    clientSecret: configurationServiceSettings.ClientSecret,
-                                                                    scope: configurationServiceSettings.Scope);
-
-                    if (string.IsNullOrEmpty(token))
-                    {
-                        logger.LogError("Token cannot be null or empty.");
-                        throw new InvalidOperationException("Token cannot be null or empty.");
-                    }
-
-                    await SchoolYearProcessor.ProcessSchoolYearTypesAsync(logger, apiService, token, options.StartYear, options.EndYear);
+                    await SchoolYearProcessor.ProcessSchoolYearTypesAsync(logger, apiService, options.StartYear, options.EndYear);
                 });
                 await host.RunAsync();
                 return 0;

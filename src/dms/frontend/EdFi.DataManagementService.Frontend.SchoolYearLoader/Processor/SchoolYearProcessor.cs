@@ -17,7 +17,6 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
         public static async Task ProcessSchoolYearTypesAsync(
             ILogger _logger,
             IApiService apiService,
-            string token,
             int startYear,
             int endYear)
         {
@@ -48,7 +47,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
-                        TokenId: token,
+                        TokenId: "",
                         ClaimSetName: "BootstrapDescriptorsandEdOrgs",
                         EducationOrganizationIds: [],
                         NamespacePrefixes: []
