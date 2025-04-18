@@ -56,7 +56,7 @@ param(
     # .NET project build configuration, defaults to "Debug". Options are: Debug, Release.
     [string]
     [ValidateSet("Debug", "Release")]
-    $Configuration = "Debug",
+    $Configuration = "Release",
 
     [bool]
     $DryRun = $false,
