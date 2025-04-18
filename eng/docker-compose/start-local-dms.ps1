@@ -39,9 +39,7 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "local-dms.yml",
-    "-f",
-    "keycloak.yml"
+    "local-dms.yml"
 )
 
 if ($SearchEngine -eq "ElasticSearch") {
@@ -82,17 +80,16 @@ else {
     )
     if ($r) { $upArgs += @("--build") }
 
-    Write-Output "Starting locally-built DMS"
-
-    docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
-
+    Write-Output "Starting Keycloak first..."
+    docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
     if ($LASTEXITCODE -ne 0) {
-        throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
+        throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
     }
 
+    Write-Output "Waiting for Keycloak to initialize..."
     Start-Sleep 20
-    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 
+    Write-Output "Running setup-keycloak.ps1 scripts..."
     Start-Sleep 5
     # Create client with default edfi_admin_api/full_access scope
     ./setup-keycloak.ps1
@@ -102,4 +99,18 @@ else {
 
     # Create client with edfi_admin_api/authMetadata_readonly_access scope
     ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+
+    Write-Output "Starting locally-built DMS"
+
+    docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
+    }
+
+    Start-Sleep 20
+
+    Write-Output "Running connector setup..."
+    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
+
 }
