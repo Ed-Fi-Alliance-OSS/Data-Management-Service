@@ -63,6 +63,7 @@ public interface ISqlAction
         Guid documentUuid,
         JsonElement edfiDoc,
         JsonElement securityElements,
+        JsonElement? studentSchoolAuthorizationEdOrgIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId

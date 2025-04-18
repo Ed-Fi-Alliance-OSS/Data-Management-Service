@@ -162,11 +162,28 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 return new UpdateResult.UpdateFailureNotExists();
             }
 
+            JsonElement? studentSchoolAuthorizationEducationOrganizationIds = null;
+
+            if (
+                updateRequest
+                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
+                    .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
+            )
+            {
+                studentSchoolAuthorizationEducationOrganizationIds =
+                    await _sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
+                        updateRequest.DocumentSecurityElements.Student[0].Value,
+                        connection,
+                        transaction
+                    );
+            }
+
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
                 updateRequest.DocumentUuid.Value,
                 JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
                 updateRequest.DocumentSecurityElements.ToJsonElement(),
+                studentSchoolAuthorizationEducationOrganizationIds,
                 connection,
                 transaction,
                 updateRequest.TraceId
@@ -301,6 +318,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                                 cascadeResult.DocumentUuid,
                                 JsonSerializer.Deserialize<JsonElement>(cascadeResult.ModifiedEdFiDoc),
                                 updateRequest.DocumentSecurityElements.ToJsonElement(),
+                                studentSchoolAuthorizationEducationOrganizationIds,
                                 connection,
                                 transaction,
                                 updateRequest.TraceId

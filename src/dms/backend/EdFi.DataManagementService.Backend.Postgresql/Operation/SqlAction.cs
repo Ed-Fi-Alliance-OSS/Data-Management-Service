@@ -270,6 +270,7 @@ public class SqlAction() : ISqlAction
         Guid documentUuid,
         JsonElement edfiDoc,
         JsonElement securityElements,
+        JsonElement? studentSchoolAuthorizationEdOrgIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
@@ -277,7 +278,7 @@ public class SqlAction() : ISqlAction
     {
         await using var command = new NpgsqlCommand(
             @"UPDATE dms.Document
-              SET EdfiDoc = $1, LastModifiedAt = clock_timestamp(), LastModifiedTraceId = $4, SecurityElements = $5
+              SET EdfiDoc = $1, LastModifiedAt = clock_timestamp(), LastModifiedTraceId = $4, SecurityElements = $5, StudentSchoolAuthorizationEdOrgIds = $6
               WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
               RETURNING Id;",
             connection,
@@ -291,6 +292,12 @@ public class SqlAction() : ISqlAction
                 new() { Value = documentUuid },
                 new() { Value = traceId.Value },
                 new() { Value = securityElements },
+                new()
+                {
+                    Value = studentSchoolAuthorizationEdOrgIds.HasValue
+                        ? studentSchoolAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
             },
         };
 

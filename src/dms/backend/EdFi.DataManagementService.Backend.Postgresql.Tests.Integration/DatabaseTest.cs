@@ -338,7 +338,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         long educationOrganizationId = 0,
         long? parentEducationOrganizationId = null,
         TraceId? traceId = null,
-        string projectName = "ProjectName"
+        string projectName = "ProjectName",
+        bool isStudentAuthorizationSecurable = false
     )
     {
         if (documentSecurityElements == null)
@@ -359,7 +360,8 @@ public abstract class DatabaseTest : DatabaseTestBase
                     allowIdentityUpdates,
                     isInEducationOrganizationHierarchy,
                     educationOrganizationId,
-                    parentEducationOrganizationId
+                    parentEducationOrganizationId,
+                    isStudentAuthorizationSecurable
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,

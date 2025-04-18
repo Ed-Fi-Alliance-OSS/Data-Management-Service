@@ -208,6 +208,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             documentUuid,
             JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
             upsertRequest.DocumentSecurityElements.ToJsonElement(),
+            studentSchoolAuthorizationEducationOrganizationIds,
             connection,
             transaction,
             traceId
