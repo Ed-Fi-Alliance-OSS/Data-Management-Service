@@ -7,8 +7,6 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:v0.7.2@sha256:8f2ff02d64b0a7a2b71b6b3b3148b85f66d00ec20ad40c30bdcd415d46d31818
     container_name: kafka-ui
-    depends_on:
-      - kafka
     environment:
       DYNAMIC_CONFIG_ENABLED: 'true'
       KAFKA_CLUSTERS_0_NAME: kafka1
@@ -17,15 +15,9 @@ services:
       - '127.0.0.1:${KAFKA_UI_PORT:-8088}:8080'
     networks:
       - dms
-    links:
-      - kafka
-      - kafka-postgresql-source
-      - kafka-elasticsearch-sink
 
   kibana:
     image: docker.elastic.co/kibana/kibana:8.5.1@sha256:dd4cd0943aae9b4b881fa578eca46015af399a309c0d3b5dc86a30adc932f434
-    depends_on:
-      - elasticsearch
     environment:
       ELASTICSEARCH_HOSTS: http://dms-search:9200
       ELASTICSEARCH_USERNAME: ${ELASTICSEARCH_ADMIN_USERNAME:-admin}
