@@ -42,11 +42,11 @@ jobs:
 
       - name: Run OpenSearch End to End Tests
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableOpenSearch -UsePublishedImage
+        run: ./build-dms.ps1 E2ETest -EnableOpenSearch -UsePublishedImage -Configuration Release
 
       - name: Run ElasticSearch End to End Tests
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableElasticSearch -UsePublishedImage
+        run: ./build-dms.ps1 E2ETest -EnableElasticSearch -UsePublishedImage -Configuration Release
 
       - name: Notify Slack on success
         if: success()
