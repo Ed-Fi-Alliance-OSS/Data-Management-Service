@@ -72,7 +72,7 @@ else {
     }
 
     Write-Output "Starting Keycloak first..."
-    docker compose -f keycloak.yml -env-file $EnvironmentFile -p dms-published up -d
+    docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-published up -d
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
     }
