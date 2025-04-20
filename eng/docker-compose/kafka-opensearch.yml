@@ -10,6 +10,12 @@ services:
     volumes:
       - kafka-data:/kafka/data
       - kafka-logs:/kafka/logs
+    restart: unless-stopped
+    healthcheck:
+      test: /opt/kafka/bin/kafka-cluster.sh cluster-id --bootstrap-server kafka:9092 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
     environment:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://dms-kafka1:9092
       KAFKA_LISTENERS: PLAINTEXT://dms-kafka1:9092,CONTROLLER://dms-kafka1:9093
@@ -36,6 +42,8 @@ services:
     depends_on:
       opensearch:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     volumes:
       - kafka-opensearch-sink-logs:/kafka/logs
       - kafka-opensearch-sink-config:/kafka/config
@@ -50,8 +58,6 @@ services:
     networks:
       - dms
     hostname: kafka-opensearch-sink
-    links:
-      - kafka
 
   kafka-postgresql-source:
     image: edfialliance/ed-fi-kafka-connect:pre
@@ -59,6 +65,9 @@ services:
     volumes:
       - kafka-postgresql-source-logs:/kafka/logs
       - kafka-postgresql-source-config:/kafka/config
+    depends_on:
+      kafka:
+        condition: service_healthy
     environment:
       BOOTSTRAP_SERVERS: dms-kafka1:9092
       GROUP_ID: 1
@@ -70,8 +79,6 @@ services:
     networks:
       - dms
     hostname: kafka-postgresql-source
-    links:
-      - kafka
 
   opensearch:
     image: opensearchproject/opensearch:2.15.0@sha256:1963b3ece46dfe1a17cd633fb2e9cea22bd20753a295f39c2f513ce0070cad42
