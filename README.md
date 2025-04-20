@@ -2,20 +2,30 @@
 
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/badge)](https://securityscorecards.dev/viewer/?uri=github.com/Ed-Fi-Alliance-OSS/Data-Management-Service)
 
-Code and design documentation for the Ed-Fi Data Management Service, successor
-to the Ed-Fi ODS/API.
+This repository contains two applications:
 
-<img alt="Scarlet Tanager, by Adam Jackson, no rights reserved"
-src="https://raw.githubusercontent.com/Ed-Fi-Alliance-OSS/Project-Tanager/main/images/scarlet-tanager_by_adam-jackson_no-rights-reserved_square-256.png"
-align="right" style="padding: 0 0 1rem 1rem; max-width: 25%"> This application
-is part of [Project
-Tanager](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager), an ambitious
-project to build a cloud-native "next generation" of
-[Ed-Fi](https://www.ed-fi.org) software. The Ed-Fi Data Management Service (DMS)
-will replace [Ed-Fi ODS/API 7.x](https://techdocs.ed-fi.org/x/UQSUCg).
+1. The Ed-Fi Data Management Service (DMS), which is a functional implementation
+   of the following API specifications: Ed-Fi Resources API, Ed-Fi Descriptors
+   API, and Ed-Fi Discovery API.
+2. The Ed-FI DMS Configuration Service, which is a functional implementation of
+   the Ed-Fi Management API specification.
 
-- See [Project Tanager](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager)
-  for design documents and discussion.
+These two applications and other services that support them are collectively
+known as the "DMS Platform".
+
+These two applications are being built to replace the legacy Ed-Fi ODS/API and
+Ed-Fi ODS Admin API applications. The target time line for production ready 1.0
+releases is Q4 of 2025. These applications and related documentation, startup
+scripts, etc., are being developed under the code name "Project Tanager".
+Tanager is just a project to get to 1.0; it is not a product.
+
+See [Getting Started](./GETTING_STARTED.md) for a detailed tutorial on starting
+the DMS Platform and interacting with it.
+
+See the [Project Tanager](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager)
+repository for detailed design documents.
+
+See the [docs folder](./docs/) for additional developer-oriented documentation.
 
 ## Repository Metadata
 
@@ -36,7 +46,7 @@ will replace [Ed-Fi ODS/API 7.x](https://techdocs.ed-fi.org/x/UQSUCg).
 
 ## Legal Information
 
-Copyright (c) 2024 Ed-Fi Alliance, LLC and contributors.
+Copyright (c) 2025 Ed-Fi Alliance, LLC and contributors.
 
 Licensed under the [Apache License, Version 2.0](./LICENSE) (the "License").
 
