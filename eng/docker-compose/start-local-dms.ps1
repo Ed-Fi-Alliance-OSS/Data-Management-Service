@@ -126,7 +126,7 @@ else {
     Write-Host "dms-kafka1 container is healthy ..."
 
     Write-Host "Starting DMS..."
-    docker-compose -f local-dms.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+    docker compose -f local-dms.yml --env-file $EnvironmentFile -p dms-local up $upArgs
 
     Write-Host "Waiting for DMS to initialize..."
     Wait-ForHealthy "dms-local-dms-1"
