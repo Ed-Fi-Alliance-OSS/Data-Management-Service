@@ -11,20 +11,6 @@ There are two parts to the lab:
 * File `getting-started.http` provides annotated HTTP commands demonstrating how
   to interact with the DMS and the DMS Configuration Service.
 
-> [!NOTE]
-> Goals for this document:
->
-> * Describe architecture
-> * Get started with Docker Desktop or Podman
-> * Create client credentials using the Configuration Service
-> * Authenticate with DMS using the Discovery API
-> * Create some thing
-> * Point out how to auto-generate client SDK from Open API specification.
-> * Can HTTP requests be copied and pasted as Python, etc.?
-> * Note that this works best with the [Rest Client
->   extension](https://marketplace.visualstudio.com/items?itemName=humao.rest-client).
->   Maybe others that work with .http?
-
 ## Pre-Requisites
 
 These instructions have been tested in Windows with current (April, 2025)
@@ -34,13 +20,11 @@ scripting, which _should_ work on any OS where PowerShell Core 7+ is installed.
 > [!TIP]
 > If using Podman without Docker in Windows, you can create either
 >
-> 1. Find and replace "docker compose" with "podman compose" in the `eng/docker-compose` directory, or
+> 1. Find and replace "docker compose" with "podman compose" in the
+>    `eng/docker-compose` directory, or
 > 2. In Windows, create a `docker.cmd` file containing the following command:
->    `podman ...` and add the location of this file into your Path environment
+>    `podman %*` and add the location of this file into your Path environment
 >    variables.
-
-> [!WARNING]
-> I forgot the command, need to look it up.
 
 The companion file [getting-started.http] can be executed in VS Code with the
 `humao.rest-client` or similar extension. Visual Studio and Rider also have
@@ -143,7 +127,7 @@ containers, it also calls an additional script for configuring Keycloak.
 Once started, try the following HTTP request, which will load the Ed-Fi
 Discovery API endpoint from the DMS.
 
-```http
+```shell
 curl http://localhost:8080
 ```
 
@@ -151,14 +135,33 @@ curl http://localhost:8080
 
 Please open [getting-started.http](./getting-started.http) for detailed
 instructions and sample HTTP commands. If using the Rest Client extension, you
-can right-click on any command to generate a Curl equivalent or a code snippet
-in one of more than a dozen supported languages, including C# and Python.
+can right-click on any command to generate a Curl command. Alternatively, you
+can create a code snippet in one of more than a dozen supported languages,
+including C# and Python.
+
+For the most part, interacting with the Data Management Service is the same as
+interacting with the Ed-Fi ODS/API. The following ODS/API documentation pertains
+to the Data Management Service and will provide additional background
+information on developing client integrations:
+
+* [Basics](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/basics)
+* [Authentication](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/authentication)
+* [Date and Datetime Elements](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/date-datetime-elements)
+* [Descriptor References](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/descriptor-references)
+* [Error Handling and Best Practices](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/error-handling-best-practices)
+* [Error Response Knowledge Base](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/error-response-knowledge-base)
+* [Resource Dependency Order](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/resource-dependency-order)
+* [Using Code Generation to Create an SDK](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-code-generation-to-create-an-sdk)
+
+In the DMS we have not included the `v3/` segment that is present in the
+ODS/API. This segment was never part of a formal standard, and we felt that it
+was a leftover vestige from the change between ODS/API 2.x and ODS/API 3.x.
 
 ## Modifying the Configuration
 
-Explore the [.env](./eng/docker-compose/.env) file you just create to see what
-configuration options are available; however, most of them should not be
-altered. After editing the `.env`, stop and then restart the containers.
+Explore the `.env` file you just created to see what configuration options are
+available; however, most of them should not be altered. After editing the
+`.env`, stop and then restart the containers.
 
 ## Stopping the Containers
 
@@ -174,56 +177,4 @@ useful when you need to start over with a clean slate.
 
 ```powershell
 ./start-local-dms.ps1 -EnableConfig -EnableSearchEngineUI -d -v
-```
-
-## Create Client Credentials Using the Configuration Service
-
-```http
-###
-@configToken={{configTokenRequest.response.body.access_token}}
-
-###
-# @name createVendor
-POST http://localhost:{{configPort}}/v2/vendors
-Content-Type: application/json
-Authorization: bearer {{configToken}}
-
-{
-    "company": "Demo Vendor",
-    "contactName": "George Washington",
-    "contactEmailAddress": "george@example.com",
-    "namespacePrefixes": "uri://ed-fi.org
-}
-```
-
-```http
-###
-@vendorLocation={{createVendor.response.headers.location}}
-
-### Retrieve the vendor so that we can extract the Id
-# @name getVendor
-GET {{vendorLocation}}
-Authorization: bearer {{configToken}}
-```
-
-> [!WARNING]
-> Provide a link to something else to give more information about namespaces?
-> Or explain right here?
-
-Next, create an Application. The response to this request will have the newly
-generated `client_id` and `client_secret` needed for accessing the DMS.
-
-```http
-###
-# @name edOrgApplication
-POST http://localhost:{{configPort}}/v2/applications
-Content-Type: application/json
-Authorization: bearer {{configToken}}
-
-{
-    "vendorId": {{vendorId}},
-    "applicationName": "For ed orgs",
-    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
-    "educationOrganizationIds": [ 255, 255901 ]
-}
 ```
