@@ -391,7 +391,7 @@ function Create_Client() {
 # Keycloak health check
 while ($true) {
     try {
-        $response = Invoke-WebRequest -Uri $healthEndpoint -Method Get -TimeoutSec 5 -UseBasicParsing
+        $response = Invoke-WebRequest -Uri $KeycloakServer/realms/master -Method Get -TimeoutSec 5 -UseBasicParsing
         if ($response.StatusCode -eq 200) {
             Write-Output "Keycloak is running."
             break
