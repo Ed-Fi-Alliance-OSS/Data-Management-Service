@@ -97,7 +97,7 @@ public abstract class ContainerSetupBase
 
         await DeleteData("dms.Reference");
         await DeleteData("dms.Alias");
-        await DeleteDataWithCondition("dms.Document", "resourename != 'SchoolYearType'");
+        await DeleteDataWithCondition("dms.Document", "'SchoolYearType'");
         await DeleteData("dms.EducationOrganizationHierarchyTermsLookup");
         await DeleteData("dms.EducationOrganizationHierarchy");
 
@@ -106,9 +106,9 @@ public abstract class ContainerSetupBase
             var deleteRefCmd = new NpgsqlCommand($"DELETE FROM {tableName};", conn);
             await deleteRefCmd.ExecuteNonQueryAsync();
         }
-        async Task DeleteDataWithCondition(string tableName, string condition)
+        async Task DeleteDataWithCondition(string tableName, string resourcename)
         {
-            var deleteCmd = new NpgsqlCommand($"DELETE FROM {tableName} WHERE {condition};", conn);
+            var deleteCmd = new NpgsqlCommand($"DELETE FROM {tableName} WHERE resourcename != {resourcename};", conn);
             await deleteCmd.ExecuteNonQueryAsync();
         }
     }

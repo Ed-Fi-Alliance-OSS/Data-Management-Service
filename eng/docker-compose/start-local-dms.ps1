@@ -129,6 +129,7 @@ else {
     docker compose -f local-dms.yml --env-file $EnvironmentFile -p dms-local up $upArgs
 
     Write-Host "Waiting for DMS to initialize..."
+    Start-Sleep 10
     Wait-ForHealthy "dms-local-dms-1"
     Write-Host "dms-local-dms-1 container is healthy ..."
 }
