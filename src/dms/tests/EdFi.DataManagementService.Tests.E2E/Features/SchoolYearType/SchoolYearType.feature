@@ -4,12 +4,12 @@ Feature: SchoolYearType resource
     Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
 
   Rule: SchoolYearType resource
-  @ignore
+  @ignore @DMS-651
   Scenario: 01 Ensure clients can get a SchoolYearType
         When a GET request is made to "/ed-fi/schoolYearTypes?limit=47"
         Then it should respond with 200
         And the response should contain at most 47 SchoolYearTypes
- @ignore
+ @ignore @DMS-651
   Scenario: 02 Filter SchoolYearTypes by schoolYear
       When a GET request is made to "/ed-fi/schoolYearTypes?schoolYear=2025"
       Then it should respond with 200
