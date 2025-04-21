@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Json.Schema;
 using Microsoft.Playwright;
-using Newtonsoft.Json.Linq;
 using Reqnroll;
 using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 
@@ -720,17 +719,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     }
                 }
             }
-        }
-
-        [Then("the response should contain at most {int} SchoolYearTypes")]
-        public Task ThenTheResponseShouldContainAtMostSchoolYearTypes(int expectedMaxCount)
-        {
-            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
-            _logger.log.Information(responseJson.ToString());
-
-            int count = responseJson.AsArray().Count;
-            count.Should().Be(expectedMaxCount);
-            return Task.CompletedTask;
         }
 
         [Then("the record can be retrieved with a GET request")]
