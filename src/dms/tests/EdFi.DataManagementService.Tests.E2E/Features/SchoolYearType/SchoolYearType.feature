@@ -18,7 +18,7 @@ Feature: SchoolYearType resource
         {
             "schoolYear": 2199,
             "currentSchoolYear": false,
-            "schoolYearDescription": "2044-2045"
+            "schoolYearDescription": "2198-2199"
         }
         """
       Then it should respond with 201 or 200
@@ -34,7 +34,7 @@ Feature: SchoolYearType resource
             "id": "{id}",
             "schoolYear": 2199,
             "currentSchoolYear": false,
-            "schoolYearDescription": "2044-2045"
+            "schoolYearDescription": "2198-2199"
         }
         """
 
@@ -43,9 +43,9 @@ Feature: SchoolYearType resource
         """
         {
             "id": "{id}",
-            "schoolYear": 2045,
+            "schoolYear": 2199,
             "currentSchoolYear": false,
-            "schoolYearDescription": "2044-2045"
+            "schoolYearDescription": "2198-2199"
         }
         """
       Then it should respond with 204
@@ -53,9 +53,9 @@ Feature: SchoolYearType resource
         """
         {
             "id": "{id}",
-            "schoolYear": 2045,
+            "schoolYear": 2199,
             "currentSchoolYear": false,
-            "schoolYearDescription": "2044-2045"
+            "schoolYearDescription": "2198-2199"
         }
         """
 
