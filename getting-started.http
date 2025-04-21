@@ -1,0 +1,479 @@
+
+@dmsPort=8080
+@configPort=8081
+
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=s3creT@09
+
+#########
+# Working with the Ed-Fi Management API, as hosted by the DMS Configuration Service.
+#########
+
+# As mentioned previously, both custom services use OAuth 2.0 for client
+# authentication, namely, using JSON Web Token (JWT) bearer tokens. The
+# Configuration Service manages client credentials (with the help of Keycloak)
+# for the DMS. The startup script you just ran creates a system administrator
+# "account" in the Configuration Service, which you will use below to create a
+# token for interacting with the Configuration Service using the default
+# credentials.
+
+### Create a Configuration Service token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+### Read the token from the response body
+@configToken={{configTokenRequest.response.body.access_token}}
+
+# Behind the scenes, the Configuration Service is forwarding this token request
+# out to the real OAuth provider, Keycloak. To prove this, try the following
+# command using the default Keycloak configuration:
+
+###
+POST http://localhost:8045/realms/edfi/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+# This token is only good for interacting with the Configuration Service. Now,
+# as a system administrator, you will want to create client credentials to allow
+# other systems to access the DMS. The Ed-Fi Management API defines two
+# concepts: a Vendor and an Application. One Vendor can have many Applications,
+# and each Application has its own client credentials (aka "key and secret").
+# For example, a large vendor could have separate SIS and HR systems that both
+# need credentials; it is preferable that they have their own, separate
+# credentials, with distinct authorization permissions.
+
+### Create a new vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Demo Vendor {{$randomInt 0 9999999}}",
+    "contactName": "George Washington",
+    "contactEmailAddress": "george@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+# In production system you may need to introduce other namespace prefixes, like
+# this: `"namespacePrefixes": "uri://ed-fi.org,uri://example.org"`. These
+# namespace prefixes determine which Descriptors you are able to use (more on
+# these below), and in some cases they restrict which records your client can
+# access ("namespace-based authorization").
+
+### Read the newly-created Vendor ID from the response body
+@vendorId={{createVendor.response.body.id}}
+
+### Create a new application for working with education organizations
+# @name edOrgApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "For ed orgs",
+    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "educationOrganizationIds": [ 255, 255901 ]
+}
+
+# This Vendor is allowed to work with two education organizations and the
+# schools that belong to them. Note the `claimSetName` as well. "Claim sets"
+# define which Descriptors and Resources can be accessed by a client, and which
+# HTTP verbs can be used (POST, GET, PUT, DELETE) with each type. At this time
+# the out-of-the-box claimsets are relatively limited, though this will change
+# before the 1.0 release. Claimsets can be managed through the Configuration
+# Service, but that is an advanced topic that will not be covered in this
+# tutorial. The following command shows the restrictions on this claimset:
+
+###
+GET http://localhost:{{configPort}}/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+Authorization: bearer {{configToken}}
+
+# As you can see, this claimset can be used with the following types, among
+# others: educationOrganizationCategoryDescriptor, gradeLevelDescriptor,
+# localEducationAgency, localEducationAgencyCategoryDescriptor, school,
+# stateEducationAgency. We will use each of these in examples below. But first,
+# you need to create an Application.
+
+###
+@edOrgClientId={{edOrgApplication.response.body.key}}
+@edOrgSecret={{edOrgApplication.response.body.secret}}
+
+
+#########
+# Working with the Ed-Fi API, as hosted by the Data Management Service.
+#########
+
+# API clients should access the Ed-Fi Discovery API endpoint to learn which data
+# models are supported and to find the right URLs for further interaction. Note
+# that this endpoint does _not_ require a token
+
+###
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+### Read the Token URL from the Discovery API
+@tokenUrl={{discovery.response.body.urls.oauth}}
+### Read the base URL for all Descriptors and Resources from the Discovery API response
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+
+# At last, we can authenticate with the DMS using the client credentials we
+# generated with the DMS Configuration Service.
+
+###
+# @name edOrgTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{edOrgClientId}}:{{edOrgSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+### Read the DMS token from the response body
+@edOrgToken={{edOrgTokenRequest.response.body.access_token}}
+
+# WARNING: the ODS/API allows sending three elements as a JSON payload; this is
+# non-standard and not supported by Keycloak or the DMS. Support for this will
+# likely be added to the DMS's proxy token endpoint in the future. In addition,
+# the DMS should be modified to allow passing all three parameters via the
+# form-encoded body. These alternatives are shown below but commented out, since
+# they are not currently operational.
+
+# ###
+# POST {{tokenUrl}}
+# Content-Type: application/x-www-form-urlencoded
+
+# grant_type=client_credentials&client_id={{edOrgClientId}}&client_secret={{edOrgSecret}}
+
+# ###
+# POST {{tokenUrl}}
+# Content-Type: application/json
+
+# {
+#     "grant_type": "client_credentials",
+#     "client_id": "{{edOrgClientId}}",
+#     "client_secret": "{{edOrgSecret}}"
+# }
+
+# Another good practice with the Discovery API is to read the Dependencies
+# endpoint. This endpoint helps you make sense of the which things have to exist
+# in the system before other things can be created.
+###
+@dependenciesUrl={{discovery.response.body.urls.dependencies}}
+
+###
+GET {{dependenciesUrl}}
+
+# Note how there are many Descriptor listed with `order: 1`. Descriptors exist
+# on their own; they are the first thing that should be loaded. But what are
+# they? They are enumerations of valid values, which we use when creating or
+# modifying Resources.
+
+# Now, search through the Dependencies until you find `/schools`. Note that it
+# has order 5: there are several other types of Resource that must be created
+# before you can create a School. The Dependencies endpoint does not explicitly
+# list those other dependencies, but you will see them as soon as you look at
+# the request body for a School. Hint: a School belongs to a Local Education
+# Agency, and a Local Education Agency belongs to a State Education Agency.
+# Search for `/stateEducationAgencies` and you'll find it with `order: 2`,
+# meaning that it only depends on one or more descriptor values.
+
+# With that, let's seed a bunch of useful descriptors. Note that this is mostly
+# a one-time activity performed by the system host while preparing for an
+# upcoming school year, although the host could add more descriptors during the
+# year. It is strongly advised never to delete a descriptor that might have been
+# used already.
+
+# ps. if you receive status code 401 Unauthorized, then that means you either
+# forgot to generate a DMS token above, or it expired and you need to regenerate
+# it.
+
+###
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+  "codeValue": "Ninth Grade",
+  "shortDescription": "9th Grade"
+}
+
+###
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+  "codeValue": "School",
+  "shortDescription": "School"
+}
+
+###
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+  "codeValue": "Local Education Agency",
+  "shortDescription": "Local Education Agency"
+}
+
+###
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+  "codeValue": "State Education Agency",
+  "shortDescription": "State Education Agency"
+}
+
+###
+POST {{dataApi}}/ed-fi/localEducationAgencyCategoryDescriptors
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "namespace": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
+  "codeValue": "Regular public school district",
+  "shortDescription": "Regular public school district"
+}
+
+# Before creating a State Education Agency, let's look at a few errors that will
+# generate response status code 400 Bad Request.
+
+### Oops, forgot the request body
+POST {{dataApi}}/ed-fi/stateEducationAgencies
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+### The JSON brackets are there, but still don't have a request body
+# This time the system is able to tell you which are the required fields
+POST {{dataApi}}/ed-fi/stateEducationAgencies
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{}
+
+### Include the required fields, but us bogus descriptor strings.
+POST {{dataApi}}/ed-fi/stateEducationAgencies
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "stateEducationAgencyId": 255,
+  "nameOfInstitution": "Texas Education Agency",
+  "stateAbbreviationDescriptor": "bogus",
+  "categories": [
+    {
+      "educationOrganizationCategoryDescriptor": "string"
+    }
+  ]
+}
+
+### Now for real
+POST {{dataApi}}/ed-fi/stateEducationAgencies
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "stateEducationAgencyId": 255,
+  "nameOfInstitution": "Texas Education Agency",
+  "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+  "categories": [
+    {
+      "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#State Education Agency"
+    }
+  ]
+}
+
+# Local Education Agency (LEA) has a _reference_ to a State Education Agency
+# (LEA). What happens when you try to create an LEA with an SEA that does not
+# yet exist? You get a 403 Forbidden response code! For most references this
+# would be a 409 Conflict response, but remember that the Application created in
+# the Configuration Service has a restricted list of education organizations it
+# can work with. The authorization kicks you out before the system can look to
+# see if the ID is real.
+
+###
+POST {{dataApi}}/ed-fi/localEducationAgencies
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "localEducationAgencyId": 255901,
+  "nameOfInstitution": "Grand Bend SD",
+  "categories": [
+    {
+      "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+    }
+  ],
+  "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district",
+  "stateEducationAgencyReference": {
+    "stateEducationAgencyId": -255
+  }
+}
+
+###  Successfully create an LEA
+POST {{dataApi}}/ed-fi/localEducationAgencies
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "localEducationAgencyId": 255901,
+  "nameOfInstitution": "Grand Bend SD",
+  "categories": [
+    {
+      "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+    }
+  ],
+  "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district",
+  "stateEducationAgencyReference": {
+    "stateEducationAgencyId": 255
+  }
+}
+
+### Create a School
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "schoolId": 1,
+  "nameOfInstitution": "Grand Bend High School",
+  "shortNameOfInstitution": "GBMS",
+  "webSite": "http://www.GBISD.edu/GBMS/",
+  "educationOrganizationCategories": [
+    {
+      "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+    }
+  ],
+  "gradeLevels": [
+    {
+      "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth Grade"
+    }
+  ],
+  "localEducationAgencyReference": {
+    "localEducationAgencyId": 255901
+  }
+}
+
+# Coming back to the missing References now, we can try creating a Bell
+# Schedule, which references both School and Classperiod. Since the specified
+# class period does not exist, the response status code will be 409 Conflict.
+###
+POST {{dataApi}}/ed-fi/bellSchedules
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+    "bellScheduleName": "Monday",
+    "schoolReference": {
+        "schoolId": 1
+    },
+    "classPeriods": [
+        {
+            "classPeriodReference": {
+                "schoolId": 1,
+                "classPeriodName": "First Period"
+            }
+        }
+    ]
+}
+
+# Another interesting thing to explore is the concept of key unification. Back
+# to the Bell Schedule: note how it has two entries for `schoolId`. These must
+# have the same value, or an error will occur.
+
+###
+POST {{dataApi}}/ed-fi/bellSchedules
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+    "bellScheduleName": "Monday",
+    "schoolReference": {
+        "schoolId": 1
+    },
+    "classPeriods": [
+        {
+            "classPeriodReference": {
+                "schoolId": 2,
+                "classPeriodName": "First Period"
+            }
+        }
+    ]
+}
+
+# Congratulations! You are well on your way to learning how to build a
+# full-blown integration either with an Ed-Fi Management API system (this DMS
+# Configuration Service, or the legacy Ed-Fi ODS Admin API) or with a system
+# implementing the Ed-Fi Resources and Descriptor API's (this Data Management
+# Service, or the legacy Ed-Fi ODS/API).
+
+
+#########
+# Below is a hodge podge of additional HTTP commands and demonstrations.
+#########
+
+### Another useful claimset: E2E-NoFurtherAuthRequiredClaimSet
+GET http://localhost:{{configPort}}/authorizationMetadata?claimSetName=E2E-NoFurtherAuthRequiredClaimSet
+Authorization: bearer {{configToken}}
+
+# What happens when you try to access a resource type that is not covered by the
+# claimset? Assuming you have an otherwise valid token, you will get a 403
+# Forbidden response.
+
+###
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+    "studentUniqueId": "gw",
+    "firstName": "George",
+    "lastSurname": "Washington",
+    "birthDate": "1982-02-22"
+}
+
+# Try using an invalid data type, like a number instead of a string
+
+###
+POST {{dataApi}}/ed-fi/localEducationAgencyCategoryDescriptors
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "namespace": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
+  "codeValue": "Regular public school district",
+  "shortDescription": 1
+}
+
+# Try using an invalid namespace in a Descriptor
+
+###
+POST {{dataApi}}/ed-fi/localEducationAgencyCategoryDescriptors
+Authorization: bearer {{edOrgToken}}
+Content-Type: application/json
+
+{
+  "namespace": "uri://eddy-fi.org/LocalEducationAgencyCategoryDescriptor",
+  "codeValue": "Regular public school district",
+  "shortDescription": "Regular public school district"
+}
+
+# OOPS, that worked. Should it have?

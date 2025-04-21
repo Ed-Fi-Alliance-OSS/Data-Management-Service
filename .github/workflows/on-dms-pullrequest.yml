@@ -152,7 +152,7 @@ jobs:
 
       - name: Run OpenSearch End to End Tests
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableOpenSearch
+        run: ./build-dms.ps1 E2ETest -EnableOpenSearch  -Configuration Release
 
       - name: Upload Logs
         if: failure()

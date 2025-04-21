@@ -175,7 +175,7 @@ function PublishCliApiDownloader {
 
 function PublishCliSchoolYearLoader {
     Invoke-Execute {
-        $schoolYearLoaderProject = "$clisRoot/$schoolYearLoaderProjectName/"
+        $schoolYearLoaderProject = "$applicationRoot/$schoolYearLoaderProjectName/"
         $outputPath = "$schoolYearLoaderProject/publish"
         dotnet publish $schoolYearLoaderProject -c $Configuration -o $outputPath --nologo
     }
