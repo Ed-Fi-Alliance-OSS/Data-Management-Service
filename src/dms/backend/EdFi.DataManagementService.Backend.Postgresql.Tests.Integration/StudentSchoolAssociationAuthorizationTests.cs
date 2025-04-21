@@ -357,6 +357,54 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
         }
     }
 
+    [TestFixture]
+    public class Given_An_Update_Of_StudentSecurableDocument : StudentSchoolAssociationAuthorizationTests
+    {
+        private Guid _studentSecurableDocumentUuid = Guid.NewGuid();
+        private Guid _studentSecurableRefId = Guid.NewGuid();
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            await UpsertEducationOrganization("StateEducationAgency", SEA_ID, null);
+            await UpsertEducationOrganization("LocalEducationAgency", LEA_ID, SEA_ID);
+            await UpsertEducationOrganization("School", SCHOOL_ID, LEA_ID);
+            await UpsertEducationOrganization("School", 111, null);
+
+            await UpsertStudentSchoolAssociation(SCHOOL_ID, "0123");
+            await UpsertStudentSchoolAssociation(111, "ABCD");
+
+            await UpsertStudentSecurableDocument(
+                _studentSecurableDocumentUuid,
+                _studentSecurableRefId,
+                "0123"
+            );
+
+            string documentEdOrgIds = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
+                _studentSecurableDocumentUuid
+            );
+
+            ParseEducationOrganizationIds(documentEdOrgIds)
+                .Should()
+                .BeEquivalentTo([SCHOOL_ID, LEA_ID, SEA_ID]);
+        }
+
+        [Test]
+        public async Task Then_Updated_StudentSecurableDocument_Should_Have_Updated_DocumentStudentSchoolAuthorizationEdOrgIds()
+        {
+            await UpdateStudentSecurableDocument(
+                _studentSecurableDocumentUuid,
+                _studentSecurableRefId,
+                "ABCD"
+            );
+
+            string documentEdOrgIds = await GetDocumentStudentSchoolAuthorizationEdOrgIds(
+                _studentSecurableDocumentUuid
+            );
+            ParseEducationOrganizationIds(documentEdOrgIds).Should().BeEquivalentTo([111]);
+        }
+    }
+
     private class StudentSchoolAssociationAuthorization
     {
         public required string StudentUniqueId { get; set; }
@@ -493,6 +541,50 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
         return await UpsertStudentSecurableDocument(Guid.NewGuid(), Guid.NewGuid(), studentUniqueId);
     }
 
+    private async Task<UpdateResult> UpdateStudentSchoolAssociation(
+        Guid documentUuid,
+        Guid referentialId,
+        long schoolId,
+        string studentUniqueId
+    )
+    {
+        IUpdateRequest updateRequest = CreateUpdateRequest(
+            "StudentSchoolAssociation",
+            documentUuid,
+            referentialId,
+            $$"""
+            {
+                "studentReference": {
+                  "studentUniqueId": "{{studentUniqueId}}"
+                },
+                "schoolReference": {
+                  "schoolId": {{schoolId}}
+                }
+            }
+            """,
+            isStudentAuthorizationSecurable: true,
+            documentSecurityElements: new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("School"),
+                        new EducationOrganizationId(schoolId)
+                    ),
+                ],
+                [new StudentUniqueId(studentUniqueId)]
+            ),
+            projectName: "Ed-Fi"
+        );
+
+        return await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+    }
+
+    private async Task<DeleteResult> DeleteStudentSchoolAssociation(Guid documentUuid)
+    {
+        IDeleteRequest deleteRequest = CreateDeleteRequest("StudentSchoolAssociation", documentUuid);
+        return await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
+    }
+
     private async Task<UpsertResult> UpsertStudentSecurableDocument(
         Guid documentUuid,
         Guid referentialId,
@@ -521,37 +613,33 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
         return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
     }
 
-    private async Task<UpdateResult> UpdateStudentSchoolAssociation(
+    private async Task<UpdateResult> UpdateStudentSecurableDocument(
         Guid documentUuid,
         Guid referentialId,
-        long schoolId,
         string studentUniqueId
     )
     {
         IUpdateRequest updateRequest = CreateUpdateRequest(
-            "StudentSchoolAssociation",
+            "CourseTranscript",
             documentUuid,
             referentialId,
             $$"""
             {
                 "studentReference": {
                   "studentUniqueId": "{{studentUniqueId}}"
-                },
-                "schoolReference": {
-                  "schoolId": {{schoolId}}
                 }
             }
             """,
+            isStudentAuthorizationSecurable: true,
+            documentSecurityElements: new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId(studentUniqueId)]
+            ),
             projectName: "Ed-Fi"
         );
 
         return await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
-    }
-
-    private async Task<DeleteResult> DeleteStudentSchoolAssociation(Guid documentUuid)
-    {
-        IDeleteRequest deleteRequest = CreateDeleteRequest("StudentSchoolAssociation", documentUuid);
-        return await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
     }
 
     private async Task<
