@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Json.Schema;
 using Microsoft.Playwright;
+using Newtonsoft.Json.Linq;
 using Reqnroll;
 using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 
@@ -720,6 +721,34 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 }
             }
         }
+
+        [Then("the response should contain at most {int} SchoolYearTypes")]
+        public Task ThenTheResponseShouldContainAtMostSchoolYearTypes(int expectedMaxCount)
+        {
+            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            _logger.log.Information(responseJson.ToString());
+
+            int count = responseJson.AsArray().Count;
+            count.Should().Be(expectedMaxCount);
+            return Task.CompletedTask;
+        }
+
+        [Then("the response should contain {int} SchoolYearType with schoolYear {int}")]
+        public void ThenTheResponseShouldContainSchoolYearTypeWithSchoolYear(int expectedCount, int expectedSchoolYear)
+        {
+            JsonNode responseJson = JsonNode.Parse(_apiResponse.TextAsync().Result)!;
+            _logger.log.Information(responseJson.ToString());
+
+            JsonNode? schoolYearTypesNode = responseJson["schoolYearTypes"] ?? responseJson;
+
+            var matchingItems = schoolYearTypesNode!.AsArray()
+                .Where(item => item?["schoolYear"]?.GetValue<int>() == expectedSchoolYear)
+                .ToList();
+
+            matchingItems.Count.Should().Be(expectedCount,
+                $"expected {expectedCount} SchoolYearType(s) with schoolYear {expectedSchoolYear}");
+        }
+
 
         [Then("the record can be retrieved with a GET request")]
         public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string expectedBody)
