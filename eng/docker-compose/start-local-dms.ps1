@@ -37,7 +37,9 @@ param (
 
 $files = @(
     "-f",
-    "postgresql.yml"
+    "postgresql.yml",
+    "-f",
+    "local-dms.yml"
 )
 
 if ($SearchEngine -eq "ElasticSearch") {
@@ -111,25 +113,4 @@ else {
     Write-Output "Running connector setup..."
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 
-    Write-Host "Waiting for SearchEngine to initialize..."
-
-    function Wait-ForHealthy($containerName) {
-        while ((docker inspect -f '{{.State.Health.Status}}' $containerName) -ne "healthy") {
-            Write-Host "Waiting on $containerName..."
-            Start-Sleep -Seconds 5
-        }
-    }
-
-    Wait-ForHealthy "dms-search"
-    Write-Host "dms-search container is healthy ..."
-    Wait-ForHealthy "dms-kafka1"
-    Write-Host "dms-kafka1 container is healthy ..."
-
-    Write-Host "Starting DMS..."
-    docker compose -f local-dms.yml --env-file $EnvironmentFile -p dms-local up $upArgs
-
-    Write-Host "Waiting for DMS to initialize..."
-    Start-Sleep 10
-    Wait-ForHealthy "dms-local-dms-1"
-    Write-Host "dms-local-dms-1 container is healthy ..."
 }
