@@ -20,5 +20,15 @@ public record AuthorizationPathway
         EducationOrganizationId? SchoolId
     ) : AuthorizationPathway;
 
+    /// <summary>
+    /// Authorization Pathway that uses StudentContactAssociation to calculate the Contacts that can reach the related Securable Document(s).
+    /// </summary>
+    /// <param name="StudentUniqueId"></param>
+    /// <param name="ContactUniqueId"></param>
+    public record StudentContactAssociation(
+        StudentUniqueId? StudentUniqueId,
+        ContactUniqueId? ContactUniqueId
+    ) : AuthorizationPathway;
+
     private AuthorizationPathway() { }
 }

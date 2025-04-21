@@ -29,7 +29,7 @@ public class ResourceAuthorizationHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            var documentSecurityElements = new DocumentSecurityElements(["uri://ed-fi.org"], [], []);
+            var documentSecurityElements = new DocumentSecurityElements(["uri://ed-fi.org"], [], [], []);
 
             var evaluator = new AuthorizationStrategyEvaluator(
                 "NamespaceBased",
@@ -81,7 +81,12 @@ public class ResourceAuthorizationHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            var documentSecurityElements = new DocumentSecurityElements(["uri://not-matching.org"], [], []);
+            var documentSecurityElements = new DocumentSecurityElements(
+                ["uri://not-matching.org"],
+                [],
+                [],
+                []
+            );
 
             var evaluator = new AuthorizationStrategyEvaluator(
                 "NamespaceBased",
@@ -139,7 +144,12 @@ public class ResourceAuthorizationHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            var documentSecurityElements = new DocumentSecurityElements(["uri://not-matching.org"], [], []);
+            var documentSecurityElements = new DocumentSecurityElements(
+                ["uri://not-matching.org"],
+                [],
+                [],
+                []
+            );
 
             var handler = new ResourceAuthorizationHandler(
                 [],
@@ -177,6 +187,7 @@ public class ResourceAuthorizationHandlerTests
                         new EducationOrganizationId(6001)
                     ),
                 ],
+                [],
                 []
             );
 
@@ -242,6 +253,7 @@ public class ResourceAuthorizationHandlerTests
                         new EducationOrganizationId(9999)
                     ),
                 ],
+                [],
                 []
             );
             var authStrategyEvaluators = new AuthorizationStrategyEvaluator(
@@ -311,7 +323,8 @@ public class ResourceAuthorizationHandlerTests
                         new EducationOrganizationId(9999)
                     ),
                 ],
-                [new StudentUniqueId("9879898")]
+                [new StudentUniqueId("9879898")],
+                []
             );
 
             var authStrategyEvaluators = new[]

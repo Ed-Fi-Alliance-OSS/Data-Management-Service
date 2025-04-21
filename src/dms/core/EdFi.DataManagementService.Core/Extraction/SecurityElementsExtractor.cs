@@ -62,6 +62,21 @@ internal static class SecurityElementsExtractor
             );
         }
 
-        return new([.. namespaceSecurityElements], [.. edOrgSecurityElements], [.. studentSecurityElements]);
+        HashSet<ContactUniqueId> contactSecurityElements = [];
+        foreach (var securityElementPath in resourceSchema.ContactSecurityElementPaths)
+        {
+            contactSecurityElements.UnionWith(
+                documentBody
+                    .SelectNodesFromArrayPathCoerceToStrings(securityElementPath.Value, logger)
+                    .Select(contactId => new ContactUniqueId(contactId))
+            );
+        }
+
+        return new(
+            [.. namespaceSecurityElements],
+            [.. edOrgSecurityElements],
+            [.. studentSecurityElements],
+            [.. contactSecurityElements]
+        );
     }
 }

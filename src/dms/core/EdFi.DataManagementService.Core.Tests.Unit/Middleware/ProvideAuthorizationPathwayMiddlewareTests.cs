@@ -52,7 +52,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                         new EducationOrganizationId(123)
                     ),
                 ],
-                [new StudentUniqueId("987")]
+                [new StudentUniqueId("987")],
+                []
             );
             _context.Method = RequestMethod.POST;
         }
@@ -171,7 +172,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                         new EducationOrganizationId(123)
                     ),
                 ],
-                [new StudentUniqueId("987")]
+                [new StudentUniqueId("987")],
+                []
             );
             _context.Method = RequestMethod.POST;
         }
@@ -206,6 +208,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                         new EducationOrganizationId(123)
                     ),
                 ],
+                [],
                 []
             );
             _context.Method = RequestMethod.POST;
@@ -236,7 +239,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
             _context.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [],
-                [new StudentUniqueId("987")]
+                [new StudentUniqueId("987")],
+                []
             );
             _context.Method = RequestMethod.POST;
         }

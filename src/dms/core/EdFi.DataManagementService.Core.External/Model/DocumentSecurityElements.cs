@@ -15,7 +15,9 @@ public record DocumentSecurityElements(
     // A list of the EducationOrganizations extracted from the document
     EducationOrganizationSecurityElement[] EducationOrganization,
     // A list of the Student unique ids extracted from the document
-    StudentUniqueId[] Student
+    StudentUniqueId[] Student,
+    // A list of the Contact unique ids extracted from the document
+    ContactUniqueId[] Contact
 );
 
 /// <summary>

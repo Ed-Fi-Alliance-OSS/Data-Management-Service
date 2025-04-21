@@ -23,7 +23,7 @@ public class NamespaceBasedValidatorTests
         {
             var validator = new NamespaceBasedValidator();
             _expectedResult = await validator.ValidateAuthorization(
-                new DocumentSecurityElements([], [], []),
+                new DocumentSecurityElements([], [], [], []),
                 [new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://namespace")],
                 [],
                 OperationType.Get
@@ -58,7 +58,7 @@ public class NamespaceBasedValidatorTests
         {
             var validator = new NamespaceBasedValidator();
             _expectedResult = await validator.ValidateAuthorization(
-                new DocumentSecurityElements(["uri://namespace/resource"], [], []),
+                new DocumentSecurityElements(["uri://namespace/resource"], [], [], []),
                 [new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://namespace")],
                 [],
                 OperationType.Get
@@ -83,7 +83,7 @@ public class NamespaceBasedValidatorTests
         {
             var validator = new NamespaceBasedValidator();
             _expectedResult = await validator.ValidateAuthorization(
-                new DocumentSecurityElements(["uri://not-matching/resource"], [], []),
+                new DocumentSecurityElements(["uri://not-matching/resource"], [], [], []),
                 [new AuthorizationFilter(SecurityElementNameConstants.Namespace, "uri://namespace")],
                 [],
                 OperationType.Get
@@ -120,6 +120,7 @@ public class NamespaceBasedValidatorTests
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(
                     ["uri://matching/resource", "uri://not-matching1/resource"],
+                    [],
                     [],
                     []
                 ),
