@@ -159,9 +159,9 @@ was a leftover vestige from the change between ODS/API 2.x and ODS/API 3.x.
 
 ## Modifying the Configuration
 
-Explore the [.env](./eng/docker-compose/.env) file you just create to see what
-configuration options are available; however, most of them should not be
-altered. After editing the `.env`, stop and then restart the containers.
+Explore the `.env` file you just created to see what configuration options are
+available; however, most of them should not be altered. After editing the
+`.env`, stop and then restart the containers.
 
 ## Stopping the Containers
 
