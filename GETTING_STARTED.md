@@ -157,19 +157,6 @@ In the DMS we have not included the `v3/` segment that is present in the
 ODS/API. This segment was never part of a formal standard, and we felt that it
 was a leftover vestige from the change between ODS/API 2.x and ODS/API 3.x.
 
-> [!TIP]
-> This solution does not start Swagger UI. The following command will run
-> Swagger UI, opening automatically to the DMS's Open API specification fil for
-> the Resources API.
->
-> ```shell
-> docker run -p 85:8080 -e SWAGGER_JSON_URL=http://localhost:8080/metadata/specifications/resources-spec.json docker.swagger.io/swaggerapi/swagger-ui
-> ```
->
-> You can load this in the browser at <http://localhost:85/>. You can also open
-> two tabs with this link, and change to the Descriptors API in the second tab
-> by entering this url: `http://localhost:8080/metadata/specifications/descriptors-spec.json`
-
 ## Modifying the Configuration
 
 Explore the [.env](./eng/docker-compose/.env) file you just create to see what
