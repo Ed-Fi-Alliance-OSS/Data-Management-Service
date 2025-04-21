@@ -8,7 +8,7 @@ Feature: SchoolYearType resource
   Scenario: 01 Ensure clients can get a SchoolYearType
         When a GET request is made to "/ed-fi/schoolYearTypes?limit=47"
         Then it should respond with 200
-        And the response should contain at most 47 SchoolYearTypes
+        And total of records should be 47
  @ignore @DMS-651
   Scenario: 02 Filter SchoolYearTypes by schoolYear
       When a GET request is made to "/ed-fi/schoolYearTypes?schoolYear=2025"
