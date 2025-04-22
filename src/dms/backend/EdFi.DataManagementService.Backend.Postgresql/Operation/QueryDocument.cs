@@ -32,8 +32,9 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
             string resourceName = queryRequest.ResourceInfo.ResourceName.Value;
 
             return new QueryResult.QuerySuccess(
-                await _sqlAction.GetAllDocumentsByResourceName(
+                await _sqlAction.GetByQuery(
                     resourceName,
+                    queryRequest.QueryElements,
                     queryRequest.PaginationParameters,
                     connection,
                     transaction,

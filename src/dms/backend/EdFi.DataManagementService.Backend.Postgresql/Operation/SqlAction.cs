@@ -4,10 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Model;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
@@ -19,7 +21,7 @@ public record UpdateDocumentValidationResult(bool DocumentExists, bool Referenti
 /// Connections and transactions are managed by the caller.
 /// Exceptions are handled by the caller.
 /// </summary>
-public class SqlAction() : ISqlAction
+public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
 {
     /// <summary>
     /// Returns a Document from a data reader row for the Document table
@@ -131,6 +133,81 @@ public class SqlAction() : ISqlAction
         // Assumes only one row returned (should never be more due to DB unique constraint)
         await reader.ReadAsync();
         return await ExtractDocumentFrom(reader);
+    }
+
+    /// <summary>
+    /// Returns an array of Documents from the database corresponding to the given ResourceName
+    /// </summary>
+    public async Task<JsonArray> GetByQuery(
+        string resourceName,
+        QueryElement[] queryElements,
+        PaginationParameters paginationParameters,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        StringBuilder builder = new();
+
+        if (queryElements.Length > 0)
+        {
+            builder.Append(" AND EdfiDoc @> '{");
+            foreach (QueryElement queryElement in queryElements)
+            {
+                builder.Append('"');
+                builder.Append(queryElement.QueryFieldName);
+                // WARNING! Not protecting against SQL injection yet. This is deliberately quick-and-dirty.
+                builder.Append("\": \"");
+                builder.Append(queryElement.Value);
+                builder.Append('"');
+                builder.Append(',');
+            }
+
+            // Remove the last comma
+            builder.Remove(builder.Length - 1, 1);
+
+            builder.Append("}'");
+        }
+
+        var sql =
+            @$"SELECT EdfiDoc
+            FROM dms.Document
+            WHERE ResourceName = $1 {builder}
+            ORDER BY CreatedAt
+            OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;";
+
+        _logger.LogDebug(
+            "Executing SQL: {Sql} with parameters: {Parameters}",
+            sql,
+            new object[] { resourceName, paginationParameters.Offset ?? 0, paginationParameters.Limit ?? 25 }
+        );
+
+        await using NpgsqlCommand command = new(sql, connection, transaction)
+        {
+            Parameters =
+            {
+                new() { Value = resourceName },
+                new() { Value = paginationParameters.Offset ?? 0 },
+                new() { Value = paginationParameters.Limit ?? 25 },
+            },
+        };
+
+        await command.PrepareAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+
+        var documents = new List<JsonNode>();
+
+        while (await reader.ReadAsync())
+        {
+            JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+
+            if (edfiDoc != null)
+            {
+                documents.Add(edfiDoc);
+            }
+        }
+
+        return new(documents.ToArray());
     }
 
     /// <summary>

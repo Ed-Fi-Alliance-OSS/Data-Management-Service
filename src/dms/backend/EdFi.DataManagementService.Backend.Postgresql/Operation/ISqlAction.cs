@@ -156,4 +156,13 @@ public interface ISqlAction
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
+
+    public Task<JsonArray> GetByQuery(
+        string resourceName,
+        QueryElement[] queryElements,
+        PaginationParameters paginationParameters,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
 }
