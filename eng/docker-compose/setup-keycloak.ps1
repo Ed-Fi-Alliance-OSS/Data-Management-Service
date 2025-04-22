@@ -389,15 +389,17 @@ function Create_Client() {
 }
 
 # Keycloak health check
-try {
-    Invoke-RestMethod -Method Get `
-        -Uri "$KeycloakServer/realms/master" `
-        -TimeoutSec 5
-    Write-Output "Keycloak is running."
-}
-catch {
-    Write-Error "Keycloak is not running. Please start Keycloak and try again."
-    exit
+while ($true) {
+    try {
+        $response = Invoke-WebRequest -Uri $KeycloakServer/realms/master -Method Get -TimeoutSec 5 -UseBasicParsing
+        if ($response.StatusCode -eq 200) {
+            Write-Output "Keycloak is running."
+            break
+        }
+    } catch {
+    }
+    Write-Output "Keycloak is not running. Retrying in 5 seconds..."
+    Start-Sleep -Seconds 5
 }
 
 # Get access token

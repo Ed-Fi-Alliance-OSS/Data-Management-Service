@@ -158,7 +158,7 @@ jobs:
         with:
           name: test-logs
           path: |
-            ./src/services/EdFi.DmsConfigurationService.Api.Tests.E2E/bin/Debug/net8.0/logs
+            ./src/services/EdFi.DmsConfigurationService.Api.Tests.E2E/bin/Release/net8.0/logs
           retention-days: 10
 
       - name: Upload Test Results
