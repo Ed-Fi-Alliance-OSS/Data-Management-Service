@@ -3,8 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
 
@@ -38,26 +42,60 @@ public interface IContentProvider
     /// </summary>
     /// <param name="fileNamePattern"></param>
     /// <param name="fileExtension"></param>
+    /// <param name="section"></param>
     /// <returns></returns>
-    IEnumerable<string> Files(string fileNamePattern, string fileExtension);
+    IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section);
 }
 
 /// <summary>
 /// Loads and parses the file content.
 /// </summary>
-public class ContentProvider(ILogger<ContentProvider> _logger, IAssemblyProvider _assemblyProvider) : IContentProvider
-{
-    private readonly Type _dataStandardMarker = typeof(DataStandard52.ApiSchema.Marker);
 
-    public IEnumerable<string> Files(string fileNamePattern, string fileExtension)
+public class ContentProvider(ILogger<ContentProvider> _logger, IOptions<AppSettings> appSettings, IAssemblyLoader assemblyLoader) : IContentProvider
+{
+
+    public IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section)
     {
+        string apiSchemaPath;
+        string[] assemblies;
         var files = new List<string>();
-        var assembly = _assemblyProvider.GetAssemblyByType(_dataStandardMarker);
-        foreach (string resourceName in assembly.GetManifestResourceNames())
+        section = section == "ed-fi" ? "DataStandard52" : section;
+        if (appSettings.Value.UseApiSchemaPath)
         {
-            if (resourceName.Contains(fileNamePattern) && resourceName.EndsWith(fileExtension))
+            apiSchemaPath = appSettings.Value.ApiSchemaPath ?? throw new InvalidOperationException("ApiSchemaPath is not configured in AppSettings.");
+        }
+        else
+        {
+            apiSchemaPath = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
+        }
+
+        assemblies = Directory
+                    .EnumerateFiles(apiSchemaPath, "*.*", SearchOption.AllDirectories)
+                    .Where(f =>
+                        Path.GetFileName(f).EndsWith(".dll", StringComparison.OrdinalIgnoreCase) &&
+                        Path.GetFileName(f).StartsWith($"EdFi.{section}.ApiSchema", StringComparison.OrdinalIgnoreCase))
+                    .GroupBy(Path.GetFileName)
+                    .Select(g => g.First())
+                    .ToArray();
+
+        assemblies = assemblies
+                    .GroupBy(Path.GetFileName)
+                    .Select(g => g.First())
+                    .ToArray();
+
+        foreach (var assemblyPath in assemblies)
+        {
+            _logger.LogInformation("assemblyPath is {AssemblyPath}", assemblyPath);
+            var assembly = assemblyLoader.Load(assemblyPath);
+            foreach (string resourceName in assembly.GetManifestResourceNames())
             {
-                files.Add(resourceName);
+                if (resourceName.Contains(fileNamePattern, StringComparison.OrdinalIgnoreCase)
+                    && resourceName.EndsWith(fileExtension)
+                    && !files.Contains(resourceName))
+                {
+                    files.Add(resourceName);
+                     _logger.LogInformation("resourceName is {ResourceName}", resourceName);
+                }
             }
         }
 
@@ -114,27 +152,67 @@ public class ContentProvider(ILogger<ContentProvider> _logger, IAssemblyProvider
         return new Lazy<Stream>(GetStream(fileName, ".xsd"));
     }
 
-    private Stream GetStream(string fileNamePattern, string fileExtension)
+    public Stream GetStream(string fileNamePattern, string fileExtension)
     {
-        var assembly = _assemblyProvider.GetAssemblyByType(_dataStandardMarker);
-        var resourceName = assembly
-            .GetManifestResourceNames()
-            .SingleOrDefault(str => str.Contains(fileNamePattern) && str.EndsWith(fileExtension));
-        if (resourceName == null)
+        string apiSchemaPath;
+        string searchPattern;
+        if (appSettings.Value.UseApiSchemaPath)
         {
-            var error = $"{fileNamePattern} not found";
-            _logger.LogCritical(error);
-            throw new InvalidOperationException(error);
+            apiSchemaPath = appSettings.Value.ApiSchemaPath ?? throw new InvalidOperationException("ApiSchemaPath is not configured in AppSettings.");
+        }
+        else
+        {
+            apiSchemaPath = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
         }
 
-        Stream? stream = assembly.GetManifestResourceStream(resourceName);
-        if (stream == null)
+        searchPattern = "*.ApiSchema.dll";
+        var assemblies = Directory.GetFiles(apiSchemaPath, searchPattern, SearchOption.AllDirectories);
+        assemblies = assemblies
+                    .GroupBy(Path.GetFileName)
+                    .Select(g => g.First())
+                    .ToArray();
+
+        foreach (var assemblyPath in assemblies)
         {
-            var error = $"Couldn't load {resourceName}";
-            _logger.LogCritical(error);
-            throw new InvalidOperationException(error);
+            var assembly = assemblyLoader.Load(assemblyPath);
+            var resourceName = assembly
+                .GetManifestResourceNames()
+                .SingleOrDefault(str => str.Contains(fileNamePattern, StringComparison.OrdinalIgnoreCase) && str.EndsWith(fileExtension));
+
+            if (resourceName != null)
+            {
+                var stream = assembly.GetManifestResourceStream(resourceName);
+                if (stream != null)
+                {
+                    return stream;
+                }
+            }
         }
 
-        return stream;
+        var error = $"Couldn't load find the resource";
+        _logger.LogCritical(error);
+        throw new InvalidOperationException(error);
+    }
+
+}
+/// <summary>
+/// Returns ApiSchemaAssemblyLoadContext for loading Assembly Context
+/// </summary>
+public class ApiSchemaAssemblyLoadContext : AssemblyLoadContext
+{
+    public ApiSchemaAssemblyLoadContext() : base(isCollectible: true) { }
+}
+
+public interface IAssemblyLoader
+{
+    Assembly Load(string path);
+}
+
+public class ApiSchemaAssemblyLoader : IAssemblyLoader
+{
+    public Assembly Load(string path)
+    {
+        var context = new ApiSchemaAssemblyLoadContext();
+        return context.LoadFromAssemblyPath(path);
     }
 }

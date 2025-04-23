@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using EdFi.DataManagementService.Tests.E2E.Authorization;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
@@ -453,35 +454,35 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonNode responseJson = JsonNode.Parse(responseBody)!;
 
             var dependenciesSchema = """
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "array",
-  "items":
-    {
-      "type": "object",
-      "properties": {
-        "resource": {
-          "type": "string"
-        },
-        "order": {
-          "type": "integer"
-        },
-        "operations": {
-          "type": "array",
-          "items":
-            {
-              "type": "string"
-            }
-        }
-      },
-      "required": [
-        "resource",
-        "order",
-        "operations"
-      ]
-    }
-}
-""";
+                {
+                  "$schema": "https://json-schema.org/draft/2020-12/schema",
+                  "type": "array",
+                  "items":
+                    {
+                      "type": "object",
+                      "properties": {
+                        "resource": {
+                          "type": "string"
+                        },
+                        "order": {
+                          "type": "integer"
+                        },
+                        "operations": {
+                          "type": "array",
+                          "items":
+                            {
+                              "type": "string"
+                            }
+                        }
+                      },
+                      "required": [
+                        "resource",
+                        "order",
+                        "operations"
+                      ]
+                    }
+                }
+                """;
             var schema = JsonSchema.FromText(dependenciesSchema);
 
             EvaluationOptions validatorEvaluationOptions = new()
@@ -500,11 +501,21 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await ResponseBodyIs(expectedBody);
         }
 
-        private async Task ResponseBodyIs(string expectedBody, bool IsDiscoveryEndpoint = false)
+        private async Task ResponseBodyIs(string expectedBody, bool IsDiscoveryEndpoint = false, bool isXml = false)
         {
-            // Parse the API response to JsonNode
-            string responseJsonString = await _apiResponse.TextAsync();
-            JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
+            string responseContent = await _apiResponse.TextAsync();
+
+            if (isXml)
+            {
+                var actualXml = XDocument.Parse(responseContent.Trim());
+                var expectedXml = XDocument.Parse(expectedBody.Trim());
+
+                actualXml.ToString().Should().Be(expectedXml.ToString(),
+                    $"Expected:\n{expectedXml}\n\nActual:\n{actualXml}");
+                return;
+            }
+
+            JsonDocument responseJsonDoc = JsonDocument.Parse(responseContent);
             JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
             if (!IsDiscoveryEndpoint && (_apiResponse.Status == 200 || _apiResponse.Status == 201))
@@ -537,6 +548,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task ThenTheGeneralResponseBodyIs(string expectedBody)
         {
             await ResponseBodyIs(expectedBody, true);
+        }
+
+        [Then("the xsd response body is")]
+        public async Task ThenTheXsdResponseBodyIs(string expectedBody)
+        {
+            await ResponseBodyIs(expectedBody, true, true);
         }
 
         /// <summary>

@@ -36,6 +36,7 @@ public static class WebApplicationBuilderExtensions
                 logger,
                 webAppBuilder.Configuration.GetSection("CircuitBreaker")
             )
+            .AddTransient<IAssemblyLoader, ApiSchemaAssemblyLoader>()
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
