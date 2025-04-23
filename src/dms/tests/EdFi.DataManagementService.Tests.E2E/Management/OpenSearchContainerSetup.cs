@@ -37,10 +37,7 @@ public class OpenSearchContainerSetup : ContainerSetupBase
 
         foreach (
             var index in indices.Records.Where(x =>
-                (
-                    x.Index.Contains("ed-fi$")
-                    && !x.Index.Equals("ed-fi$schoolyeartype", StringComparison.InvariantCultureIgnoreCase)
-                )
+                x.Index.Contains("ed-fi$")
                 || x.Index.Contains("tpdm$")
                 || x.Index.Contains("sample$")
                 || x.Index.Contains("homograph$")
