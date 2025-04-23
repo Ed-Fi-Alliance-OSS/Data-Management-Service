@@ -341,7 +341,7 @@ public class ExtractSecurityElementsTests
                 .WithStartResource("CourseTranscript")
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
-                .WithStudentSecurityElements(["$.studentReference.studentId"])
+                .WithStudentSecurityElements([])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();

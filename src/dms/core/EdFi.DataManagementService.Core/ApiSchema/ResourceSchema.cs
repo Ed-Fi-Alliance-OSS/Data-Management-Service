@@ -341,12 +341,12 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
 
     private readonly Lazy<IEnumerable<JsonPath>> _namespaceSecurityElementPaths = new(() =>
     {
-        return _resourceSchemaNode["securityElements"]
+        return _resourceSchemaNode["securableElements"]
                 ?["Namespace"]?.AsArray()
                 .GetValues<string>()
                 .Select(x => new JsonPath(x))
             ?? throw new InvalidOperationException(
-                "Expected securityElements.Namespace to be on ResourceSchema, invalid ApiSchema"
+                "Expected securableElements.Namespace to be on ResourceSchema, invalid ApiSchema"
             );
     });
 
@@ -360,33 +360,16 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         IEnumerable<EducationOrganizationSecurityElementPath>
     > _educationOrganizationSecurityElementPaths = new(() =>
     {
-        return _resourceSchemaNode["securityElements"]
+        return _resourceSchemaNode["securableElements"]
                 ?["EducationOrganization"]?.AsArray()
                 .Select(x => new EducationOrganizationSecurityElementPath(
                     new ResourceName(x!["metaEdName"]!.GetValue<string>()),
                     new JsonPath(x!["jsonPath"]!.GetValue<string>())
                 ))
             ?? throw new InvalidOperationException(
-                "Expected securityElements.EducationOrganization to be on ResourceSchema, invalid ApiSchema"
+                "Expected securableElements.EducationOrganization to be on ResourceSchema, invalid ApiSchema"
             );
     });
-
-    private readonly Lazy<IEnumerable<JsonPath>> _studentAuthorizationSecurablePaths = new(() =>
-    {
-        return _resourceSchemaNode["authorizationSecurable"]
-                ?["Student"]?.AsArray()
-                .GetValues<string>()
-                .Select(x => new JsonPath(x))
-            ?? throw new InvalidOperationException(
-                "Expected authorizationsecurable.Student to be on ResourceSchema, invalid ApiSchema"
-            );
-    });
-
-    /// <summary>
-    /// A list of the JsonPaths that are authorizationSecurable for type Student
-    /// </summary>
-    public IEnumerable<JsonPath> StudentAuthorizationSecurablePaths =>
-        _studentAuthorizationSecurablePaths.Value;
 
     /// <summary>
     /// A list of the ResourceNames and JsonPaths that are education organization security elements, for authorization.
@@ -397,12 +380,12 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
 
     private readonly Lazy<IEnumerable<JsonPath>> _studentSecurityElementPaths = new(() =>
     {
-        return _resourceSchemaNode["securityElements"]
+        return _resourceSchemaNode["securableElements"]
                 ?["Student"]?.AsArray()
                 .GetValues<string>()
                 .Select(path => new JsonPath(path))
             ?? throw new InvalidOperationException(
-                "Expected securityElements.Student to be on ResourceSchema, invalid ApiSchema"
+                "Expected securableElements.Student to be on ResourceSchema, invalid ApiSchema"
             );
     });
 

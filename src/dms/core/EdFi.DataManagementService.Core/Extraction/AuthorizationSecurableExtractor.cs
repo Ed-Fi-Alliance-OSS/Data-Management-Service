@@ -19,7 +19,7 @@ internal static class AuthorizationSecurableExtractor
         this ResourceSchema resourceSchema
     )
     {
-        var securablePaths = resourceSchema.StudentAuthorizationSecurablePaths;
+        var securablePaths = resourceSchema.StudentSecurityElementPaths;
         if (!securablePaths.Any())
         {
             return [];
