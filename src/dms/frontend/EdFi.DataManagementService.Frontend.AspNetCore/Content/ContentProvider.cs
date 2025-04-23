@@ -94,7 +94,7 @@ public class ContentProvider(ILogger<ContentProvider> _logger, IOptions<AppSetti
                     && !files.Contains(resourceName))
                 {
                     files.Add(resourceName);
-                     _logger.LogInformation("resourceName is {ResourceName}", resourceName);
+                    _logger.LogInformation("resourceName is {ResourceName}", resourceName);
                 }
             }
         }
