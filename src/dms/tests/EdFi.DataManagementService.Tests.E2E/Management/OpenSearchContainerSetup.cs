@@ -37,7 +37,10 @@ public class OpenSearchContainerSetup : ContainerSetupBase
 
         foreach (
             var index in indices.Records.Where(x =>
-                x.Index.Contains("ed-fi$")
+                (
+                    x.Index.Contains("ed-fi$")
+                    && !x.Index.Equals("ed-fi$schoolyeartype", StringComparison.InvariantCultureIgnoreCase)
+                )
                 || x.Index.Contains("tpdm$")
                 || x.Index.Contains("sample$")
                 || x.Index.Contains("homograph$")
@@ -48,8 +51,6 @@ public class OpenSearchContainerSetup : ContainerSetupBase
             )
         )
         {
-            //Preserved index: ed-fi$schoolyeartype
-            // Delete the index
             await openSearchClient.Indices.DeleteAsync(index.Index);
 
             // Recreate the index with default or custom settings if needed
