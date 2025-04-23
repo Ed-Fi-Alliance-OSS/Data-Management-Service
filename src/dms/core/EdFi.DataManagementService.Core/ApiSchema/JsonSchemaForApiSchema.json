@@ -243,18 +243,49 @@
                         "resourceName": {
                             "type": "string"
                         },
-                        "securityElements": {
+                        "securableElements": {
                             "type": "object",
                             "properties": {
                                 "Namespace": {
                                     "type": "array",
                                     "items": {
-                                        "$ref": "#/definitions/JsonPath"
+                                        "type": "string"
+                                    }
+                                },
+                                "EducationOrganization": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "jsonPath": {
+                                                "type": "string"
+                                            },
+                                            "metaEdName": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [ "jsonPath", "metaEdName" ],
+                                        "additionalProperties": false
+                                    }
+                                },
+                                "Student": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                },
+                                "Contact": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
                                     }
                                 }
                             },
                             "required": [
-                                "Namespace"
+                                "Namespace",
+                                "EducationOrganization",
+                                "Student",
+                                "Contact"
                             ]
                         },
                         "subclassType": {

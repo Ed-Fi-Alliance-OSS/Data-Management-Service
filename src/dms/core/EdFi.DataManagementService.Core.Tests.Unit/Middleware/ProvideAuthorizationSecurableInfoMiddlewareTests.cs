@@ -36,7 +36,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
             ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Student")
-                .WithStudentAuthorizationSecurablePaths(["$.studentUniqueId"]) // This indicates that the StudentUniqueId should be extracted for authorization
+                .WithStudentSecurityElements(["$.studentUniqueId"]) // This indicates that the StudentUniqueId should be extracted for authorization
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
                 .WithEndDocumentPathsMapping()
@@ -93,7 +93,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
             ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Student")
-                .WithStudentAuthorizationSecurablePaths([]) // No paths specified for StudentAuthorizationSecurable
+                .WithStudentSecurityElements([]) // No paths specified for Student Securable elements
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
                 .WithEndDocumentPathsMapping()

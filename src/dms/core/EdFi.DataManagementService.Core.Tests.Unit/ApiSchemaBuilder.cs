@@ -166,9 +166,8 @@ public class ApiSchemaBuilder
             ["numericJsonPaths"] = new JsonArray(),
             ["resourceName"] = resourceName,
             ["queryFieldMapping"] = new JsonObject(),
-            ["securityElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
+            ["securableElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
             ["authorizationPathways"] = new JsonArray(),
-            ["authorizationSecurable"] = new JsonObject { ["Student"] = new JsonArray() },
         };
 
         string endpointName = ToEndpointName(resourceName);
@@ -304,7 +303,7 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
-        _currentResourceNode["securityElements"]!["Namespace"] = new JsonArray(
+        _currentResourceNode["securableElements"]!["Namespace"] = new JsonArray(
             jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
         );
 
@@ -325,28 +324,10 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
-        _currentResourceNode["securityElements"]!["EducationOrganization"] = new JsonArray(
+        _currentResourceNode["securableElements"]!["EducationOrganization"] = new JsonArray(
             jsonPaths
                 .Select(x => new JsonObject { ["metaEdName"] = x.Item1, ["jsonPath"] = x.Item2 })
                 .ToArray()
-        );
-
-        return this;
-    }
-
-    public ApiSchemaBuilder WithStudentAuthorizationSecurablePaths(string[] jsonPaths)
-    {
-        if (_currentProjectNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-        if (_currentResourceNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-
-        _currentResourceNode["authorizationSecurable"]!["Student"] = new JsonArray(
-            jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
         );
 
         return this;
@@ -366,7 +347,7 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
-        _currentResourceNode["securityElements"]!["Student"] = new JsonArray(
+        _currentResourceNode["securableElements"]!["Student"] = new JsonArray(
             jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
         );
 
