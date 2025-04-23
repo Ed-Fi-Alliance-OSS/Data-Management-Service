@@ -78,10 +78,6 @@ public class ContentProvider(ILogger<ContentProvider> _logger, IOptions<AppSetti
                     .Select(g => g.First())
                     .ToArray();
 
-        assemblies = assemblies
-                    .GroupBy(Path.GetFileName)
-                    .Select(g => g.First())
-                    .ToArray();
 
         foreach (var assemblyPath in assemblies)
         {
