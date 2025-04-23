@@ -69,8 +69,18 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         {
             var baseUrl = httpContext.Request.UrlWithPathSegment().Replace("files", "");
             var withFullPath = new List<string>();
-            var xsdFiles = contentProvider.Files("ApiSchema.xsd", ".xsd");
-            withFullPath.AddRange(from xsdFile in xsdFiles select $"{baseUrl}{xsdFile}");
+            section = section == "ed-fi" ? "DataStandard52" : section;
+            var searchPattern = $"EdFi.{section}.ApiSchema";
+            var xsdFiles = contentProvider.Files(searchPattern, ".xsd", section);
+
+            if (xsdFiles.Any())
+            {
+                withFullPath.AddRange(from xsdFile in xsdFiles select $"{baseUrl}{xsdFile}");
+            }
+            else
+            {
+                withFullPath.Add("No XSD files found for extension.");
+            }
             await httpContext.Response.WriteAsSerializedJsonAsync(withFullPath);
         }
         else
@@ -88,9 +98,10 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         {
             return Results.NotFound(ErrorResourcePath);
         }
+        string section = match.Groups["section"].Value;
         var fileName = match.Groups["fileName"].Value;
         var fileFullName = $"{fileName}.xsd";
-        var files = contentProvider.Files(fileFullName, ".xsd");
+        var files = contentProvider.Files(fileFullName, ".xsd", section);
         if (files.Any())
         {
             var content = contentProvider.LoadXsdContent(fileFullName);
