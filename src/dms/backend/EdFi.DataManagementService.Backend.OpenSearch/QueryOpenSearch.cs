@@ -163,7 +163,25 @@ public static partial class QueryOpenSearch
                             },
                         });
 
-                    JsonObject[] strategyFilters = namespaceFilters.Union(edOrgFilters).ToArray();
+                    IEnumerable<JsonObject> studentUniqueIdFilters = strategyEvaluator
+                        .Filters.Where(f => f.FilterPath == SecurityElementNameConstants.StudentUniqueId)
+                        .Select(filter => new JsonObject
+                        {
+                            ["terms"] = new JsonObject
+                            {
+                                [$"studentSchoolAuthorizationEdOrgIds"] = new JsonObject
+                                {
+                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                    ["id"] = filter.Value,
+                                    ["path"] = "hierarchy.array",
+                                },
+                            },
+                        });
+
+                    JsonObject[] strategyFilters = namespaceFilters
+                        .Union(edOrgFilters)
+                        .Union(studentUniqueIdFilters)
+                        .ToArray();
 
                     if (strategyFilters.Any())
                     {
