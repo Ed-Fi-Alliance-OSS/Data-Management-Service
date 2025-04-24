@@ -42,12 +42,15 @@ public class OpenApiDocument(ILogger _logger)
             // If _ext has already been added by another extension, we don't support a second one
             if (locationForExt["_ext"] != null)
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second _ext to '$.components.schemas.{componentSchemaName}.properties', which is not supported. Extension fragment validation failed?"
+                _logger.LogError(
+                    "OpenAPI extension fragment tried to add a second _ext to '$.components.schemas.{ComponentSchemaName}.properties', which is not supported. Extension fragment validation failed?",
+                    componentSchemaName
                 );
             }
-
-            locationForExt.Add("_ext", extObject.DeepClone());
+            else
+            {
+                locationForExt.Add("_ext", extObject.DeepClone());
+            }
         }
     }
 
@@ -73,12 +76,15 @@ public class OpenApiDocument(ILogger _logger)
             // If pathName has already been added by another extension, we don't support a second one
             if (locationForPaths[pathName] != null)
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second path '$.paths.{pathName}', which is not supported. Extension fragment validation failed?"
+                _logger.LogError(
+                    "OpenAPI extension fragment tried to add a second path '$.paths.{PathName}', which is not supported. Extension fragment validation failed?",
+                    pathName
                 );
             }
-
-            locationForPaths.Add(pathName, pathObject.DeepClone());
+            else
+            {
+                locationForPaths.Add(pathName, pathObject.DeepClone());
+            }
         }
     }
 
@@ -104,12 +110,15 @@ public class OpenApiDocument(ILogger _logger)
             // If schemaName has already been added by another extension, we don't support a second one
             if (locationForSchemas[schemaName] != null)
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second schema '$.components.schemas.{schemaName}', which is not supported. Extension fragment validation failed?"
+                _logger.LogError(
+                    "OpenAPI extension fragment tried to add a second schema '$.components.schemas.{SchemaName}', which is not supported. Extension fragment validation failed?",
+                    schemaName
                 );
             }
-
-            locationForSchemas.Add(schemaName, schemaObject.DeepClone());
+            else
+            {
+                locationForSchemas.Add(schemaName, schemaObject.DeepClone());
+            }
         }
     }
 
@@ -159,12 +168,15 @@ public class OpenApiDocument(ILogger _logger)
             // If tag has already been added by another extension, we don't support a second one
             if (existingTagNames.Contains(tagObjectName))
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second tag named '{tagObjectName}', which is not supported. Extension fragment validation failed?"
+                _logger.LogError(
+                    "OpenAPI extension fragment tried to add a second tag named - {TagObjectName}, which is not supported. Extension fragment validation failed?",
+                    tagObjectName
                 );
             }
-
-            globalTags.Add(newTagObject.DeepClone());
+            else
+            {
+                globalTags.Add(newTagObject.DeepClone());
+            }
         }
     }
 
