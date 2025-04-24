@@ -25,10 +25,18 @@ public class ProvideAuthorizationPathwayMiddlewareTests
 
     private readonly PipelineContext _context = No.PipelineContext();
 
-    private readonly ApiSchemaDocuments _apiSchemaDocument = new ApiSchemaBuilder()
+    private readonly ApiSchemaDocuments _studentSchoolAssociationApiSchma = new ApiSchemaBuilder()
         .WithStartProject()
         .WithStartResource("StudentSchoolAssociation")
         .WithAuthorizationPathways(["StudentSchoolAssociationAuthorization"])
+        .WithEndResource()
+        .WithEndProject()
+        .ToApiSchemaDocuments();
+
+    private readonly ApiSchemaDocuments _studentContactAssociationApiSchma = new ApiSchemaBuilder()
+        .WithStartProject()
+        .WithStartResource("StudentContactAssociation")
+        .WithAuthorizationPathways(["ContactStudentSchoolAuthorization"])
         .WithEndResource()
         .WithEndProject()
         .ToApiSchemaDocuments();
@@ -39,7 +47,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _apiSchemaDocument.GetCoreProjectSchema();
+            _context.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
             _context.ResourceSchema = new ResourceSchema(
                 _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
             );
@@ -52,7 +60,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                         new EducationOrganizationId(123)
                     ),
                 ],
-                [new StudentUniqueId("987")]
+                [new StudentUniqueId("987")],
+                []
             );
             _context.Method = RequestMethod.POST;
         }
@@ -83,7 +92,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _apiSchemaDocument.GetCoreProjectSchema();
+            _context.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
             _context.ResourceSchema = new ResourceSchema(
                 _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
             );
@@ -171,7 +180,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                         new EducationOrganizationId(123)
                     ),
                 ],
-                [new StudentUniqueId("987")]
+                [new StudentUniqueId("987")],
+                []
             );
             _context.Method = RequestMethod.POST;
         }
@@ -193,7 +203,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _apiSchemaDocument.GetCoreProjectSchema();
+            _context.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
             _context.ResourceSchema = new ResourceSchema(
                 _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
             );
@@ -206,6 +216,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                         new EducationOrganizationId(123)
                     ),
                 ],
+                [],
                 []
             );
             _context.Method = RequestMethod.POST;
@@ -228,7 +239,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _apiSchemaDocument.GetCoreProjectSchema();
+            _context.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
             _context.ResourceSchema = new ResourceSchema(
                 _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
             );
@@ -236,7 +247,162 @@ public class ProvideAuthorizationPathwayMiddlewareTests
             _context.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [],
-                [new StudentUniqueId("987")]
+                [new StudentUniqueId("987")],
+                []
+            );
+            _context.Method = RequestMethod.POST;
+        }
+
+        [Test]
+        public void Throws_exception()
+        {
+            // Act & Assert
+            Assert.ThrowsAsync<InvalidOperationException>(
+                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_StudentContactAssociation_Post : ProvideAuthorizationPathwayMiddlewareTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            _context.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StudentContactAssociations")
+                )!
+            );
+
+            _context.DocumentSecurityElements = new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("School"),
+                        new EducationOrganizationId(123)
+                    ),
+                ],
+                [new StudentUniqueId("987")],
+                [new ContactUniqueId("898")]
+            );
+            _context.Method = RequestMethod.POST;
+        }
+
+        [Test]
+        public async Task Initializes_StudentContactAssociationAuthorizationPathway_In_The_Pipeline_Context()
+        {
+            // Act
+            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+
+            // Assert
+            _context.AuthorizationPathways.Count.Should().Be(1);
+            _context
+                .AuthorizationPathways.Single()
+                .Should()
+                .BeOfType<AuthorizationPathway.StudentContactAssociation>();
+
+            var pathway = (AuthorizationPathway.StudentContactAssociation)
+                _context.AuthorizationPathways.Single();
+            pathway.StudentUniqueId.Should().Be(new StudentUniqueId("987"));
+            pathway.ContactUniqueId.Should().Be(new ContactUniqueId("898"));
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_StudentContactAssociation_Get : ProvideAuthorizationPathwayMiddlewareTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            _context.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StudentContactAssociations")
+                )!
+            );
+
+            _context.Method = RequestMethod.GET;
+        }
+
+        [Test]
+        public async Task Initializes_StudentContactAssociationAuthorizationPathway_In_The_Pipeline_Context()
+        {
+            // Act
+            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+
+            // Assert
+            _context.AuthorizationPathways.Count.Should().Be(1);
+            _context
+                .AuthorizationPathways.Single()
+                .Should()
+                .BeOfType<AuthorizationPathway.StudentContactAssociation>();
+
+            var pathway = (AuthorizationPathway.StudentContactAssociation)
+                _context.AuthorizationPathways.Single();
+            pathway.StudentUniqueId.Should().Be(default(StudentUniqueId));
+            pathway.ContactUniqueId.Should().Be(default(ContactUniqueId));
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_StudentContactAssociation_Post_With_No_StudentId
+        : ProvideAuthorizationPathwayMiddlewareTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            _context.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StudentContactAssociations")
+                )!
+            );
+
+            _context.DocumentSecurityElements = new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("School"),
+                        new EducationOrganizationId(123)
+                    ),
+                ],
+                [],
+                [new ContactUniqueId("898")]
+            );
+            _context.Method = RequestMethod.POST;
+        }
+
+        [Test]
+        public void Throws_exception()
+        {
+            // Act & Assert
+            Assert.ThrowsAsync<InvalidOperationException>(
+                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_StudentContactAssociation_Post_With_No_ContactUniqueId
+        : ProvideAuthorizationPathwayMiddlewareTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            _context.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StudentContactAssociations")
+                )!
+            );
+
+            _context.DocumentSecurityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId("987")],
+                []
             );
             _context.Method = RequestMethod.POST;
         }
