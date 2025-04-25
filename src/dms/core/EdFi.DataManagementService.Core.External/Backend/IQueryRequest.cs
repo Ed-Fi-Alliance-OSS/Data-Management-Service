@@ -23,6 +23,10 @@ public interface IQueryRequest
     QueryElement[] QueryElements { get; }
 
     /// <summary>
+    /// Collection of authorization securable info
+    /// </summary>
+    public AuthorizationSecurableInfo[] AuthorizationSecurableInfo { get; }
+
     /// Collection of authorization strategy filters, each specifying
     /// collection of filters and filter operator
     /// </summary>
