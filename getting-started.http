@@ -2,6 +2,11 @@
 @dmsPort=8080
 @configPort=8081
 
+# Switch to the following values if running the apps from the command line
+# instead of Docker
+# @dmsPort=5198
+# @configPort=5126
+
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=s3creT@09
 
@@ -208,6 +213,10 @@ Content-Type: application/json
   "codeValue": "Ninth Grade",
   "shortDescription": "9th Grade"
 }
+
+###
+GET {{dataApi}}/ed-fi/gradeLevelDescriptors?codeValue=Ninth+Grade
+Authorization: bearer {{edOrgToken}}
 
 ###
 POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
