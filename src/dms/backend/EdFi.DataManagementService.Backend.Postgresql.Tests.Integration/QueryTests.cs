@@ -215,4 +215,138 @@ public class QueryTests : DatabaseTest
             (_queryResults2! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(null);
         }
     }
+
+    [TestFixture]
+    public class Given_insert_of_several_descriptors : QueryTests
+    {
+        private QueryResult? _queryByResource;
+        private QueryResult? _queryByCodeValue;
+        private QueryResult? _queryByNamespace;
+        private QueryResult? _queryByTwo;
+
+        private static readonly string _edFiDocString1 =
+            """{"codeValue":"abc","shortDescription":"1","namespace":"uri://one"}""";
+        private static readonly string _edFiDocString2 =
+            """{"codeValue":"def","shortDescription":"2","namespace":"uri://one"}""";
+        private static readonly string _edFiDocString3 =
+            """{"codeValue":"ghi","shortDescription":"3","namespace":"uri://two"}""";
+        private static readonly string _edFiDocString4 =
+            """{"codeValue":"def","shortDescription":"4","namespace":"uri://three"}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var setupIndex =
+                @"
+CREATE EXTENSION IF NOT EXISTS btree_gin;
+CREATE INDEX IF NOT EXISTS IX_Document_GIN on dms.document USING gin(EdfiDoc jsonb_path_ops, ResourceName);
+";
+
+            var command = Connection!.CreateCommand();
+            command.CommandText = setupIndex;
+            command.Transaction = Transaction;
+            await command.ExecuteNonQueryAsync();
+
+            var requests = CreateMultipleInsertRequest(
+                "SomeDescriptor",
+                [_edFiDocString1, _edFiDocString2, _edFiDocString3, _edFiDocString4]
+            );
+
+            foreach (var request in requests)
+            {
+                await CreateUpsert().Upsert(request, Connection!, Transaction!);
+            }
+
+            PaginationParameters paginationParameters = new(25, 0, false);
+
+            // Query by resource name
+            IQueryRequest queryRequest = CreateQueryRequest("SomeDescriptor", [], paginationParameters);
+            _queryByResource = await CreateQueryDocument()
+                .QueryDocuments(queryRequest, Connection!, Transaction!);
+
+            // Query by code value - expect 2
+            IQueryRequest queryRequest2 = CreateQueryRequest(
+                "SomeDescriptor",
+                new() { { "codeValue", "def" } },
+                paginationParameters
+            );
+            _queryByCodeValue = await CreateQueryDocument()
+                .QueryDocuments(queryRequest2, Connection!, Transaction!);
+
+            // Query by namespace - expect 2
+            IQueryRequest queryRequest3 = CreateQueryRequest(
+                "SomeDescriptor",
+                new() { { "namespace", "uri://one" } },
+                paginationParameters
+            );
+            _queryByNamespace = await CreateQueryDocument()
+                .QueryDocuments(queryRequest3, Connection!, Transaction!);
+
+            // Query by two parameters - expect 1
+            IQueryRequest queryRequest4 = CreateQueryRequest(
+                "SomeDescriptor",
+                new() { { "codeValue", "def" }, { "namespace", "uri://one" } },
+                paginationParameters
+            );
+            _queryByTwo = await CreateQueryDocument()
+                .QueryDocuments(queryRequest4, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void When_querying_by_resourceName_it_should_find_four_results()
+        {
+            _queryByResource!.Should().BeOfType<QueryResult.QuerySuccess>();
+            QueryResult.QuerySuccess success = (_queryByResource! as QueryResult.QuerySuccess)!;
+
+            success.EdfiDocs.Count.Should().Be(4);
+
+            var docString = success.EdfiDocs.ToJsonString();
+
+            docString.Should().Contain("1");
+            docString.Should().Contain("2");
+            docString.Should().Contain("3");
+            docString.Should().Contain("4");
+        }
+
+        [Test]
+        public void When_querying_by_codeValue_it_should_find_two_results()
+        {
+            _queryByCodeValue!.Should().BeOfType<QueryResult.QuerySuccess>();
+            QueryResult.QuerySuccess success = (_queryByCodeValue! as QueryResult.QuerySuccess)!;
+
+            success.EdfiDocs.Count.Should().Be(2);
+
+            var docString = success.EdfiDocs.ToJsonString();
+
+            docString.Should().Contain("2");
+            docString.Should().Contain("4");
+        }
+
+        [Test]
+        public void When_querying_by_namespace_it_should_find_two_results()
+        {
+            _queryByNamespace!.Should().BeOfType<QueryResult.QuerySuccess>();
+            QueryResult.QuerySuccess success = (_queryByNamespace! as QueryResult.QuerySuccess)!;
+
+            success.EdfiDocs.Count.Should().Be(2);
+
+            var docString = success.EdfiDocs.ToJsonString();
+
+            docString.Should().Contain("1");
+            docString.Should().Contain("2");
+        }
+
+        [Test]
+        public void When_querying_by_two_parameters_it_should_find_one_result()
+        {
+            _queryByTwo!.Should().BeOfType<QueryResult.QuerySuccess>();
+            QueryResult.QuerySuccess success = (_queryByTwo! as QueryResult.QuerySuccess)!;
+
+            success.EdfiDocs.Count.Should().Be(1);
+
+            var docString = success.EdfiDocs.ToJsonString();
+
+            docString.Should().Contain("2");
+        }
+    }
 }

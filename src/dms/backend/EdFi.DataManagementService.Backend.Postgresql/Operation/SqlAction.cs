@@ -150,50 +150,72 @@ public class SqlAction(ILogger<SqlAction> _logger) : ISqlAction
         TraceId traceId
     )
     {
-        StringBuilder builder = new();
+        // Consider adding: , SecurityElements, LastModifiedAt, LastModifiedTraceId, Id
+        StringBuilder builder = new(
+            @$"SELECT EdfiDoc
+            FROM dms.Document
+            WHERE ResourceName = $1"
+        );
+
+        // resourceName is parameter 1; start counting additional parameters at 2
+        var parameterIndex = 2;
 
         if (queryElements.Length > 0)
         {
-            builder.Append(" AND EdfiDoc @> '{");
+            // Use json_build_object to protect against SQL injection
+            builder.Append(" AND EdfiDoc @> json_build_object(");
             foreach (QueryElement queryElement in queryElements)
             {
-                builder.Append('"');
+                builder.Append('\'');
                 builder.Append(queryElement.QueryFieldName);
-                // WARNING! Not protecting against SQL injection yet. This is deliberately quick-and-dirty.
-                builder.Append("\": \"");
+                builder.Append("\', \'");
+                // TODO: handle data types; this will only work for strings
                 builder.Append(queryElement.Value);
-                builder.Append('"');
+                builder.Append('\'');
                 builder.Append(',');
             }
 
             // Remove the last comma
             builder.Remove(builder.Length - 1, 1);
 
-            builder.Append("}'");
+            builder.Append(")::jsonb");
         }
 
-        var sql =
-            @$"SELECT EdfiDoc
-            FROM dms.Document
-            WHERE ResourceName = $1 {builder}
+        builder.Append(
+            @"
             ORDER BY CreatedAt
-            OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;";
-
-        _logger.LogDebug(
-            "Executing SQL: {Sql} with parameters: {Parameters}",
-            sql,
-            new object[] { resourceName, paginationParameters.Offset ?? 0, paginationParameters.Limit ?? 25 }
+            OFFSET $"
         );
+        builder.Append(parameterIndex++);
+        builder.Append(" ROWS FETCH FIRST $");
+        builder.Append(parameterIndex);
+        builder.Append(" ROWS ONLY;");
+
+        var sql = builder.ToString();
+
+        // Does this need  {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)} ?
+
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "Executing SQL: {Sql} with parameters: {Parameters}",
+                sql,
+                new object[]
+                {
+                    resourceName,
+                    queryElements,
+                    paginationParameters.Offset ?? 0,
+                    paginationParameters.Limit ?? 25,
+                }
+            );
+        }
 
         await using NpgsqlCommand command = new(sql, connection, transaction)
         {
-            Parameters =
-            {
-                new() { Value = resourceName },
-                new() { Value = paginationParameters.Offset ?? 0 },
-                new() { Value = paginationParameters.Limit ?? 25 },
-            },
+            Parameters = { new() { Value = resourceName } },
         };
+        command.Parameters.Add(new() { Value = paginationParameters.Offset ?? 0 });
+        command.Parameters.Add(new() { Value = paginationParameters.Limit ?? 25 });
 
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
