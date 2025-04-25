@@ -26,7 +26,13 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
         NpgsqlTransaction transaction
     )
     {
-        _logger.LogDebug("Entering QueryDocument.QueryDocuments - {TraceId}", queryRequest.TraceId.Value);
+        if (_logger.IsEnabled(LogLevel.Debug))
+        {
+            _logger.LogDebug(
+                "Entering Postgresql.QueryDocument.QueryDocuments - {TraceId}",
+                queryRequest.TraceId.Value
+            );
+        }
         try
         {
             string resourceName = queryRequest.ResourceInfo.ResourceName.Value;
@@ -59,7 +65,7 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
         {
             _logger.LogError(
                 ex,
-                "QueryDocument.QueryDocuments failure - {TraceId}",
+                "Postgresql.QueryDocument.QueryDocuments failure - {TraceId}",
                 queryRequest.TraceId.Value
             );
             return new QueryResult.UnknownFailure("Unknown Failure");
