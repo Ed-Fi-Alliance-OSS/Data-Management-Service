@@ -131,7 +131,7 @@ public abstract class DatabaseTest : DatabaseTestBase
 
     protected static SqlAction CreateSqlAction()
     {
-        return new SqlAction();
+        return new SqlAction(NullLogger<SqlAction>.Instance);
     }
 
     protected static UpsertDocument CreateUpsert()
@@ -419,6 +419,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         TraceId? traceId = null
     )
     {
+        searchParameters = searchParameters ?? new();
+
         if (traceId == null)
         {
             traceId = new("NotProvided");
@@ -427,7 +429,11 @@ public abstract class DatabaseTest : DatabaseTestBase
             new
             {
                 ResourceInfo = CreateResourceInfo(resourceName),
-                SearchParameters = searchParameters,
+
+                QueryElements = searchParameters
+                    .AsQueryable()
+                    .Select(k => new QueryElement(k.Key, Array.Empty<JsonPath>(), k.Value))
+                    .ToArray(),
                 PaginationParameters = paginationParameters,
                 TraceId = traceId,
             }
