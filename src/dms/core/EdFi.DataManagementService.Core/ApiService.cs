@@ -154,6 +154,7 @@ internal class ApiService(
                     new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                     new ParsePathMiddleware(_logger),
                     new ValidateEndpointMiddleware(_logger),
+                    new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                     new BuildResourceInfoMiddleware(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
