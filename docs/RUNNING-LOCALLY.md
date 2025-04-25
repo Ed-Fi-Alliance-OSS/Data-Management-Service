@@ -1,10 +1,10 @@
 # Running the Application Locally
 
-> [!TIP]
-> This describes command line operations in the immediate "local"
-> context, without using Docker and not running the application in Docker.
+This describes command line operations in the immediate "local" context, without
+using Docker and not running the application in Docker.
 
-> [!NOTE] If using a custom connection string or custom app settings in your
+> [!NOTE]
+> If using a custom connection string or custom app settings in your
 > .NET application, it's highly recommended to add an
 > `appsettings.Development.json` file for your local development environment.
 > This file should be based on the `appsettings.json` file and can override
