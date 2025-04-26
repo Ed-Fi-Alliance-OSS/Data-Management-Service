@@ -30,12 +30,14 @@ The following three queries are equivalent:
 explain analyze 
 SELECT EdfiDoc
 FROM dms.Document
-WHERE ResourceName = 'SchoolYearType' AND EdfiDoc @> '{"schoolYear": 2020}';
+WHERE ResourceName = 'SchoolYearType'
+    AND EdfiDoc @> '{"schoolYear": 2020}';
 
 explain analyze
 SELECT EdfiDoc
 FROM dms.Document
-WHERE ResourceName = 'SchoolYearType' AND EdfiDoc @> json_build_object('schoolYear', 2020)::jsonb;
+WHERE ResourceName = 'SchoolYearType'
+    AND EdfiDoc @> json_build_object('schoolYear', 2020)::jsonb;
 
 explain analyze 
 SELECT EdfiDoc
@@ -48,6 +50,28 @@ With a small database (56 records), the query plan analysis makes it look like
 these would have differing performance, but the actual time to retrieve data is
 about the same in all cases. Need to perform more intensive testing to see if
 one approach is more productive than another.
+
+It should be easy to query on natural key elements inside references. The
+following three examples achieve the same goal: search by
+`schoolReference.schoolId` _and_ by `weekName`:
+
+```sql
+SELECT EdfiDoc
+FROM dms.Document
+WHERE ResourceName = 'AcademicWeek'
+    AND EdfiDoc @> '{"schoolReference":{"schoolId":255901}, "weekName": "two" }';
+
+SELECT EdfiDoc
+FROM dms.Document
+WHERE ResourceName = 'AcademicWeek' 
+    AND EdfiDoc @> json_build_object('schoolReference', json_build_object('schoolId', 255901), 'weekName', 'two')::jsonb;
+
+SELECT EdfiDoc 
+FROM dms.Document
+WHERE ResourceName = 'AcademicWeek' 
+  AND jsonb_path_exists(EdfiDoc, '$.schoolReference.schoolId ? (@ == 255901)')
+  AND jsonb_path_exists(EdFiDoc, '$.weekName ? (@ == "two")');
+```
 
 ## Authorization
 
