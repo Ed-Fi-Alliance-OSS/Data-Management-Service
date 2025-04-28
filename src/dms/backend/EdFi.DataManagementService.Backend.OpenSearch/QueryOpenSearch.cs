@@ -297,13 +297,18 @@ public static partial class QueryOpenSearch
                 }
             }
 #pragma warning restore S3267 // Loops should be simplified with "LINQ" expressions
-
-            terms.Add(
-                new JsonObject
-                {
-                    ["bool"] = new JsonObject { ["should"] = new JsonArray(authorizationFilters.ToArray()) },
-                }
-            );
+            if (authorizationFilters.Any())
+            {
+                terms.Add(
+                    new JsonObject
+                    {
+                        ["bool"] = new JsonObject
+                        {
+                            ["should"] = new JsonArray(authorizationFilters.ToArray()),
+                        },
+                    }
+                );
+            }
 
             JsonObject query = new()
             {
