@@ -43,7 +43,7 @@ public class OpenApiDocument(ILogger _logger)
                     $"OpenAPI extension fragment expects Core to have '$.components.schemas.{componentSchemaName}.properties'. Extension fragment validation failed?"
                 );
 
-            string extensionSchemaName = $"{componentSchemaName}Extensions";
+            string extensionSchemaName = $"{componentSchemaName}Extension";
 
             // Add _ext if is not already there
             if (locationForExt["_ext"] == null)
