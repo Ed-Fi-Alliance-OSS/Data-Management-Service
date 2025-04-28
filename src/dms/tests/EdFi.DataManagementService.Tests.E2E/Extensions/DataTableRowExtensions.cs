@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
                 WriteIndented = true
             };
 
-            var rowDict = new Dictionary<string, object>();
+            var rowDict = new Dictionary<string, object?>();
             foreach (var column in dataRow.Keys)
             {
                 rowDict[column] = ConvertValueToCorrectType(dataRow[column]);
@@ -29,7 +29,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
             return JsonSerializer.Serialize(rowDict, options);
         }
 
-        private static object ConvertValueToCorrectType(string value)
+        private static object? ConvertValueToCorrectType(string value)
         {
             // When other data type treated as string (ex: CalenderCode: "255901107")
             if (value.StartsWith('"') && value.EndsWith('"'))
@@ -77,6 +77,11 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
                     JsonDocument.Parse(value) ?? throw new InvalidOperationException($"Error while parsing {value}");
 
                 return document.RootElement.Clone();
+            }
+
+            if (value == "null")
+            {
+                return null;
             }
 
             return value;

@@ -31,6 +31,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _etag = string.Empty;
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
+        private ScenarioVariables _scenarioVariables = new();
         private string _dmsToken = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
         private Dictionary<string, string> _relationships = [];
@@ -56,6 +57,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         )
         {
             await SetAuthorizationToken("uri://ed-fi.org", educationOrganizationIds, claimSetName);
+        }
+
+        [Given("the resulting token is stored in the {string} variable")]
+        public void GivenTheResultingTokenIsStoredInTheVariable(string variableName)
+        {
+            _scenarioVariables.Add(variableName, _dmsToken);
+        }
+
+        [Given("the token gets switched to the one in the {string} variable")]
+        public void GivenTheTokenGetsSwitchedToTheOneInTheVariable(string variableName)
+        {
+            _dmsToken = _scenarioVariables.GetValueByName(variableName);
         }
 
         private async Task SetAuthorizationToken(
@@ -174,6 +187,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
                 // Add to relationship list
                 AddRelationships(_scenarioContext.ScenarioInfo.Tags, response, entityType);
+
+                if (
+                    row.TryGetValue("_storeResultingIdInVariable", out string variableName)
+                    && !string.IsNullOrWhiteSpace(variableName)
+                )
+                {
+                    _scenarioVariables.Add(
+                        variableName,
+                        extractDataFromResponseAndReturnIdIfAvailable(response)
+                    );
+                }
             }
 
             return _apiResponses;
@@ -260,6 +284,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await ExecutePostRequest(url, body);
         }
 
+        [Given("the resulting id is stored in the {string} variable")]
+        [When("the resulting id is stored in the {string} variable")]
+        public void WhenResultingIdStoredInTheVariable(string variableName)
+        {
+            _scenarioVariables.Add(variableName, _id);
+        }
+
         private async Task ExecutePostRequest(string url, string body)
         {
             _logger.log.Information($"POST url: {url}");
@@ -335,9 +366,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a PUT request is made to {string} with")]
         public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
         {
-            url = AddDataPrefixIfNecessary(url).Replace("{id}", _id).Replace("{dependentId}", _dependentId);
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
-            body = body.Replace("{id}", _id).Replace("{dependentId}", _dependentId);
+            body = body.Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
@@ -384,7 +421,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a DELETE request is made to {string}")]
         public async Task WhenADELETERequestIsMadeTo(string url)
         {
-            url = AddDataPrefixIfNecessary(url).Replace("{id}", _id);
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
                 url,
                 new() { Headers = GetHeaders() }
@@ -419,7 +459,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
-            url = AddDataPrefixIfNecessary(url).Replace("{id}", _id);
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
             _logger.log.Information(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 url,
@@ -708,7 +751,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     }
                 );
             }
-            replacedBody = replacedBody.Replace("{BASE_URL}/", _playwrightContext.ApiUrl);
+            replacedBody = replacedBody
+                .Replace("{BASE_URL}/", _playwrightContext.ApiUrl)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
             return replacedBody;
         }
 
