@@ -106,8 +106,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse
                 .Status.Should()
                 .BeOneOf(OkCreated, $"Given post to {url} failed:\n{_apiResponse.TextAsync().Result}");
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("the token signature is manipulated")]
@@ -209,8 +207,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _ = await ProcessDataTable(entityType, dataTable);
 
             _logger.log.Information($"Responses for Given(the system has these {entityType})");
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("the system has these descriptors")]
@@ -235,8 +231,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
                 apiResponse.Status.Should().BeOneOf(OkCreated, $"Request failed:\n{body}");
             }
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         private readonly int[] OkCreated = [200, 201];
@@ -302,7 +296,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         private string extractDataFromResponseAndReturnIdIfAvailable(IAPIResponse apiResponse)
@@ -350,7 +343,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a POST request is made for dependent resource {string} with")]
@@ -363,7 +355,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a PUT request is made to {string} with")]
@@ -386,7 +377,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
@@ -419,7 +409,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     );
                 }
             }
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("a DELETE request is made to {string}")]
@@ -434,8 +423,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a relationship with {string} is deleted")]
@@ -459,17 +446,22 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a GET request is made to {string}")]
         public async Task WhenAGETRequestIsMadeTo(string url)
         {
+            // Only wait for search engine queries.
+            if (!url.Contains("{id}"))
+            {
+                WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
+            }
             url = AddDataPrefixIfNecessary(url)
                 .Replace("{id}", _id)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
             _logger.log.Information(url);
+            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 url,
                 new() { Headers = GetHeaders() }
