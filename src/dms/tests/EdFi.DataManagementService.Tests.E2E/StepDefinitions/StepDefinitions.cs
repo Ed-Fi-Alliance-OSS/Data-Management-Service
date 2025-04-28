@@ -361,6 +361,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a PUT request is made to {string} with")]
@@ -383,6 +384,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
@@ -429,7 +431,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-
             WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
@@ -544,7 +545,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await ResponseBodyIs(expectedBody);
         }
 
-        private async Task ResponseBodyIs(string expectedBody, bool IsDiscoveryEndpoint = false, bool isXml = false)
+        private async Task ResponseBodyIs(
+            string expectedBody,
+            bool IsDiscoveryEndpoint = false,
+            bool isXml = false
+        )
         {
             string responseContent = await _apiResponse.TextAsync();
 
@@ -553,8 +558,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 var actualXml = XDocument.Parse(responseContent.Trim());
                 var expectedXml = XDocument.Parse(expectedBody.Trim());
 
-                actualXml.ToString().Should().Be(expectedXml.ToString(),
-                    $"Expected:\n{expectedXml}\n\nActual:\n{actualXml}");
+                actualXml
+                    .ToString()
+                    .Should()
+                    .Be(expectedXml.ToString(), $"Expected:\n{expectedXml}\n\nActual:\n{actualXml}");
                 return;
             }
 
