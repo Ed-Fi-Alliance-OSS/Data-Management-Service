@@ -38,6 +38,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 .WithStartResource("Student")
                 .WithStudentSecurityElements(["$.studentUniqueId"]) // This indicates that the StudentUniqueId should be extracted for authorization
                 .WithContactSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
                 .WithEndDocumentPathsMapping()
@@ -96,6 +97,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 .WithStartResource("Student")
                 .WithStudentSecurityElements([]) // No paths specified for Student Securable elements
                 .WithContactSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
                 .WithEndDocumentPathsMapping()
