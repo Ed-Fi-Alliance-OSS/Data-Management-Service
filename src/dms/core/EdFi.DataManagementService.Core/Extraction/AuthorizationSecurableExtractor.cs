@@ -19,14 +19,27 @@ internal static class AuthorizationSecurableExtractor
         this ResourceSchema resourceSchema
     )
     {
-        var securablePaths = resourceSchema.StudentSecurityElementPaths;
-        if (!securablePaths.Any())
+        // The securable flag is currently determined based on the presence of the specific path element
+        // in the securable elements list.
+
+        // Add student securable
+        List<AuthorizationSecurableInfo> authorizationSecurable = [];
+        var studentSecurablePaths = resourceSchema.StudentSecurityElementPaths;
+        if (studentSecurablePaths.Any())
         {
-            return [];
+            authorizationSecurable.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.StudentUniqueId)
+            );
         }
 
-        // The IsStudentSecurable flag is currently determined based on the presence of the path element
-        // in the authorization securable element.
-        return [new AuthorizationSecurableInfo(SecurityElementNameConstants.StudentUniqueId)];
+        // Add contact securable
+        var contactSecurablePaths = resourceSchema.ContactSecurityElementPaths;
+        if (contactSecurablePaths.Any())
+        {
+            authorizationSecurable.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.ContactUniqueId)
+            );
+        }
+        return [.. authorizationSecurable];
     }
 }

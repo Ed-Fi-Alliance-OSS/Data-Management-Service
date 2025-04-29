@@ -355,6 +355,27 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
+    /// Adds a ContactSecurityElements section to a resource
+    /// </summary>
+    public ApiSchemaBuilder WithContactSecurityElements(string[] jsonPaths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["securableElements"]!["Contact"] = new JsonArray(
+            jsonPaths.Select(x => JsonValue.Create(x)).ToArray()
+        );
+
+        return this;
+    }
+
+    /// <summary>
     /// Adds an AuthorizationPathways section to a resource
     /// </summary>
     public ApiSchemaBuilder WithAuthorizationPathways(string[] authorizationPathways)

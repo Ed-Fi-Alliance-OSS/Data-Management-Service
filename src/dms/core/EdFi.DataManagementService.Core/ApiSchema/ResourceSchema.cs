@@ -403,6 +403,22 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     });
 
     /// <summary>
+    /// A list of the JsonPaths that are authorizationSecurable for type Contact
+    /// </summary>
+    public IEnumerable<JsonPath> ContactSecurityElementPaths => _contactSecurityElementPaths.Value;
+
+    private readonly Lazy<IEnumerable<JsonPath>> _contactSecurityElementPaths = new(() =>
+    {
+        return _resourceSchemaNode["securableElements"]
+                ?["Contact"]?.AsArray()
+                .GetValues<string>()
+                .Select(x => new JsonPath(x))
+            ?? throw new InvalidOperationException(
+                "Expected securableElements.Contact to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
+
+    /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
     public IEnumerable<string> AuthorizationPathways => _authorizationPathways.Value;

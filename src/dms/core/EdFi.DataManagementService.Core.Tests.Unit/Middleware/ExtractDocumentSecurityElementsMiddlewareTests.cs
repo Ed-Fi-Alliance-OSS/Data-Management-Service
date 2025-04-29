@@ -39,6 +39,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 .WithNamespaceSecurityElements(["$.namespace"])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("Namespace", "$.namespace")
                 .WithEndDocumentPathsMapping()
@@ -96,6 +97,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([("School", "$.schoolReference.schoolId")])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -141,6 +143,75 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
         {
             context.DocumentSecurityElements.EducationOrganization.Should().HaveCount(1);
             context.DocumentSecurityElements.EducationOrganization[0].Id.Value.Should().Be(12345);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_StudentContactAssociations_resource_that_has_studentUniqueId_and_ContactUniqueId
+        : ExtractDocumentSecurityElementsMiddlewareTests
+    {
+        private PipelineContext context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("StudentContactAssociation")
+                .WithNamespaceSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements(["$.studentReference.studentUniqueId"])
+                .WithContactSecurityElements(["$.contactReference.contactUniqueId"])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                apiSchemaDocuments,
+                "StudentContactAssociations"
+            );
+
+            string body = """
+                {
+                    "studentReference": {
+                        "studentUniqueId": "12345"
+                    },
+                   "contactReference": {
+                        "contactUniqueId": "7878"
+                    }
+                }
+                """;
+
+            context = new(
+                new(
+                    Body: body,
+                    QueryParameters: [],
+                    Path: "/ed-fi/academicWeeks",
+                    TraceId: new TraceId("123"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                ),
+                RequestMethod.POST
+            )
+            {
+                ResourceSchema = resourceSchema,
+                ParsedBody = JsonNode.Parse(body)!,
+            };
+
+            await BuildMiddleware().Execute(context, NullNext);
+        }
+
+        [Test]
+        public void It_has_extracted_studentUniqueId_and_contactUniqueId()
+        {
+            context.DocumentSecurityElements.Student.Should().HaveCount(1);
+            context.DocumentSecurityElements.Student[0].Value.Should().Be("12345");
+            context.DocumentSecurityElements.Contact.Should().HaveCount(1);
+            context.DocumentSecurityElements.Contact[0].Value.Should().Be("7878");
         }
     }
 }
