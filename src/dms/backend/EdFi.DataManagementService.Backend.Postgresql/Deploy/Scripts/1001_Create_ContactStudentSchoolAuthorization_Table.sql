@@ -7,7 +7,6 @@ CREATE TABLE dms.ContactStudentSchoolAuthorization(
     Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     ContactUniqueId VARCHAR(32) NOT NULL,
     StudentUniqueId VARCHAR(32) NOT NULL,
-    HierarchySchoolId BIGINT NOT NULL,
     ContactStudentSchoolAuthorizationEducationOrganizationIds JSONB NOT NULL,
     StudentContactAssociationId BIGINT NOT NULL,
     StudentContactAssociationPartitionKey SMALLINT NOT NULL,

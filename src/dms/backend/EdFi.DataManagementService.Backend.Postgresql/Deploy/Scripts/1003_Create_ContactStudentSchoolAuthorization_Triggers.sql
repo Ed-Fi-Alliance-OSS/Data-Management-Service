@@ -17,7 +17,6 @@ DECLARE
     contact_id text;
     student_school_asso_id BIGINT;
     student_school_asso_key BIGINT;
-    hierarchy_school_id BIGINT;
 BEGIN
     -- Extract student unique ID
     student_id := NEW.EdfiDoc->'studentReference'->>'studentUniqueId';
@@ -26,7 +25,7 @@ BEGIN
     contact_id := NEW.EdfiDoc->'contactReference'->>'contactUniqueId';
 
     -- Extract student school association document details
-    SELECT jsonb_agg(StudentSchoolAuthorizationEducationOrganizationIds), HierarchySchoolId, StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
+    SELECT jsonb_agg(StudentSchoolAuthorizationEducationOrganizationIds), StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
     INTO ed_org_ids, hierarchy_school_id, student_school_asso_id, student_school_asso_key
     FROM dms.StudentSchoolAssociationAuthorization 
     WHERE StudentUniqueId = student_id
@@ -35,7 +34,6 @@ BEGIN
     INSERT INTO dms.ContactStudentSchoolAuthorization (
         ContactUniqueId,
         StudentUniqueId,
-        HierarchySchoolId, 
         ContactStudentSchoolAuthorizationEducationOrganizationIds,
         StudentContactAssociationId,
         StudentContactAssociationPartitionKey,
@@ -45,12 +43,11 @@ BEGIN
     VALUES (
         contact_id,
         student_id,
-        hierarchy_school_id,
         ed_org_ids,
         NEW.Id,
         NEW.DocumentPartitionKey,
         student_school_asso_id,
-        hierarchy_school_id
+        student_school_asso_key
     );
 
     UPDATE dms.Document
@@ -75,7 +72,6 @@ DECLARE
     old_contact_id bigint;
     student_school_asso_id BIGINT;
     student_school_asso_key BIGINT;
-    hierarchy_school_id BIGINT;
 BEGIN
     -- Extract values from NEW and OLD records
     new_student_id := NEW.EdfiDoc->'studentReference'->>'studentUniqueId';
@@ -89,8 +85,8 @@ BEGIN
     END IF;
 
     -- Extract student school association document details
-    SELECT jsonb_agg(StudentSchoolAuthorizationEducationOrganizationIds), HierarchySchoolId, StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
-    INTO ed_org_ids, hierarchy_school_id, student_school_asso_id, student_school_asso_key
+    SELECT jsonb_agg(StudentSchoolAuthorizationEducationOrganizationIds), StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
+    INTO ed_org_ids, student_school_asso_id, student_school_asso_key
     FROM dms.StudentSchoolAssociationAuthorization 
     WHERE StudentUniqueId = student_id
 
@@ -98,7 +94,6 @@ BEGIN
     SET
         ContactUniqueId = new_contact_id,
         StudentUniqueId = new_student_id,
-        HierarchySchoolId = hierarchy_school_id,
         ContactStudentSchoolAuthorizationEducationOrganizationIds = ed_org_ids,
         StudentSchoolAssociationId = student_school_asso_id,
         StudentSchoolAssociationPartitionKey = student_school_asso_key
