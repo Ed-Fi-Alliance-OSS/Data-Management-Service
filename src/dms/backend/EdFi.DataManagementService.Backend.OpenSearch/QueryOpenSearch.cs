@@ -143,21 +143,16 @@ public static partial class QueryOpenSearch
                 if (authorizationSecurableInfo.SecurableKey == SecurityElementNameConstants.Namespace)
                 {
                     // Get all namespaces from the filters array where filterPath matches Namespace
-                    var namespaces = new List<string>();
-
-                    foreach (var evaluator in queryRequest.AuthorizationStrategyEvaluators)
-                    {
-                        // Find filters where filterPath equals Namespace
-                        IEnumerable<string> namespaceFilters = evaluator
-                            .Filters.Where(f => f.FilterPath == SecurityElementNameConstants.Namespace)
-                            .Select(f => f.Value?.ToString())
-                            .Where(ns => !string.IsNullOrEmpty(ns))
-                            .Cast<string>();
-
-                        namespaces.AddRange(namespaceFilters);
-                    }
-
-                    namespaces = namespaces.Distinct().ToList();
+                    var namespaces = queryRequest
+                        .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
+                            evaluator
+                                .Filters.Where(f => f.FilterPath == SecurityElementNameConstants.Namespace)
+                                .Select(f => f.Value?.ToString())
+                                .Where(ns => !string.IsNullOrEmpty(ns))
+                                .Cast<string>()
+                        )
+                        .Distinct()
+                        .ToList();
 
                     // If we have multiple namespaces, use a terms query (OR)
                     if (namespaces.Count > 1)
@@ -184,14 +179,6 @@ public static partial class QueryOpenSearch
                             },
                         };
                     }
-                    // No namespaces found - log this situation but continue
-                    else
-                    {
-                        logger.LogWarning(
-                            "No namespaces found in AuthorizationStrategyEvaluators - {TraceId}",
-                            queryRequest.TraceId.Value
-                        );
-                    }
                 }
                 else if (
                     authorizationSecurableInfo.SecurableKey
@@ -199,23 +186,18 @@ public static partial class QueryOpenSearch
                 )
                 {
                     // Get all education organization IDs from the filters
-                    var edOrgIds = new List<string>();
-
-                    foreach (var evaluator in queryRequest.AuthorizationStrategyEvaluators)
-                    {
-                        // Find filters where filterPath equals EducationOrganization
-                        IEnumerable<string> edOrgFilters = evaluator
-                            .Filters.Where(f =>
-                                f.FilterPath == SecurityElementNameConstants.EducationOrganization
-                            )
-                            .Select(f => f.Value?.ToString())
-                            .Where(id => !string.IsNullOrEmpty(id))
-                            .Cast<string>();
-
-                        edOrgIds.AddRange(edOrgFilters);
-                    }
-
-                    edOrgIds = edOrgIds.Distinct().ToList();
+                    var edOrgIds = queryRequest
+                        .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
+                            evaluator
+                                .Filters.Where(f =>
+                                    f.FilterPath == SecurityElementNameConstants.EducationOrganization
+                                )
+                                .Select(f => f.Value?.ToString())
+                                .Where(id => !string.IsNullOrEmpty(id))
+                                .Cast<string>()
+                        )
+                        .Distinct()
+                        .ToList();
 
                     if (edOrgIds.Count > 0)
                     {
@@ -235,13 +217,6 @@ public static partial class QueryOpenSearch
                                 },
                             },
                         };
-                    }
-                    else
-                    {
-                        logger.LogWarning(
-                            "No education organization IDs found in AuthorizationStrategyEvaluators - {TraceId}",
-                            queryRequest.TraceId.Value
-                        );
                     }
                 }
                 else if (
