@@ -105,8 +105,7 @@ Feature: Resources "Delete" Operation validations
                     }
                   """
 
-        # Will be enabled as part of DMS-614 implementation
-        @API-179 @ignore 
+        @API-179
         Scenario: 04 Verify response when deleting a student with more than one reference
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |

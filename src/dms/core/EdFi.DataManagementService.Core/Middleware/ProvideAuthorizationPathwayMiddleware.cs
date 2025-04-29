@@ -31,6 +31,12 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
                             context.DocumentSecurityElements,
                             context.Method
                         ),
+                    "ContactStudentSchoolAuthorization" =>
+                        (AuthorizationPathway)BuildStudentContactAssociationAuthorizationPathway(
+                            context.DocumentSecurityElements,
+                            context.Method
+                        ),
+
                     _ => throw new InvalidOperationException(
                         $"Unrecognized Authorization Pathway '{authorizationPathway}'."
                     ),
@@ -52,19 +58,43 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
         if (
             requestMethod is RequestMethod.POST or RequestMethod.PUT
             && (
-                !documentSecurityElements.Student.Any()
-                || !documentSecurityElements.EducationOrganization.Any()
+                documentSecurityElements.Student.Length == 0
+                || documentSecurityElements.EducationOrganization.Length == 0
             )
         )
         {
             throw new InvalidOperationException(
-                "The StudentId and/or SchoolId are missing from the request body."
+                "The StudentUniqueId and/or SchoolId are missing from the request body."
             );
         }
 
         return new AuthorizationPathway.StudentSchoolAssociation(
             documentSecurityElements.Student.FirstOrDefault(),
             documentSecurityElements.EducationOrganization.FirstOrDefault()?.Id ?? default
+        );
+    }
+
+    /// <summary>
+    /// Builds the StudentContactAssociation AuthorizationPathway from the DocumentSecurityElements.
+    /// </summary>
+    private static AuthorizationPathway.StudentContactAssociation BuildStudentContactAssociationAuthorizationPathway(
+        DocumentSecurityElements documentSecurityElements,
+        RequestMethod requestMethod
+    )
+    {
+        if (
+            requestMethod is RequestMethod.POST or RequestMethod.PUT
+            && (documentSecurityElements.Student.Length == 0 || documentSecurityElements.Contact.Length == 0)
+        )
+        {
+            throw new InvalidOperationException(
+                "The StudentUniqueId and/or ContactUniqueId are missing from the request body."
+            );
+        }
+
+        return new AuthorizationPathway.StudentContactAssociation(
+            documentSecurityElements.Student.FirstOrDefault(),
+            documentSecurityElements.Contact.FirstOrDefault()
         );
     }
 }

@@ -26,6 +26,7 @@ public class ExtractSecurityElementsTests
             .WithNamespaceSecurityElements([])
             .WithEducationOrganizationSecurityElements([])
             .WithStudentSecurityElements([])
+            .WithContactSecurityElements([])
             .WithStartDocumentPathsMapping()
             .WithDocumentPathScalar("Namespace", "$.namespace")
             .WithEndDocumentPathsMapping()
@@ -48,6 +49,7 @@ public class ExtractSecurityElementsTests
                 .WithNamespaceSecurityElements(["$.namespace"])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("AssessmentIdentifier", "$.assessmentIdentifier")
                 .WithDocumentPathScalar("Namespace", "$.namespace")
@@ -88,6 +90,7 @@ public class ExtractSecurityElementsTests
                 .WithNamespaceSecurityElements(["$.namespace"])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("AssessmentIdentifier", "$.assessmentIdentifier")
                 .WithDocumentPathScalar("Namespace", "$.namespace")
@@ -128,6 +131,7 @@ public class ExtractSecurityElementsTests
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("AssessmentIdentifier", "$.assessmentIdentifier")
                 .WithDocumentPathScalar("Namespace", "$.namespace")
@@ -167,6 +171,7 @@ public class ExtractSecurityElementsTests
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([("School", "$.schoolReference.schoolId")])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -213,6 +218,7 @@ public class ExtractSecurityElementsTests
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([("school", "$.schoolReference.schoolId")])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -256,6 +262,7 @@ public class ExtractSecurityElementsTests
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -300,6 +307,7 @@ public class ExtractSecurityElementsTests
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements(["$.studentReference.studentId"])
+                .WithContactSecurityElements([])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -342,6 +350,7 @@ public class ExtractSecurityElementsTests
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -380,6 +389,7 @@ public class ExtractSecurityElementsTests
                 .WithNamespaceSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -404,6 +414,140 @@ public class ExtractSecurityElementsTests
         public void It_has_no_studentId()
         {
             documentSecurityElements.Student.Should().HaveCount(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_StudentContactAssociations_resource_that_has_studentUniqueId_and_ContactUniqueId
+        : ExtractSecurityElementsTests
+    {
+        private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("StudentContactAssociation")
+                .WithNamespaceSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements(["$.studentReference.studentUniqueId"])
+                .WithContactSecurityElements(["$.contactReference.contactUniqueId"])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                apiSchemaDocuments,
+                "StudentContactAssociations"
+            );
+
+            string body = """
+                {
+                    "studentReference": {
+                        "studentUniqueId": "12345"
+                    },
+                   "contactReference": {
+                        "contactUniqueId": "7878"
+                    }
+                }
+                """;
+
+            documentSecurityElements = resourceSchema.ExtractSecurityElements(
+                JsonNode.Parse(body)!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_has_extracted_studentUniqueId_and_contactUniqueId()
+        {
+            documentSecurityElements.Student.Should().HaveCount(1);
+            documentSecurityElements.Student[0].Value.Should().Be("12345");
+            documentSecurityElements.Contact.Should().HaveCount(1);
+            documentSecurityElements.Contact[0].Value.Should().Be("7878");
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_Contact_resource_that_does_not_have_contactUniqueId : ExtractSecurityElementsTests
+    {
+        private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Contact")
+                .WithNamespaceSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "contacts");
+
+            string body = """
+                {
+                }
+                """;
+
+            documentSecurityElements = resourceSchema.ExtractSecurityElements(
+                JsonNode.Parse(body)!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_has_no_contactUniqueId()
+        {
+            documentSecurityElements.Contact.Should().HaveCount(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_resource_that_has_contactUniqueId_not_as_a_security_element
+        : ExtractSecurityElementsTests
+    {
+        private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("SurveyResponse")
+                .WithNamespaceSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "SurveyResponses");
+
+            string body = """
+                {
+                    "contactReference": {
+                        "contactUniqueId": "12345"
+                    }
+                }
+                """;
+
+            documentSecurityElements = resourceSchema.ExtractSecurityElements(
+                JsonNode.Parse(body)!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_has_no_contactUniqueId()
+        {
+            documentSecurityElements.Contact.Should().HaveCount(0);
         }
     }
 }

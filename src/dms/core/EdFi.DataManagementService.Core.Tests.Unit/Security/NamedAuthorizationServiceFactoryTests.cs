@@ -51,7 +51,12 @@ public class NamedAuthorizationServiceFactoryTests
                 as NoFurtherAuthorizationRequiredValidator;
             handler.Should().NotBeNull();
             var authResult = handler!
-                .ValidateAuthorization(new DocumentSecurityElements([], [], []), [], [], OperationType.Get)
+                .ValidateAuthorization(
+                    new DocumentSecurityElements([], [], [], []),
+                    [],
+                    [],
+                    OperationType.Get
+                )
                 .Result;
             authResult.Should().NotBeNull();
             authResult.Should().BeOfType<ResourceAuthorizationResult.Authorized>();
@@ -66,7 +71,7 @@ public class NamedAuthorizationServiceFactoryTests
             handler.Should().NotBeNull();
             var authResult = handler!
                 .ValidateAuthorization(
-                    new DocumentSecurityElements(["uri://namespace/resource"], [], []),
+                    new DocumentSecurityElements(["uri://namespace/resource"], [], [], []),
                     [],
                     [],
                     OperationType.Get
@@ -92,6 +97,7 @@ public class NamedAuthorizationServiceFactoryTests
                                 new EducationOrganizationId(255901)
                             ),
                         ],
+                        [],
                         []
                     ),
                     [],

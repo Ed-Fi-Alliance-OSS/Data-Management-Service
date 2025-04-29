@@ -273,7 +273,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     {
         if (documentSecurityElements == null)
         {
-            documentSecurityElements = new([], [], []);
+            documentSecurityElements = new([], [], [], []);
         }
         if (traceId == null)
         {
@@ -344,7 +344,7 @@ public abstract class DatabaseTest : DatabaseTestBase
     {
         if (documentSecurityElements == null)
         {
-            documentSecurityElements = new([], [], []);
+            documentSecurityElements = new([], [], [], []);
         }
 
         if (traceId == null)
