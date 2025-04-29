@@ -81,62 +81,61 @@ public static partial class QueryOpenSearch
         return JsonPathPrefixRegex().Replace(documentPath.Value, "");
     }
 
-    public static async Task<QueryResult> QueryDocuments(
-        IOpenSearchClient client,
-        IQueryRequest queryRequest,
-        ILogger logger
-    )
+    /// <summary>
+    /// Builds the query terms from query elements
+    /// </summary>
+    /// <param name="queryElements">Query elements to build terms from</param>
+    /// <returns>Array of JSON objects representing query terms</returns>
+    public static JsonArray BuildQueryTerms(IEnumerable<QueryElement> queryElements)
     {
-        logger.LogDebug("Entering QueryOpenSearch.Query - {TraceId}", queryRequest.TraceId.Value);
-
-        try
+        JsonArray terms = [];
+        foreach (QueryElement queryElement in queryElements)
         {
-            string indexName = IndexFromResourceInfo(queryRequest.ResourceInfo);
-
-            // Build API client requested filters
-            JsonArray terms = [];
-            foreach (QueryElement queryElement in queryRequest.QueryElements)
+            // If just one document path, it's a pure AND
+            if (queryElement.DocumentPaths.Length == 1)
             {
-                // If just one document path, it's a pure AND
-                if (queryElement.DocumentPaths.Length == 1)
-                {
-                    terms.Add(
-                        new JsonObject
+                terms.Add(
+                    new JsonObject
+                    {
+                        ["match_phrase"] = new JsonObject
                         {
-                            ["match_phrase"] = new JsonObject
-                            {
-                                [$@"edfidoc.{QueryFieldFrom(queryElement.DocumentPaths[0])}"] =
-                                    queryElement.Value,
-                            },
-                        }
-                    );
-                }
-                else
-                {
-                    // If more than one document path, it's an OR
-                    JsonObject[] possibleTerms = queryElement
-                        .DocumentPaths.Select(documentPath => new JsonObject
-                        {
-                            ["match_phrase"] = new JsonObject
-                            {
-                                [$@"edfidoc.{QueryFieldFrom(documentPath)}"] = queryElement.Value,
-                            },
-                        })
-                        .ToArray();
-
-                    terms.Add(
-                        new JsonObject
-                        {
-                            ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleTerms) },
-                        }
-                    );
-                }
+                            [$@"edfidoc.{QueryFieldFrom(queryElement.DocumentPaths[0])}"] =
+                                queryElement.Value,
+                        },
+                    }
+                );
             }
+            else
+            {
+                // If more than one document path, it's an OR
+                JsonObject[] possibleTerms = queryElement
+                    .DocumentPaths.Select(documentPath => new JsonObject
+                    {
+                        ["match_phrase"] = new JsonObject
+                        {
+                            [$@"edfidoc.{QueryFieldFrom(documentPath)}"] = queryElement.Value,
+                        },
+                    })
+                    .ToArray();
 
-            // Convert LINQ to foreach loop for better debugging
-            var authorizationFilters = new List<JsonObject>();
-#pragma warning disable S3267 // Loops should be simplified with "LINQ" expressions
-            foreach (var authorizationSecurableInfo in queryRequest.AuthorizationSecurableInfo)
+                terms.Add(
+                    new JsonObject { ["bool"] = new JsonObject { ["should"] = new JsonArray(possibleTerms) } }
+                );
+            }
+        }
+        return terms;
+    }
+
+    /// <summary>
+    /// Builds authorization filters from authorization securable info
+    /// </summary>
+    /// <param name="queryRequest">Query request containing authorization information</param>
+    /// <param name="logger">Logger for warnings</param>
+    /// <returns>List of JSON objects representing authorization filters</returns>
+    public static List<JsonObject> BuildAuthorizationFilters(IQueryRequest queryRequest, ILogger logger)
+    {
+        var authorizationFilters = queryRequest
+            .AuthorizationSecurableInfo.Select(authorizationSecurableInfo =>
             {
                 JsonObject? filter = null;
 
@@ -224,23 +223,18 @@ public static partial class QueryOpenSearch
                 )
                 {
                     // Get all education organization IDs from the filters
-                    var edOrgIds = new List<string>();
-
-                    foreach (var evaluator in queryRequest.AuthorizationStrategyEvaluators)
-                    {
-                        // Find filters where filterPath equals EducationOrganization
-                        IEnumerable<string> edOrgFilters = evaluator
-                            .Filters.Where(f =>
-                                f.FilterPath == SecurityElementNameConstants.EducationOrganization
-                            )
-                            .Select(f => f.Value?.ToString())
-                            .Where(id => !string.IsNullOrEmpty(id))
-                            .Cast<string>();
-
-                        edOrgIds.AddRange(edOrgFilters);
-                    }
-
-                    edOrgIds = edOrgIds.Distinct().ToList();
+                    var edOrgIds = queryRequest
+                        .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
+                            evaluator
+                                .Filters.Where(f =>
+                                    f.FilterPath == SecurityElementNameConstants.EducationOrganization
+                                )
+                                .Select(f => f.Value?.ToString())
+                                .Where(id => !string.IsNullOrEmpty(id))
+                                .Cast<string>()
+                        )
+                        .Distinct()
+                        .ToList();
 
                     if (edOrgIds.Count > 0)
                     {
@@ -257,50 +251,77 @@ public static partial class QueryOpenSearch
                             },
                         };
                     }
-                    else
-                    {
-                        logger.LogWarning(
-                            "No education organization IDs found in AuthorizationStrategyEvaluators - {TraceId}",
-                            queryRequest.TraceId.Value
-                        );
-                    }
                 }
 
-                if (filter != null)
+                return filter;
+            })
+            .Where(filter => filter != null)
+            .Cast<JsonObject>()
+            .ToList();
+
+        return authorizationFilters;
+    }
+
+    /// <summary>
+    /// Builds a complete query object for OpenSearch from the provided query request
+    /// </summary>
+    /// <param name="queryRequest">The query request object</param>
+    /// <param name="logger">Logger for warnings</param>
+    /// <returns>A JsonObject representing the OpenSearch query</returns>
+    public static JsonObject BuildQueryObject(IQueryRequest queryRequest, ILogger logger)
+    {
+        // Build query terms from query elements
+        JsonArray terms = BuildQueryTerms(queryRequest.QueryElements);
+
+        // Build authorization filters
+        var authorizationFilters = BuildAuthorizationFilters(queryRequest, logger);
+
+        // Add authorization filters to terms if there are any
+        if (authorizationFilters.Any())
+        {
+            terms.Add(
+                new JsonObject
                 {
-                    authorizationFilters.Add(filter);
+                    ["bool"] = new JsonObject { ["should"] = new JsonArray(authorizationFilters.ToArray()) },
                 }
-            }
-#pragma warning restore S3267 // Loops should be simplified with "LINQ" expressions
-            if (authorizationFilters.Any())
-            {
-                terms.Add(
-                    new JsonObject
-                    {
-                        ["bool"] = new JsonObject
-                        {
-                            ["should"] = new JsonArray(authorizationFilters.ToArray()),
-                        },
-                    }
-                );
-            }
+            );
+        }
 
-            JsonObject query = new()
-            {
-                ["query"] = new JsonObject { ["bool"] = new JsonObject { ["must"] = terms } },
-                ["sort"] = SortDirective(),
-            };
+        // Build the final query object
+        JsonObject query = new()
+        {
+            ["query"] = new JsonObject { ["bool"] = new JsonObject { ["must"] = terms } },
+            ["sort"] = SortDirective(),
+        };
 
-            // Add in PaginationParameters if any
-            if (queryRequest.PaginationParameters.Limit != null)
-            {
-                query.Add(new("size", queryRequest.PaginationParameters.Limit));
-            }
+        // Add in PaginationParameters if any
+        if (queryRequest.PaginationParameters.Limit != null)
+        {
+            query.Add(new("size", queryRequest.PaginationParameters.Limit));
+        }
 
-            if (queryRequest.PaginationParameters.Offset != null)
-            {
-                query.Add(new("from", queryRequest.PaginationParameters.Offset));
-            }
+        if (queryRequest.PaginationParameters.Offset != null)
+        {
+            query.Add(new("from", queryRequest.PaginationParameters.Offset));
+        }
+
+        return query;
+    }
+
+    public static async Task<QueryResult> QueryDocuments(
+        IOpenSearchClient client,
+        IQueryRequest queryRequest,
+        ILogger logger
+    )
+    {
+        logger.LogDebug("Entering QueryOpenSearch.Query - {TraceId}", queryRequest.TraceId.Value);
+
+        try
+        {
+            string indexName = IndexFromResourceInfo(queryRequest.ResourceInfo);
+
+            // Build the query using the extracted method
+            JsonObject query = BuildQueryObject(queryRequest, logger);
 
             logger.LogDebug("Query - {TraceId} - {Query}", queryRequest.TraceId.Value, query.ToJsonString());
 

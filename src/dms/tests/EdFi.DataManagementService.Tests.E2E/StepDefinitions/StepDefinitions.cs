@@ -106,8 +106,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _apiResponse
                 .Status.Should()
                 .BeOneOf(OkCreated, $"Given post to {url} failed:\n{_apiResponse.TextAsync().Result}");
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("the token signature is manipulated")]

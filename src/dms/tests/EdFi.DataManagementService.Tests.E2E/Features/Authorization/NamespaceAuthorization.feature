@@ -70,7 +70,7 @@ Feature: Namespace Authorization
                   }
                   """
              Then it should respond with 403
-
+             
         @addwait
         Scenario: 17 Ensure clients can GET information when querying a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns2.org"
