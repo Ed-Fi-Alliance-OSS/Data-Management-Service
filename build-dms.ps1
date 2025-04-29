@@ -207,7 +207,8 @@ function RunTests {
     )
 
     $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
-    $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse
+    $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -Recurse |
+    Sort-Object -Property { $_.Name.Length }
 
     if ($testAssemblies.Length -eq 0) {
         Write-Output "no test assemblies found in $testAssemblyPath"
@@ -269,8 +270,7 @@ function RunE2E {
 }
 
 function E2ETests {
-    if (-not $UsePublishedImage)
-    {
+    if (-not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
     }
 
@@ -300,7 +300,8 @@ function E2ETests {
                 Push-Location eng/docker-compose/
                 if ($UsePublishedImage) {
                     ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig
-                } else {
+                }
+                else {
                     ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -r
                 }
             }

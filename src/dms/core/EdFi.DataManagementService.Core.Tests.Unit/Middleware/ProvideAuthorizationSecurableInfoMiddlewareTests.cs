@@ -154,6 +154,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 .WithStartResource("StudentContactAssociation")
                 .WithStudentSecurityElements(["$.studentUniqueId"])
                 .WithContactSecurityElements(["$.contactReference.contactUniqueId"])
+                .WithEducationOrganizationSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
                 .WithDocumentPathReference(
@@ -230,6 +231,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 .WithStartProject()
                 .WithStartResource("Contact")
                 .WithStudentSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
                 .WithContactSecurityElements(["$.contactUniqueId"]) // This indicates that the ContactUniqueId should be extracted for authorization
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("ContactUniqueId", "$.contactUniqueId")
@@ -287,6 +289,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
             ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Contact")
+                .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
                 .WithContactSecurityElements([]) // No paths specified for Student Securable elements
                 .WithStartDocumentPathsMapping()
