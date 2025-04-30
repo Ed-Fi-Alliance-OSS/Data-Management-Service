@@ -31,14 +31,9 @@ internal class DescriptorDocument(JsonNode _document)
 
         string? codeValue = _document["codeValue"]?.GetValue<string>();
         Debug.Assert(
-            namespaceName != null,
+            codeValue != null,
             "Failed getting codeValue field, JSON schema validation not in pipeline?"
         );
-
-        if (codeValue == null)
-        {
-            throw new InvalidOperationException("CodeValue is null. JSON schema validation not in pipeline?");
-        }
 
         DocumentIdentityElement[] descriptorElement =
         [
