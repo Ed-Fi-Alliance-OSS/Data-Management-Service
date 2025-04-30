@@ -21,3 +21,7 @@ CREATE TABLE dms.ContactStudentSchoolAuthorization(
 
 CREATE INDEX IX_ContactStudentSchoolAuthorization_ContactUniqueId
 ON dms.ContactStudentSchoolAuthorization(ContactUniqueId);
+
+CREATE INDEX IX_ContactStudentSchoolAuthorization_StudentUniqueId
+ON dms.ContactStudentSchoolAuthorization(StudentUniqueId);
+

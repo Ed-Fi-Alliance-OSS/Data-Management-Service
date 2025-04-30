@@ -15,8 +15,7 @@ DECLARE
     ed_org_ids jsonb;
     student_id text;
     contact_id text;
-    student_school_asso_id BIGINT;
-    student_school_asso_key BIGINT;
+    student_school_asso RECORD;
 BEGIN
     -- Extract student unique ID
     student_id := NEW.EdfiDoc->'studentReference'->>'studentUniqueId';
@@ -25,13 +24,13 @@ BEGIN
     contact_id := NEW.EdfiDoc->'contactReference'->>'contactUniqueId';
 
     -- Extract student school association document details
-    SELECT jsonb_agg(StudentSchoolAuthorizationEducationOrganizationIds), StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
-    INTO ed_org_ids, hierarchy_school_id, student_school_asso_id, student_school_asso_key
-    FROM dms.StudentSchoolAssociationAuthorization 
-    WHERE StudentUniqueId = student_id
-
-
-    INSERT INTO dms.ContactStudentSchoolAuthorization (
+    FOR student_school_asso IN
+        SELECT jsonb_agg(StudentSchoolAuthorizationEducationOrganizationIds), StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
+        FROM dms.StudentSchoolAssociationAuthorization 
+        WHERE StudentUniqueId = student_id
+    LOOP
+    -- Insert into ContactStudentSchoolAuthorization table
+        INSERT INTO dms.ContactStudentSchoolAuthorization (
         ContactUniqueId,
         StudentUniqueId,
         ContactStudentSchoolAuthorizationEducationOrganizationIds,
@@ -43,69 +42,31 @@ BEGIN
     VALUES (
         contact_id,
         student_id,
-        ed_org_ids,
+        student_school_asso.StudentSchoolAuthorizationEducationOrganizationIds,
         NEW.Id,
         NEW.DocumentPartitionKey,
-        student_school_asso_id,
-        student_school_asso_key
+        student_school_asso.StudentSchoolAssociationId,
+        student_school_asso.StudentSchoolAssociationPartitionKey
     );
+    END LOOP;
 
-    UPDATE dms.Document
-    SET ContactStudentSchoolAuthorizationEdOrgIds = ed_org_ids
-    WHERE
-        Id = NEW.Id AND
-        DocumentPartitionKey = NEW.DocumentPartitionKey;
+    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(student_id);
 
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
--- Function for UPDATE operations
-CREATE OR REPLACE FUNCTION dms.ContactStudentSchoolAuthorizationUpdateFunction()
+-- Function for DELETE operations
+CREATE OR REPLACE FUNCTION dms.ContactStudentSchoolAuthorizationDeleteFunction()
 RETURNS TRIGGER
 AS $$
 DECLARE
-    ed_org_ids jsonb;
-    new_student_id text;
     old_student_id text;
-    new_contact_id bigint;
-    old_contact_id bigint;
-    student_school_asso_id BIGINT;
-    student_school_asso_key BIGINT;
 BEGIN
-    -- Extract values from NEW and OLD records
-    new_student_id := NEW.EdfiDoc->'studentReference'->>'studentUniqueId';
     old_student_id := OLD.EdfiDoc->'studentReference'->>'studentUniqueId';
-    new_contact_id := (NEW.EdfiDoc->'contactReference'->>'contactUniqueId')::BIGINT;
-    old_contact_id := (OLD.EdfiDoc->'contactReference'->>'contactUniqueId')::BIGINT;
 
-    -- Skip if neither StudentUniqueId nor ContactUniqueId has changed
-    IF new_student_id = old_student_id AND new_contact_id = old_contact_id THEN
-        RETURN NULL;
-    END IF;
-
-    -- Extract student school association document details
-    SELECT jsonb_agg(StudentSchoolAuthorizationEducationOrganizationIds), StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
-    INTO ed_org_ids, student_school_asso_id, student_school_asso_key
-    FROM dms.StudentSchoolAssociationAuthorization 
-    WHERE StudentUniqueId = student_id
-
-    UPDATE dms.ContactStudentSchoolAuthorization
-    SET
-        ContactUniqueId = new_contact_id,
-        StudentUniqueId = new_student_id,
-        ContactStudentSchoolAuthorizationEducationOrganizationIds = ed_org_ids,
-        StudentSchoolAssociationId = student_school_asso_id,
-        StudentSchoolAssociationPartitionKey = student_school_asso_key
-    WHERE
-        StudentContactAssociationId = NEW.Id AND
-        StudentContactAssociationPartitionKey = NEW.DocumentPartitionKey;
-
-    UPDATE dms.Document
-    SET ContactStudentSchoolAuthorizationEdOrgIds = ed_org_ids
-    WHERE
-        Id = NEW.Id AND
-        DocumentPartitionKey = NEW.DocumentPartitionKey;
+    -- Update edorg id list for the contact securable documents
+    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(old_student_id);
 
     RETURN NULL;
 END;
@@ -119,9 +80,9 @@ AFTER INSERT ON dms.Document
     WHEN (NEW.ProjectName = 'Ed-Fi' AND NEW.ResourceName = 'StudentContactAssociation')
     EXECUTE PROCEDURE dms.ContactStudentSchoolAuthorizationInsertFunction();
 
-DROP TRIGGER IF EXISTS ContactStudentSchoolAuthorizationTrigger_Update ON dms.Document;
-CREATE TRIGGER ContactStudentSchoolAuthorizationTrigger_Update
-AFTER UPDATE OF EdfiDoc ON dms.Document
+DROP TRIGGER IF EXISTS ContactStudentSchoolAuthorizationTrigger_Delete ON dms.Document;
+CREATE TRIGGER ContactStudentSchoolAuthorizationTrigger_Delete
+AFTER DELETE ON dms.Document
     FOR EACH ROW
-    WHEN (NEW.ProjectName = 'Ed-Fi' AND NEW.ResourceName = 'StudentContactAssociation')
-    EXECUTE PROCEDURE dms.ContactStudentSchoolAuthorizationUpdateFunction();
+    WHEN (OLD.ProjectName = 'Ed-Fi' AND OLD.ResourceName = 'StudentContactAssociation')
+    EXECUTE PROCEDURE dms.ContactStudentSchoolAuthorizationDeleteFunction();
