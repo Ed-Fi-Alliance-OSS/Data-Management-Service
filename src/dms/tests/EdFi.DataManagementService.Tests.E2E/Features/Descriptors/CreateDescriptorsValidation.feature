@@ -1,7 +1,7 @@
 Feature: Create a Descriptor
 
         Background:
-            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
+            Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @API-006
         Scenario: 01 Ensure clients can create a descriptor
@@ -465,25 +465,26 @@ Feature: Create a Descriptor
                   """
 
         Scenario: 17 Post a Descriptor using a resource not configured in claims
-            When a POST request is made to "/ed-fi/academicHonorCategoryDescriptors" with
-                """
-                    {
-                        "codeValue": "xxxx",
-                        "description": "Wrong Value",
-                        "namespace": "uri://.org/wrong",
-                        "shortDescription": "Wrong Value"
-                    }
+             When a POST request is made to "/ed-fi/academicHonorCategoryDescriptors" with
                   """
-            Then it should respond with 403
+                      {
+                          "codeValue": "xxxx",
+                          "description": "Wrong Value",
+                          "namespace": "uri://.org/wrong",
+                          "shortDescription": "Wrong Value"
+                      }
+                  """
+             Then it should respond with 403
               And the response body is
                   """
-                  {
+                    {
                       "detail": "Access to the resource could not be authorized.",
                       "type": "urn:ed-fi:api:security:authorization:",
                       "title": "Authorization Denied",
                       "status": 403,
-                      "correlationId": null,
                       "validationErrors": {},
-                      "errors": []
-                  }
+                      "errors": [
+                        "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ed-fi.org'."
+                      ]
+                    }
                   """
