@@ -48,7 +48,7 @@ public class DescriptorDocumentTests
             descriptorIdentity
                 .DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/AcademicSubjectDescriptor#English");
+                .Be("uri://ed-fi.org/AcademicSubjectDescriptor#english");
         }
 
         [Test]
@@ -74,7 +74,7 @@ public class DescriptorDocumentTests
             descriptorIdentity
                 .DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/AcademicSubjectDescriptor#English");
+                .Be("uri://ed-fi.org/AcademicSubjectDescriptor#english");
         }
     }
 }

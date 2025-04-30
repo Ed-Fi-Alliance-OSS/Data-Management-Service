@@ -40,6 +40,24 @@ internal static class AuthorizationSecurableExtractor
                 new AuthorizationSecurableInfo(SecurityElementNameConstants.ContactUniqueId)
             );
         }
+
+        // add namespace securable
+        var namespaceSecurablePaths = resourceSchema.NamespaceSecurityElementPaths;
+        if (namespaceSecurablePaths.Any())
+        {
+            authorizationSecurable.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.Namespace)
+            );
+        }
+
+        //add education organization securable
+        var educationOrganizationSecurablePaths = resourceSchema.EducationOrganizationSecurityElementPaths;
+        if (educationOrganizationSecurablePaths.Any())
+        {
+            authorizationSecurable.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.EducationOrganization)
+            );
+        }
         return [.. authorizationSecurable];
     }
 }

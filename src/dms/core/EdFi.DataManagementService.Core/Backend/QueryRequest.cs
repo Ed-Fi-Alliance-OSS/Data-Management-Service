@@ -21,6 +21,9 @@ internal record QueryRequest(
     /// </summary>
     QueryElement[] QueryElements,
     /// <summary>
+    /// Collection of authorization securable info
+    /// </summary>
+    AuthorizationSecurableInfo[] AuthorizationSecurableInfo,
     /// Collection of authorization strategy filters, each specifying
     /// collection of filters and filter operator
     /// </summary>

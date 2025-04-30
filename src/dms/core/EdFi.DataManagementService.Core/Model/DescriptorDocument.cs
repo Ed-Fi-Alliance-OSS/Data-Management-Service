@@ -31,13 +31,13 @@ internal class DescriptorDocument(JsonNode _document)
 
         string? codeValue = _document["codeValue"]?.GetValue<string>();
         Debug.Assert(
-            namespaceName != null,
+            codeValue != null,
             "Failed getting codeValue field, JSON schema validation not in pipeline?"
         );
 
         DocumentIdentityElement[] descriptorElement =
         [
-            new(IdentityJsonPath: DescriptorIdentityPath, IdentityValue: $"{namespaceName}#{codeValue}")
+            new(IdentityJsonPath: DescriptorIdentityPath, IdentityValue: $"{namespaceName}#{codeValue.ToLowerInvariant()}")
         ];
         return new DocumentIdentity(descriptorElement);
     }

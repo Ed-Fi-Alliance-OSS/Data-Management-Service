@@ -90,7 +90,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/CareerPathwayDescriptor#Other");
+                .Be("uri://ed-fi.org/CareerPathwayDescriptor#other");
         }
 
         [Test]
@@ -106,7 +106,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Basic");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#basic");
         }
 
         [Test]
@@ -122,7 +122,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Advanced");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#advanced");
         }
     }
 
@@ -239,7 +239,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Basic");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#basic");
         }
 
         [Test]
@@ -255,7 +255,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Advanced");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#advanced");
         }
     }
 
@@ -306,7 +306,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Advanced");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#advanced");
         }
     }
 
@@ -387,7 +387,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/CareerPathwayDescriptor#Other");
+                .Be("uri://ed-fi.org/CareerPathwayDescriptor#other");
         }
     }
 
