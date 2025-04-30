@@ -528,7 +528,8 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                         new EducationOrganizationId(schoolId)
                     ),
                 ],
-                [new StudentUniqueId(studentUniqueId)]
+                [new StudentUniqueId(studentUniqueId)],
+                []
             ),
             projectName: "Ed-Fi"
         );
@@ -571,7 +572,8 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
                         new EducationOrganizationId(schoolId)
                     ),
                 ],
-                [new StudentUniqueId(studentUniqueId)]
+                [new StudentUniqueId(studentUniqueId)],
+                []
             ),
             projectName: "Ed-Fi"
         );
@@ -606,7 +608,8 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
             documentSecurityElements: new DocumentSecurityElements(
                 [],
                 [],
-                [new StudentUniqueId(studentUniqueId)]
+                [new StudentUniqueId(studentUniqueId)],
+                []
             ),
             projectName: "Ed-Fi"
         );
@@ -634,7 +637,8 @@ public class StudentSchoolAssociationAuthorizationTests : DatabaseTest
             documentSecurityElements: new DocumentSecurityElements(
                 [],
                 [],
-                [new StudentUniqueId(studentUniqueId)]
+                [new StudentUniqueId(studentUniqueId)],
+                []
             ),
             projectName: "Ed-Fi"
         );

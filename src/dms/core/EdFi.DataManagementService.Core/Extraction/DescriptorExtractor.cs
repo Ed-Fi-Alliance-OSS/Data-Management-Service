@@ -61,13 +61,23 @@ internal static class DescriptorExtractor
 
             foreach (JsonPathAndValue descriptorUri in descriptorUrisWithPath)
             {
+                var normalizedDescriptorUriValue = descriptorUri.value;
+                if (!string.IsNullOrEmpty(normalizedDescriptorUriValue))
+                {
+                    int hashIndex = normalizedDescriptorUriValue.IndexOf('#');
+                    if (hashIndex >= 0 && hashIndex < normalizedDescriptorUriValue.Length - 1)
+                    {
+                        string beforeHash = normalizedDescriptorUriValue.Substring(0, hashIndex + 1);
+                        string afterHash = normalizedDescriptorUriValue.Substring(hashIndex + 1);
+
+                        normalizedDescriptorUriValue = beforeHash + afterHash.ToLowerInvariant();
+                    }
+                }
+
                 // One descriptor reference per Uri
                 DocumentIdentityElement documentIdentityElement = new(
                     DocumentIdentity.DescriptorIdentityJsonPath,
-                    // [DMS-597] Workaround for DMS-631 When referencing a Descriptor the CodeValue should be case insensitive
-                    descriptorUri.value == "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale Score"
-                        ? descriptorUri.value.Replace("Score", "score")
-                        : descriptorUri.value
+                    normalizedDescriptorUriValue
                 );
                 DocumentIdentity documentIdentity = new([documentIdentityElement]);
                 result.Add(
