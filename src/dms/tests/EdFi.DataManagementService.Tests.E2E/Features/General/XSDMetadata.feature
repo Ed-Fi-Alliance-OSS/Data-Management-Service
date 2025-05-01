@@ -67,12 +67,39 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.SchemaAnnotation.xsd"
                     ]
                   """
-        Scenario: 03 Ensure clients can retrieve Core schema (Sample) files for the data model
+        Scenario: 03 Ensure clients can retrieve Extension (Sample) blended with Core schema files for the data model
              When a GET request is made to "/metadata/xsd/sample/files"
              Then it should respond with 200
               And the general response body is
                   """
                     [
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Ed-Fi-Core.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-AssessmentMetadata.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-AssessmentRegistration.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Contact.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Descriptors.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-EducationOrganization.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-EducationOrgCalendar.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Finance.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-MasterSchedule.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-PostSecondaryEvent.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StaffAssociation.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Standards.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Student.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentAssessment.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentAttendance.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentCohort.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentDiscipline.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentEnrollment.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentGrade.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentGradebook.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentHealth.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentIntervention.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentProgram.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentProgramEvaluation.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentTranscript.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Survey.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.SchemaAnnotation.xsd",
                       "http://localhost:8080/metadata/xsd/sample/EdFi.Sample.ApiSchema.xsd.Sample-EXTENSION-Ed-Fi-Extended-Core.xsd",
                       "http://localhost:8080/metadata/xsd/sample/EdFi.Sample.ApiSchema.xsd.Sample-EXTENSION-Interchange-Contact-Extension.xsd",
                       "http://localhost:8080/metadata/xsd/sample/EdFi.Sample.ApiSchema.xsd.Sample-EXTENSION-Interchange-Descriptors-Extension.xsd",
@@ -84,7 +111,7 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/sample/EdFi.Sample.ApiSchema.xsd.Sample-EXTENSION-Interchange-StudentProgram-Extension.xsd"
                     ]
                   """
-        Scenario: 04 Ensure clients can retrieve Core schema (Homograph) files for the data model
+        Scenario: 04 Ensure clients can retrieve Extension (Homograph) blended with Core schema files for the data model
              When a GET request is made to "/metadata/xsd/homograph/files"
              Then it should respond with 200
               And the general response body is
@@ -93,12 +120,39 @@ Feature: XSD Metadata Endpoint
                       "No XSD files found for extension."
                     ]
                   """
-        Scenario: 05 Ensure clients can retrieve Core schema (TPDM) files for the data model
+        Scenario: 05 Ensure clients can retrieve Extension (TPDM) blended with Core schema files for the data model
              When a GET request is made to "/metadata/xsd/tpdm/files"
              Then it should respond with 200
               And the general response body is
                   """
                     [
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Ed-Fi-Core.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-AssessmentMetadata.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-AssessmentRegistration.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Contact.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Descriptors.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-EducationOrganization.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-EducationOrgCalendar.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Finance.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-MasterSchedule.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-PostSecondaryEvent.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StaffAssociation.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Standards.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Student.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentAssessment.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentAttendance.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentCohort.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentDiscipline.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentEnrollment.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentGrade.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentGradebook.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentHealth.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentIntervention.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentProgram.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentProgramEvaluation.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentTranscript.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Survey.xsd",
+                      "http://localhost:8080/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.SchemaAnnotation.xsd",
                       "http://localhost:8080/metadata/xsd/tpdm/EdFi.TPDM.ApiSchema.xsd.TPDM-EXTENSION-Ed-Fi-Extended-Core.xsd",
                       "http://localhost:8080/metadata/xsd/tpdm/EdFi.TPDM.ApiSchema.xsd.TPDM-EXTENSION-Interchange-Candidate-Extension.xsd",
                       "http://localhost:8080/metadata/xsd/tpdm/EdFi.TPDM.ApiSchema.xsd.TPDM-EXTENSION-Interchange-Descriptors-Extension.xsd",
@@ -177,7 +231,7 @@ Feature: XSD Metadata Endpoint
                     </xs:element>
                     </xs:schema>
                   """
-        Scenario: 08 Ensure clients can retrieve XSD content of Core 
+        Scenario: 08 Ensure clients can retrieve XSD content of Core
              When a GET request is made to "/metadata/xsd/ed-fi/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Survey.xsd"
              Then it should respond with 200
               And the xsd response body is
