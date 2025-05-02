@@ -79,6 +79,7 @@ public class ContentProvider(
             .Where(f => Path.GetFileName(f).EndsWith(".ApiSchema.dll", StringComparison.OrdinalIgnoreCase))
             .GroupBy(Path.GetFileName)
             .Select(g => g.First())
+            .OrderBy(f => f)
             .ToArray();
 
         foreach (var assemblyPath in assemblies)
