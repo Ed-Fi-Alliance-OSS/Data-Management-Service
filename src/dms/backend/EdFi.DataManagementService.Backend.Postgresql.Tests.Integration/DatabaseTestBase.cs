@@ -45,6 +45,8 @@ public abstract class DatabaseTestBase
                     new("dms", "educationorganizationhierarchytermslookup"),
                     new("dms", "studentschoolassociationauthorization"),
                     new("dms", "studentsecurabledocument"),
+                    new("dms", "contactstudentschoolauthorization"),
+                    new("dms", "contactsecurabledocument"),
                 ],
                 DbAdapter = DbAdapter.Postgres,
             }

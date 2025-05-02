@@ -173,6 +173,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         long educationOrganizationId = 0,
         long? parentEducationOrganizationId = default,
         bool isStudentAuthorizationSecurable = false,
+        bool isContactAuthorizationSecurable = false,
         string? studentUniqueId = default
     )
     {
@@ -187,10 +188,32 @@ public abstract class DatabaseTest : DatabaseTestBase
                 educationOrganizationId,
                 parentEducationOrganizationId
             ),
-            AuthorizationSecurableInfo: isStudentAuthorizationSecurable
-                ? [new AuthorizationSecurableInfo(SecurityElementNameConstants.StudentUniqueId)]
-                : []
+            AuthorizationSecurableInfo: GetAuthorizationSecurableInfos(
+                isStudentAuthorizationSecurable,
+                isContactAuthorizationSecurable
+            )
         );
+    }
+
+    protected static AuthorizationSecurableInfo[] GetAuthorizationSecurableInfos(
+        bool isStudentAuthorizationSecurable,
+        bool isContactAuthorizationSecurable
+    )
+    {
+        var authorizationSecurableInfos = new List<AuthorizationSecurableInfo>();
+        if (isStudentAuthorizationSecurable)
+        {
+            authorizationSecurableInfos.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.StudentUniqueId)
+            );
+        }
+        if (isContactAuthorizationSecurable)
+        {
+            authorizationSecurableInfos.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.ContactUniqueId)
+            );
+        }
+        return [.. authorizationSecurableInfos];
     }
 
     protected static DocumentInfo CreateDocumentInfo(
@@ -268,7 +291,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         long? parentEducationOrganizationId = null,
         TraceId? traceId = null,
         string projectName = "ProjectName",
-        bool isStudentAuthorizationSecurable = false
+        bool isStudentAuthorizationSecurable = false,
+        bool isContactAuthorizationSecurable = false
     )
     {
         if (documentSecurityElements == null)
@@ -289,7 +313,8 @@ public abstract class DatabaseTest : DatabaseTestBase
                     isInEducationOrganizationHierarchy,
                     educationOrganizationId,
                     parentEducationOrganizationId,
-                    isStudentAuthorizationSecurable
+                    isStudentAuthorizationSecurable,
+                    isContactAuthorizationSecurable
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,
@@ -339,7 +364,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         long? parentEducationOrganizationId = null,
         TraceId? traceId = null,
         string projectName = "ProjectName",
-        bool isStudentAuthorizationSecurable = false
+        bool isStudentAuthorizationSecurable = false,
+        bool isContactAuthorizationSecurable = false
     )
     {
         if (documentSecurityElements == null)
@@ -361,7 +387,8 @@ public abstract class DatabaseTest : DatabaseTestBase
                     isInEducationOrganizationHierarchy,
                     educationOrganizationId,
                     parentEducationOrganizationId,
-                    isStudentAuthorizationSecurable
+                    isStudentAuthorizationSecurable,
+                    isContactAuthorizationSecurable
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,
