@@ -177,6 +177,8 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
         private readonly string student2Id = "0987";
 
         private readonly string contactUniqueId = "1111";
+        private readonly Guid contactDocumentId = Guid.NewGuid();
+        private readonly Guid sca1DocumentId = Guid.NewGuid();
 
         [SetUp]
         public async Task SetUp()
@@ -188,12 +190,11 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
             var ssa2Result = await UpsertStudentSchoolAssociation(school2Id, student2Id);
 
             // Upsert a contact
-            var contactDocumentId = Guid.NewGuid();
             var contactReferentialId = Guid.NewGuid();
             var contactResult = await UpsertContact(contactDocumentId, contactReferentialId, contactUniqueId);
 
             var student1ContactResult = await UpsertStudentContactAssociation(
-                Guid.NewGuid(),
+                sca1DocumentId,
                 Guid.NewGuid(),
                 student1Id,
                 contactUniqueId
@@ -222,6 +223,11 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
             // Act
             var authorizations = await GetAllContactStudentSchoolAuthorizations();
             var securables = await GetAllContactSecurableDocuments();
+            var edOrgIdsForContactSecurable = await GetDocumentContactStudentSchoolAuthorizationEdOrgIds(
+                contactDocumentId
+            );
+            var edOrgIdForContactAndStudentSecurable =
+                await GetDocumentContactStudentSchoolAuthorizationEdOrgIds(sca1DocumentId);
 
             // Assert
             authorizations.Should().NotBeNull();
@@ -259,6 +265,12 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
                 .NotBe(authorization2.StudentSchoolAssociationId);
 
             securables.Count.Should().Be(3);
+            edOrgIdsForContactSecurable.Should().NotBeNull();
+            ParseEducationOrganizationIds(edOrgIdsForContactSecurable)
+                .Should()
+                .BeEquivalentTo([school1Id, school2Id]);
+
+            edOrgIdForContactAndStudentSecurable.Should().NotBeNull();
         }
     }
 }

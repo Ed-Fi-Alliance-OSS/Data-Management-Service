@@ -380,34 +380,15 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
             JsonElement? studentSchoolAuthorizationEducationOrganizationIds = null;
             JsonElement? contactStudentSchoolAuthorizationEducationOrganizationIds = null;
-
-            if (
-                upsertRequest
-                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                    .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
-            )
-            {
-                studentSchoolAuthorizationEducationOrganizationIds =
-                    await _sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
-                        upsertRequest.DocumentSecurityElements.Student[0].Value,
-                        connection,
-                        transaction
-                    );
-            }
-
-            if (
-                upsertRequest
-                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                    .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId)
-            )
-            {
-                contactStudentSchoolAuthorizationEducationOrganizationIds =
-                    await _sqlAction.GetContactStudentSchoolAuthorizationEducationOrganizationIds(
-                        upsertRequest.DocumentSecurityElements.Contact[0].Value,
-                        connection,
-                        transaction
-                    );
-            }
+            (
+                studentSchoolAuthorizationEducationOrganizationIds,
+                contactStudentSchoolAuthorizationEducationOrganizationIds
+            ) = await AuthorizationDataHelper.GetAuthorizationEducationOrganizationIds(
+                upsertRequest,
+                connection,
+                transaction,
+                _sqlAction
+            );
 
             // Either get the existing document uuid or use the new one provided
             if (documentFromDb == null)

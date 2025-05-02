@@ -25,10 +25,18 @@ BEGIN
 
     -- Extract student school association document details
     FOR student_school_asso IN
-        SELECT jsonb_agg(StudentSchoolAuthorizationEducationOrganizationIds) AS aggregated_ed_org_ids, StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
-        FROM dms.StudentSchoolAssociationAuthorization 
-        WHERE StudentUniqueId = student_id
+        SELECT jsonb_agg(DISTINCT value) AS aggregated_ed_org_ids,
+            StudentSchoolAssociationId, 
+            StudentSchoolAssociationPartitionKey
+        FROM (
+            SELECT DISTINCT jsonb_array_elements(StudentSchoolAuthorizationEducationOrganizationIds) AS value,
+            StudentSchoolAssociationId,
+            StudentSchoolAssociationPartitionKey
+            FROM dms.StudentSchoolAssociationAuthorization 
+            WHERE StudentUniqueId = student_id
+        ) subquery
         GROUP BY StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
+
     LOOP
     -- Insert into ContactStudentSchoolAuthorization table
         INSERT INTO dms.ContactStudentSchoolAuthorization (

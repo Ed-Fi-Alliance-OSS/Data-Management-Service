@@ -172,6 +172,13 @@ public interface ISqlAction
     );
 
     public Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
+        string contactUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<JsonElement?> GetContactStudentSchoolAuthorizationEdOrgIdsForStudentAndContactSecurable(
+        string contactUniqueId,
         string studentUniqueId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction

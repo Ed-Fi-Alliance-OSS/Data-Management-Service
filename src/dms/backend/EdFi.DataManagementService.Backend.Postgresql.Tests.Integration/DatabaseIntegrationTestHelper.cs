@@ -463,6 +463,24 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
         return results;
     }
 
+    public async Task<string> GetDocumentContactStudentSchoolAuthorizationEdOrgIds(Guid documentUuid)
+    {
+        await using NpgsqlCommand command = new(
+            "SELECT ContactStudentSchoolAuthorizationEdOrgIds FROM dms.Document WHERE DocumentUuid = $1;",
+            Connection!,
+            Transaction!
+        )
+        {
+            Parameters = { new() { Value = documentUuid } },
+        };
+        await using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return reader["ContactStudentSchoolAuthorizationEdOrgIds"].ToString()!;
+        }
+        throw new InvalidOperationException("No matching document found.");
+    }
+
     public static long[] ParseEducationOrganizationIds(string ids)
     {
         return ids.Trim('[', ']')

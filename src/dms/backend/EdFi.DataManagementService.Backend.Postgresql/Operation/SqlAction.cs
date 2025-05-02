@@ -782,7 +782,7 @@ public class SqlAction() : ISqlAction
     }
 
     public async Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
-        string studentUniqueId,
+        string contactUniqueId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     )
@@ -797,7 +797,39 @@ public class SqlAction() : ISqlAction
             transaction
         )
         {
-            Parameters = { new() { Value = studentUniqueId } },
+            Parameters = { new() { Value = contactUniqueId } },
+        };
+
+        await command.PrepareAsync();
+        object? result = await command.ExecuteScalarAsync();
+
+        return result == DBNull.Value || result == null
+            ? null
+            : JsonSerializer.Deserialize<JsonElement>((string)result);
+    }
+
+    public async Task<JsonElement?> GetContactStudentSchoolAuthorizationEdOrgIdsForStudentAndContactSecurable(
+        string contactUniqueId,
+        string studentUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $"""
+                SELECT ContactStudentSchoolAuthorizationEducationOrganizationIds
+                FROM dms.ContactStudentSchoolAuthorization
+                WHERE ContactUniqueId = $1 AND StudentUniqueId = $2
+            """,
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = contactUniqueId },
+                new() { Value = studentUniqueId },
+            },
         };
 
         await command.PrepareAsync();
