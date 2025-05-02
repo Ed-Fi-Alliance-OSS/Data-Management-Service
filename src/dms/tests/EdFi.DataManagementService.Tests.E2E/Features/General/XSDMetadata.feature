@@ -117,7 +117,33 @@ Feature: XSD Metadata Endpoint
               And the general response body is
                   """
                     [
-                      "No XSD files found for extension."
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Ed-Fi-Core.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-AssessmentMetadata.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-AssessmentRegistration.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Contact.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Descriptors.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-EducationOrganization.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-EducationOrgCalendar.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Finance.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-MasterSchedule.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-PostSecondaryEvent.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StaffAssociation.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Standards.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Student.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentAssessment.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentAttendance.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentCohort.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentDiscipline.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentEnrollment.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentGrade.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentGradebook.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentHealth.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentIntervention.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentProgram.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentProgramEvaluation.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-StudentTranscript.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.Interchange-Survey.xsd",
+                      "http://localhost:8080/metadata/xsd/homograph/EdFi.DataStandard52.ApiSchema.xsd.SchemaAnnotation.xsd"
                     ]
                   """
         Scenario: 05 Ensure clients can retrieve Extension (TPDM) blended with Core schema files for the data model
