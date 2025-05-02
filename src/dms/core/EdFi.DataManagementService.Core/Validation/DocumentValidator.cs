@@ -64,6 +64,17 @@ internal class DocumentValidator() : IDocumentValidator
             results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
         }
 
+        var whiteSpacePruneResult = PruneCodeValueWhitespaceData(context.ParsedBody, results);
+
+        if (whiteSpacePruneResult is PruneResult.Pruned whiteSpacePruned)
+        {
+            // Used pruned body for the remainder of pipeline
+            context.ParsedBody = whiteSpacePruned.prunedDocumentBody;
+
+            // Now re-evaluate the pruned body
+            results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
+        }
+
         return (new List<string>().ToArray(), ValidationErrorsFrom(results));
 
         PruneResult PruneOverpostedData(JsonNode? documentBody, EvaluationResults evaluationResults)
@@ -144,6 +155,52 @@ internal class DocumentValidator() : IDocumentValidator
             }
 
             return new PruneResult.Pruned(documentBody);
+        }
+
+        PruneResult PruneCodeValueWhitespaceData(JsonNode? documentBody, EvaluationResults evaluationResults)
+        {
+            if (documentBody == null)
+            {
+                return new PruneResult.NotPruned();
+            }
+
+            var allowedProperties = new HashSet<string> { "codeValue", "shortDescription" };
+
+            var trimTargets = evaluationResults.Details
+                .Where(r =>
+                    r.Errors != null &&
+                    r.Errors.Values.Any(e => e.Contains("The string value is not a match for the indicated regular expression")) &&
+                    allowedProperties.Contains(r.InstanceLocation.ToString().TrimStart('/'))
+                )
+                .ToList();
+
+            if (trimTargets.Count == 0)
+            {
+                return new PruneResult.NotPruned();
+            }
+
+            bool modified = false;
+
+            foreach (var target in trimTargets)
+            {
+                string propertyName = target.InstanceLocation.ToString().TrimStart('/');
+
+                if (documentBody is JsonObject obj &&
+                    obj[propertyName] is JsonValue val &&
+                    val.TryGetValue<string>(out var str))
+                {
+                    var trimmed = str.Trim();
+                    if (trimmed != str)
+                    {
+                        obj[propertyName] = trimmed;
+                        modified = true;
+                    }
+                }
+            }
+
+            return modified
+                ? new PruneResult.Pruned(documentBody)
+                : new PruneResult.NotPruned();
         }
 
         Dictionary<string, string[]> ValidationErrorsFrom(EvaluationResults results)
