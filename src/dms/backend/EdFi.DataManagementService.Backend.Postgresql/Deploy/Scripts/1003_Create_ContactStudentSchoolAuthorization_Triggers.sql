@@ -12,7 +12,7 @@ CREATE OR REPLACE FUNCTION dms.ContactStudentSchoolAuthorizationInsertFunction()
 RETURNS TRIGGER
 AS $$
 DECLARE
-    ed_org_ids jsonb;
+    unified_ed_org_ids jsonb := '[]';
     student_id text;
     contact_id text;
     student_school_asso RECORD;
@@ -59,7 +59,23 @@ BEGIN
     );
     END LOOP;
 
-    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(student_id);
+    SELECT jsonb_agg(DISTINCT value)
+        INTO unified_ed_org_ids
+        FROM (
+            SELECT DISTINCT jsonb_array_elements(ContactStudentSchoolAuthorizationEducationOrganizationIds) AS value
+            FROM dms.ContactStudentSchoolAuthorization
+            WHERE ContactUniqueId = contact_id AND 
+                StudentUniqueId = student_id
+        ) subquery;
+
+     -- Update the Document table with the unified_ed_org_ids
+        UPDATE dms.Document
+        SET ContactStudentSchoolAuthorizationEdOrgIds = unified_ed_org_ids
+        WHERE 
+            Id =  NEW.Id AND
+            DocumentPartitionKey = NEW.DocumentPartitionKey;
+
+     PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(student_id);
 
     RETURN NULL;
 END;
