@@ -173,7 +173,7 @@ public class ClaimSetModuleTests
                     """
                     {
                         "originalId" : 1,
-                        "name": "Test-Copy" 
+                        "name": "Test-Copy"
                     }
                     """,
                     Encoding.UTF8,
@@ -660,26 +660,32 @@ public class ClaimSetModuleTests
     [TestFixture]
     public class FailureDuplicateClaimSetNameTests : ClaimSetModuleTests
     {
+        private HttpClient _client;
+
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
-                .Returns(new ClaimSetInsertResult.FailureDuplicateClaimSetName());
-
-            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
-                .Returns(new ClaimSetImportResult.FailureDuplicateClaimSetName());
-
             A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+
+            _client = SetUpClient();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            //Arrange
+            _client.Dispose();
         }
 
         [Test]
         public async Task Should_return_duplicate_claimSetName_error_message_on_insert()
         {
             //Arrange
-            using var client = SetUpClient();
+            A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
+                .Returns(new ClaimSetInsertResult.FailureDuplicateClaimSetName());
 
             //Act
-            var addResponse = await client.PostAsync(
+            var addResponse = await _client.PostAsync(
                 "/v2/claimSets",
                 new StringContent(
                     """
@@ -691,23 +697,6 @@ public class ClaimSetModuleTests
                     "application/json"
                 )
             );
-
-            string importBody = """
-                {
-                    "name" : "Test-Duplicate",
-                    "resourceClaims" : [
-                    {
-                        "name": "Test ResourceClaim",
-                        "actions": [
-                          {
-                            "name": "Create",
-                            "enabled": true
-                          }
-                        ]
-                    }
-                ]
-                }
-                """;
 
             var actualPostResponse = JsonNode.Parse(await addResponse.Content.ReadAsStringAsync());
             var expectedPostResponse = JsonNode.Parse(
@@ -728,7 +717,25 @@ public class ClaimSetModuleTests
                 """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
             );
 
-            var importResponse = await client.PostAsync(
+            //Assert
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task Should_return_duplicate_claimSetName_error_message_on_import_claim_set()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.FailureDuplicateClaimSetName());
+
+            string importBody = """
+                {
+                    "name" : "Test-Duplicate"
+                }
+                """;
+
+            var importResponse = await _client.PostAsync(
                 "/v2/claimSets/import",
                 new StringContent(importBody, Encoding.UTF8, "application/json")
             );
@@ -751,10 +758,6 @@ public class ClaimSetModuleTests
                 }
                 """.Replace("{correlationId}", actualImportResponse!["correlationId"]!.GetValue<string>())
             );
-
-            //Assert
-            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().Be(true);
 
             importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(actualImportResponse, expectedImportResponse).Should().Be(true);
