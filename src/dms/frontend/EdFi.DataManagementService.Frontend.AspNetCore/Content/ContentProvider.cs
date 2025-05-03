@@ -91,11 +91,14 @@ public class ContentProvider(
                 if (
                     Regex.IsMatch(resourceName, fileNamePattern, RegexOptions.IgnoreCase)
                     && resourceName.EndsWith(fileExtension)
-                    && !files.Contains(resourceName)
                 )
                 {
-                    files.Add(resourceName);
-                    _logger.LogInformation("resourceName is {ResourceName}", resourceName);
+                    var fileName = resourceName.Replace($"{assembly.GetName().Name}.xsd.", string.Empty);
+                    if (!files.Contains(fileName))
+                    {
+                        files.Add(fileName);
+                    }
+                    _logger.LogInformation("fileName is {FileName}", fileName);
                 }
             }
         }
