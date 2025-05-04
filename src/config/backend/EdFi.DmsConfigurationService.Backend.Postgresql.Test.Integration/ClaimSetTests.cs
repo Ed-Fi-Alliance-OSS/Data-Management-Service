@@ -6,10 +6,11 @@
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
+using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
-using AuthorizationStrategy = EdFi.DmsConfigurationService.DataModel.Model.ClaimSets.AuthorizationStrategy;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;
 
@@ -17,7 +18,11 @@ public class ClaimSetTests : DatabaseTest
 {
     private readonly IClaimSetRepository _repository = new ClaimSetRepository(
         Configuration.DatabaseOptions,
-        NullLogger<ClaimSetRepository>.Instance
+        NullLogger<ClaimSetRepository>.Instance,
+        new ClaimsHierarchyRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimsHierarchyRepository>.Instance
+        )
     );
 
     [TestFixture]
@@ -81,17 +86,82 @@ public class ClaimSetTests : DatabaseTest
     {
         private ClaimSetInsertCommand _insertClaimSet = null!;
         private ClaimSetUpdateCommand _updateClaimSet = null!;
+        private long _applicationId;
+        private IApplicationRepository _applicationRepository;
+        private IClaimsHierarchyRepository _claimsHierarchyRepository;
 
         [SetUp]
         public async Task Setup()
         {
+            IVendorRepository repository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance
+            );
+
+            VendorInsertCommand vendor = new()
+            {
+                Company = "Test Company",
+                ContactEmailAddress = "test@test.com",
+                ContactName = "Fake Name",
+                NamespacePrefixes = "FakePrefix1,FakePrefix2",
+            };
+
+            var vendorResult = await repository.InsertVendor(vendor);
+            var vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+            // Create the application to contain the claim set to be renamed
+            _applicationRepository = new ApplicationRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ApplicationRepository>.Instance
+            );
+
+            ApplicationInsertCommand application = new()
+            {
+                ApplicationName = "Test Application",
+                VendorId = vendorId,
+                ClaimSetName = "Test-Insert-ClaimSet",
+                EducationOrganizationIds = [1, 255911001, 255911002],
+            };
+
+            var applicationResult = await _applicationRepository.InsertApplication(
+                application,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+
+            _applicationId = (applicationResult as ApplicationInsertResult.Success)?.Id ?? 0;
+
+            // Insert claim set
             _insertClaimSet = new ClaimSetInsertCommand() { Name = "Test-Insert-ClaimSet" };
-
-            _updateClaimSet = new ClaimSetUpdateCommand() { Name = "Test-Update-ClaimSet" };
-
             var insertResult = await _repository.InsertClaimSet(_insertClaimSet);
             insertResult.Should().BeOfType<ClaimSetInsertResult.Success>();
 
+            // Initialize claims hierarchy
+            _claimsHierarchyRepository = new ClaimsHierarchyRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ClaimsHierarchyRepository>.Instance
+            );
+
+            var claimsHierarchy = new[]
+            {
+                new Claim
+                {
+                    Name = "RootClaim",
+                    ClaimSets = new List<ClaimSet> { new ClaimSet { Name = "Test-Insert-ClaimSet" } },
+                    Claims = new List<Claim>
+                    {
+                        new Claim
+                        {
+                            Name = "ChildClaim",
+                            ClaimSets = new List<ClaimSet> { new ClaimSet { Name = "Test-Insert-ClaimSet" } },
+                        },
+                    },
+                },
+            };
+
+            await _claimsHierarchyRepository.SaveClaimsHierarchy(claimsHierarchy);
+
+            // Update the claim set
+            _updateClaimSet = new ClaimSetUpdateCommand() { Name = "Test-Update-ClaimSet" };
             _updateClaimSet.Id = (insertResult as ClaimSetInsertResult.Success)!.Id;
             _updateClaimSet.Name = "Test-Update-ClaimSet";
 
@@ -102,13 +172,13 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_update_claimSet_from_get_all()
         {
-            var getResul = await _repository.QueryClaimSet(
+            var getResult = await _repository.QueryClaimSet(
                 new PagingQuery() { Limit = 25, Offset = 0 },
                 false
             );
-            getResul.Should().BeOfType<ClaimSetQueryResult.Success>();
+            getResult.Should().BeOfType<ClaimSetQueryResult.Success>();
 
-            object claimSetFromDb = ((ClaimSetQueryResult.Success)getResul).ClaimSetResponses.First();
+            object claimSetFromDb = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses.First();
             claimSetFromDb.Should().NotBeNull();
             claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
 
@@ -127,6 +197,50 @@ public class ClaimSetTests : DatabaseTest
 
             var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test-Update-ClaimSet");
+        }
+
+        [Test]
+        public async Task Should_get_renamed_claimSet_from_application_by_id()
+        {
+            var getByIdResult = await _applicationRepository.GetApplication(_applicationId);
+            getByIdResult.Should().BeOfType<ApplicationGetResult.Success>();
+
+            var applicationResponse = ((ApplicationGetResult.Success)getByIdResult).ApplicationResponse;
+
+            applicationResponse.ClaimSetName.Should().Be("Test-Update-ClaimSet");
+        }
+
+        [Test]
+        public async Task Should_update_all_occurrences_of_claimSet_in_claims_hierarchy()
+        {
+            // Retrieve the updated claims hierarchy
+            var hierarchyResult = await _claimsHierarchyRepository.GetClaimsHierarchy();
+            hierarchyResult.Should().BeOfType<ClaimsHierarchyGetResult.Success>();
+
+            var claims = ((ClaimsHierarchyGetResult.Success)hierarchyResult).Claims;
+
+            // Verify that "Test-Insert-ClaimSet" no longer exists
+            bool containsOldClaimSet = claims.Any(c => ContainsClaimSet(c, "Test-Insert-ClaimSet"));
+            containsOldClaimSet.Should().BeFalse();
+
+            // Verify that "Test-Update-ClaimSet" exists in all appropriate places
+            bool containsNewClaimSet = claims.Any(c => ContainsClaimSet(c, "Test-Update-ClaimSet"));
+            containsNewClaimSet.Should().BeTrue();
+        }
+
+        private bool ContainsClaimSet(Claim claim, string claimSetName)
+        {
+            if (claim.ClaimSets.Any(cs => cs.Name == claimSetName))
+            {
+                return true;
+            }
+
+            if (claim.Claims.Any(c => ContainsClaimSet(c, claimSetName)))
+            {
+                return true;
+            }
+
+            return false;
         }
     }
 
@@ -208,11 +322,7 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-
-            ClaimSetImportCommand claimSet = new()
-            {
-                Name = "Test-Import-ClaimSet"
-            };
+            ClaimSetImportCommand claimSet = new() { Name = "Test-Import-ClaimSet" };
 
             var result = await _repository.Import(claimSet);
             result.Should().BeOfType<ClaimSetImportResult.Success>();
@@ -245,10 +355,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_duplicate_failure()
         {
-            ClaimSetImportCommand claimSetDup = new()
-            {
-                Name = "Test-Import-ClaimSet"
-            };
+            ClaimSetImportCommand claimSetDup = new() { Name = "Test-Import-ClaimSet" };
 
             var resultDup = await _repository.Import(claimSetDup);
             resultDup.Should().BeOfType<ClaimSetImportResult.FailureDuplicateClaimSetName>();
