@@ -21,9 +21,9 @@ public class ClaimsHierarchyTests : DatabaseTest
     public async Task Should_get_claims_hierarchy()
     {
         var claimsHierarchyResult = await _repository.GetClaimsHierarchy();
-        claimsHierarchyResult.Should().BeOfType<ClaimsHierarchyResult.Success>();
+        claimsHierarchyResult.Should().BeOfType<ClaimsHierarchyGetResult.Success>();
 
-        var hierarchy = ((ClaimsHierarchyResult.Success)claimsHierarchyResult).Claims;
+        var hierarchy = ((ClaimsHierarchyGetResult.Success)claimsHierarchyResult).Claims;
         hierarchy.Should().NotBeNull();
         hierarchy.Should().BeOfType<Claim[]>();
 

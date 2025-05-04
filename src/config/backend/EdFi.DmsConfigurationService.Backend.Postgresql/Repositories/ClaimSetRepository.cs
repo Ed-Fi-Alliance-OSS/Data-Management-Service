@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Runtime.InteropServices.ComTypes;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dapper;
@@ -17,8 +18,11 @@ using AuthorizationStrategy = EdFi.DmsConfigurationService.DataModel.Model.Claim
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
-public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogger<ClaimSetRepository> logger)
-    : IClaimSetRepository
+public class ClaimSetRepository(
+    IOptions<DatabaseOptions> databaseOptions,
+    ILogger<ClaimSetRepository> logger,
+    IClaimsHierarchyRepository claimsHierarchyRepository
+) : IClaimSetRepository
 {
     public IEnumerable<Action> GetActions()
     {
@@ -230,25 +234,73 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            string sql = """
-                UPDATE dmscs.ClaimSet
-                SET ClaimSetName=@ClaimSetName, IsSystemReserved=@IsSystemReserved
+            // Get the current claim set name
+            string getClaimSetSql = """
+                SELECT ClaimSetName
+                FROM dmscs.ClaimSet
                 WHERE Id = @Id;
                 """;
 
-            var parameters = new
-            {
-                command.Id,
-                ClaimSetName = command.Name,
-                IsSystemReserved = false,
-            };
+            var getClaimSetParameters = new { Id = command.Id };
 
-            int affectedRows = await connection.ExecuteAsync(sql, parameters);
+            string? oldClaimSetName = await connection.ExecuteScalarAsync<string?>(
+                getClaimSetSql,
+                getClaimSetParameters,
+                transaction
+            );
+
+            if (oldClaimSetName == null)
+            {
+                return new ClaimSetUpdateResult.FailureNotFound();
+            }
+
+            string renameClaimSetSql = """
+                UPDATE dmscs.ClaimSet
+                SET ClaimSetName=@ClaimSetName
+                WHERE Id = @Id;
+                """;
+
+            string newClaimSetName = command.Name;
+
+            var renameClaimSetParameters = new { command.Id, ClaimSetName = newClaimSetName };
+
+            int affectedRows = await connection.ExecuteAsync(
+                renameClaimSetSql,
+                renameClaimSetParameters,
+                transaction
+            );
 
             if (affectedRows == 0)
             {
                 return new ClaimSetUpdateResult.FailureNotFound();
             }
+
+            var updateApplicationParameters = new
+            {
+                NewClaimSetName = newClaimSetName,
+                OldClaimSetName = oldClaimSetName,
+            };
+
+            string updateApplicationSql = """
+                UPDATE dmscs.Application
+                SET ClaimSetName = @NewClaimSetName
+                WHERE ClaimSetName = @OldClaimSetName;
+                """;
+
+            await connection.ExecuteAsync(updateApplicationSql, updateApplicationParameters, transaction);
+
+            // Update all occurrences of claim set name in JSON hierarchy
+            var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
+
+            if (hierarchyResult is ClaimsHierarchyGetResult.Success success)
+            {
+                var claims = success.Claims;
+
+                RenameClaimSet(claims, oldClaimSetName, newClaimSetName);
+
+                await claimsHierarchyRepository.SaveClaimsHierarchy(claims, transaction);
+            }
+
             await transaction.CommitAsync();
 
             return new ClaimSetUpdateResult.Success();
@@ -258,6 +310,28 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
             logger.LogError(ex, "Update claim set failure");
             await transaction.RollbackAsync();
             return new ClaimSetUpdateResult.FailureUnknown(ex.Message);
+        }
+
+        void RenameClaimSet(IEnumerable<Claim> claims, string oldClaimSetName, string newClaimSetName)
+        {
+            foreach (var claim in claims)
+            {
+                if (claim.ClaimSets != null)
+                {
+                    foreach (var claimSet in claim.ClaimSets)
+                    {
+                        if (claimSet.Name == oldClaimSetName)
+                        {
+                            claimSet.Name = newClaimSetName;
+                        }
+                    }
+                }
+
+                if (claim.Claims != null && claim.Claims.Any())
+                {
+                    RenameClaimSet(claim.Claims, oldClaimSetName, newClaimSetName);
+                }
+            }
         }
     }
 
