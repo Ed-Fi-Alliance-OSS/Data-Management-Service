@@ -609,7 +609,7 @@ Feature: Update a Descriptor
                     "codeValue": " Little Shell Tribe ",
                     "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                     "shortDescription": " Little Shell Tribe ",
-                    "description": "Little Shell Tribe of Chippewa Indians of Montana"
+                    "description": "Little Shell Tribe of Chippewa Indians of Montana",
                     "effectiveBeginDate": "2025-05-14",
                     "effectiveEndDate": "2027-05-14"
                   }
@@ -622,7 +622,7 @@ Feature: Update a Descriptor
                     "codeValue": "Little Shell Tribe",
                     "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                     "shortDescription": "Little Shell Tribe",
-                    "description": "Little Shell Tribe of Chippewa Indians of Montana"
+                    "description": "Little Shell Tribe of Chippewa Indians of Montana",
                     "effectiveBeginDate": "2025-05-14",
                     "effectiveEndDate": "2027-05-14"
                   }
