@@ -27,6 +27,8 @@ internal interface IDocumentValidator
 
 internal class DocumentValidator() : IDocumentValidator
 {
+    private readonly HashSet<string> allowedProperties = new HashSet<string> { "codeValue", "shortDescription" };
+
     private static JsonSchema GetSchema(ResourceSchema resourceSchema, RequestMethod method)
     {
         JsonNode jsonSchemaForResource = resourceSchema.JsonSchemaForRequestMethod(method);
@@ -36,7 +38,6 @@ internal class DocumentValidator() : IDocumentValidator
 
     public (string[], Dictionary<string, string[]>) Validate(PipelineContext context)
     {
-        var allowedProperties = new HashSet<string> { "codeValue", "shortDescription" };
 
         EvaluationOptions validatorEvaluationOptions =
                 new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
