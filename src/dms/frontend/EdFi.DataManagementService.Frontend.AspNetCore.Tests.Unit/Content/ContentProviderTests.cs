@@ -30,8 +30,8 @@ public class ContentProviderTests
 
         var resources = new string[] {
             "EdFi.DataStandard52.ApiSchema.ApiSchema.json",
-            "EdFi.DataStandard52.ApiSchema.xsd.Interchange-AssessmentMetadata.xsd",
-            "EdFi.DataStandard52.ApiSchema.xsd.Interchange-Descriptors.xsd" };
+            "Interchange-AssessmentMetadata.xsd",
+            "Interchange-Descriptors.xsd" };
 
         A.CallTo(() => _assembly.GetManifestResourceNames()).Returns(resources);
         A.CallTo(() => _iAssemblyLoader.Load(A<string>._)).Returns(_assembly);
@@ -72,7 +72,7 @@ public class ContentProviderTests
         // Assert
         response.Should().NotBeNull();
         response.Count().Should().Be(2);
-        response.Should().Contain("EdFi.DataStandard52.ApiSchema.xsd.Interchange-AssessmentMetadata.xsd");
+        response.Should().Contain("Interchange-AssessmentMetadata.xsd");
     }
 
     [Test]
