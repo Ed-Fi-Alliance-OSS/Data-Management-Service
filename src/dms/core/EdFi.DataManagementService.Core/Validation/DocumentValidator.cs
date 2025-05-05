@@ -27,7 +27,7 @@ internal interface IDocumentValidator
 
 internal class DocumentValidator() : IDocumentValidator
 {
-    private readonly HashSet<string> allowedProperties = new HashSet<string> { "codeValue", "shortDescription" };
+    private readonly HashSet<string> trimmableProperties = new HashSet<string> { "codeValue", "shortDescription" };
 
     private static JsonSchema GetSchema(ResourceSchema resourceSchema, RequestMethod method)
     {
@@ -67,12 +67,12 @@ internal class DocumentValidator() : IDocumentValidator
             results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
         }
 
-        var whiteSpacePruneResult = PruneCodeValueWhitespaceData(context.ParsedBody, results);
+        var whitespacePruneResult = PruneCodeValueWhitespaceData(context.ParsedBody, results);
 
-        if (whiteSpacePruneResult is PruneResult.Pruned whiteSpacePruned)
+        if (whitespacePruneResult is PruneResult.Pruned whitespacePruned)
         {
             // Used pruned body for the remainder of pipeline
-            context.ParsedBody = whiteSpacePruned.prunedDocumentBody;
+            context.ParsedBody = whitespacePruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
@@ -171,7 +171,7 @@ internal class DocumentValidator() : IDocumentValidator
                 .Where(r =>
                     r.Errors != null &&
                     r.Errors.Values.Any(e => e.Contains("The string value is not a match for the indicated regular expression")) &&
-                    allowedProperties.Contains(r.InstanceLocation.ToString().TrimStart('/'))
+                    trimmableProperties.Contains(r.InstanceLocation.ToString().TrimStart('/'))
                 )
                 .ToList();
 

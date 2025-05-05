@@ -606,7 +606,7 @@ Feature: Update a Descriptor
                   """
                   {
                     "id": "{id}",
-                    "codeValue": " Little Shell Tribe ",
+                    "codeValue": "Little Shell Tribe",
                     "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
                     "shortDescription": " Little Shell Tribe ",
                     "description": "Little Shell Tribe of Chippewa Indians of Montana",
