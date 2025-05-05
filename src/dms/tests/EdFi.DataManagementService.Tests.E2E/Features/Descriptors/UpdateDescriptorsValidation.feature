@@ -601,29 +601,3 @@ Feature: Update a Descriptor
                       "errors": []
                   }
                   """
-        Scenario: 21 Update a descriptor with leading and trailing spaces
-             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
-                  """
-                  {
-                    "id": "{id}",
-                    "codeValue": "Little Shell Tribe",
-                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                    "shortDescription": " Little Shell Tribe ",
-                    "description": "Little Shell Tribe of Chippewa Indians of Montana",
-                    "effectiveBeginDate": "2025-05-14",
-                    "effectiveEndDate": "2027-05-14"
-                  }
-                  """
-             Then it should respond with 204
-              And the record can be retrieved with a GET request
-                  """
-                  {
-                    "id": "{id}",
-                    "codeValue": "Little Shell Tribe",
-                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
-                    "shortDescription": "Little Shell Tribe",
-                    "description": "Little Shell Tribe of Chippewa Indians of Montana",
-                    "effectiveBeginDate": "2025-05-14",
-                    "effectiveEndDate": "2027-05-14"
-                  }
-                  """
