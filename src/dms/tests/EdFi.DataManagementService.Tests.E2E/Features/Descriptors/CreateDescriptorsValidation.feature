@@ -167,17 +167,18 @@ Feature: Create a Descriptor
               And the response body is
                   """
                   {
-                    "validationErrors": {
+                          "validationErrors": {
                         "$.codeValue": [
-                        "codeValue cannot contain leading or trailing spaces."
+                          "codeValue Value should be at least 1 characters"
                         ],
                         "$.namespace": [
-                        "namespace cannot contain leading or trailing spaces."
+                          "namespace cannot contain leading or trailing spaces."
                         ],
                         "$.shortDescription": [
-                        "shortDescription cannot contain leading or trailing spaces."
+                          "shortDescription Value should be at least 1 characters"
                         ]
-                    },
+
+                   },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
                     "type": "urn:ed-fi:api:bad-request:data-validation-failed",
@@ -203,14 +204,8 @@ Feature: Create a Descriptor
                   """
                   {
                     "validationErrors": {
-                      "$.codeValue": [
-                        "codeValue cannot contain leading or trailing spaces."
-                      ],
                       "$.namespace": [
                         "namespace cannot contain leading or trailing spaces."
-                      ],
-                      "$.shortDescription": [
-                        "shortDescription cannot contain leading or trailing spaces."
                       ]
                     },
                     "errors": [],
@@ -238,14 +233,8 @@ Feature: Create a Descriptor
                   """
                   {
                     "validationErrors": {
-                        "$.codeValue": [
-                        "codeValue cannot contain leading or trailing spaces."
-                        ],
                         "$.namespace": [
                         "namespace cannot contain leading or trailing spaces."
-                        ],
-                        "$.shortDescription": [
-                        "shortDescription cannot contain leading or trailing spaces."
                         ]
                     },
                     "errors": [],
@@ -486,5 +475,26 @@ Feature: Create a Descriptor
                       "errors": [
                         "Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: 'uri://ed-fi.org'."
                       ]
+                    }
+                  """
+        Scenario: 18 Create a descriptor with leading and trailing spaces
+             When a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
+                  """
+                    {
+                        "codeValue": " Little Shell Tribe ",
+                        "namespace": "uri://ed-fi.org/absenceEventCategoryDescriptor",
+                        "shortDescription": " Little Shell Tribe ",
+                        "description": "Little Shell Tribe of Chippewa Indians of Montana"
+                    }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                    {
+                        "id": "{id}",
+                        "codeValue": "Little Shell Tribe",
+                        "namespace": "uri://ed-fi.org/absenceEventCategoryDescriptor",
+                        "shortDescription": "Little Shell Tribe",
+                        "description": "Little Shell Tribe of Chippewa Indians of Montana"
                     }
                   """
