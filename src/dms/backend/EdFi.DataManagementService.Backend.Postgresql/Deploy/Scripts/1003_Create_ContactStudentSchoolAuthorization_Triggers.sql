@@ -59,23 +59,7 @@ BEGIN
     );
     END LOOP;
 
-    SELECT jsonb_agg(DISTINCT value)
-        INTO unified_ed_org_ids
-        FROM (
-            SELECT DISTINCT jsonb_array_elements(ContactStudentSchoolAuthorizationEducationOrganizationIds) AS value
-            FROM dms.ContactStudentSchoolAuthorization
-            WHERE ContactUniqueId = contact_id AND 
-                StudentUniqueId = student_id
-        ) subquery;
-
-     -- Update the Document table with the unified_ed_org_ids
-        UPDATE dms.Document
-        SET ContactStudentSchoolAuthorizationEdOrgIds = unified_ed_org_ids
-        WHERE 
-            Id =  NEW.Id AND
-            DocumentPartitionKey = NEW.DocumentPartitionKey;
-
-     PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(student_id);
+    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(contact_id);
 
     RETURN NULL;
 END;
@@ -86,12 +70,12 @@ CREATE OR REPLACE FUNCTION dms.ContactStudentSchoolAuthorizationDeleteFunction()
 RETURNS TRIGGER
 AS $$
 DECLARE
-    old_student_id text;
+    old_contact_id text;
 BEGIN
-    old_student_id := OLD.EdfiDoc->'studentReference'->>'studentUniqueId';
+    old_contact_id := OLD.EdfiDoc->'contactReference'->>'contactUniqueId';
 
     -- Update edorg id list for the contact securable documents
-    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(old_student_id);
+    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(old_contact_id);
 
     RETURN NULL;
 END;

@@ -55,25 +55,6 @@ public static class AuthorizationDataHelper
                 );
         }
 
-        // Check for both StudentUniqueId and ContactUniqueId securables
-        if (
-            upsertRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId)
-            && upsertRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
-        )
-        {
-            contactStudentSchoolAuthorizationEducationOrganizationIds =
-                await _sqlAction.GetContactStudentSchoolAuthorizationEdOrgIdsForStudentAndContactSecurable(
-                    upsertRequest.DocumentSecurityElements.Contact[0].Value,
-                    upsertRequest.DocumentSecurityElements.Student[0].Value,
-                    connection,
-                    transaction
-                );
-        }
-
         return (
             studentSchoolAuthorizationEducationOrganizationIds,
             contactStudentSchoolAuthorizationEducationOrganizationIds

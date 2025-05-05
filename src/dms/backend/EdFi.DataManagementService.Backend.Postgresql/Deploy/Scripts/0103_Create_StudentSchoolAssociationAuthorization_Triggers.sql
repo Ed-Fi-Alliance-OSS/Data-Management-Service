@@ -108,9 +108,10 @@ BEGIN
         NEW.Id,
         NEW.DocumentPartitionKey
     );
-    END LOOP;
 
-    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(student_id);
+    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(existing_contact.ContactUniqueId);
+
+    END LOOP;
 
     RETURN NULL;
 END;
@@ -122,6 +123,7 @@ RETURNS TRIGGER
 AS $$
 DECLARE
     old_student_id text;
+    existing_contact RECORD;
 BEGIN
     old_student_id := OLD.EdfiDoc->'studentReference'->>'studentUniqueId';
 
@@ -129,7 +131,13 @@ BEGIN
     PERFORM dms.ClearStudentSchoolAuthorizationEdOrgIds(old_student_id);
 
     -- Update edorg id list for the contact securable documents
-    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(old_student_id);
+    FOR existing_contact IN
+        SELECT ContactUniqueId, StudentContactAssociationId, StudentContactAssociationPartitionKey
+        FROM dms.ContactStudentSchoolAuthorization WHERE StudentUniqueId = old_student_id
+    LOOP
+    
+    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(existing_contact.ContactUniqueId);
+    END LOOP;
 
     RETURN NULL;
 END;

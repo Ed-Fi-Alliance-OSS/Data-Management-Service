@@ -6,22 +6,13 @@
 -- Helper function to handle the aggregation of ContactStudentSchoolAuthorizationEducationOrganizationIds
 -- and updating the dms.Document table
 CREATE OR REPLACE FUNCTION dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(
-    student_id text
+    contact_id text
 )
 RETURNS VOID
 AS $$
 DECLARE
-    contact_id text;
     unified_ed_org_ids jsonb := '[]';
-    contact_secureable_doc_id BIGINT;
-    contact_secureable_doc_key SMALLINT;
 BEGIN
-    -- Loop through all contact IDs associated with the given student ID
-    FOR contact_id IN
-        SELECT ContactUniqueId
-        FROM dms.ContactStudentSchoolAuthorization
-        WHERE StudentUniqueId = student_id
-    LOOP
         -- Aggregate and merge distinct values into unified_ed_org_ids
         SELECT jsonb_agg(DISTINCT value)
         INTO unified_ed_org_ids
@@ -31,18 +22,13 @@ BEGIN
             WHERE ContactUniqueId = contact_id
         ) subquery;
 
-        -- Retrieve ContactSecurableDocumentId and ContactSecurableDocumentPartitionKey
-        SELECT ContactSecurableDocumentId, ContactSecurableDocumentPartitionKey
-        INTO contact_secureable_doc_id, contact_secureable_doc_key
-        FROM dms.ContactSecurableDocument
-        WHERE ContactUniqueId = contact_id;
-
         -- Update the Document table with the unified_ed_org_ids
-        UPDATE dms.Document
+        UPDATE dms.Document doc
         SET ContactStudentSchoolAuthorizationEdOrgIds = unified_ed_org_ids
-        WHERE 
-            Id = contact_secureable_doc_id AND
-            DocumentPartitionKey = contact_secureable_doc_key;
-    END LOOP;
+        FROM dms.ContactSecurableDocument csd
+        WHERE
+            csd.ContactUniqueId = contact_id AND
+            doc.Id = csd.ContactSecurableDocumentId AND
+            doc.DocumentPartitionKey = csd.ContactSecurableDocumentPartitionKey;
 END;
 $$ LANGUAGE plpgsql;

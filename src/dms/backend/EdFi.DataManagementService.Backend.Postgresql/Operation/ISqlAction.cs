@@ -177,13 +177,6 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
-    public Task<JsonElement?> GetContactStudentSchoolAuthorizationEdOrgIdsForStudentAndContactSecurable(
-        string contactUniqueId,
-        string studentUniqueId,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction
-    );
-
     public Task<int> InsertStudentSecurableDocument(
         string studentUniqueId,
         long documentId,
