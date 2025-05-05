@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Runtime.Loader;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Extensions.Options;
 
@@ -51,18 +52,22 @@ public interface IContentProvider
 /// Loads and parses the file content.
 /// </summary>
 
-public class ContentProvider(ILogger<ContentProvider> _logger, IOptions<AppSettings> appSettings, IAssemblyLoader assemblyLoader) : IContentProvider
+public class ContentProvider(
+    ILogger<ContentProvider> _logger,
+    IOptions<AppSettings> appSettings,
+    IAssemblyLoader assemblyLoader
+) : IContentProvider
 {
-
     public IEnumerable<string> Files(string fileNamePattern, string fileExtension, string section)
     {
         string apiSchemaPath;
         string[] assemblies;
         var files = new List<string>();
-        section = section == "ed-fi" ? "DataStandard52" : section;
         if (appSettings.Value.UseApiSchemaPath)
         {
-            apiSchemaPath = appSettings.Value.ApiSchemaPath ?? throw new InvalidOperationException("ApiSchemaPath is not configured in AppSettings.");
+            apiSchemaPath =
+                appSettings.Value.ApiSchemaPath
+                ?? throw new InvalidOperationException("ApiSchemaPath is not configured in AppSettings.");
         }
         else
         {
@@ -70,14 +75,12 @@ public class ContentProvider(ILogger<ContentProvider> _logger, IOptions<AppSetti
         }
 
         assemblies = Directory
-                    .EnumerateFiles(apiSchemaPath, "*.*", SearchOption.AllDirectories)
-                    .Where(f =>
-                        Path.GetFileName(f).EndsWith(".dll", StringComparison.OrdinalIgnoreCase) &&
-                        Path.GetFileName(f).StartsWith($"EdFi.{section}.ApiSchema", StringComparison.OrdinalIgnoreCase))
-                    .GroupBy(Path.GetFileName)
-                    .Select(g => g.First())
-                    .ToArray();
-
+            .EnumerateFiles(apiSchemaPath, "*.*", SearchOption.AllDirectories)
+            .Where(f => Path.GetFileName(f).EndsWith(".ApiSchema.dll", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(Path.GetFileName)
+            .Select(g => g.First())
+            .OrderBy(f => f)
+            .ToArray();
 
         foreach (var assemblyPath in assemblies)
         {
@@ -85,12 +88,17 @@ public class ContentProvider(ILogger<ContentProvider> _logger, IOptions<AppSetti
             var assembly = assemblyLoader.Load(assemblyPath);
             foreach (string resourceName in assembly.GetManifestResourceNames())
             {
-                if (resourceName.Contains(fileNamePattern, StringComparison.OrdinalIgnoreCase)
+                if (
+                    Regex.IsMatch(resourceName, fileNamePattern, RegexOptions.IgnoreCase)
                     && resourceName.EndsWith(fileExtension)
-                    && !files.Contains(resourceName))
+                )
                 {
-                    files.Add(resourceName);
-                    _logger.LogInformation("resourceName is {ResourceName}", resourceName);
+                    var fileName = resourceName.Replace($"{assembly.GetName().Name}.xsd.", string.Empty);
+                    if (!files.Contains(fileName))
+                    {
+                        files.Add(fileName);
+                    }
+                    _logger.LogInformation("fileName is {FileName}", fileName);
                 }
             }
         }
@@ -154,7 +162,9 @@ public class ContentProvider(ILogger<ContentProvider> _logger, IOptions<AppSetti
         string searchPattern;
         if (appSettings.Value.UseApiSchemaPath)
         {
-            apiSchemaPath = appSettings.Value.ApiSchemaPath ?? throw new InvalidOperationException("ApiSchemaPath is not configured in AppSettings.");
+            apiSchemaPath =
+                appSettings.Value.ApiSchemaPath
+                ?? throw new InvalidOperationException("ApiSchemaPath is not configured in AppSettings.");
         }
         else
         {
@@ -163,17 +173,17 @@ public class ContentProvider(ILogger<ContentProvider> _logger, IOptions<AppSetti
 
         searchPattern = "*.ApiSchema.dll";
         var assemblies = Directory.GetFiles(apiSchemaPath, searchPattern, SearchOption.AllDirectories);
-        assemblies = assemblies
-                    .GroupBy(Path.GetFileName)
-                    .Select(g => g.First())
-                    .ToArray();
+        assemblies = assemblies.GroupBy(Path.GetFileName).Select(g => g.First()).ToArray();
 
         foreach (var assemblyPath in assemblies)
         {
             var assembly = assemblyLoader.Load(assemblyPath);
             var resourceName = assembly
                 .GetManifestResourceNames()
-                .SingleOrDefault(str => str.Contains(fileNamePattern, StringComparison.OrdinalIgnoreCase) && str.EndsWith(fileExtension));
+                .SingleOrDefault(str =>
+                    str.Contains(fileNamePattern, StringComparison.OrdinalIgnoreCase)
+                    && str.EndsWith(fileExtension)
+                );
 
             if (resourceName != null)
             {
@@ -189,14 +199,15 @@ public class ContentProvider(ILogger<ContentProvider> _logger, IOptions<AppSetti
         _logger.LogCritical(error);
         throw new InvalidOperationException(error);
     }
-
 }
+
 /// <summary>
 /// Returns ApiSchemaAssemblyLoadContext for loading Assembly Context
 /// </summary>
 public class ApiSchemaAssemblyLoadContext : AssemblyLoadContext
 {
-    public ApiSchemaAssemblyLoadContext() : base(isCollectible: true) { }
+    public ApiSchemaAssemblyLoadContext()
+        : base(isCollectible: true) { }
 }
 
 public interface IAssemblyLoader
