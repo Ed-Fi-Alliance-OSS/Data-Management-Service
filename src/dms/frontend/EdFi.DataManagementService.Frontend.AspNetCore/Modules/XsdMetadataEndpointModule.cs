@@ -38,7 +38,9 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         {
             sections.Add(
                 new XsdMetaDataSectionInfo(
-                    description: $"Core schema ({dataModelInfo.ProjectName}) files for the data model",
+                    description: dataModelInfo.IsCoreProject
+                        ? $"Core schema ({dataModelInfo.ProjectName}) files for the data model"
+                        : $"Extension ({dataModelInfo.ProjectName}) blended with Core schema files for the data model",
                     name: dataModelInfo.ProjectName.ToLower(),
                     version: dataModelInfo.ProjectVersion,
                     files: $"{baseUrl}/{dataModelInfo.ProjectName.ToLower()}/files"
@@ -63,14 +65,17 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         }
 
         string section = match.Groups["section"].Value;
-        IList<IDataModelInfo> dataModelInfos = apiService.GetDataModelInfo();
+        IDataModelInfo? dataModelInfo = apiService
+            .GetDataModelInfo()
+            .FirstOrDefault(x => x.ProjectName.Equals(section, StringComparison.InvariantCultureIgnoreCase));
 
-        if (dataModelInfos.Any(x => x.ProjectName.Equals(section, StringComparison.InvariantCultureIgnoreCase)))
+        if (dataModelInfo != null)
         {
             var baseUrl = httpContext.Request.UrlWithPathSegment().Replace("files", "");
             var withFullPath = new List<string>();
-            section = section == "ed-fi" ? "DataStandard52" : section;
-            var searchPattern = $"EdFi.{section}.ApiSchema";
+            var searchPattern = dataModelInfo.IsCoreProject
+                ? @"EdFi\.DataStandard.*\.ApiSchema"
+                : $@"EdFi\.DataStandard.*\.ApiSchema|EdFi.{section}.ApiSchema";
             var xsdFiles = contentProvider.Files(searchPattern, ".xsd", section);
 
             if (xsdFiles.Any())

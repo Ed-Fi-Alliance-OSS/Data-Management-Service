@@ -143,15 +143,15 @@ Feature: Update a Descriptor
                   """
                   {
                     "validationErrors": {
-                      "$.codeValue": [
-                        "codeValue cannot contain leading or trailing spaces."
-                      ],
-                      "$.namespace": [
+                        "$.codeValue": [
+                        "codeValue Value should be at least 1 characters"
+                    ],
+                    "$.namespace": [
                         "namespace cannot contain leading or trailing spaces."
-                      ],
-                      "$.shortDescription": [
-                        "shortDescription cannot contain leading or trailing spaces."
-                      ]
+                    ],
+                    "$.shortDescription": [
+                        "shortDescription Value should be at least 1 characters"
+                    ]
                     },
                     "errors": [],
                     "detail": "Data validation failed. See 'validationErrors' for details.",
@@ -179,14 +179,8 @@ Feature: Update a Descriptor
                   """
                   {
                     "validationErrors": {
-                      "$.codeValue": [
-                        "codeValue cannot contain leading or trailing spaces."
-                      ],
                       "$.namespace": [
                         "namespace cannot contain leading or trailing spaces."
-                      ],
-                      "$.shortDescription": [
-                        "shortDescription cannot contain leading or trailing spaces."
                       ]
                     },
                     "errors": [],
@@ -215,14 +209,8 @@ Feature: Update a Descriptor
                   """
                   {
                     "validationErrors": {
-                      "$.codeValue": [
-                        "codeValue cannot contain leading or trailing spaces."
-                      ],
                       "$.namespace": [
                         "namespace cannot contain leading or trailing spaces."
-                      ],
-                      "$.shortDescription": [
-                        "shortDescription cannot contain leading or trailing spaces."
                       ]
                     },
                     "errors": [],

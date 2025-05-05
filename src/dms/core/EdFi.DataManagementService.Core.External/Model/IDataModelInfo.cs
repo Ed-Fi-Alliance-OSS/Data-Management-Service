@@ -24,4 +24,9 @@ public interface IDataModelInfo
     /// The description of this data model
     /// </summary>
     string Description { get; }
+
+    /// <summary>
+    /// Indicates whether this is a core data model project
+    /// </summary>
+    bool IsCoreProject { get; }
 }

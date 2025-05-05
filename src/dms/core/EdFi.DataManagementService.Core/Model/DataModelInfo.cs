@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.ComponentModel;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Model;
@@ -23,4 +24,10 @@ internal record DataModelInfo(
     /// The description of this data model
     /// </summary>
     string Description
-) : IDataModelInfo;
+) : IDataModelInfo
+{
+    /// <summary>
+    /// Indicates whether this is a core data model project
+    /// </summary>
+    public bool IsCoreProject => ProjectName.Equals("Ed-Fi", StringComparison.OrdinalIgnoreCase);
+}

@@ -76,15 +76,16 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Services
 
                 foreach (var resourceName in resourceNames)
                 {
+                    // Skip saving .xsd files
+                    if (resourceName.EndsWith(".xsd"))
+                    {
+                        continue;
+                    }
+
                     string outputFilePath = Path.Combine(
                         outputDir,
                         resourceName.Replace(packageId + ".", "")
                     );
-
-                    if (resourceName.EndsWith(".xsd"))
-                    {
-                        outputFilePath = outputFilePath.Replace("xsd.", "");
-                    }
 
                     using var resourceStream = assembly.GetManifestResourceStream(resourceName);
                     using var fileStream = File.Create(outputFilePath);

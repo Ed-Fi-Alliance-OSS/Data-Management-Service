@@ -37,6 +37,7 @@ public class XsdMetaDataModuleTests
                 ProjectName = "Ed-Fi",
                 ProjectVersion = "5.0.0",
                 Description = "Ed-Fi data standard 5.0.0",
+                IsCoreProject = true,
             }
         ).ActLike<IDataModelInfo>();
         IDataModelInfo expectedtpdmModel = (
@@ -45,6 +46,7 @@ public class XsdMetaDataModuleTests
                 ProjectName = "Tpdm",
                 ProjectVersion = "1.0.0",
                 Description = "TPDM data standard 1.0.0",
+                IsCoreProject = false,
             }
         ).ActLike<IDataModelInfo>();
 
@@ -120,7 +122,7 @@ public class XsdMetaDataModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         files.Should().NotBeNull();
-        files?.Count().Should().Be(1);
+        files?.Count().Should().Be(3);
     }
 
     [Test]

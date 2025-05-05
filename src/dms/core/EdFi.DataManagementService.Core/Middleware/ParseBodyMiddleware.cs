@@ -70,18 +70,6 @@ namespace EdFi.DataManagementService.Core.Middleware
 
                 JsonNode? body = JsonNode.Parse(context.FrontendRequest.Body);
 
-                // [DMS-597] Workaround for DMS-629 DMS should allow leading and trailing spaces in Descriptor's CodeValue and ShortDescription
-                if (
-                    context.FrontendRequest.Path.Equals(
-                        "/ed-fi/tribalAffiliationDescriptors",
-                        StringComparison.OrdinalIgnoreCase
-                    )
-                )
-                {
-                    body!["codeValue"] = body["codeValue"]!.GetValue<string>().Trim();
-                    body["shortDescription"] = body["shortDescription"]!.GetValue<string>().Trim();
-                }
-
                 Trace.Assert(body != null, "Unable to parse JSON");
 
                 context.ParsedBody = body;
