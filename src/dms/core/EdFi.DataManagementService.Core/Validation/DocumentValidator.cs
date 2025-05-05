@@ -36,8 +36,10 @@ internal class DocumentValidator() : IDocumentValidator
 
     public (string[], Dictionary<string, string[]>) Validate(PipelineContext context)
     {
+        var allowedProperties = new HashSet<string> { "codeValue", "shortDescription" };
+
         EvaluationOptions validatorEvaluationOptions =
-            new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
+                new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
 
         var resourceSchemaValidator = GetSchema(context.ResourceSchema, context.Method);
         var results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
@@ -163,8 +165,6 @@ internal class DocumentValidator() : IDocumentValidator
             {
                 return new PruneResult.NotPruned();
             }
-
-            var allowedProperties = new HashSet<string> { "codeValue", "shortDescription" };
 
             var trimTargets = evaluationResults.Details
                 .Where(r =>
