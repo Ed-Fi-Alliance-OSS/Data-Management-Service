@@ -141,7 +141,7 @@ public class ClaimSetTests : DatabaseTest
                 NullLogger<ClaimsHierarchyRepository>.Instance
             );
 
-            var claimsHierarchy = new[]
+            var claimsHierarchy = new List<Claim>
             {
                 new Claim
                 {

@@ -29,14 +29,19 @@ public class ClaimsHierarchyRepository(
             // Initial implementation assumes a basic implementation with single record.
             string sql = "SELECT Hierarchy FROM dmscs.ClaimsHierarchy";
 
-            string? hierarchyJson = await connection.QuerySingleOrDefaultAsync<string>(sql);
+            var hierarchyJson = (await connection.QueryAsync<string>(sql)).ToList();
 
-            if (hierarchyJson == null)
+            if (hierarchyJson.Count == 0)
             {
                 return new ClaimsHierarchyGetResult.FailureHierarchyNotFound();
             }
 
-            var hierarchy = JsonSerializer.Deserialize<Claim[]>(hierarchyJson);
+            if (hierarchyJson.Count > 1)
+            {
+                return new ClaimsHierarchyGetResult.FailureMultipleHierarchiesFound();
+            }
+
+            var hierarchy = JsonSerializer.Deserialize<List<Claim>>(hierarchyJson[0]);
 
             if (hierarchy == null)
             {
@@ -56,7 +61,7 @@ public class ClaimsHierarchyRepository(
     }
 
     public async Task<ClaimsHierarchySaveResult> SaveClaimsHierarchy(
-        Claim[] claimsHierarchy,
+        List<Claim> claimsHierarchy,
         DbTransaction? transaction = null
     )
     {
@@ -75,7 +80,7 @@ public class ClaimsHierarchyRepository(
             if (existingRecords.Count > 1)
             {
                 // Only one claims hierarchy is currently expected to be present, but multiple were found.
-                return new ClaimsHierarchySaveResult.MultipleHierarchiesFound();
+                return new ClaimsHierarchySaveResult.FailureMultipleHierarchiesFound();
             }
 
             if (existingRecords.Count == 0)
@@ -110,7 +115,7 @@ public class ClaimsHierarchyRepository(
 
                 if (affectedRows == 0)
                 {
-                    return new ClaimsHierarchySaveResult.MultiUserConflict();
+                    return new ClaimsHierarchySaveResult.FailureMultiUserConflict();
                 }
             }
 
