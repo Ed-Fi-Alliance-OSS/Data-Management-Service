@@ -889,3 +889,27 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     }
                   ]
                   """
+
+    Rule: POST LocalEducationAgency succeeds
+     Background:
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901"
+              And the system has these descriptors
+                  | descriptorValue                                                                       |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency        |
+                  | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district |
+
+        Scenario: 20 Ensure client can create a LocalEducationAgency without specifying a StateEducationAgencyReference
+              And a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Grand Bend SD",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+                  Then it should respond with 201
