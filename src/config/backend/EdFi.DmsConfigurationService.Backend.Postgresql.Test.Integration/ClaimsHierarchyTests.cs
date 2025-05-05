@@ -25,9 +25,9 @@ public class ClaimsHierarchyTests : DatabaseTest
 
         var hierarchy = ((ClaimsHierarchyGetResult.Success)claimsHierarchyResult).Claims;
         hierarchy.Should().NotBeNull();
-        hierarchy.Should().BeOfType<Claim[]>();
+        hierarchy.Should().BeOfType<List<Claim>>();
 
-        hierarchy.Length.Should().BeGreaterThan(0);
+        hierarchy.Count.Should().BeGreaterThan(0);
 
         // Verify parent-child relationships for each root claim
         foreach (var rootClaim in hierarchy)

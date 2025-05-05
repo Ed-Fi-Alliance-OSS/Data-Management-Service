@@ -16,7 +16,7 @@ public interface IClaimsHierarchyRepository
     Task<ClaimsHierarchyGetResult> GetClaimsHierarchy();
 
     Task<ClaimsHierarchySaveResult> SaveClaimsHierarchy(
-        Claim[] claimsHierarchy,
+        List<Claim> claimsHierarchy,
         DbTransaction? transaction = null
     );
 }
@@ -27,12 +27,7 @@ public abstract record ClaimsHierarchyGetResult
     /// Successfully loaded and deserialized the claim set hierarchy.
     /// </summary>
     /// <param name="Claims"></param>
-    public record Success(Claim[] Claims) : ClaimsHierarchyGetResult;
-
-    /// <summary>
-    /// Unexpected exception thrown and caught.
-    /// </summary>
-    public record FailureHierarchyNotFound() : ClaimsHierarchyGetResult;
+    public record Success(List<Claim> Claims) : ClaimsHierarchyGetResult;
 
     /// <summary>
     /// Unexpected exception thrown and caught.
@@ -42,7 +37,12 @@ public abstract record ClaimsHierarchyGetResult
     /// <summary>
     /// There was more than one claims hierarchy, which is all that is currently expected.
     /// </summary>
-    public record HierarchyNotFound() : ClaimsHierarchyGetResult;
+    public record FailureHierarchyNotFound() : ClaimsHierarchyGetResult;
+
+    /// <summary>
+    /// There was more than one claims hierarchy, which is all that is currently expected.
+    /// </summary>
+    public record FailureMultipleHierarchiesFound() : ClaimsHierarchyGetResult;
 }
 
 public abstract record ClaimsHierarchySaveResult
@@ -53,19 +53,24 @@ public abstract record ClaimsHierarchySaveResult
     public record Success() : ClaimsHierarchySaveResult;
 
     /// <summary>
+    /// Unexpected exception thrown and caught.
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ClaimsHierarchySaveResult;
+
+    /// <summary>
     /// The claims hierarchy was modified by another user.
     /// </summary>
-    public record MultiUserConflict() : ClaimsHierarchySaveResult;
+    public record FailureMultiUserConflict() : ClaimsHierarchySaveResult;
 
     /// <summary>
     /// There was more than one claims hierarchy, which is all that is currently expected.
     /// </summary>
-    public record MultipleHierarchiesFound() : ClaimsHierarchySaveResult;
+    public record FailureHierarchyNotFound() : ClaimsHierarchySaveResult;
 
     /// <summary>
-    /// Unexpected exception thrown and caught.
+    /// There was more than one claims hierarchy, which is all that is currently expected.
     /// </summary>
-    public record FailureUnknown(string FailureMessage) : ClaimsHierarchySaveResult;
+    public record FailureMultipleHierarchiesFound() : ClaimsHierarchySaveResult;
 }
 
 public class Claim

@@ -318,7 +318,7 @@ public class AuthorizationTests
                     )
                 );
 
-            Claim[] claims =
+            List<Claim> claims =
             [
                 new Claim
                 {

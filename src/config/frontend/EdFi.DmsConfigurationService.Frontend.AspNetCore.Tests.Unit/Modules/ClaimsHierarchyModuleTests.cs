@@ -72,7 +72,7 @@ public class ClaimsHierarchyModuleTests
         // Arrange
         using var client = SetUpClient();
 
-        Claim[] claims =
+        List<Claim> claims =
         [
             new Claim
             {
