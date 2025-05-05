@@ -28,5 +28,6 @@ public record DocumentInfo(
     /// <summary>
     /// If this document is a subclass, this provides the document superclass identity information.
     /// </summary>
-    SuperclassIdentity? SuperclassIdentity
+    SuperclassIdentity? SuperclassIdentity,
+    string[]? ArrayUniquenessConstraints
 );

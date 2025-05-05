@@ -38,7 +38,8 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
             DescriptorReferences: context.ResourceSchema.ExtractDescriptors(context.ParsedBody, _logger),
             DocumentIdentity: documentIdentity,
             ReferentialId: ReferentialIdFrom(context.ResourceInfo, documentIdentity),
-            SuperclassIdentity: superclassIdentity
+            SuperclassIdentity: superclassIdentity,
+            ArrayUniquenessConstraints: context.ResourceSchema.ExtractUniquenessConstraints(_logger)
         );
 
         await next();

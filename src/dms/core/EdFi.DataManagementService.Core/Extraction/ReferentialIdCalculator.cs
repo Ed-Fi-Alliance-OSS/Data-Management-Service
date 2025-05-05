@@ -48,11 +48,12 @@ internal static class ReferentialIdCalculator
         DocumentIdentity documentIdentity
     )
     {
-        return new(
+        ReferentialId result = new(
             Deterministic.Create(
                 EdFiUuidv5Namespace,
                 $"{ResourceInfoString(resourceInfo)}{DocumentIdentityString(documentIdentity)}"
             )
         );
+        return result;
     }
 }

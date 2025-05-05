@@ -422,4 +422,26 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
     public IEnumerable<string> AuthorizationPathways => _authorizationPathways.Value;
+
+    private readonly Lazy<IEnumerable<JsonPath>> _arrayUniquenessConstraints = new(() =>
+    {
+        var outerArray = _resourceSchemaNode["arrayUniquenessConstraints"]?.AsArray();
+        if (outerArray == null)
+        {
+            throw new InvalidOperationException(
+                "Expected arrayUniquenessConstraints to be on ResourceSchema, invalid ApiSchema"
+            );
+        }
+
+        var paths = outerArray
+            .SelectMany(innerNode => innerNode!.AsArray())
+            .Select(valueNode => new JsonPath(valueNode!.GetValue<string>()));
+
+        return paths;
+    });
+
+    /// <summary>
+    /// The ArrayUniquenessConstraints the resource is part of.
+    /// </summary>
+    public IEnumerable<JsonPath> ArrayUniquenessConstraints => _arrayUniquenessConstraints.Value;
 }

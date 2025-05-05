@@ -6,7 +6,6 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security.Model;
@@ -84,7 +83,8 @@ internal static class No
         ReferentialId: new(Guid.Empty),
         DocumentReferences: [],
         DescriptorReferences: [],
-        SuperclassIdentity: null
+        SuperclassIdentity: null,
+        ArrayUniquenessConstraints: []
     );
 
     /// <summary>
