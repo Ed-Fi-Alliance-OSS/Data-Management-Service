@@ -8,7 +8,7 @@
 -- Deletes are simply cascaded from the Document table.
 
 -- Function for INSERT operations
-CREATE OR REPLACE FUNCTION dms.ContactStudentSchoolAuthorizationInsertFunction()
+CREATE OR REPLACE FUNCTION dms.ContactStudentSchoolAuthorizationDocumentInsertFunction()
 RETURNS TRIGGER
 AS $$
 DECLARE
@@ -59,6 +59,21 @@ BEGIN
     );
     END LOOP;
 
+    -- Aggregate and merge distinct values into unified_ed_org_ids
+    SELECT jsonb_agg(DISTINCT value)
+    INTO unified_ed_org_ids
+    FROM (
+        SELECT DISTINCT jsonb_array_elements(ContactStudentSchoolAuthorizationEducationOrganizationIds) AS value
+        FROM dms.ContactStudentSchoolAuthorization
+        WHERE ContactUniqueId = contact_id
+    ) subquery;
+
+    UPDATE dms.Document
+    SET ContactStudentSchoolAuthorizationEdOrgIds = unified_ed_org_ids
+    WHERE
+    Id = NEW.Id AND
+    DocumentPartitionKey = NEW.DocumentPartitionKey;
+
     PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(contact_id);
 
     RETURN NULL;
@@ -72,7 +87,7 @@ AS $$
 DECLARE
     old_contact_id text;
 BEGIN
-    old_contact_id := OLD.EdfiDoc->'contactReference'->>'contactUniqueId';
+    old_contact_id := OLD.ContactUniqueId;
 
     -- Update edorg id list for the contact securable documents
     PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(old_contact_id);
@@ -82,16 +97,15 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Drop and recreate triggers
-DROP TRIGGER IF EXISTS ContactStudentSchoolAuthorizationTrigger_Insert ON dms.Document;
-CREATE TRIGGER ContactStudentSchoolAuthorizationTrigger_Insert
+DROP TRIGGER IF EXISTS ContactStudentSchoolAuthorization_Document_Insert_Trigger ON dms.Document;
+CREATE TRIGGER ContactStudentSchoolAuthorization_Document_Insert_Trigger
 AFTER INSERT ON dms.Document
     FOR EACH ROW
     WHEN (NEW.ProjectName = 'Ed-Fi' AND NEW.ResourceName = 'StudentContactAssociation')
-    EXECUTE PROCEDURE dms.ContactStudentSchoolAuthorizationInsertFunction();
+    EXECUTE PROCEDURE dms.ContactStudentSchoolAuthorizationDocumentInsertFunction();
 
-DROP TRIGGER IF EXISTS ContactStudentSchoolAuthorizationTrigger_Delete ON dms.Document;
-CREATE TRIGGER ContactStudentSchoolAuthorizationTrigger_Delete
-AFTER DELETE ON dms.Document
+DROP TRIGGER IF EXISTS ContactStudentSchoolAuthorization_Delete_Trigger ON dms.ContactStudentSchoolAuthorization;
+CREATE TRIGGER ContactStudentSchoolAuthorization_Delete_Trigger
+AFTER DELETE ON dms.ContactStudentSchoolAuthorization
     FOR EACH ROW
-    WHEN (OLD.ProjectName = 'Ed-Fi' AND OLD.ResourceName = 'StudentContactAssociation')
     EXECUTE PROCEDURE dms.ContactStudentSchoolAuthorizationDeleteFunction();

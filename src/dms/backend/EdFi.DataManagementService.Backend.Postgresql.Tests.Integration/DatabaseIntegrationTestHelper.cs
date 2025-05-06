@@ -276,6 +276,12 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
         return await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
     }
 
+    public async Task<DeleteResult> DeleteStudentContactAssociation(Guid documentUuid)
+    {
+        IDeleteRequest deleteRequest = CreateDeleteRequest("StudentContactAssociation", documentUuid);
+        return await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
+    }
+
     public async Task<UpsertResult> UpsertStudentSecurableDocument(string studentUniqueId)
     {
         return await UpsertStudentSecurableDocument(Guid.NewGuid(), Guid.NewGuid(), studentUniqueId);

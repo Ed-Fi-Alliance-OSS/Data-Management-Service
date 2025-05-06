@@ -130,15 +130,6 @@ BEGIN
     -- Update all documents for the old student
     PERFORM dms.ClearStudentSchoolAuthorizationEdOrgIds(old_student_id);
 
-    -- Update edorg id list for the contact securable documents
-    FOR existing_contact IN
-        SELECT ContactUniqueId, StudentContactAssociationId, StudentContactAssociationPartitionKey
-        FROM dms.ContactStudentSchoolAuthorization WHERE StudentUniqueId = old_student_id
-    LOOP
-    
-    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(existing_contact.ContactUniqueId);
-    END LOOP;
-
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;

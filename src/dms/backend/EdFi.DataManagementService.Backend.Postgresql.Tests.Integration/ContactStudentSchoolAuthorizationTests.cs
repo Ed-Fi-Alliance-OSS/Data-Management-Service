@@ -210,8 +210,10 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
 
             edOrg1Result.Should().BeOfType<UpsertResult.InsertSuccess>();
             edOrg2Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+
             ssa1Result.Should().BeOfType<UpsertResult.InsertSuccess>();
             ssa2Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+
             contactResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
             student1ContactResult.Should().BeOfType<UpsertResult.InsertSuccess>();
@@ -281,12 +283,12 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
             sca1EdOrgIdForContactAndStudentSecurable.Should().NotBeNull();
             ParseEducationOrganizationIds(sca1EdOrgIdForContactAndStudentSecurable)
                 .Should()
-                .BeEquivalentTo([school1Id]);
+                .BeEquivalentTo([school1Id, school2Id]);
 
             sca2EdOrgIdForContactAndStudentSecurable.Should().NotBeNull();
             ParseEducationOrganizationIds(sca2EdOrgIdForContactAndStudentSecurable)
                 .Should()
-                .BeEquivalentTo([school2Id]);
+                .BeEquivalentTo([school1Id, school2Id]);
         }
     }
 
@@ -391,7 +393,113 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
                 .Should()
                 .BeEquivalentTo([school1Id]);
 
-            sca2EdOrgIdForContactAndStudentSecurable.Should().BeNull();
+            sca2EdOrgIdForContactAndStudentSecurable.Should().NotBeNull();
+            ParseEducationOrganizationIds(sca2EdOrgIdForContactAndStudentSecurable)
+                .Should()
+                .BeEquivalentTo([school1Id]);
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Upsert_Of_Two_School_Student_StudentSchoolAssociation_One_Contact_Delete_StudentContactAssociation
+        : ContactStudentSchoolAuthorizationTests
+    {
+        private readonly long school1Id = 888;
+        private readonly long school2Id = 777;
+
+        private readonly string student1Id = "0123";
+        private readonly string student2Id = "0987";
+
+        private readonly string contactUniqueId = "1111";
+        private readonly Guid contactDocumentId = Guid.NewGuid();
+        private readonly Guid sca1DocumentId = Guid.NewGuid();
+        private readonly Guid sca2DocumentId = Guid.NewGuid();
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            var edOrg1Result = await UpsertEducationOrganization("School", school1Id, null);
+            var edOrg2Result = await UpsertEducationOrganization("School", school2Id, null);
+
+            var ssa1Result = await UpsertStudentSchoolAssociation(school1Id, student1Id);
+            UpsertResult.InsertSuccess ssa2Result = (UpsertResult.InsertSuccess)
+                await UpsertStudentSchoolAssociation(school2Id, student2Id);
+
+            // Upsert a contact
+            var contactReferentialId = Guid.NewGuid();
+            var contactResult = await UpsertContact(contactDocumentId, contactReferentialId, contactUniqueId);
+
+            var student1ContactResult = await UpsertStudentContactAssociation(
+                sca1DocumentId,
+                Guid.NewGuid(),
+                student1Id,
+                contactUniqueId
+            );
+
+            UpsertResult.InsertSuccess student2ContactResult = (UpsertResult.InsertSuccess)
+                await UpsertStudentContactAssociation(
+                    sca2DocumentId,
+                    Guid.NewGuid(),
+                    student2Id,
+                    contactUniqueId
+                );
+
+            edOrg1Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+            edOrg2Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+            ssa1Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+            ssa2Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+            contactResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            student1ContactResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+            student2ContactResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            var deleteResult = await DeleteStudentContactAssociation(
+                student2ContactResult.NewDocumentUuid.Value
+            );
+            deleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
+        }
+
+        [Test]
+        public async Task Then_Correct_EdOrgIds_Should_Be_Populated()
+        {
+            // Act
+            var authorizations = await GetAllContactStudentSchoolAuthorizations();
+            var securables = await GetAllContactSecurableDocuments();
+            var edOrgIdsForContactSecurable = await GetDocumentContactStudentSchoolAuthorizationEdOrgIds(
+                contactDocumentId
+            );
+            var sca1EdOrgIdForContactAndStudentSecurable =
+                await GetDocumentContactStudentSchoolAuthorizationEdOrgIds(sca1DocumentId);
+
+            // Assert
+            authorizations.Should().NotBeNull();
+            authorizations.Should().HaveCount(1);
+
+            // Only one authorization should be present since the second student school association was deleted
+            var authorization1 = authorizations[0];
+            authorization1.StudentUniqueId.Should().Be(student1Id);
+            authorization1.ContactUniqueId.Should().Be(contactUniqueId);
+            ParseEducationOrganizationIds(
+                    authorization1.ContactStudentSchoolAuthorizationEducationOrganizationIds
+                )
+                .Should()
+                .BeEquivalentTo([school1Id]);
+            authorization1.StudentContactAssociationId.Should().BeGreaterThan(0);
+            authorization1.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+            authorization1.StudentSchoolAssociationId.Should().BeGreaterThan(0);
+            authorization1.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+
+            // Securables should 2, one for each contact and student contact association
+            securables.Count.Should().Be(2);
+
+            // EdOrgIds for the contact securable should be 1
+            edOrgIdsForContactSecurable.Should().NotBeNull();
+            ParseEducationOrganizationIds(edOrgIdsForContactSecurable).Should().BeEquivalentTo([school1Id]);
+
+            sca1EdOrgIdForContactAndStudentSecurable.Should().NotBeNull();
+            ParseEducationOrganizationIds(sca1EdOrgIdForContactAndStudentSecurable)
+                .Should()
+                .BeEquivalentTo([school1Id]);
         }
     }
 }
