@@ -19,25 +19,25 @@ public class OpenApiDocumentTests
     {
         JsonObject descriptorSchemas = new()
         {
-            ["EdFi_AbsenceEventCategory"] = new JsonObject
+            ["EdFi_AbsenceEventCategoryDescriptor"] = new JsonObject
             {
                 ["description"] = "An Ed-Fi Descriptor",
                 ["properties"] = new JsonObject(),
                 ["type"] = "string",
             },
-            ["EdFi_AcademicHonorCategory"] = new JsonObject
+            ["EdFi_AcademicHonorCategoryDescriptor"] = new JsonObject
             {
                 ["description"] = "An Ed-Fi Descriptor",
                 ["properties"] = new JsonObject(),
                 ["type"] = "string",
             },
-            ["EdFi_AcademicSubject"] = new JsonObject
+            ["EdFi_AcademicSubjectDescriptor"] = new JsonObject
             {
                 ["description"] = "An Ed-Fi Descriptor",
                 ["properties"] = new JsonObject(),
                 ["type"] = "string",
             },
-            ["EdFi_Accommodation"] = new JsonObject
+            ["EdFi_AccommodationDescriptor"] = new JsonObject
             {
                 ["description"] = "An Ed-Fi Descriptor",
                 ["properties"] = new JsonObject(),

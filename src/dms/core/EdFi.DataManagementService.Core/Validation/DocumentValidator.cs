@@ -27,6 +27,12 @@ internal interface IDocumentValidator
 
 internal class DocumentValidator() : IDocumentValidator
 {
+    private readonly HashSet<string> trimmableProperties = new HashSet<string>
+    {
+        "codeValue",
+        "shortDescription",
+    };
+
     private static JsonSchema GetSchema(ResourceSchema resourceSchema, RequestMethod method)
     {
         JsonNode jsonSchemaForResource = resourceSchema.JsonSchemaForRequestMethod(method);
@@ -36,8 +42,11 @@ internal class DocumentValidator() : IDocumentValidator
 
     public (string[], Dictionary<string, string[]>) Validate(PipelineContext context)
     {
-        EvaluationOptions validatorEvaluationOptions =
-            new() { OutputFormat = OutputFormat.List, RequireFormatValidation = true };
+        EvaluationOptions validatorEvaluationOptions = new()
+        {
+            OutputFormat = OutputFormat.List,
+            RequireFormatValidation = true,
+        };
 
         var resourceSchemaValidator = GetSchema(context.ResourceSchema, context.Method);
         var results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
@@ -59,6 +68,17 @@ internal class DocumentValidator() : IDocumentValidator
         {
             // Used pruned body for the remainder of pipeline
             context.ParsedBody = nullPruned.prunedDocumentBody;
+
+            // Now re-evaluate the pruned body
+            results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
+        }
+
+        var whitespacePruneResult = PruneCodeValueWhitespaceData(context.ParsedBody, results);
+
+        if (whitespacePruneResult is PruneResult.Pruned whitespacePruned)
+        {
+            // Used pruned body for the remainder of pipeline
+            context.ParsedBody = whitespacePruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
             results = resourceSchemaValidator.Evaluate(context.ParsedBody, validatorEvaluationOptions);
@@ -115,7 +135,6 @@ internal class DocumentValidator() : IDocumentValidator
             return false;
         }
 
-
         PruneResult PruneNullData(JsonNode? documentBody, EvaluationResults evaluationResults)
         {
             if (documentBody == null)
@@ -144,6 +163,52 @@ internal class DocumentValidator() : IDocumentValidator
             }
 
             return new PruneResult.Pruned(documentBody);
+        }
+
+        PruneResult PruneCodeValueWhitespaceData(JsonNode? documentBody, EvaluationResults evaluationResults)
+        {
+            if (documentBody == null)
+            {
+                return new PruneResult.NotPruned();
+            }
+
+            var trimTargets = evaluationResults
+                .Details.Where(r =>
+                    r.Errors != null
+                    && r.Errors.Values.Any(e =>
+                        e.Contains("The string value is not a match for the indicated regular expression")
+                    )
+                    && trimmableProperties.Contains(r.InstanceLocation.ToString().TrimStart('/'))
+                )
+                .ToList();
+
+            if (trimTargets.Count == 0)
+            {
+                return new PruneResult.NotPruned();
+            }
+
+            bool modified = false;
+
+            foreach (var target in trimTargets)
+            {
+                string propertyName = target.InstanceLocation.ToString().TrimStart('/');
+
+                if (
+                    documentBody is JsonObject obj
+                    && obj[propertyName] is JsonValue val
+                    && val.TryGetValue<string>(out var str)
+                )
+                {
+                    var trimmed = str.Trim();
+                    if (trimmed != str)
+                    {
+                        obj[propertyName] = trimmed;
+                        modified = true;
+                    }
+                }
+            }
+
+            return modified ? new PruneResult.Pruned(documentBody) : new PruneResult.NotPruned();
         }
 
         Dictionary<string, string[]> ValidationErrorsFrom(EvaluationResults results)

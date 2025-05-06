@@ -261,23 +261,6 @@ public class OpenApiDocument(ILogger _logger)
             )
             .DeepClone();
 
-        #region [DMS-597] Workaround for DMS-628 Descriptor OpenApi Schemas should have the 'Descriptor' suffix
-        if (documentSection == DocumentSection.Descriptor)
-        {
-            var openApiJsonSpec = openApiSpecification.ToJsonString();
-            foreach (
-                var schemaKey in openApiSpecification["components"]!["schemas"]!
-                    .AsObject()
-                    .Select(schema => schema.Key)
-            )
-            {
-                openApiJsonSpec = openApiJsonSpec.Replace(schemaKey, $"{schemaKey}Descriptor");
-            }
-
-            openApiSpecification = JsonNode.Parse(openApiJsonSpec)!;
-        }
-        #endregion
-
         #region [DMS-597] Workaround for DMS-633 SchoolYearType shouldn't be inlined in the OpenApi spec
         if (documentSection == DocumentSection.Resource)
         {
