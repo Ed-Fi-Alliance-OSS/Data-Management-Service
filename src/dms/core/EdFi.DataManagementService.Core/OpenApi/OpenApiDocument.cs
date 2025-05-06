@@ -22,7 +22,7 @@ public class OpenApiDocument(ILogger _logger)
     private void InsertExts(
         JsonObject openApiExtensionFragmentList,
         JsonNode openApiCoreResources,
-        string? projectName
+        string projectName
     )
     {
         foreach ((string componentSchemaName, JsonNode? extObject) in openApiExtensionFragmentList)
@@ -84,10 +84,10 @@ public class OpenApiDocument(ILogger _logger)
             string projectExtensionSchemaName = $"{projectName}_{componentSchemaName}Extension";
 
             // Add reference to the specific project schema
-            if (!extensionProperties.ContainsKey(projectName!))
+            if (!extensionProperties.ContainsKey(projectName))
             {
                 extensionProperties.Add(
-                    projectName!,
+                    projectName,
                     JsonNode.Parse($"{{ \"$ref\": \"#/components/schemas/{projectExtensionSchemaName}\" }}")
                 );
             }
@@ -209,7 +209,7 @@ public class OpenApiDocument(ILogger _logger)
             if (existingTagNames.Contains(tagObjectName))
             {
                 _logger.LogDebug(
-                    "OpenAPI extension fragment tried to add a second tag named '{TagObjectName}', which is not supported. Extension fragment validation failed?",
+                    "OpenAPI extension fragment tried to add a second tag named '{TagObjectName}', skipping.",
                     tagObjectName
                 );
             }
@@ -348,18 +348,12 @@ public class OpenApiDocument(ILogger _logger)
                 documentSection.ToString()
             );
 
-            string? projectName = extensionApiSchemaRootNode
-                .SelectNodeFromPath("$.projectSchema.projectName", _logger)
-                ?.GetValue<string>()
-                .ToLower();
-
-            if (projectName != null)
-            {
-                _logger.LogInformation(
-                    "OpenAPI extension fragment found for project '{ProjectName}'",
-                    projectName
-                );
-            }
+            string projectName =
+                (
+                    extensionApiSchemaRootNode
+                        .SelectNodeFromPath("$.projectSchema.projectName", _logger)
+                        ?.GetValue<string>()
+                )?.ToLower() ?? string.Empty;
 
             foreach (JsonNode openApiExtensionFragment in openApiExtensionFragments)
             {
