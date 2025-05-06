@@ -164,33 +164,15 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
             JsonElement? studentSchoolAuthorizationEducationOrganizationIds = null;
             JsonElement? contactStudentSchoolAuthorizationEducationOrganizationIds = null;
-
-            if (
-                updateRequest
-                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                    .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
-            )
-            {
-                studentSchoolAuthorizationEducationOrganizationIds =
-                    await _sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
-                        updateRequest.DocumentSecurityElements.Student[0].Value,
-                        connection,
-                        transaction
-                    );
-            }
-            if (
-                updateRequest
-                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                    .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId)
-            )
-            {
-                contactStudentSchoolAuthorizationEducationOrganizationIds =
-                    await _sqlAction.GetContactStudentSchoolAuthorizationEducationOrganizationIds(
-                        updateRequest.DocumentSecurityElements.Contact[0].Value,
-                        connection,
-                        transaction
-                    );
-            }
+            (
+                studentSchoolAuthorizationEducationOrganizationIds,
+                contactStudentSchoolAuthorizationEducationOrganizationIds
+            ) = await DocumentAuthorizationHelper.GetAuthorizationEducationOrganizationIds(
+                updateRequest,
+                connection,
+                transaction,
+                _sqlAction
+            );
 
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,

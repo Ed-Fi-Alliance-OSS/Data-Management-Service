@@ -171,35 +171,15 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
         }
 
-        if (
-            upsertRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
-        )
-        {
-            await _sqlAction.InsertStudentSecurableDocument(
-                upsertRequest.DocumentSecurityElements.Student[0].Value,
-                newDocumentId,
-                documentPartitionKey,
-                connection,
-                transaction
-            );
-        }
-
-        if (
-            upsertRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId)
-        )
-        {
-            await _sqlAction.InsertContactSecurableDocument(
-                upsertRequest.DocumentSecurityElements.Contact[0].Value,
-                newDocumentId,
-                documentPartitionKey,
-                connection,
-                transaction
-            );
-        }
+        // Insert the SecurableDocument
+        await DocumentAuthorizationHelper.InsertSecurableDocument(
+            upsertRequest,
+            newDocumentId,
+            documentPartitionKey,
+            connection,
+            transaction,
+            _sqlAction
+        );
 
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId.Value);
         return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
@@ -278,35 +258,15 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
         }
 
-        if (
-            upsertRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
-        )
-        {
-            await _sqlAction.UpdateStudentSecurableDocument(
-                upsertRequest.DocumentSecurityElements.Student[0].Value,
-                documentId,
-                documentPartitionKey,
-                connection,
-                transaction
-            );
-        }
-
-        if (
-            upsertRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId)
-        )
-        {
-            await _sqlAction.UpdateContactSecurableDocument(
-                upsertRequest.DocumentSecurityElements.Contact[0].Value,
-                documentId,
-                documentPartitionKey,
-                connection,
-                transaction
-            );
-        }
+        // Update the SecurableDocument
+        await DocumentAuthorizationHelper.UpdateSecurableDocument(
+            upsertRequest,
+            documentId,
+            documentPartitionKey,
+            connection,
+            transaction,
+            _sqlAction
+        );
 
         _logger.LogDebug("Upsert success as update - {TraceId}", upsertRequest.TraceId.Value);
         return new UpsertResult.UpdateSuccess(new(documentUuid));
@@ -383,7 +343,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             (
                 studentSchoolAuthorizationEducationOrganizationIds,
                 contactStudentSchoolAuthorizationEducationOrganizationIds
-            ) = await AuthorizationDataHelper.GetAuthorizationEducationOrganizationIds(
+            ) = await DocumentAuthorizationHelper.GetAuthorizationEducationOrganizationIds(
                 upsertRequest,
                 connection,
                 transaction,
