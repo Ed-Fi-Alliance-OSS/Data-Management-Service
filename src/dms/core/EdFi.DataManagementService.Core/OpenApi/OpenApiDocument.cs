@@ -208,12 +208,15 @@ public class OpenApiDocument(ILogger _logger)
             // If tag has already been added by another extension, we don't support a second one
             if (existingTagNames.Contains(tagObjectName))
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second tag named '{tagObjectName}', which is not supported. Extension fragment validation failed?"
+                _logger.LogDebug(
+                    "OpenAPI extension fragment tried to add a second tag named '{TagObjectName}', which is not supported. Extension fragment validation failed?",
+                    tagObjectName
                 );
             }
-
-            globalTags.Add(newTagObject.DeepClone());
+            else
+            {
+                globalTags.Add(newTagObject.DeepClone());
+            }
         }
     }
 
