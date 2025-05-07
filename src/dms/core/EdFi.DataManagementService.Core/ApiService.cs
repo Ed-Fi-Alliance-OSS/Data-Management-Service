@@ -95,7 +95,10 @@ internal class ApiService(
                     _appSettings.Value.DisablePersonAuthorizationStrategies
                 ),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                new ProvideAuthorizationPathwayMiddleware(_logger),
+                new ProvideAuthorizationPathwayMiddleware(
+                    _logger,
+                    _appSettings.Value.DisablePersonAuthorizationStrategies
+                ),
                 new UpsertHandler(
                     _documentStoreRepository,
                     _logger,
@@ -222,7 +225,10 @@ internal class ApiService(
                     _appSettings.Value.DisablePersonAuthorizationStrategies
                 ),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                new ProvideAuthorizationPathwayMiddleware(_logger),
+                new ProvideAuthorizationPathwayMiddleware(
+                    _logger,
+                    _appSettings.Value.DisablePersonAuthorizationStrategies
+                ),
                 new UpdateByIdHandler(
                     _documentStoreRepository,
                     _logger,
@@ -257,7 +263,10 @@ internal class ApiService(
                         _appSettings.Value.DisablePersonAuthorizationStrategies
                     ),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                    new ProvideAuthorizationPathwayMiddleware(_logger),
+                    new ProvideAuthorizationPathwayMiddleware(
+                        _logger,
+                        _appSettings.Value.DisablePersonAuthorizationStrategies
+                    ),
                     new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                     new DeleteByIdHandler(
                         _documentStoreRepository,

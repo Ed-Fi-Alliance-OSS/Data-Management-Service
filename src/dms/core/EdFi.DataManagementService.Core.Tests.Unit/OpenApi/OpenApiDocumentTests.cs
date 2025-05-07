@@ -164,10 +164,10 @@ public class OpenApiDocumentTests
 
         JsonObject descriptorNewPaths = new()
         {
-            ["/tpdm/credentialDecriptor"] = new JsonObject
+            ["/tpdm/credentialDescriptor"] = new JsonObject
             {
-                ["get"] = new JsonObject { ["description"] = "credential decriptor get" },
-                ["post"] = new JsonObject { ["description"] = "credential decriptor post" },
+                ["get"] = new JsonObject { ["description"] = "credential descriptor get" },
+                ["post"] = new JsonObject { ["description"] = "credential descriptor post" },
             },
         };
 
@@ -182,9 +182,9 @@ public class OpenApiDocumentTests
 
         JsonObject descriptorNewSchemas = new()
         {
-            ["TPDM_CredentialDecriptor"] = new JsonObject
+            ["TPDM_CredentialDescriptor"] = new JsonObject
             {
-                ["description"] = "TPDM credential decriptor description",
+                ["description"] = "TPDM credential descriptor description",
                 ["type"] = "string",
             },
         };
@@ -697,12 +697,12 @@ public class OpenApiDocumentTests
                       "description": "accommodationDescriptors delete description"
                     }
                   },
-                  "/tpdm/credentialDecriptor": {
+                  "/tpdm/credentialDescriptor": {
                     "get": {
-                      "description": "credential decriptor get"
+                      "description": "credential descriptor get"
                     },
                     "post": {
-                      "description": "credential decriptor post"
+                      "description": "credential descriptor post"
                     }
                   },
                   "/tpdm/candidateDescriptor/{id}": {
@@ -744,8 +744,8 @@ public class OpenApiDocumentTests
                     "properties": {},
                     "type": "string"
                   },
-                  "TPDM_CredentialDecriptor": {
-                    "description": "TPDM credential decriptor description",
+                  "TPDM_CredentialDescriptor": {
+                    "description": "TPDM credential descriptor description",
                     "type": "string"
                   },
                   "TPDM_CandidateDescriptor": {
