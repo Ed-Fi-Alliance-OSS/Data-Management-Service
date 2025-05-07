@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
@@ -54,23 +55,10 @@ internal static class SecurityHelper
         var educationOrganizations =
             jsonObject["EducationOrganization"]
                 ?.AsArray()
-                .Select(eo =>
-                {
-                    var resourceName = eo!["ResourceName"]!.GetValue<string>();
-
-                    var idNode = eo["Id"]!;
-                    long id = idNode.GetValueKind() switch
-                    {
-                        JsonValueKind.String => long.Parse(idNode.GetValue<string>()),
-                        JsonValueKind.Number => idNode.GetValue<long>(),
-                        _ => throw new InvalidOperationException($"Unexpected value kind for 'Id': {idNode.GetValueKind()}")
-                    };
-
-                    return new EducationOrganizationSecurityElement(
-                        new ResourceName(resourceName),
-                        new EducationOrganizationId(id)
-                    );
-                })
+                .Select(eo => new EducationOrganizationSecurityElement(
+                    new ResourceName(eo!["ResourceName"]!.GetValue<string>()),
+                    new EducationOrganizationId(eo["Id"]!.GetValue<long>())
+                ))
                 .ToArray() ?? [];
 
         var studentUniqueId =
