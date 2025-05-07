@@ -414,20 +414,23 @@ public class OpenApiDocument(ILogger _logger)
         {
             var assessmentAdministrationsReference = openApiSpecification["components"]!["schemas"]![
                 "EdFi_AssessmentAdministration_Reference"
-            ]!;
+            ];
 
-            // Add assigningEducationOrganizationId based on educationOrganizationId
-            assessmentAdministrationsReference["properties"]!["assigningEducationOrganizationId"] =
-                assessmentAdministrationsReference["properties"]!["educationOrganizationId"]!.DeepClone();
+            if (assessmentAdministrationsReference != null)
+            {
+                // Add assigningEducationOrganizationId based on educationOrganizationId
+                assessmentAdministrationsReference["properties"]!["assigningEducationOrganizationId"] =
+                    assessmentAdministrationsReference["properties"]!["educationOrganizationId"]!.DeepClone();
 
-            // Remove educationOrganizationId
-            assessmentAdministrationsReference["properties"]!.AsObject().Remove("educationOrganizationId");
+                // Remove educationOrganizationId
+                assessmentAdministrationsReference["properties"]!.AsObject().Remove("educationOrganizationId");
 
-            var requiredArray = assessmentAdministrationsReference["required"]!.AsArray();
-            requiredArray.Add(JsonValue.Create("assigningEducationOrganizationId"));
-            requiredArray.Remove(
-                requiredArray.Single(n => n!.GetValue<string>() == "educationOrganizationId")
-            );
+                var requiredArray = assessmentAdministrationsReference["required"]!.AsArray();
+                requiredArray.Add(JsonValue.Create("assigningEducationOrganizationId"));
+                requiredArray.Remove(
+                    requiredArray.Single(n => n!.GetValue<string>() == "educationOrganizationId")
+                );
+            }
         }
         #endregion
 
