@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
