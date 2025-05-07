@@ -22,27 +22,28 @@ public class ContentProviderTests
     private IOptions<AppSettings> _appSettings;
     private Assembly _assembly;
     private IAssemblyLoader _iAssemblyLoader;
+
     [SetUp]
     public void Setup()
     {
         _assembly = A.Fake<Assembly>();
         _iAssemblyLoader = A.Fake<IAssemblyLoader>();
 
-        var resources = new string[] {
+        var resources = new string[]
+        {
             "EdFi.DataStandard52.ApiSchema.ApiSchema.json",
             "Interchange-AssessmentMetadata.xsd",
-            "Interchange-Descriptors.xsd" };
+            "Interchange-Descriptors.xsd",
+        };
 
         A.CallTo(() => _assembly.GetManifestResourceNames()).Returns(resources);
         A.CallTo(() => _iAssemblyLoader.Load(A<string>._)).Returns(_assembly);
 
         _logger = A.Fake<ILogger<ContentProvider>>();
 
-        _appSettings = Options.Create(new AppSettings
-        {
-            ApiSchemaPath = "some/valid/path",
-            AllowIdentityUpdateOverrides = ""
-        });
+        _appSettings = Options.Create(
+            new AppSettings { ApiSchemaPath = "some/valid/path", AllowIdentityUpdateOverrides = "" }
+        );
     }
 
     [Test]
@@ -87,9 +88,14 @@ public class ContentProviderTests
         var mockJsonNode = JsonNode.Parse(content)!;
 
         var contentProvider = A.Fake<IContentProvider>();
-        A.CallTo(() => contentProvider.LoadJsonContent(A<string>._, A<string>._, A<string>._)).Returns(mockJsonNode);
+        A.CallTo(() => contentProvider.LoadJsonContent(A<string>._, A<string>._, A<string>._))
+            .Returns(mockJsonNode);
         // Act
-        var response = contentProvider.LoadJsonContent("EdFi.DataStandard52.ApiSchema.ApiSchema.json", expectedHost, expectedOauthUrl);
+        var response = contentProvider.LoadJsonContent(
+            "EdFi.DataStandard52.ApiSchema.ApiSchema.json",
+            expectedHost,
+            expectedOauthUrl
+        );
         var openApi = response?["openapi"]?.GetValue<string>();
         var serverUrl = response?["servers"]?.AsArray()?[0]?["url"]?.GetValue<string>();
         var oauthUrl = response?["oauth"]?.AsArray()?[0]?["url"]?.GetValue<string>();
@@ -132,15 +138,18 @@ public class ContentProviderTests
     public void Returns_Expected_Xsd_File_Content()
     {
         // Arrange
-        var content = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n  <xs:include schemaLocation=\"Ed-Fi-Core.xsd\" />\n";
+        var content =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>\n<xs:schema xmlns:xs=\"http://www.w3.org/2001/XMLSchema\">\n  <xs:include schemaLocation=\"Ed-Fi-Core.xsd\" />\n";
         MemoryStream contentStream = new(Encoding.UTF8.GetBytes(content.ToString()));
 
         var contentProvider = A.Fake<IContentProvider>();
         A.CallTo(() => contentProvider.LoadXsdContent(A<string>._))
-         .Returns(new Lazy<Stream>(() => contentStream));
+            .Returns(new Lazy<Stream>(() => contentStream));
 
         // Act
-        var response = contentProvider.LoadXsdContent("EdFi.DataStandard52.ApiSchema.xsd.Interchange-Contact.xsd");
+        var response = contentProvider.LoadXsdContent(
+            "EdFi.DataStandard52.ApiSchema.xsd.Interchange-Contact.xsd"
+        );
         var responseStream = response.Value;
         string line = string.Empty;
         using (var reader = new StreamReader(responseStream))
