@@ -261,6 +261,75 @@ public class OpenApiDocument(ILogger _logger)
             )
             .DeepClone();
 
+        // Get each extension OpenAPI fragment to insert into core OpenAPI spec
+        foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
+        {
+            List<JsonNode> openApiExtensionFragments = FindOpenApiExtensionFragments(
+                extensionApiSchemaRootNode,
+                documentSection.ToString()
+            );
+
+            string projectName =
+                (
+                    extensionApiSchemaRootNode
+                        .SelectNodeFromPath("$.projectSchema.projectName", _logger)
+                        ?.GetValue<string>()
+                )?.ToLower() ?? string.Empty;
+
+            foreach (JsonNode openApiExtensionFragment in openApiExtensionFragments)
+            {
+                InsertExts(
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
+                    openApiSpecification,
+                    projectName
+                );
+
+                InsertNewPaths(
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
+                    openApiSpecification
+                );
+
+                InsertNewSchemas(
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
+                    openApiSpecification
+                );
+
+                InsertNewTags(
+                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
+                    openApiSpecification
+                );
+            }
+        }
+
+        #region [DMS-597] Workaround for DMS-628 Descriptor OpenApi Schemas should have the 'Descriptor' suffix
+        if (documentSection == DocumentSection.Descriptor)
+        {
+            var openApiJsonSpec = openApiSpecification.ToJsonString();
+            foreach (
+                var schemaKey in openApiSpecification["components"]!["schemas"]!
+                    .AsObject()
+                    .Select(schema => schema.Key)
+            )
+            {
+                var schemaKeyWithoutDescriptorSuffix = schemaKey.Replace("Descriptor", "");
+
+                // Revert flawed rename
+                openApiJsonSpec = openApiJsonSpec.Replace(
+                    $"{schemaKeyWithoutDescriptorSuffix}Descriptor\"",
+                    $"{schemaKeyWithoutDescriptorSuffix}\""
+                );
+
+                // Rename accordingly
+                openApiJsonSpec = openApiJsonSpec.Replace(
+                    $"{schemaKeyWithoutDescriptorSuffix}\"",
+                    $"{schemaKeyWithoutDescriptorSuffix}Descriptor\""
+                );
+            }
+
+            openApiSpecification = JsonNode.Parse(openApiJsonSpec)!;
+        }
+        #endregion
+
         #region [DMS-597] Workaround for DMS-633 SchoolYearType shouldn't be inlined in the OpenApi spec
         if (documentSection == DocumentSection.Resource)
         {
@@ -340,45 +409,27 @@ public class OpenApiDocument(ILogger _logger)
         }
         #endregion
 
-        // Get each extension OpenAPI fragment to insert into core OpenAPI spec
-        foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
+        #region [DMS-597] Workaround for DMS-685 AssigningEducationOrganizationId missing in OpenApi's EdFi_AssessmentAdministration_Reference
+        if (documentSection == DocumentSection.Resource)
         {
-            List<JsonNode> openApiExtensionFragments = FindOpenApiExtensionFragments(
-                extensionApiSchemaRootNode,
-                documentSection.ToString()
+            var assessmentAdministrationsReference = openApiSpecification["components"]!["schemas"]![
+                "EdFi_AssessmentAdministration_Reference"
+            ]!;
+
+            // Add assigningEducationOrganizationId based on educationOrganizationId
+            assessmentAdministrationsReference["properties"]!["assigningEducationOrganizationId"] =
+                assessmentAdministrationsReference["properties"]!["educationOrganizationId"]!.DeepClone();
+
+            // Remove educationOrganizationId
+            assessmentAdministrationsReference["properties"]!.AsObject().Remove("educationOrganizationId");
+
+            var requiredArray = assessmentAdministrationsReference["required"]!.AsArray();
+            requiredArray.Add(JsonValue.Create("assigningEducationOrganizationId"));
+            requiredArray.Remove(
+                requiredArray.Single(n => n!.GetValue<string>() == "educationOrganizationId")
             );
-
-            string projectName =
-                (
-                    extensionApiSchemaRootNode
-                        .SelectNodeFromPath("$.projectSchema.projectName", _logger)
-                        ?.GetValue<string>()
-                )?.ToLower() ?? string.Empty;
-
-            foreach (JsonNode openApiExtensionFragment in openApiExtensionFragments)
-            {
-                InsertExts(
-                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
-                    openApiSpecification,
-                    projectName
-                );
-
-                InsertNewPaths(
-                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
-                    openApiSpecification
-                );
-
-                InsertNewSchemas(
-                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
-                    openApiSpecification
-                );
-
-                InsertNewTags(
-                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
-                    openApiSpecification
-                );
-            }
         }
+        #endregion
 
         return openApiSpecification;
     }

@@ -13,7 +13,10 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// Initializes the AuthorizationPathways in the PipelineContext.
 /// </summary>
-internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelineStep
+internal class ProvideAuthorizationPathwayMiddleware(
+    ILogger _logger,
+    bool disablePersonAuthorizationStrategies = false
+) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
@@ -22,27 +25,30 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
             context.FrontendRequest.TraceId.Value
         );
 
-        context.AuthorizationPathways = context
-            .ResourceSchema.AuthorizationPathways.Select(authorizationPathway =>
-                authorizationPathway switch
-                {
-                    "StudentSchoolAssociationAuthorization" =>
-                        BuildStudentSchoolAssociationAuthorizationPathway(
-                            context.DocumentSecurityElements,
-                            context.Method
-                        ),
-                    "ContactStudentSchoolAuthorization" =>
-                        (AuthorizationPathway)BuildStudentContactAssociationAuthorizationPathway(
-                            context.DocumentSecurityElements,
-                            context.Method
-                        ),
+        if (!disablePersonAuthorizationStrategies)
+        {
+            context.AuthorizationPathways = context
+                .ResourceSchema.AuthorizationPathways.Select(authorizationPathway =>
+                    authorizationPathway switch
+                    {
+                        "StudentSchoolAssociationAuthorization" =>
+                            BuildStudentSchoolAssociationAuthorizationPathway(
+                                context.DocumentSecurityElements,
+                                context.Method
+                            ),
+                        "ContactStudentSchoolAuthorization" =>
+                            (AuthorizationPathway)BuildStudentContactAssociationAuthorizationPathway(
+                                context.DocumentSecurityElements,
+                                context.Method
+                            ),
 
-                    _ => throw new InvalidOperationException(
-                        $"Unrecognized Authorization Pathway '{authorizationPathway}'."
-                    ),
-                }
-            )
-            .ToList();
+                        _ => throw new InvalidOperationException(
+                            $"Unrecognized Authorization Pathway '{authorizationPathway}'."
+                        ),
+                    }
+                )
+                .ToList();
+        }
 
         await next();
     }
