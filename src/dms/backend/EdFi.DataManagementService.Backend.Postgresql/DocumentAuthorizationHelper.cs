@@ -6,6 +6,7 @@
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -19,112 +20,63 @@ public static class DocumentAuthorizationHelper
         JsonElement? StudentEdOrgIds,
         JsonElement? ContactEdOrgIds
     )> GetAuthorizationEducationOrganizationIds(
-        IUpdateRequest updateRequest,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        ISqlAction sqlAction
-    )
-    {
-        return await GetAuthorizationEducationOrganizationIdsInternal(
-            updateRequest,
-            connection,
-            transaction,
-            sqlAction
-        );
-    }
-
-    public static async Task<(
-        JsonElement? StudentEdOrgIds,
-        JsonElement? ContactEdOrgIds
-    )> GetAuthorizationEducationOrganizationIds(
-        IUpsertRequest upsertRequest,
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        ISqlAction sqlAction
-    )
-    {
-        return await GetAuthorizationEducationOrganizationIdsInternal(
-            upsertRequest,
-            connection,
-            transaction,
-            sqlAction
-        );
-    }
-
-    private static async Task<(
-        JsonElement? StudentEdOrgIds,
-        JsonElement? ContactEdOrgIds
-    )> GetAuthorizationEducationOrganizationIdsInternal(
         object request,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ISqlAction sqlAction
     )
     {
+        // Extract security elements and authorization info based on request type
+        var (securityElements, authInfo) = request switch
+        {
+            IUpdateRequest updateRequest => (
+                updateRequest.DocumentSecurityElements,
+                updateRequest.ResourceInfo.AuthorizationSecurableInfo
+            ),
+            IUpsertRequest upsertRequest => (
+                upsertRequest.DocumentSecurityElements,
+                upsertRequest.ResourceInfo.AuthorizationSecurableInfo
+            ),
+            _ => throw new ArgumentException(
+                $"Unsupported request type: {request.GetType().Name}",
+                nameof(request)
+            ),
+        };
+
+        // Process student authorization if applicable
         JsonElement? studentEdOrgIds = null;
-        JsonElement? contactEdOrgIds = null;
-
-        if (request is IUpdateRequest updateRequest)
+        if (
+            HasSecurable(authInfo, SecurityElementNameConstants.StudentUniqueId)
+            && securityElements.Student?.Length > 0
+        )
         {
-            if (
-                updateRequest
-                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                    .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
-            )
-            {
-                studentEdOrgIds = await sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
-                    updateRequest.DocumentSecurityElements.Student[0].Value,
-                    connection,
-                    transaction
-                );
-            }
-
-            if (
-                updateRequest
-                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                    .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId)
-            )
-            {
-                contactEdOrgIds =
-                    await sqlAction.GetContactStudentSchoolAuthorizationEducationOrganizationIds(
-                        updateRequest.DocumentSecurityElements.Contact[0].Value,
-                        connection,
-                        transaction
-                    );
-            }
+            studentEdOrgIds = await sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
+                securityElements.Student[0].Value,
+                connection,
+                transaction
+            );
         }
-        else if (request is IUpsertRequest upsertRequest)
-        {
-            if (
-                upsertRequest
-                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                    .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
-            )
-            {
-                studentEdOrgIds = await sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
-                    upsertRequest.DocumentSecurityElements.Student[0].Value,
-                    connection,
-                    transaction
-                );
-            }
 
-            if (
-                upsertRequest
-                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                    .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId)
-            )
-            {
-                contactEdOrgIds =
-                    await sqlAction.GetContactStudentSchoolAuthorizationEducationOrganizationIds(
-                        upsertRequest.DocumentSecurityElements.Contact[0].Value,
-                        connection,
-                        transaction
-                    );
-            }
+        // Process contact authorization if applicable
+        JsonElement? contactEdOrgIds = null;
+        if (
+            HasSecurable(authInfo, SecurityElementNameConstants.ContactUniqueId)
+            && securityElements.Contact?.Length > 0
+        )
+        {
+            contactEdOrgIds = await sqlAction.GetContactStudentSchoolAuthorizationEducationOrganizationIds(
+                securityElements.Contact[0].Value,
+                connection,
+                transaction
+            );
         }
 
         return (studentEdOrgIds, contactEdOrgIds);
     }
+
+    // Helper method to check if a securable key exists
+    private static bool HasSecurable(IEnumerable<AuthorizationSecurableInfo> authInfo, string securableKey) =>
+        authInfo.AsEnumerable().Any(x => x.SecurableKey == securableKey);
 
     public static async Task InsertSecurableDocument(
         IUpsertRequest upsertRequest,
@@ -135,14 +87,16 @@ public static class DocumentAuthorizationHelper
         ISqlAction sqlAction
     )
     {
+        var securableInfo = upsertRequest.ResourceInfo.AuthorizationSecurableInfo.AsEnumerable();
+        var securityElements = upsertRequest.DocumentSecurityElements;
+
         if (
-            upsertRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
+            HasSecurable(securableInfo, SecurityElementNameConstants.StudentUniqueId)
+            && securityElements.Student?.Length > 0
         )
         {
             await sqlAction.InsertStudentSecurableDocument(
-                upsertRequest.DocumentSecurityElements.Student[0].Value,
+                securityElements.Student[0].Value,
                 newDocumentId,
                 documentPartitionKey,
                 connection,
@@ -151,13 +105,12 @@ public static class DocumentAuthorizationHelper
         }
 
         if (
-            upsertRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId)
+            HasSecurable(securableInfo, SecurityElementNameConstants.ContactUniqueId)
+            && securityElements.Contact?.Length > 0
         )
         {
             await sqlAction.InsertContactSecurableDocument(
-                upsertRequest.DocumentSecurityElements.Contact[0].Value,
+                securityElements.Contact[0].Value,
                 newDocumentId,
                 documentPartitionKey,
                 connection,
@@ -175,14 +128,16 @@ public static class DocumentAuthorizationHelper
         ISqlAction sqlAction
     )
     {
+        var securableInfo = updateRequest.ResourceInfo.AuthorizationSecurableInfo.AsEnumerable();
+        var securityElements = updateRequest.DocumentSecurityElements;
+
         if (
-            updateRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
+            HasSecurable(securableInfo, SecurityElementNameConstants.StudentUniqueId)
+            && securityElements.Student?.Length > 0
         )
         {
             await sqlAction.UpdateStudentSecurableDocument(
-                updateRequest.DocumentSecurityElements.Student[0].Value,
+                securityElements.Student[0].Value,
                 documentId,
                 documentPartitionKey,
                 connection,
@@ -190,13 +145,12 @@ public static class DocumentAuthorizationHelper
             );
         }
         if (
-            updateRequest
-                .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId)
+            HasSecurable(securableInfo, SecurityElementNameConstants.ContactUniqueId)
+            && securityElements.Contact?.Length > 0
         )
         {
             await sqlAction.UpdateContactSecurableDocument(
-                updateRequest.DocumentSecurityElements.Contact[0].Value,
+                securityElements.Contact[0].Value,
                 documentId,
                 documentPartitionKey,
                 connection,
