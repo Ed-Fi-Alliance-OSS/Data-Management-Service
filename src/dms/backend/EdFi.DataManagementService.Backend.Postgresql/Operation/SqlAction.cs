@@ -222,10 +222,6 @@ public class SqlAction() : ISqlAction
         NpgsqlTransaction transaction
     )
     {
-        JsonElement securityElementsValue = document.SecurityElements
-                                        .ToDocumentSecurityElements()
-                                        .ToJsonElement();
-
         await using var command = new NpgsqlCommand(
             @"
             WITH Documents AS (
@@ -249,7 +245,7 @@ public class SqlAction() : ISqlAction
                 new() { Value = document.IsDescriptor },
                 new() { Value = document.ProjectName },
                 new() { Value = document.EdfiDoc },
-                new() { Value = securityElementsValue },
+                new() { Value = document.SecurityElements },
                 new()
                 {
                     Value = document.StudentSchoolAuthorizationEdOrgIds.HasValue
