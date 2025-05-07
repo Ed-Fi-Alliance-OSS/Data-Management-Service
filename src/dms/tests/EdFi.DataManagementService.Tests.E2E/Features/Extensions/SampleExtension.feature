@@ -29,11 +29,11 @@ Feature: Sample extension resources
                           "status": 400,
                           "correlationId": null,
                           "validationErrors": {
+                              "$.busReference": [
+                                  "busReference is required."
+                              ],
                               "$.busRouteNumber": [
                                   "busRouteNumber is required."
-                              ],
-                              "$.busId": [
-                                  "busId is required."
                               ],
                               "$.busRouteDirection": [
                                   "busRouteDirection is required."
@@ -55,9 +55,6 @@ Feature: Sample extension resources
                               ],
                               "$.telephones": [
                                   "telephones is required."
-                              ],
-                              "$.busReference": [
-                                  "busReference is required."
                               ]
                           },
                           "errors": []
@@ -134,7 +131,6 @@ Feature: Sample extension resources
                   """
                         {
                             "id": "{id}",
-                            "busId": "111",
                             "startTimes": [
                                 {
                                     "startTime": "13:01:01"
