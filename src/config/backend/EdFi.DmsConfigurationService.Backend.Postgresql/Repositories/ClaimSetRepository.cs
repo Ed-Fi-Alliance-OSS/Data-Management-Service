@@ -307,30 +307,54 @@ public class ClaimSetRepository(
                     }
                 );
 
-            var nameChangeResult = await retryPolicy.ExecuteAsync(
-                () => ApplyNameChangeToClaimsHierarchy(oldClaimSetName, newClaimSetName)
-            );
-
-            if (nameChangeResult is ClaimsHierarchySaveResult.FailureUnknown failureUnknown)
-            {
-                throw new InvalidOperationException(
-                    $"Failed to save claims hierarchy: {failureUnknown.FailureMessage}"
+            ClaimsHierarchySaveResult nameChangeResult =
+                (
+                    await retryPolicy.ExecuteAsync(
+                        () => ApplyNameChangeToClaimsHierarchy(oldClaimSetName, newClaimSetName)
+                    )
+                )
+                ?? new ClaimsHierarchySaveResult.FailureUnknown(
+                    "No claim set name change result was returned."
                 );
-            }
 
-            if (nameChangeResult is ClaimsHierarchySaveResult.FailureHierarchyNotFound)
+            ClaimSetUpdateResult result = nameChangeResult switch
             {
-                throw new Exception("Claims hierarchy not found.");
-            }
+                ClaimsHierarchySaveResult.Success or ClaimsHierarchySaveResult.FailureHierarchyNotFound =>
+                    new ClaimSetUpdateResult.Success(),
+                ClaimsHierarchySaveResult.FailureMultipleHierarchiesFound =>
+                    new ClaimSetUpdateResult.FailureMultipleHierarchiesFound(),
+                ClaimsHierarchySaveResult.FailureMultiUserConflict =>
+                    new ClaimSetUpdateResult.FailureMultiUserConflict(),
+                ClaimsHierarchySaveResult.FailureUnknown unknown => new ClaimSetUpdateResult.FailureUnknown(
+                    unknown.FailureMessage
+                ),
+                _ => new ClaimSetUpdateResult.FailureUnknown(
+                    $"Unhandled ClaimsHierarchyGetResult of type '{nameChangeResult.GetType().Name}'"
+                ),
+            };
 
-            if (nameChangeResult is ClaimsHierarchySaveResult.FailureMultipleHierarchiesFound)
+            if (result is ClaimSetUpdateResult.Success)
             {
-                throw new Exception("Multiple claims hierarchies found.");
+                await transaction.CommitAsync();
+            }
+            else
+            {
+                await transaction.RollbackAsync();
             }
 
-            await transaction.CommitAsync();
+            if (result is ClaimSetUpdateResult.FailureUnknown failureUnknown)
+            {
+                logger.LogError(failureUnknown.FailureMessage);
+            }
 
-            return new ClaimSetUpdateResult.Success();
+            return result;
+        }
+        catch (PostgresException ex)
+            when (ex is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "idx_claimsetname" })
+        {
+            logger.LogWarning(ex, "ClaimSetName must be unique");
+            await transaction.RollbackAsync();
+            return new ClaimSetUpdateResult.FailureDuplicateClaimSetName();
         }
         catch (Exception ex)
         {
@@ -377,7 +401,8 @@ public class ClaimSetRepository(
                 ClaimsHierarchyGetResult.Success success => await RenameAndSaveClaimsHierarchy(
                     oldClaimSetName,
                     newClaimSetName,
-                    success.Claims
+                    success.Claims,
+                    success.LastModifiedDate
                 ),
                 _ => new ClaimsHierarchySaveResult.FailureUnknown(
                     $"Unhandled ClaimsHierarchyGetResult of type '{hierarchyResult.GetType().Name}'"
@@ -388,12 +413,17 @@ public class ClaimSetRepository(
         async Task<ClaimsHierarchySaveResult> RenameAndSaveClaimsHierarchy(
             string oldClaimSetName,
             string newClaimSetName,
-            List<Claim> claimsHierarchy
+            List<Claim> claimsHierarchy,
+            DateTime lastModifiedDate
         )
         {
             RenameClaimSetInHierarchy(claimsHierarchy, oldClaimSetName, newClaimSetName);
 
-            return await claimsHierarchyRepository.SaveClaimsHierarchy(claimsHierarchy, transaction);
+            return await claimsHierarchyRepository.SaveClaimsHierarchy(
+                claimsHierarchy,
+                lastModifiedDate,
+                transaction
+            );
         }
     }
 

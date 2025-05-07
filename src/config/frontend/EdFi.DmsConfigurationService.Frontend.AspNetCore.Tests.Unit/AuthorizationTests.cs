@@ -333,7 +333,7 @@ public class AuthorizationTests
             ];
 
             A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
-                .Returns(new ClaimsHierarchyGetResult.Success(claims));
+                .Returns(new ClaimsHierarchyGetResult.Success(claims, DateTime.Now));
             var suppliedAuthorizationMetadataResponse = new AuthorizationMetadataResponse(
                 Claims: [new("ClaimOne", 1)],
                 Authorizations:

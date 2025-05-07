@@ -17,6 +17,7 @@ public interface IClaimsHierarchyRepository
 
     Task<ClaimsHierarchySaveResult> SaveClaimsHierarchy(
         List<Claim> claimsHierarchy,
+        DateTime existingLastModifiedDate,
         DbTransaction? transaction = null
     );
 }
@@ -27,7 +28,7 @@ public abstract record ClaimsHierarchyGetResult
     /// Successfully loaded and deserialized the claim set hierarchy.
     /// </summary>
     /// <param name="Claims"></param>
-    public record Success(List<Claim> Claims) : ClaimsHierarchyGetResult;
+    public record Success(List<Claim> Claims, DateTime LastModifiedDate) : ClaimsHierarchyGetResult;
 
     /// <summary>
     /// Unexpected exception thrown and caught.

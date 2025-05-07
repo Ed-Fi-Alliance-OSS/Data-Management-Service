@@ -719,7 +719,53 @@ public class ClaimSetModuleTests
 
             //Assert
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().Be(true);
+            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().BeTrue();
+        }
+
+        [Test]
+        public async Task Should_return_duplicate_claimSetName_error_message_on_update()
+        {
+            //Arrange
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureDuplicateClaimSetName());
+
+            //Act
+            var addResponse = await _client.PutAsync(
+                "/v2/claimSets/333",
+                new StringContent(
+                    """
+                    {
+                        "id": 333,
+                        "name":"Testing-PUT-for-ClaimSet"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            var actualPostResponse = JsonNode.Parse(await addResponse.Content.ReadAsStringAsync());
+            var expectedPostResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "Name": [
+                      "A claim set with this name already exists in the database. Please enter a unique name."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
+            );
+
+            //Assert
+            addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualPostResponse, expectedPostResponse).Should().BeTrue();
         }
 
         [Test]
@@ -761,6 +807,124 @@ public class ClaimSetModuleTests
 
             importResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(actualImportResponse, expectedImportResponse).Should().Be(true);
+        }
+    }
+
+    [TestFixture]
+    public class FailureMultipleHierarchiesFoundTests : ClaimSetModuleTests
+    {
+        private HttpClient _client;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _client = SetUpClient();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            //Arrange
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task Should_return_conflict_when_multiple_hierarchies_found_on_claim_set_update()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureMultipleHierarchiesFound());
+
+            var updateBody = """
+                {
+                    "id": 1,
+                    "name": "Updated-ClaimSet"
+                }
+                """;
+
+            // Act
+            var response = await _client.PutAsync(
+                "/v2/claimSets/1",
+                new StringContent(updateBody, Encoding.UTF8, "application/json")
+            );
+
+            var actualResponseJson = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+            var expectedResponseJson = JsonNode.Parse(
+                """
+                {
+                    "detail": "",
+                    "type": "urn:ed-fi:api:internal-server-error",
+                    "title": "Internal Server Error",
+                    "status": 500,
+                    "correlationId": "{correlationId}",
+                    "validationErrors": {},
+                    "errors": []
+                }
+                """.Replace("{correlationId}", actualResponseJson!["correlationId"]!.GetValue<string>())
+            );
+
+            //Assert
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            JsonNode.DeepEquals(actualResponseJson, expectedResponseJson).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class FailureMultiUserConflictTests : ClaimSetModuleTests
+    {
+        private HttpClient _client;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _client = SetUpClient();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            //Arrange
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task Should_return_conflict_when_multi_user_conflict_occurs_on_hierarchy_during_claim_set_update()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureMultiUserConflict());
+
+            var updateBody = """
+                {
+                    "id": 1,
+                    "name": "Updated-ClaimSet"
+                }
+                """;
+
+            // Act
+            var response = await _client.PutAsync(
+                "/v2/claimSets/1",
+                new StringContent(updateBody, Encoding.UTF8, "application/json")
+            );
+
+            var actualResponseJson = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+            var expectedResponseJson = JsonNode.Parse(
+                """
+                {
+                    "detail": "Unable to update claim set due to multi-user conflicts. Retry the request.",
+                    "type": "urn:ed-fi:api:conflict",
+                    "title": "Conflict",
+                    "status": 409,
+                    "correlationId": "{correlationId}",
+                    "validationErrors": {},
+                    "errors": []
+                }
+                """.Replace("{correlationId}", actualResponseJson!["correlationId"]!.GetValue<string>())
+            );
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            JsonNode.DeepEquals(actualResponseJson, expectedResponseJson).Should().BeTrue();
         }
     }
 }

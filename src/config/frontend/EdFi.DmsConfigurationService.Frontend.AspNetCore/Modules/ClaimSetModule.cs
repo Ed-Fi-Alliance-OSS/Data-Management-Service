@@ -41,6 +41,7 @@ public class ClaimSetModule : IEndpointModule
         var insertResult = await repository.InsertClaimSet(entity);
 
         var request = httpContext.Request;
+
         return insertResult switch
         {
             ClaimSetInsertResult.Success success => Results.Created(
@@ -72,6 +73,7 @@ public class ClaimSetModule : IEndpointModule
     )
     {
         ClaimSetQueryResult result = await repository.QueryClaimSet(query, verbose);
+
         return result switch
         {
             ClaimSetQueryResult.Success success => Results.Ok(success.ClaimSetResponses),
@@ -88,6 +90,7 @@ public class ClaimSetModule : IEndpointModule
     )
     {
         ClaimSetGetResult result = await repository.GetClaimSet(id, verbose);
+
         return result switch
         {
             ClaimSetGetResult.Success success => Results.Ok(success.ClaimSetResponse),
@@ -124,12 +127,39 @@ public class ClaimSetModule : IEndpointModule
         return result switch
         {
             ClaimSetUpdateResult.Success => Results.NoContent(),
+            ClaimSetUpdateResult.FailureDuplicateClaimSetName => Results.Json(
+                FailureResponse.ForDataValidation(
+                    [
+                        new ValidationFailure(
+                            "Name",
+                            "A claim set with this name already exists in the database. Please enter a unique name."
+                        ),
+                    ],
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
+            ClaimSetUpdateResult.FailureMultiUserConflict => Results.Json(
+                FailureResponse.ForConflict(
+                    $"Unable to update claim set due to multi-user conflicts. Retry the request.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.Conflict
+            ),
+            ClaimSetUpdateResult.FailureMultipleHierarchiesFound => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            ),
             ClaimSetUpdateResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound(
                     $"ClaimSet {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
                 ),
                 statusCode: (int)HttpStatusCode.NotFound
+            ),
+            ClaimSetUpdateResult.FailureUnknown => Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
@@ -143,6 +173,7 @@ public class ClaimSetModule : IEndpointModule
     )
     {
         ClaimSetDeleteResult result = await repository.DeleteClaimSet(id);
+
         return result switch
         {
             ClaimSetDeleteResult.Success => Results.NoContent(),
@@ -165,6 +196,7 @@ public class ClaimSetModule : IEndpointModule
     )
     {
         ClaimSetExportResult result = await repository.Export(id);
+
         return result switch
         {
             ClaimSetExportResult.Success success => Results.Ok(success.ClaimSetExportResponse),
@@ -216,12 +248,13 @@ public class ClaimSetModule : IEndpointModule
         IClaimSetDataProvider provider
     )
     {
-        var validator = new ClaimSetImportCommand.Validator(provider);
+        var validator = new ClaimSetImportCommand.Validator();
         await validator.GuardAsync(entity);
 
         var insertResult = await repository.Import(entity);
 
         var request = httpContext.Request;
+
         return insertResult switch
         {
             ClaimSetImportResult.Success success => Results.Created(
