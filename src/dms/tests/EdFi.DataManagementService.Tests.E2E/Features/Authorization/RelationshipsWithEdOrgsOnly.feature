@@ -854,8 +854,8 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   """
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:
-                  # Build a hierarchy
-            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3, 301, 30101"
+                      # Build a hierarchy
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3, 301, 30101999999"
               And the system has these "stateEducationAgencies"
                   | stateEducationAgencyId | nameOfInstitution | categories                                                                                                            |
                   | 3                      | Test state        | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#State" }] |
@@ -863,14 +863,15 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                   | localEducationAgencyId | nameOfInstitution | stateEducationAgencyReference   | categories                                                                                                               | localEducationAgencyCategoryDescriptor                       |
                   | 301                    | Test LEA          | { "stateEducationAgencyId": 3 } | [{ "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
               And the system has these "schools"
-                  | schoolId     | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
-                  | 30101        | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 301} |
+                  | schoolId    | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        | localEducationAgencyReference    |
+                  | 30101999999 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 301} |
               And the system has these "academicWeeks"
-                  | weekIdentifier | schoolReference              | beginDate  | endDate    | totalInstructionalDays |
-                  | week 1         | { "schoolId": 30101 }        | 2023-08-01 | 2023-08-07 | 5                      |
+                  | weekIdentifier | schoolReference             | beginDate  | endDate    | totalInstructionalDays |
+                  | week 1         | { "schoolId": 30101999999 } | 2023-08-01 | 2023-08-07 | 5                      |
+
 
         @addwait
-        Scenario: 19 Ensure client with access to state education agency 244901 gets query results for school level classPeriods
+        Scenario: 19 Ensure client with access to state education agency 3 gets query results for school level classPeriods
             Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "3"
              When a GET request is made to "/ed-fi/academicWeeks"
              Then it should respond with 200
@@ -884,7 +885,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     "id": "{id}",
                     "weekIdentifier": "week 1",
                     "schoolReference": {
-                        "schoolId": 30101
+                        "schoolId": 30101999999
                      }
                     }
                   ]

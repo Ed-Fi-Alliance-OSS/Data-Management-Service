@@ -54,10 +54,23 @@ internal static class SecurityHelper
         var educationOrganizations =
             jsonObject["EducationOrganization"]
                 ?.AsArray()
-                .Select(eo => new EducationOrganizationSecurityElement(
-                    new ResourceName(eo!["ResourceName"]!.GetValue<string>()),
-                    new EducationOrganizationId(eo["Id"]!.GetValue<long>())
-                ))
+                .Select(eo =>
+                {
+                    var resourceName = eo!["ResourceName"]!.GetValue<string>();
+
+                    var idNode = eo["Id"]!;
+                    long id = idNode.GetValueKind() switch
+                    {
+                        JsonValueKind.String => long.Parse(idNode.GetValue<string>()),
+                        JsonValueKind.Number => idNode.GetValue<long>(),
+                        _ => throw new InvalidOperationException($"Unexpected value kind for 'Id': {idNode.GetValueKind()}")
+                    };
+
+                    return new EducationOrganizationSecurityElement(
+                        new ResourceName(resourceName),
+                        new EducationOrganizationId(id)
+                    );
+                })
                 .ToArray() ?? [];
 
         var studentUniqueId =
