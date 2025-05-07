@@ -223,7 +223,9 @@ public class SqlAction() : ISqlAction
         NpgsqlTransaction transaction
     )
     {
-        var securityElementsValue = ConvertSecurityElementIdsToString(document.SecurityElements);
+        JsonElement securityElementsValue = document.SecurityElements
+                                        .ToDocumentSecurityElements()
+                                        .ToJsonElement();
 
         await using var command = new NpgsqlCommand(
             @"
@@ -248,11 +250,7 @@ public class SqlAction() : ISqlAction
                 new() { Value = document.IsDescriptor },
                 new() { Value = document.ProjectName },
                 new() { Value = document.EdfiDoc },
-                new NpgsqlParameter
-                {
-                    Value = securityElementsValue,
-                    NpgsqlDbType = NpgsqlTypes.NpgsqlDbType.Jsonb
-                },
+                new() { Value = securityElementsValue },
                 new()
                 {
                     Value = document.StudentSchoolAuthorizationEdOrgIds.HasValue
@@ -267,65 +265,6 @@ public class SqlAction() : ISqlAction
 
         await command.PrepareAsync();
         return Convert.ToInt64(await command.ExecuteScalarAsync());
-    }
-
-    /// <summary>
-    /// Converts  the long of ids into string of Ids
-    /// </summary>
-    private static object ConvertSecurityElementIdsToString(JsonElement securityElements)
-    {
-        using var doc = JsonDocument.Parse(securityElements.GetRawText());
-        var root = doc.RootElement;
-
-        if (root.ValueKind != JsonValueKind.Object)
-        {
-            return securityElements;
-        }
-
-        var writerOptions = new JsonWriterOptions { Indented = false };
-        using var stream = new MemoryStream();
-        using var writer = new Utf8JsonWriter(stream, writerOptions);
-        writer.WriteStartObject();
-
-        foreach (var property in root.EnumerateObject())
-        {
-            if (property.Name == "EducationOrganization" &&
-                property.Value.ValueKind == JsonValueKind.Array)
-            {
-                writer.WritePropertyName(property.Name);
-                writer.WriteStartArray();
-
-                foreach (var org in property.Value.EnumerateArray())
-                {
-                    writer.WriteStartObject();
-
-                    foreach (var orgProp in org.EnumerateObject())
-                    {
-                        writer.WritePropertyName(orgProp.Name);
-
-                        if (orgProp.Name == "Id" && orgProp.Value.ValueKind == JsonValueKind.Number)
-                        {
-                            writer.WriteStringValue(orgProp.Value.GetInt64().ToString());
-                        }
-                        else
-                        {
-                            orgProp.Value.WriteTo(writer);
-                        }
-                    }
-
-                    writer.WriteEndObject();
-                }
-                writer.WriteEndArray();
-            }
-            else
-            {
-                property.WriteTo(writer);
-            }
-        }
-
-        writer.WriteEndObject();
-        writer.Flush();
-        return Encoding.UTF8.GetString(stream.ToArray());
     }
 
     /// <summary>

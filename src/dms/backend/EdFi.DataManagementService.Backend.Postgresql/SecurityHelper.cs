@@ -26,7 +26,7 @@ internal static class SecurityHelper
                     documentSecurityElements
                         .EducationOrganization.Select(eo => new JsonObject
                         {
-                            ["Id"] = JsonValue.Create(eo.Id.Value),
+                            ["Id"] = JsonValue.Create(eo.Id.Value.ToString()),
                             ["ResourceName"] = JsonValue.Create(eo.ResourceName.Value),
                         })
                         .ToArray()
