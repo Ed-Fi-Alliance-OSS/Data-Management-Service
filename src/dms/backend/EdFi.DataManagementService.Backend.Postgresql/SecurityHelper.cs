@@ -57,7 +57,7 @@ internal static class SecurityHelper
                 ?.AsArray()
                 .Select(eo => new EducationOrganizationSecurityElement(
                     new ResourceName(eo!["ResourceName"]!.GetValue<string>()),
-                    new EducationOrganizationId(eo["Id"]!.GetValue<long>())
+                    new EducationOrganizationId(long.Parse(eo["Id"]!.GetValue<string>()))
                 ))
                 .ToArray() ?? [];
 
