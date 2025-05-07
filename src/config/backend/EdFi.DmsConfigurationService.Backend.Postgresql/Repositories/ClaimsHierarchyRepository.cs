@@ -27,21 +27,23 @@ public class ClaimsHierarchyRepository(
         try
         {
             // Initial implementation assumes a basic implementation with single record.
-            string sql = "SELECT Hierarchy FROM dmscs.ClaimsHierarchy";
+            string sql = "SELECT Hierarchy, LastModifiedDate FROM dmscs.ClaimsHierarchy";
 
-            var hierarchyJson = (await connection.QueryAsync<string>(sql)).ToList();
+            var hierarchyTuples = (
+                await connection.QueryAsync<(string hierarchyJson, DateTime lastModifiedDate)>(sql)
+            ).ToList();
 
-            if (hierarchyJson.Count == 0)
+            if (hierarchyTuples.Count == 0)
             {
                 return new ClaimsHierarchyGetResult.FailureHierarchyNotFound();
             }
 
-            if (hierarchyJson.Count > 1)
+            if (hierarchyTuples.Count > 1)
             {
                 return new ClaimsHierarchyGetResult.FailureMultipleHierarchiesFound();
             }
 
-            var hierarchy = JsonSerializer.Deserialize<List<Claim>>(hierarchyJson[0]);
+            var hierarchy = JsonSerializer.Deserialize<List<Claim>>(hierarchyTuples[0].hierarchyJson);
 
             if (hierarchy == null)
             {
@@ -50,7 +52,7 @@ public class ClaimsHierarchyRepository(
                 );
             }
 
-            return new ClaimsHierarchyGetResult.Success(hierarchy);
+            return new ClaimsHierarchyGetResult.Success(hierarchy, hierarchyTuples[0].lastModifiedDate);
         }
         catch (Exception ex)
         {
@@ -62,6 +64,7 @@ public class ClaimsHierarchyRepository(
 
     public async Task<ClaimsHierarchySaveResult> SaveClaimsHierarchy(
         List<Claim> claimsHierarchy,
+        DateTime existingLastModifiedDate,
         DbTransaction? transaction = null
     )
     {
@@ -96,6 +99,12 @@ public class ClaimsHierarchyRepository(
             {
                 var existingRecord = existingRecords.Single();
 
+                // If the supplied change data doesn't match the one just retrieved, this indicates a multi-user conflict
+                if (existingLastModifiedDate != existingRecord.LastModifiedDate)
+                {
+                    return new ClaimsHierarchySaveResult.FailureMultiUserConflict();
+                }
+
                 const string UpdateSql =
                     @"
                     UPDATE dmscs.ClaimsHierarchy
@@ -109,10 +118,11 @@ public class ClaimsHierarchyRepository(
                     {
                         Hierarchy = hierarchyJson,
                         Id = existingRecord.Id,
-                        LastModifiedDate = existingRecord.LastModifiedDate,
+                        LastModifiedDate = existingLastModifiedDate,
                     }
                 );
 
+                // In the remote chance a multi-user conflict happened since the last check, we need to respond with a failure.
                 if (affectedRows == 0)
                 {
                     return new ClaimsHierarchySaveResult.FailureMultiUserConflict();

@@ -9,11 +9,6 @@ public class ClaimSetUpdateCommand : IClaimSetCommand
 {
     public long Id { get; set; }
     public required string Name { get; set; }
-    public List<ResourceClaim>? ResourceClaims { get; set; }
 
-    public class Validator(IClaimSetDataProvider claimSetDataProvider)
-        : ClaimSetCommandValidator<ClaimSetUpdateCommand>(
-            claimSetDataProvider,
-            isResourceClaimsOptional: false
-        );
+    public class Validator() : ClaimSetCommandValidator<ClaimSetUpdateCommand>();
 }

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -158,7 +159,8 @@ public class ClaimSetTests : DatabaseTest
                 },
             };
 
-            await _claimsHierarchyRepository.SaveClaimsHierarchy(claimsHierarchy);
+            var saveResult = await _claimsHierarchyRepository.SaveClaimsHierarchy(claimsHierarchy, default);
+            saveResult.Should().BeOfType<ClaimsHierarchySaveResult.Success>();
 
             // Update the claim set
             _updateClaimSet = new ClaimSetUpdateCommand() { Name = "Test-Update-ClaimSet" };
@@ -241,6 +243,184 @@ public class ClaimSetTests : DatabaseTest
             }
 
             return false;
+        }
+    }
+
+    [TestFixture]
+    public class UpdateRetryPolicyTests : ClaimSetTests
+    {
+        private ClaimSetInsertCommand _insertClaimSet = null!;
+        private ClaimSetUpdateCommand _updateClaimSet = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert claim set
+            _insertClaimSet = new ClaimSetInsertCommand() { Name = "Test-Retry-ClaimSet" };
+            var insertResult = await _repository.InsertClaimSet(_insertClaimSet);
+            insertResult.Should().BeOfType<ClaimSetInsertResult.Success>();
+
+            await InitializeClaimsHierarchy();
+
+            // Prepare update command
+            _updateClaimSet = new ClaimSetUpdateCommand() { Name = "Test-Retry-Updated-ClaimSet" };
+            _updateClaimSet.Id = (insertResult as ClaimSetInsertResult.Success)!.Id;
+
+            async Task InitializeClaimsHierarchy()
+            {
+                var claimsHierarchyRepository = CreateClaimsHierarchyRepository();
+
+                var claimsHierarchy = new List<Claim>
+                {
+                    new Claim
+                    {
+                        Name = "RootClaim",
+                        ClaimSets = new List<ClaimSet> { new ClaimSet { Name = "Test-Retry-ClaimSet" } },
+                        Claims = new List<Claim>
+                        {
+                            new Claim
+                            {
+                                Name = "ChildClaim",
+                                ClaimSets = new List<ClaimSet>
+                                {
+                                    new ClaimSet { Name = "Test-Retry-ClaimSet" },
+                                },
+                            },
+                        },
+                    },
+                };
+
+                await claimsHierarchyRepository.SaveClaimsHierarchy(claimsHierarchy, default);
+            }
+        }
+
+        [TestCase(4, false)]
+        [TestCase(3, true)]
+        public async Task Should_retry_3_times_on_lastmodifieddate_conflict(
+            int multiUserConflictCount,
+            bool expectSuccess
+        )
+        {
+            // Arrange
+
+            // Wrap the repository to introduce multi-user conflicts during save
+            var claimsHierarchyRepository = new ClaimsHierarchyRepositoryMultiUserTestDecorator(
+                CreateClaimsHierarchyRepository(),
+                multiUserConflictCount
+            );
+
+            var claimSetRepository = new ClaimSetRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ClaimSetRepository>.Instance,
+                claimsHierarchyRepository
+            );
+
+            // Act
+
+            // Attempt to update the claim set, expecting retries
+            var updateResult = await claimSetRepository.UpdateClaimSet(_updateClaimSet);
+
+            // Assert
+
+            // Ensure the correct number of attempts were made to apply the claim name change to the hierarchy
+            claimsHierarchyRepository
+                .SaveClaimsHierarchyInvocationCount.Should()
+                .Be(Math.Min(4, multiUserConflictCount + 1));
+
+            if (expectSuccess)
+            {
+                // Verify that the update succeeded after retries were attempted
+                updateResult.Should().BeOfType<ClaimSetUpdateResult.Success>();
+            }
+            else
+            {
+                // Verify that the update failed after 3 retries
+                updateResult.Should().BeOfType<ClaimSetUpdateResult.FailureMultiUserConflict>();
+            }
+        }
+
+        private static ClaimsHierarchyRepository CreateClaimsHierarchyRepository()
+        {
+            // Initialize claims hierarchy
+            var claimsHierarchyRepository = new ClaimsHierarchyRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ClaimsHierarchyRepository>.Instance
+            );
+
+            return claimsHierarchyRepository;
+        }
+
+        private class ClaimsHierarchyRepositoryMultiUserTestDecorator(
+            IClaimsHierarchyRepository _claimsHierarchyRepository,
+            int _conflictingUpdateCount = int.MaxValue
+        ) : IClaimsHierarchyRepository
+        {
+            private readonly IClaimsHierarchyRepository _multiUserClaimsHierarchyRepository =
+                new ClaimsHierarchyRepository(
+                    Configuration.DatabaseOptions,
+                    NullLogger<ClaimsHierarchyRepository>.Instance
+                );
+
+            private int _remainingConflictingUpdateCount = _conflictingUpdateCount;
+
+            public Task<ClaimsHierarchyGetResult> GetClaimsHierarchy()
+            {
+                // Pass the call through unmodified
+                return _claimsHierarchyRepository.GetClaimsHierarchy();
+            }
+
+            public int SaveClaimsHierarchyInvocationCount;
+
+            public async Task<ClaimsHierarchySaveResult> SaveClaimsHierarchy(
+                List<Claim> claimsHierarchy,
+                DateTime existingLastModifiedDate,
+                DbTransaction? transaction = null
+            )
+            {
+                // Increment invocation counter for inspection by tests
+                SaveClaimsHierarchyInvocationCount++;
+
+                // If the call is part of an existing transaction, force a multi-user conflict on a separate connection
+                if (transaction != null && _remainingConflictingUpdateCount > 0)
+                {
+                    _remainingConflictingUpdateCount--;
+
+                    var hierarchyResult = GetCurrentClaimsHierarchy();
+
+                    hierarchyResult.claims.Add(
+                        new Claim() { Name = $"Test-MultiUser-Claim-{Random.Shared.Next(100000)}" }
+                    );
+
+                    var result = await _multiUserClaimsHierarchyRepository.SaveClaimsHierarchy(
+                        hierarchyResult.claims,
+                        hierarchyResult.lastModifiedDate
+                    );
+
+                    result.Should().BeOfType<ClaimsHierarchySaveResult.Success>();
+                }
+
+                // Pass the call through
+                return await _claimsHierarchyRepository.SaveClaimsHierarchy(
+                    claimsHierarchy,
+                    existingLastModifiedDate,
+                    transaction
+                );
+
+                (List<Claim> claims, DateTime lastModifiedDate) GetCurrentClaimsHierarchy()
+                {
+                    var claimsResult = _multiUserClaimsHierarchyRepository
+                        .GetClaimsHierarchy()
+                        .ConfigureAwait(false)
+                        .GetAwaiter()
+                        .GetResult();
+
+                    claimsResult.Should().BeOfType<ClaimsHierarchyGetResult.Success>();
+
+                    var success = (claimsResult as ClaimsHierarchyGetResult.Success)!;
+
+                    return (success.Claims, success.LastModifiedDate);
+                }
+            }
         }
     }
 
