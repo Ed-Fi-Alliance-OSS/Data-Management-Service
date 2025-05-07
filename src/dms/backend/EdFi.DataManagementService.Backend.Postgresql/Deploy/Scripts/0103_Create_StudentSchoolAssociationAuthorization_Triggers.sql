@@ -123,7 +123,7 @@ RETURNS TRIGGER
 AS $$
 DECLARE
     old_student_id text;
-    existing_contact RECORD;
+
 BEGIN
     old_student_id := OLD.EdfiDoc->'studentReference'->>'studentUniqueId';
 
