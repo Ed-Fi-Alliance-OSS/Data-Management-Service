@@ -9,5 +9,7 @@ public class ClaimSetInsertCommand : IClaimSetCommand
 {
     public required string Name { get; set; }
 
+    public bool IsSystemReserved { get; set; }
+
     public class Validator() : ClaimSetCommandValidator<ClaimSetInsertCommand>();
 }

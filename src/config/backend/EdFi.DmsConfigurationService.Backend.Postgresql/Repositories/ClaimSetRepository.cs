@@ -3,9 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Runtime.InteropServices.ComTypes;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -108,7 +106,7 @@ public class ClaimSetRepository(
                    RETURNING Id;
                 """;
 
-            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = false };
+            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = command.IsSystemReserved };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
             await transaction.CommitAsync();
@@ -238,23 +236,29 @@ public class ClaimSetRepository(
         {
             // Get the current claim set name
             string getClaimSetSql = """
-                SELECT ClaimSetName
+                SELECT ClaimSetName, IsSystemReserved
                 FROM dmscs.ClaimSet
                 WHERE Id = @Id;
                 """;
 
             var getClaimSetParameters = new { Id = command.Id };
 
-            string? oldClaimSetName = await connection.ExecuteScalarAsync<string?>(
-                getClaimSetSql,
-                getClaimSetParameters,
-                transaction
-            );
+            var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
+                string claimSetName,
+                bool isSystemReserved
+            )>(getClaimSetSql, getClaimSetParameters, transaction);
 
-            if (oldClaimSetName == null)
+            if (existingClaimSet == default)
             {
                 return new ClaimSetUpdateResult.FailureNotFound();
             }
+
+            if (existingClaimSet.isSystemReserved)
+            {
+                return new ClaimSetUpdateResult.FailureSystemReserved();
+            }
+
+            string? oldClaimSetName = existingClaimSet.claimSetName;
 
             string renameClaimSetSql = """
                 UPDATE dmscs.ClaimSet
