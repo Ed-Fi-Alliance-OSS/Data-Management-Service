@@ -163,20 +163,16 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             }
 
             JsonElement? studentSchoolAuthorizationEducationOrganizationIds = null;
-
-            if (
-                updateRequest
-                    .ResourceInfo.AuthorizationSecurableInfo.AsEnumerable()
-                    .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId)
-            )
-            {
-                studentSchoolAuthorizationEducationOrganizationIds =
-                    await _sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
-                        updateRequest.DocumentSecurityElements.Student[0].Value,
-                        connection,
-                        transaction
-                    );
-            }
+            JsonElement? contactStudentSchoolAuthorizationEducationOrganizationIds = null;
+            (
+                studentSchoolAuthorizationEducationOrganizationIds,
+                contactStudentSchoolAuthorizationEducationOrganizationIds
+            ) = await DocumentAuthorizationHelper.GetAuthorizationEducationOrganizationIds(
+                updateRequest,
+                connection,
+                transaction,
+                _sqlAction
+            );
 
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
@@ -184,6 +180,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
                 updateRequest.DocumentSecurityElements.ToJsonElement(),
                 studentSchoolAuthorizationEducationOrganizationIds,
+                contactStudentSchoolAuthorizationEducationOrganizationIds,
                 connection,
                 transaction,
                 updateRequest.TraceId
@@ -319,6 +316,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                                 JsonSerializer.Deserialize<JsonElement>(cascadeResult.ModifiedEdFiDoc),
                                 updateRequest.DocumentSecurityElements.ToJsonElement(),
                                 studentSchoolAuthorizationEducationOrganizationIds,
+                                contactStudentSchoolAuthorizationEducationOrganizationIds,
                                 connection,
                                 transaction,
                                 updateRequest.TraceId

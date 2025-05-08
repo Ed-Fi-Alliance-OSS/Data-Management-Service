@@ -48,6 +48,10 @@ public record Document(
     /// </summary>
     JsonElement? StudentSchoolAuthorizationEdOrgIds,
     /// <summary>
+    /// Array of EducationOrganizationIds through StudentContactAssociation
+    /// </summary>
+    JsonElement? ContactStudentSchoolAuthorizationEdOrgIds,
+    /// <summary>
     /// The correlation id of the last insert or update
     /// </summary>
     string LastModifiedTraceId,

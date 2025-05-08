@@ -49,6 +49,8 @@ AS $$
 DECLARE
     ed_org_ids jsonb;
     student_id text;
+    existing_contact RECORD;
+
 BEGIN
     -- Extract student unique ID
     student_id := NEW.EdfiDoc->'studentReference'->>'studentUniqueId';
@@ -82,6 +84,35 @@ BEGIN
     -- Update all student-securable documents for this student
     PERFORM dms.SetStudentSchoolAuthorizationEdOrgIds(student_id, ed_org_ids);
 
+    -- Insert student contact association records for this student school association
+    FOR existing_contact IN
+        SELECT ContactUniqueId, StudentContactAssociationId, StudentContactAssociationPartitionKey
+        FROM dms.ContactStudentSchoolAuthorization WHERE StudentUniqueId = student_id
+    LOOP
+        -- Insert into ContactStudentSchoolAuthorization table
+        INSERT INTO dms.ContactStudentSchoolAuthorization (
+        ContactUniqueId,
+        StudentUniqueId,
+        ContactStudentSchoolAuthorizationEducationOrganizationIds,
+        StudentContactAssociationId,
+        StudentContactAssociationPartitionKey,
+        StudentSchoolAssociationId, 
+        StudentSchoolAssociationPartitionKey
+    )
+    VALUES (
+        existing_contact.ContactUniqueId,
+        student_id,
+        ed_org_ids,
+        existing_contact.StudentContactAssociationId,
+        existing_contact.StudentContactAssociationPartitionKey,
+        NEW.Id,
+        NEW.DocumentPartitionKey
+    );
+
+    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(existing_contact.ContactUniqueId);
+
+    END LOOP;
+
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -92,6 +123,7 @@ RETURNS TRIGGER
 AS $$
 DECLARE
     old_student_id text;
+
 BEGIN
     old_student_id := OLD.EdfiDoc->'studentReference'->>'studentUniqueId';
 
