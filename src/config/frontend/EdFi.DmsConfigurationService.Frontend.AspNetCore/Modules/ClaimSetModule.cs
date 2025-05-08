@@ -161,6 +161,13 @@ public class ClaimSetModule : IEndpointModule
                 FailureResponse.ForUnknown(httpContext.TraceIdentifier),
                 statusCode: (int)HttpStatusCode.InternalServerError
             ),
+            ClaimSetUpdateResult.FailureSystemReserved => Results.Json(
+                FailureResponse.ForBadRequest(
+                    "The specified claim set is system-reserved and cannot be updated.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }

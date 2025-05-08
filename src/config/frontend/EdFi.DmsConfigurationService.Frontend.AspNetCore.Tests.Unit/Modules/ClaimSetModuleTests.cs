@@ -927,4 +927,63 @@ public class ClaimSetModuleTests
             JsonNode.DeepEquals(actualResponseJson, expectedResponseJson).Should().BeTrue();
         }
     }
+
+    [TestFixture]
+    public class FailureSystemReservedTests : ClaimSetModuleTests
+    {
+        private HttpClient _client;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _client = SetUpClient();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            //Arrange
+            _client.Dispose();
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_when_attempt_made_to_update_a_system_reserved_claim_set()
+        {
+            // Arrange
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.FailureSystemReserved());
+
+            var updateBody = """
+                {
+                    "id": 1,
+                    "name": "Updated-System-Reserved-ClaimSet"
+                }
+                """;
+
+            // Act
+            var response = await _client.PutAsync(
+                "/v2/claimSets/1",
+                new StringContent(updateBody, Encoding.UTF8, "application/json")
+            );
+
+            var actualResponseJson = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+            var expectedResponseJson = JsonNode.Parse(
+                """
+                {
+                    "detail": "The specified claim set is system-reserved and cannot be updated.",
+                    "type": "urn:ed-fi:api:bad-request",
+                    "title": "Bad Request",
+                    "status": 400,
+                    "correlationId": "{correlationId}",
+                    "validationErrors": {},
+                    "errors": []
+                }
+                """.Replace("{correlationId}", actualResponseJson!["correlationId"]!.GetValue<string>())
+            );
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.DeepEquals(actualResponseJson, expectedResponseJson).Should().BeTrue();
+        }
+    }
 }

@@ -104,6 +104,11 @@ public record ClaimSetUpdateResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ClaimSetUpdateResult();
+
+    /// <summary>
+    /// Attempt was made to modify a system reserved claim set.
+    /// </summary>
+    public record FailureSystemReserved() : ClaimSetUpdateResult();
 }
 
 public record ClaimSetDeleteResult

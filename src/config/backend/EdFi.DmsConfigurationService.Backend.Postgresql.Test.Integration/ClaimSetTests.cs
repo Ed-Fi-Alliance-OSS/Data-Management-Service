@@ -90,6 +90,7 @@ public class ClaimSetTests : DatabaseTest
         private long _applicationId;
         private IApplicationRepository _applicationRepository;
         private IClaimsHierarchyRepository _claimsHierarchyRepository;
+        private ClaimSetInsertResult _insertSystemReservedResult;
 
         [SetUp]
         public async Task Setup()
@@ -136,6 +137,15 @@ public class ClaimSetTests : DatabaseTest
             var insertResult = await _repository.InsertClaimSet(_insertClaimSet);
             insertResult.Should().BeOfType<ClaimSetInsertResult.Success>();
 
+            // Insert system-reserved claim set
+            var insertSystemReservedClaimSet = new ClaimSetInsertCommand()
+            {
+                Name = "Test-Insert-System-Reserved-ClaimSet",
+                IsSystemReserved = true,
+            };
+            _insertSystemReservedResult = await _repository.InsertClaimSet(insertSystemReservedClaimSet);
+            _insertSystemReservedResult.Should().BeOfType<ClaimSetInsertResult.Success>();
+
             // Initialize claims hierarchy
             _claimsHierarchyRepository = new ClaimsHierarchyRepository(
                 Configuration.DatabaseOptions,
@@ -163,16 +173,18 @@ public class ClaimSetTests : DatabaseTest
             saveResult.Should().BeOfType<ClaimsHierarchySaveResult.Success>();
 
             // Update the claim set
-            _updateClaimSet = new ClaimSetUpdateCommand() { Name = "Test-Update-ClaimSet" };
-            _updateClaimSet.Id = (insertResult as ClaimSetInsertResult.Success)!.Id;
-            _updateClaimSet.Name = "Test-Update-ClaimSet";
+            _updateClaimSet = new ClaimSetUpdateCommand()
+            {
+                Id = (insertResult as ClaimSetInsertResult.Success)!.Id,
+                Name = "Test-Update-ClaimSet",
+            };
 
             var updateResult = await _repository.UpdateClaimSet(_updateClaimSet);
             updateResult.Should().BeOfType<ClaimSetUpdateResult.Success>();
         }
 
         [Test]
-        public async Task Should_get_update_claimSet_from_get_all()
+        public async Task Should_get_updated_and_system_reserved_claimSets_from_get_all()
         {
             var getResult = await _repository.QueryClaimSet(
                 new PagingQuery() { Limit = 25, Offset = 0 },
@@ -186,6 +198,14 @@ public class ClaimSetTests : DatabaseTest
 
             var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test-Update-ClaimSet");
+            reducedResponse.IsSystemReserved.Should().Be(false);
+
+            object reservedClaimSetFromDb = ((ClaimSetQueryResult.Success)getResult)
+                .ClaimSetResponses.Skip(1)
+                .First();
+            var reducedSystemReservedResponse = (ClaimSetResponseReduced)reservedClaimSetFromDb;
+            reducedSystemReservedResponse.Name.Should().Be("Test-Insert-System-Reserved-ClaimSet");
+            reducedSystemReservedResponse.IsSystemReserved.Should().Be(true);
         }
 
         [Test]
@@ -199,6 +219,7 @@ public class ClaimSetTests : DatabaseTest
 
             var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test-Update-ClaimSet");
+            reducedResponse.IsSystemReserved.Should().Be(false);
         }
 
         [Test]
@@ -213,7 +234,7 @@ public class ClaimSetTests : DatabaseTest
         }
 
         [Test]
-        public async Task Should_update_all_occurrences_of_claimSet_in_claims_hierarchy()
+        public async Task Should_update_all_occurrences_of_claimSet_name_in_claims_hierarchy()
         {
             // Retrieve the updated claims hierarchy
             var hierarchyResult = await _claimsHierarchyRepository.GetClaimsHierarchy();
@@ -228,6 +249,20 @@ public class ClaimSetTests : DatabaseTest
             // Verify that "Test-Update-ClaimSet" exists in all appropriate places
             bool containsNewClaimSet = claims.Any(c => ContainsClaimSet(c, "Test-Update-ClaimSet"));
             containsNewClaimSet.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task Should_return_failure_when_attempting_to_update_system_reserved_claim_set()
+        {
+            // Attempt to update the system-reserved claim set
+            var updateSystemReserved = new ClaimSetUpdateCommand()
+            {
+                Id = (_insertSystemReservedResult as ClaimSetInsertResult.Success)!.Id,
+                Name = "Test-Update-System-Reserved-ClaimSet",
+            };
+
+            var updateSystemReservedResult = await _repository.UpdateClaimSet(updateSystemReserved);
+            updateSystemReservedResult.Should().BeOfType<ClaimSetUpdateResult.FailureSystemReserved>();
         }
 
         private bool ContainsClaimSet(Claim claim, string claimSetName)
