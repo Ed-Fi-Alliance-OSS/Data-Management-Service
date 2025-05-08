@@ -250,6 +250,7 @@ Authorization: bearer {{dmsToken}}
 # @name createContact
 POST {{dataApi}}/ed-fi/contacts
 Authorization: bearer {{dmsToken}}
+
  {
      "contactUniqueId": "6666666",
      "firstName": "contactfirstname",
@@ -265,7 +266,8 @@ Authorization: bearer {{dmsToken}}
 # @name createStudentContactAssociation1
 POST {{dataApi}}/ed-fi/studentcontactassociations
 Authorization: bearer {{dmsToken}}
- {
+
+{
       "studentReference": {
        "studentUniqueId": "604824"
      },
@@ -293,7 +295,8 @@ Authorization: bearer {{dmsToken}}
 # @name createStudentContactAssociation2
 POST {{dataApi}}/ed-fi/studentcontactassociations
 Authorization: bearer {{dmsToken}}
- {
+
+{
       "studentReference": {
        "studentUniqueId": "604823"
      },
@@ -336,12 +339,11 @@ Authorization: bearer {{dmsToken}}
 
 {
     "id": "{{studentContactAssociationId}}",
-    "entryDate": "2021-08-23",
-    "entryGradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade",
-    "schoolReference": {
-      "schoolId": 6001010
-    },
     "studentReference": {
-      "studentUniqueId": "604824"
-    }
+       "studentUniqueId": "604824"
+     },
+     "contactReference": {
+       "contactUniqueId": "6666666"
+     },
+     "contactPriority": 1
 }
