@@ -789,9 +789,12 @@ public class SqlAction() : ISqlAction
     {
         await using NpgsqlCommand command = new(
             $"""
-                SELECT ContactStudentSchoolAuthorizationEducationOrganizationIds
-                FROM dms.ContactStudentSchoolAuthorization
-                WHERE ContactUniqueId = $1
+                SELECT jsonb_agg(DISTINCT value)
+                FROM (
+                    SELECT DISTINCT jsonb_array_elements(ContactStudentSchoolAuthorizationEducationOrganizationIds) AS value
+                    FROM dms.ContactStudentSchoolAuthorization
+                    WHERE ContactUniqueId = $1
+                ) subquery;
             """,
             connection,
             transaction
