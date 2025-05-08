@@ -48,14 +48,15 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         // Find duplicates in document references
         // [DMS-597] Workaround for DMS-632 Duplicate array items validation considers all the references instead of only the ones part of identity
         if (
-            context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1)
-            && !_problematicResources.Contains(context.ResourceInfo.ResourceName)
+            context
+                .DocumentInfo.DocumentReferences.GroupBy(d => GenerateReferenceKey(d))
+                .Any(g => g.Count() > 1)
         )
         {
             // if duplicates are found, they should be reported
             ValidateDuplicates(
                 context.DocumentInfo.DocumentReferences,
-                item => item.ReferentialId.Value,
+                item => GenerateReferenceKey(item),
                 item => item.ResourceInfo.ResourceName.Value,
                 validationErrors
             );
@@ -91,7 +92,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 // if duplicates are found, they should be reported
                 ValidateDuplicates(
                     context.DocumentInfo.DescriptorReferences,
-                    item => item.ReferentialId.Value,
+                    item => item.ReferentialId.Value.ToString(),
                     item => item.Path.Value,
                     validationErrors,
                     true
@@ -119,25 +120,27 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         await next();
     }
 
+    // Fix for CS0029 and CS1662: Ensure the lambda expressions return the correct type (string) for ReferentialId.Value.
+
     private static void ValidateDuplicates<T>(
         IEnumerable<T> items,
-        Func<T, Guid> getReferentialId,
+        Func<T, string> getReferentialId, // Changed from Guid to string
         Func<T, string> getPath,
         Dictionary<string, string[]> validationErrors,
-        bool IsDescriptor = false
+        bool isDescriptor = false
     )
     {
-        var seenItems = new HashSet<Guid>();
+        var seenItems = new HashSet<string>(); // Changed from HashSet<Guid> to HashSet<string>
         var positions = new Dictionary<string, int>();
 
         foreach (var item in items)
         {
-            Guid referentialId = getReferentialId(item);
+            string referentialId = getReferentialId(item); // Changed type to string
             string path = getPath(item);
 
             // The descriptor reference path includes index value, which groups error messages by index.
             // To prevent this, converting the index to *
-            if (IsDescriptor)
+            if (isDescriptor)
             {
                 path = _numericIndexRegex.Replace(path, "[*]");
             }
@@ -149,7 +152,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
             positions.TryAdd(propertyName, 1);
 
-            if (!seenItems.Add(referentialId))
+            if (!seenItems.Add(referentialId)) // Adjusted to work with string
             {
                 path = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
                     ? ExtractArrayName(path)
@@ -171,6 +174,25 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             }
             positions[propertyName]++;
         }
+    }
+
+    private static string GenerateReferenceKey(DocumentReference reference)
+    {
+        var keyBuilder = new StringBuilder(reference.ReferentialId.Value.ToString());
+
+        if (reference.DocumentIdentity?.DocumentIdentityElements is { Length: > 0 })
+        {
+            var orderedElements = reference
+                .DocumentIdentity.DocumentIdentityElements.OrderBy(e => e.IdentityValue)
+                .Select(element => element.IdentityValue);
+
+            foreach (string identityValue in orderedElements)
+            {
+                keyBuilder.Append($"|{identityValue}:{identityValue}");
+            }
+        }
+
+        return keyBuilder.ToString();
     }
 
     private static string GetOrdinal(int number)
