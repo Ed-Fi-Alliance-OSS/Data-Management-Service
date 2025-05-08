@@ -347,11 +347,6 @@ Authorization: bearer {{dmsToken}}
      "contactPriority": 1
 }
 
-### Query StudentContactAssociation
-###
-GET {{dataApi}}/ed-fi/contacts
-Authorization: bearer {{dmsToken}}
-
 ### Query Contacts - should return 1 record
 ###
 GET {{dataApi}}/ed-fi/contacts
