@@ -174,6 +174,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         long? parentEducationOrganizationId = default,
         bool isStudentAuthorizationSecurable = false,
         bool isContactAuthorizationSecurable = false,
+        bool isStaffAuthorizationSecurable = false,
         string? studentUniqueId = default
     )
     {
@@ -190,14 +191,16 @@ public abstract class DatabaseTest : DatabaseTestBase
             ),
             AuthorizationSecurableInfo: GetAuthorizationSecurableInfos(
                 isStudentAuthorizationSecurable,
-                isContactAuthorizationSecurable
+                isContactAuthorizationSecurable,
+                isStaffAuthorizationSecurable
             )
         );
     }
 
     protected static AuthorizationSecurableInfo[] GetAuthorizationSecurableInfos(
         bool isStudentAuthorizationSecurable,
-        bool isContactAuthorizationSecurable
+        bool isContactAuthorizationSecurable,
+        bool isStaffAuthorizationSecurable
     )
     {
         var authorizationSecurableInfos = new List<AuthorizationSecurableInfo>();
@@ -211,6 +214,12 @@ public abstract class DatabaseTest : DatabaseTestBase
         {
             authorizationSecurableInfos.Add(
                 new AuthorizationSecurableInfo(SecurityElementNameConstants.ContactUniqueId)
+            );
+        }
+        if (isStaffAuthorizationSecurable)
+        {
+            authorizationSecurableInfos.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.StaffUniqueId)
             );
         }
         return [.. authorizationSecurableInfos];
@@ -292,12 +301,13 @@ public abstract class DatabaseTest : DatabaseTestBase
         TraceId? traceId = null,
         string projectName = "ProjectName",
         bool isStudentAuthorizationSecurable = false,
-        bool isContactAuthorizationSecurable = false
+        bool isContactAuthorizationSecurable = false,
+        bool isStaffAuthorizationSecurable = false
     )
     {
         if (documentSecurityElements == null)
         {
-            documentSecurityElements = new([], [], [], []);
+            documentSecurityElements = new([], [], [], [], []);
         }
         if (traceId == null)
         {
@@ -314,7 +324,8 @@ public abstract class DatabaseTest : DatabaseTestBase
                     educationOrganizationId,
                     parentEducationOrganizationId,
                     isStudentAuthorizationSecurable,
-                    isContactAuthorizationSecurable
+                    isContactAuthorizationSecurable,
+                    isStaffAuthorizationSecurable
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,
@@ -365,12 +376,13 @@ public abstract class DatabaseTest : DatabaseTestBase
         TraceId? traceId = null,
         string projectName = "ProjectName",
         bool isStudentAuthorizationSecurable = false,
-        bool isContactAuthorizationSecurable = false
+        bool isContactAuthorizationSecurable = false,
+        bool isStaffAuthorizationSecurable = false
     )
     {
         if (documentSecurityElements == null)
         {
-            documentSecurityElements = new([], [], [], []);
+            documentSecurityElements = new([], [], [], [], []);
         }
 
         if (traceId == null)
@@ -388,7 +400,8 @@ public abstract class DatabaseTest : DatabaseTestBase
                     educationOrganizationId,
                     parentEducationOrganizationId,
                     isStudentAuthorizationSecurable,
-                    isContactAuthorizationSecurable
+                    isContactAuthorizationSecurable,
+                    isStaffAuthorizationSecurable
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,

@@ -33,7 +33,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         [SetUp]
         public async Task Setup()
         {
-            var securityElements = new DocumentSecurityElements([], [], [], []);
+            var securityElements = new DocumentSecurityElements([], [], [], [], []);
             var authorizationFilters = Array.Empty<AuthorizationFilter>();
             var authorizationSecurableInfo = new AuthorizationSecurableInfo(
                 SecurityElementNameConstants.StudentUniqueId
@@ -73,7 +73,13 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         [SetUp]
         public async Task Setup()
         {
-            var securityElements = new DocumentSecurityElements([], [], [new StudentUniqueId("12345")], []);
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId("12345")],
+                [],
+                []
+            );
 
             var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
 
@@ -118,7 +124,13 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         [SetUp]
         public async Task Setup()
         {
-            var securityElements = new DocumentSecurityElements([], [], [new StudentUniqueId("12345")], []);
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId("12345")],
+                [],
+                []
+            );
 
             var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
 
@@ -153,7 +165,13 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         [SetUp]
         public async Task Setup()
         {
-            var securityElements = new DocumentSecurityElements([], [], [new StudentUniqueId("12345")], []);
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId("12345")],
+                [],
+                []
+            );
 
             var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
 
@@ -185,7 +203,13 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         [SetUp]
         public async Task Setup()
         {
-            var securityElements = new DocumentSecurityElements([], [], [new StudentUniqueId("12345")], []);
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId("12345")],
+                [],
+                []
+            );
 
             var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255903") };
 

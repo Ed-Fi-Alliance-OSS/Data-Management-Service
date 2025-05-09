@@ -418,6 +418,18 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             );
     });
 
+    public IEnumerable<JsonPath> StaffSecurityElementPaths => _staffSecurityElementPaths.Value;
+    private readonly Lazy<IEnumerable<JsonPath>> _staffSecurityElementPaths = new(() =>
+    {
+        return _resourceSchemaNode["securableElements"]
+                ?["Staff"]?.AsArray()
+                .GetValues<string>()
+                .Select(x => new JsonPath(x))
+            ?? throw new InvalidOperationException(
+                "Expected securableElements.Staff to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
+
     /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>

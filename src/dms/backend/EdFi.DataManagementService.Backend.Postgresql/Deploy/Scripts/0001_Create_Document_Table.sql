@@ -15,6 +15,7 @@ CREATE TABLE dms.Document (
   SecurityElements JSONB NOT NULL,
   StudentSchoolAuthorizationEdOrgIds JSONB NULL,
   ContactStudentSchoolAuthorizationEdOrgIds JSONB NULL,
+  StaffEducationOrganizationAuthorizationEdOrgIds JSONB NULL,
   CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   LastModifiedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   LastModifiedTraceId VARCHAR(128) NOT NULL,

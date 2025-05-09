@@ -52,7 +52,7 @@ public class NamedAuthorizationServiceFactoryTests
             handler.Should().NotBeNull();
             var authResult = handler!
                 .ValidateAuthorization(
-                    new DocumentSecurityElements([], [], [], []),
+                    new DocumentSecurityElements([], [], [], [], []),
                     [],
                     [],
                     OperationType.Get
@@ -71,7 +71,7 @@ public class NamedAuthorizationServiceFactoryTests
             handler.Should().NotBeNull();
             var authResult = handler!
                 .ValidateAuthorization(
-                    new DocumentSecurityElements(["uri://namespace/resource"], [], [], []),
+                    new DocumentSecurityElements(["uri://namespace/resource"], [], [], [], []),
                     [],
                     [],
                     OperationType.Get
@@ -97,6 +97,7 @@ public class NamedAuthorizationServiceFactoryTests
                                 new EducationOrganizationId(255901)
                             ),
                         ],
+                        [],
                         [],
                         []
                     ),
