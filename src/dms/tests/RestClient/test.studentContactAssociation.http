@@ -84,7 +84,6 @@ Authorization: bearer {{configToken}}
 ###
 @clientKey={{createApplication.response.body.key}}
 @clientSecret={{createApplication.response.body.secret}}
-@applicationLocation={{createApplication.response.headers.location}}
 
 ### Read the Token URL from the Discovery API
 # @name discovery
@@ -347,3 +346,41 @@ Authorization: bearer {{dmsToken}}
      },
      "contactPriority": 1
 }
+
+### Query Contacts - should return 1 record
+###
+GET {{dataApi}}/ed-fi/contacts
+Authorization: bearer {{dmsToken}}
+
+### Create a new application
+# @name createApplication2
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Demo application 2",
+    "claimSetName": "EdFiSandbox",
+    "educationOrganizationIds": [123456789]
+}
+
+###
+@clientKey2={{createApplication2.response.body.key}}
+@clientSecret2={{createApplication2.response.body.secret}}
+
+### Create a DMS token
+# @name sandboxTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{clientKey2}}:{{clientSecret2}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@sandboxToken={{sandboxTokenRequest.response.body.access_token}}
+
+### Query Contacts - should return no records with this token
+###
+GET {{dataApi}}/ed-fi/contacts
+Authorization: bearer {{sandboxToken}}
