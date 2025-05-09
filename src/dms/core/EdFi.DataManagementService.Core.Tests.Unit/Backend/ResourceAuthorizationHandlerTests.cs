@@ -29,7 +29,7 @@ public class ResourceAuthorizationHandlerTests
         [SetUp]
         public async Task Setup()
         {
-            var documentSecurityElements = new DocumentSecurityElements(["uri://ed-fi.org"], [], [], []);
+            var documentSecurityElements = new DocumentSecurityElements(["uri://ed-fi.org"], [], [], [], []);
 
             var evaluator = new AuthorizationStrategyEvaluator(
                 "NamespaceBased",
@@ -83,6 +83,7 @@ public class ResourceAuthorizationHandlerTests
         {
             var documentSecurityElements = new DocumentSecurityElements(
                 ["uri://not-matching.org"],
+                [],
                 [],
                 [],
                 []
@@ -148,6 +149,7 @@ public class ResourceAuthorizationHandlerTests
                 ["uri://not-matching.org"],
                 [],
                 [],
+                [],
                 []
             );
 
@@ -187,6 +189,7 @@ public class ResourceAuthorizationHandlerTests
                         new EducationOrganizationId(6001)
                     ),
                 ],
+                [],
                 [],
                 []
             );
@@ -253,6 +256,7 @@ public class ResourceAuthorizationHandlerTests
                         new EducationOrganizationId(9999)
                     ),
                 ],
+                [],
                 [],
                 []
             );
@@ -324,6 +328,7 @@ public class ResourceAuthorizationHandlerTests
                     ),
                 ],
                 [new StudentUniqueId("9879898")],
+                [],
                 []
             );
 

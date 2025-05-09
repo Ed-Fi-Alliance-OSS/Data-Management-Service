@@ -47,6 +47,15 @@ public class ContactSecurableDocument
     public short ContactSecurableDocumentPartitionKey { get; set; }
 }
 
+public class StaffEducationOrganizationAuthorization
+{
+    public required string StaffUniqueId { get; set; }
+    public long HierarchyEdOrgId { get; set; }
+    public required string StaffEducationOrganizationAuthorizationEdOrgIds { get; set; }
+    public long StaffEducationOrganizationId { get; set; }
+    public short StaffEducationOrganizationPartitionKey { get; set; }
+}
+
 public class DatabaseIntegrationTestHelper : DatabaseTest
 {
     public async Task<UpsertResult> UpsertEducationOrganization(
@@ -157,6 +166,7 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                     ),
                 ],
                 [new StudentUniqueId(studentUniqueId)],
+                [],
                 []
             ),
             projectName: "Ed-Fi"
@@ -192,7 +202,8 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                 [],
                 [],
                 [new StudentUniqueId(studentUniqueId)],
-                [new ContactUniqueId(contactUniqueId)]
+                [new ContactUniqueId(contactUniqueId)],
+                []
             ),
             projectName: "Ed-Fi"
         );
@@ -223,7 +234,8 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                 [],
                 [],
                 [],
-                [new ContactUniqueId(contactUniqueId)]
+                [new ContactUniqueId(contactUniqueId)],
+                []
             ),
             projectName: "Ed-Fi"
         );
@@ -262,6 +274,7 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                     ),
                 ],
                 [new StudentUniqueId(studentUniqueId)],
+                [],
                 []
             ),
             projectName: "Ed-Fi"
@@ -309,6 +322,7 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                 [],
                 [],
                 [new StudentUniqueId(studentUniqueId)],
+                [],
                 []
             ),
             projectName: "Ed-Fi"
@@ -338,6 +352,7 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                 [],
                 [],
                 [new StudentUniqueId(studentUniqueId)],
+                [],
                 []
             ),
             projectName: "Ed-Fi"
@@ -485,6 +500,89 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
             return reader["ContactStudentSchoolAuthorizationEdOrgIds"].ToString()!;
         }
         throw new InvalidOperationException("No matching document found.");
+    }
+
+    public async Task<UpsertResult> UpsertStaffEducationOrganizationEmploymentAssociation(
+        long educationOrganizationId,
+        string staffUniqueId
+    )
+    {
+        return await UpsertStaffEducationOrganizationEmploymentAssociation(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            educationOrganizationId,
+            staffUniqueId
+        );
+    }
+
+    public async Task<UpsertResult> UpsertStaffEducationOrganizationEmploymentAssociation(
+        Guid documentUuid,
+        Guid referentialId,
+        long educationOrganizationId,
+        string staffUniqueId
+    )
+    {
+        IUpsertRequest upsertRequest = CreateUpsertRequest(
+            "StaffEducationOrganizationEmploymentAssociation",
+            documentUuid,
+            referentialId,
+            $$"""
+            {
+                "staffReference": {
+                  "staffUniqueId": "{{staffUniqueId}}"
+                },
+                "educationOrganizationReference": {
+                  "educationOrganizationId": {{educationOrganizationId}}
+                }
+            }
+            """,
+            isStaffAuthorizationSecurable: true,
+            documentSecurityElements: new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("EducationOrganization"),
+                        new EducationOrganizationId(educationOrganizationId)
+                    ),
+                ],
+                [],
+                [],
+                [new StaffUniqueId(staffUniqueId)]
+            ),
+            projectName: "Ed-Fi"
+        );
+
+        return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+    }
+
+    public async Task<
+        List<StaffEducationOrganizationAuthorization>
+    > GetAllStaffEducationOrganizationAuthorizations()
+    {
+        var command = Connection!.CreateCommand();
+        command.Transaction = Transaction;
+        command.CommandText = "SELECT * FROM dms.StaffEducationOrganizationAuthorization";
+
+        var results = new List<StaffEducationOrganizationAuthorization>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var authorization = new StaffEducationOrganizationAuthorization
+            {
+                StaffUniqueId = reader["StaffUniqueId"].ToString()!,
+                HierarchyEdOrgId = (long)reader["HierarchyEdOrgId"],
+                StaffEducationOrganizationAuthorizationEdOrgIds = reader[
+                    "StaffEducationOrganizationAuthorizationEdOrgIds"
+                ]
+                    .ToString()!,
+                StaffEducationOrganizationId = (long)reader["StaffEducationOrganizationId"],
+                StaffEducationOrganizationPartitionKey = (short)
+                    reader["StaffEducationOrganizationPartitionKey"],
+            };
+            results.Add(authorization);
+        }
+
+        return results;
     }
 
     public static long[] ParseEducationOrganizationIds(string ids)

@@ -17,7 +17,9 @@ public record DocumentSecurityElements(
     // A list of the Student unique ids extracted from the document
     StudentUniqueId[] Student,
     // A list of the Contact unique ids extracted from the document
-    ContactUniqueId[] Contact
+    ContactUniqueId[] Contact,
+    // A list of the Staff unique ids extracted from the document
+    StaffUniqueId[] Staff
 );
 
 /// <summary>
