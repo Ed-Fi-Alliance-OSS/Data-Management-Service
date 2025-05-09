@@ -40,7 +40,10 @@ public class RelationshipsWithEdOrgsOnlyFiltersProviderTests
             _expectedResult!.Filters.Should().HaveCount(2);
             _expectedResult!.Filters[0].Value.Should().Be("255901");
             _expectedResult!.Filters[1].Value.Should().Be("255902");
-            _expectedResult!.Filters.Select(x => x.FilterPath).Should().AllBe("EducationOrganization");
+            _expectedResult!
+                .Filters.Select(x => x.FilteringMetadataElementName)
+                .Should()
+                .AllBe("EducationOrganization");
         }
     }
 

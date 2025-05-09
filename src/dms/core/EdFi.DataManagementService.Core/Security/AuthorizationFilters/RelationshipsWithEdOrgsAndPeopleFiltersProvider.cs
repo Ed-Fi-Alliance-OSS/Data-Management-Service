@@ -30,7 +30,12 @@ public class RelationshipsWithEdOrgsAndPeopleFiltersProvider : IAuthorizationFil
         }
         foreach (var edOrgId in edOrgIdsFromClaim)
         {
-            filters.Add(new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, edOrgId));
+            filters.Add(
+                new AuthorizationFilter.EducationOrganization(
+                    SecurityElementNameConstants.EducationOrganization,
+                    edOrgId
+                )
+            );
         }
 
         return new AuthorizationStrategyEvaluator(AuthorizationStrategyName, [.. filters], FilterOperator.Or);

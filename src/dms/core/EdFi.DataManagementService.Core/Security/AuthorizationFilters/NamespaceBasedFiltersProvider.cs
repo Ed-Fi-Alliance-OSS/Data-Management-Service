@@ -29,7 +29,10 @@ public class NamespaceBasedFiltersProvider : IAuthorizationFiltersProvider
         foreach (var namespacePrefix in namespacePrefixesFromClaim)
         {
             filters.Add(
-                new AuthorizationFilter(SecurityElementNameConstants.Namespace, namespacePrefix.Value)
+                new AuthorizationFilter.Namespace(
+                    SecurityElementNameConstants.Namespace,
+                    namespacePrefix.Value
+                )
             );
         }
 

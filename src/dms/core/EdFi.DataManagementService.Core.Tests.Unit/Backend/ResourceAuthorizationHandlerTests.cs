@@ -33,7 +33,7 @@ public class ResourceAuthorizationHandlerTests
 
             var evaluator = new AuthorizationStrategyEvaluator(
                 "NamespaceBased",
-                [new AuthorizationFilter("Namespace", "uri://ed-fi.org")],
+                [new AuthorizationFilter.Namespace("Namespace", "uri://ed-fi.org")],
                 FilterOperator.Or
             );
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
@@ -90,7 +90,7 @@ public class ResourceAuthorizationHandlerTests
 
             var evaluator = new AuthorizationStrategyEvaluator(
                 "NamespaceBased",
-                [new AuthorizationFilter("Namespace", "uri://ed-fi.org")],
+                [new AuthorizationFilter.Namespace("Namespace", "uri://ed-fi.org")],
                 FilterOperator.Or
             );
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
@@ -193,7 +193,7 @@ public class ResourceAuthorizationHandlerTests
 
             var authStrategyEvaluators = new AuthorizationStrategyEvaluator(
                 "RelationshipsWithEdOrgsOnly",
-                [new AuthorizationFilter("EducationOrganization", "6001")],
+                [new AuthorizationFilter.Namespace("EducationOrganization", "6001")],
                 FilterOperator.Or
             );
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
@@ -258,7 +258,7 @@ public class ResourceAuthorizationHandlerTests
             );
             var authStrategyEvaluators = new AuthorizationStrategyEvaluator(
                 "RelationshipsWithEdOrgsOnly",
-                [new AuthorizationFilter("EducationOrganization", "6001")],
+                [new AuthorizationFilter.EducationOrganization("EducationOrganization", "6001")],
                 FilterOperator.Or
             );
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
@@ -331,12 +331,12 @@ public class ResourceAuthorizationHandlerTests
             {
                 new AuthorizationStrategyEvaluator(
                     "RelationshipsWithEdOrgsOnly",
-                    [new AuthorizationFilter("EducationOrganization", "9999")],
+                    [new AuthorizationFilter.EducationOrganization("EducationOrganization", "9999")],
                     FilterOperator.And
                 ),
                 new AuthorizationStrategyEvaluator(
                     "RelationshipsWithPeopleOnly",
-                    [new AuthorizationFilter("Student", "9879898")],
+                    [new AuthorizationFilter.StudentUniqueId("Student", "9879898")],
                     FilterOperator.And
                 ),
             };

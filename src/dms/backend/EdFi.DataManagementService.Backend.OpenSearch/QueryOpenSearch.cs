@@ -139,118 +139,39 @@ public static partial class QueryOpenSearch
             {
                 JsonObject? filter = null;
 
-                if (authorizationSecurableInfo.SecurableKey == SecurityElementNameConstants.Namespace)
-                {
-                    // Get all namespaces from the filters array where filterPath matches Namespace
-                    var namespaces = queryRequest
-                        .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
-                            evaluator
-                                .Filters.Where(f => f.FilterPath == SecurityElementNameConstants.Namespace)
-                                .Select(f => f.Value?.ToString())
-                                .Where(ns => !string.IsNullOrEmpty(ns))
-                                .Cast<string>()
+                var securityElements = queryRequest
+                    .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
+                        evaluator.Filters.Where(x =>
+                            x.GetType().Name == authorizationSecurableInfo.SecurableKey
                         )
-                        .Distinct()
-                        .ToList();
+                    )
+                    .Distinct()
+                    .ToList();
 
-                    // If we have multiple namespaces, use a terms query (OR)
-                    if (namespaces.Count > 1)
-                    {
-                        filter = new JsonObject
-                        {
-                            ["terms"] = new JsonObject
-                            {
-                                [$"securityelements.{SecurityElementNameConstants.Namespace}"] =
-                                    new JsonArray(namespaces.Select(ns => JsonValue.Create(ns)).ToArray()),
-                            },
-                        };
-                    }
-                    // If we have just one namespace, use a match_phrase query
-                    else if (namespaces.Count == 1)
-                    {
-                        filter = new JsonObject
-                        {
-                            ["match_phrase"] = new JsonObject
-                            {
-                                [$"securityelements.{SecurityElementNameConstants.Namespace}"] = namespaces[
-                                    0
-                                ],
-                            },
-                        };
-                    }
+                if (securityElements.Count == 0)
+                {
+                    return filter;
                 }
-                else if (
-                    authorizationSecurableInfo.SecurableKey
-                    == SecurityElementNameConstants.EducationOrganization
-                )
-                {
-                    // Get all education organization IDs from the filters
-                    var edOrgIds = queryRequest
-                        .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
-                            evaluator
-                                .Filters.Where(f =>
-                                    f.FilterPath == SecurityElementNameConstants.EducationOrganization
-                                )
-                                .Select(f => f.Value?.ToString())
-                                .Where(id => !string.IsNullOrEmpty(id))
-                                .Cast<string>()
-                        )
-                        .Distinct()
-                        .ToList();
 
-                    if (edOrgIds.Count > 0)
-                    {
-                        // If we have education organization IDs, use them in the filter
-                        // Use first ID for now as the lookup id - may need to handle multiple differently
-                        filter = new JsonObject
-                        {
-                            ["terms"] = new JsonObject
-                            {
-                                [
-                                    $"securityelements.{SecurityElementNameConstants.EducationOrganization}.Id"
-                                ] = new JsonObject
-                                {
-                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
-                                    ["id"] = edOrgIds[0],
-                                    ["path"] = "hierarchy.array",
-                                },
-                            },
-                        };
-                    }
-                }
-                else if (
-                    authorizationSecurableInfo.SecurableKey == SecurityElementNameConstants.StudentUniqueId
-                )
+                switch (securityElements[0])
                 {
-                    // Get all education organization IDs from the filters
-                    var edOrgIds = queryRequest
-                        .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
-                            evaluator
-                                .Filters.Where(f =>
-                                    f.FilterPath == SecurityElementNameConstants.EducationOrganization
-                                )
-                                .Select(f => f.Value?.ToString())
-                                .Where(id => !string.IsNullOrEmpty(id))
-                                .Cast<string>()
-                        )
-                        .Distinct()
-                        .ToList();
+                    case AuthorizationFilter.Namespace:
+                        filter = BuildNamespaceFilter(
+                            securityElements.Cast<AuthorizationFilter.Namespace>().ToList()
+                        );
+                        break;
 
-                    if (edOrgIds.Count > 0)
-                    {
-                        filter = new JsonObject
-                        {
-                            ["terms"] = new JsonObject
-                            {
-                                [$"studentschoolauthorizationedorgids.array"] = new JsonObject
-                                {
-                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
-                                    ["id"] = edOrgIds[0],
-                                    ["path"] = "hierarchy.array",
-                                },
-                            },
-                        };
-                    }
+                    case AuthorizationFilter.EducationOrganization:
+                        filter = BuildEducationOrganizationFilter(
+                            securityElements.Cast<AuthorizationFilter.EducationOrganization>().ToList()
+                        );
+                        break;
+
+                    case AuthorizationFilter.StudentUniqueId:
+                        filter = BuildStudentFilter(
+                            securityElements.Cast<AuthorizationFilter.StudentUniqueId>().ToList()
+                        );
+                        break;
                 }
 
                 return filter;
@@ -260,6 +181,81 @@ public static partial class QueryOpenSearch
             .ToList();
 
         return authorizationFilters;
+    }
+
+    private static JsonObject? BuildNamespaceFilter(List<AuthorizationFilter.Namespace> namespaces)
+    {
+        if (namespaces.Count > 1)
+        {
+            return new JsonObject
+            {
+                ["terms"] = new JsonObject
+                {
+                    [$"securityelements.{namespaces[0].FilteringMetadataElementName}"] = new JsonArray(
+                        namespaces.Select(ns => JsonValue.Create(ns.Value)).ToArray()
+                    ),
+                },
+            };
+        }
+        else if (namespaces.Count == 1)
+        {
+            return new JsonObject
+            {
+                ["match_phrase"] = new JsonObject
+                {
+                    [$"securityelements.{namespaces[0].FilteringMetadataElementName}"] = namespaces[0].Value,
+                },
+            };
+        }
+
+        return null;
+    }
+
+    private static JsonObject? BuildEducationOrganizationFilter(
+        List<AuthorizationFilter.EducationOrganization> edOrgIds
+    )
+    {
+        if (edOrgIds.Count > 0)
+        {
+            // If we have education organization IDs, use them in the filter
+            // Use first ID for now as the lookup id - may need to handle multiple differently
+            return new JsonObject
+            {
+                ["terms"] = new JsonObject
+                {
+                    [$"securityelements.{SecurityElementNameConstants.EducationOrganization}.Id"] =
+                        new JsonObject
+                        {
+                            ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                            ["id"] = edOrgIds[0].Value,
+                            ["path"] = "hierarchy.array",
+                        },
+                },
+            };
+        }
+
+        return null;
+    }
+
+    private static JsonObject? BuildStudentFilter(List<AuthorizationFilter.StudentUniqueId> edOrgIds)
+    {
+        if (edOrgIds.Count > 0)
+        {
+            return new JsonObject
+            {
+                ["terms"] = new JsonObject
+                {
+                    [$"studentschoolauthorizationedorgids.array"] = new JsonObject
+                    {
+                        ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                        ["id"] = edOrgIds[0].Value,
+                        ["path"] = "hierarchy.array",
+                    },
+                },
+            };
+        }
+
+        return null;
     }
 
     /// <summary>
