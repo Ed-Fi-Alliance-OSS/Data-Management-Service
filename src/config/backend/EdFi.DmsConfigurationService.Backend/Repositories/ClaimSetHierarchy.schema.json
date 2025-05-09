@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ClaimsHierarchy",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/claim"
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "defaultAuthorization": { "$ref": "#/$defs/defaultAuthorization" },
+        "claimSets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/claimSet" }
+        },
+        "claims": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/claim" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaultAuthorization": {
+      "type": "object",
+      "required": ["action"],
+      "properties": {
+        "action": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/defaultAction" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaultAction": {
+      "type": "object",
+      "required": ["name", "authorizationStrategies"],
+      "properties": {
+        "name": { "type": "string" },
+        "authorizationStrategies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/authorizationStrategy" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "claimSet": {
+      "type": "object",
+      "required": ["name", "actions"],
+      "properties": {
+        "name": { "type": "string" },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/claimSetAction" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "claimSetAction": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "authorizationStrategyOverrides": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/authorizationStrategy" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "authorizationStrategy": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

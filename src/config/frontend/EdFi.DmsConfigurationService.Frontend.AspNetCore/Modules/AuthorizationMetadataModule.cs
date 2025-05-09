@@ -34,7 +34,7 @@ public class AuthorizationMetadataModule : IEndpointModule
 
         var claimsHierarchyResult = await repository.GetClaimsHierarchy();
 
-        if (claimsHierarchyResult is ClaimsHierarchyResult.Success success)
+        if (claimsHierarchyResult is ClaimsHierarchyGetResult.Success success)
         {
             var authorizationMetadataResponse = responseFactory.Create(claimSetName, success.Claims);
 
@@ -43,7 +43,7 @@ public class AuthorizationMetadataModule : IEndpointModule
 
         return claimsHierarchyResult switch
         {
-            ClaimsHierarchyResult.FailureHierarchyNotFound => Results.Json(
+            ClaimsHierarchyGetResult.FailureHierarchyNotFound => Results.Json(
                 FailureResponse.ForNotFound(
                     $"Authorization metadata for claim set '{claimSetName}' not found.",
                     httpContext.TraceIdentifier

@@ -3,10 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
+using Dapper;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;
 
@@ -18,42 +21,83 @@ public class ClaimsHierarchyTests : DatabaseTest
     );
 
     [Test]
-    public async Task Should_get_claims_hierarchy()
+    public async Task Should_return_failure_when_no_hierarchy_exists()
     {
-        var claimsHierarchyResult = await _repository.GetClaimsHierarchy();
-        claimsHierarchyResult.Should().BeOfType<ClaimsHierarchyResult.Success>();
+        var initialClaimsHierarchyResult = await _repository.GetClaimsHierarchy();
+        initialClaimsHierarchyResult.Should().BeOfType<ClaimsHierarchyGetResult.FailureHierarchyNotFound>();
+    }
 
-        var hierarchy = ((ClaimsHierarchyResult.Success)claimsHierarchyResult).Claims;
-        hierarchy.Should().NotBeNull();
-        hierarchy.Should().BeOfType<Claim[]>();
+    [Test]
+    public async Task Should_return_failure_when_multiple_hierarchies_exist()
+    {
+        // Arrange
+        string connectionString = Configuration.DatabaseOptions.Value.DatabaseConnection;
 
-        hierarchy.Length.Should().BeGreaterThan(0);
+        await using var conn = new NpgsqlConnection(connectionString);
 
-        // Verify parent-child relationships for each root claim
-        foreach (var rootClaim in hierarchy)
+        // Insert 2 hierarchies
+        int recordsAffected = await conn.ExecuteAsync(
+            "INSERT INTO dmscs.claimshierarchy (hierarchy, lastmodifieddate) VALUES ('{}'::jsonb, now())"
+        );
+        recordsAffected.Should().Be(1);
+
+        recordsAffected = await conn.ExecuteAsync(
+            "INSERT INTO dmscs.claimshierarchy (hierarchy, lastmodifieddate) VALUES ('{}'::jsonb, now())"
+        );
+        recordsAffected.Should().Be(1);
+
+        // Act
+        var initialClaimsHierarchyResult = await _repository.GetClaimsHierarchy();
+
+        // Assert
+        initialClaimsHierarchyResult
+            .Should()
+            .BeOfType<ClaimsHierarchyGetResult.FailureMultipleHierarchiesFound>();
+    }
+
+    [Test]
+    public async Task Should_return_success_when_single_hierarchy_exists()
+    {
+        // Arrange
+        string connectionString = Configuration.DatabaseOptions.Value.DatabaseConnection;
+
+        await using var conn = new NpgsqlConnection(connectionString);
+
+        // Create a single hierarchy
+        var claimsHierarchy = new List<Claim>
         {
-            // Root claims should have no parent
-            rootClaim.Parent.Should().BeNull();
-
-            // Verify the hierarchy starting from this root claim
-            VerifyClaimsHierarchyNavigability(rootClaim);
-        }
-
-        // Helper method to verify parent-child relationships in a claim hierarchy
-        void VerifyClaimsHierarchyNavigability(Claim claim)
-        {
-            // Verify each child claim's parent reference
-            if (claim.Claims.Any())
+            new Claim
             {
-                foreach (var child in claim.Claims)
+                Name = "RootClaim",
+                ClaimSets = new List<ClaimSet> { new ClaimSet { Name = "Test-Insert-ClaimSet" } },
+                Claims = new List<Claim>
                 {
-                    // Child's parent should reference the current claim
-                    child.Parent.Should().Be(claim);
+                    new Claim
+                    {
+                        Name = "ChildClaim",
+                        ClaimSets = new List<ClaimSet> { new ClaimSet { Name = "Test-Insert-ClaimSet" } },
+                    },
+                },
+            },
+        };
 
-                    // Recursively verify the child's hierarchy
-                    VerifyClaimsHierarchyNavigability(child);
-                }
-            }
-        }
+        string hierarchyJson = JsonSerializer.Serialize(claimsHierarchy);
+
+        // Insert the single hierarchy
+        int recordsAffected = await conn.ExecuteAsync(
+            "INSERT INTO dmscs.claimshierarchy (hierarchy, lastmodifieddate) VALUES (@HierarchyJson::jsonb, now())",
+            new { HierarchyJson = hierarchyJson }
+        );
+        recordsAffected.Should().Be(1);
+
+        // Act
+        var claimsHierarchyResult = await _repository.GetClaimsHierarchy();
+
+        // Assert
+        claimsHierarchyResult.Should().BeOfType<ClaimsHierarchyGetResult.Success>();
+        (claimsHierarchyResult as ClaimsHierarchyGetResult.Success)!
+            .Claims.Single()
+            .Name.Should()
+            .Be("RootClaim");
     }
 }
