@@ -28,7 +28,12 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
             var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements([], [], [], [], []),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299501")],
+                [
+                    new AuthorizationFilter.EducationOrganization(
+                        SecurityElementNameConstants.EducationOrganization,
+                        "299501"
+                    ),
+                ],
                 [],
                 OperationType.Get
             );
@@ -77,7 +82,12 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     []
                 ),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "255901")],
+                [
+                    new AuthorizationFilter.EducationOrganization(
+                        SecurityElementNameConstants.EducationOrganization,
+                        "255901"
+                    ),
+                ],
                 [],
                 OperationType.Get
             );
@@ -116,7 +126,12 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     []
                 ),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "2455")],
+                [
+                    new AuthorizationFilter.EducationOrganization(
+                        SecurityElementNameConstants.EducationOrganization,
+                        "2455"
+                    ),
+                ],
                 [],
                 OperationType.Get
             );
@@ -169,7 +184,12 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     []
                 ),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "567")],
+                [
+                    new AuthorizationFilter.EducationOrganization(
+                        SecurityElementNameConstants.EducationOrganization,
+                        "567"
+                    ),
+                ],
                 [],
                 OperationType.Upsert
             );
@@ -217,7 +237,12 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     []
                 ),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299")],
+                [
+                    new AuthorizationFilter.EducationOrganization(
+                        SecurityElementNameConstants.EducationOrganization,
+                        "299"
+                    ),
+                ],
                 [],
                 OperationType.Get
             );
@@ -272,7 +297,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         {
             var tokenEdOrgs = new[]
             {
-                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "1"),
+                new AuthorizationFilter.EducationOrganization(SecurityElementNameConstants.EducationOrganization, "1"),
             };
 
             var result = await new RelationshipsWithEdOrgsOnlyValidator(
@@ -287,8 +312,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         {
             var tokenEdOrgs = new[]
             {
-                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "1"),
-                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "2"),
+                new AuthorizationFilter.EducationOrganization(SecurityElementNameConstants.EducationOrganization, "1"),
+                new AuthorizationFilter.EducationOrganization(SecurityElementNameConstants.EducationOrganization, "2"),
             };
 
             var result = await new RelationshipsWithEdOrgsOnlyValidator(

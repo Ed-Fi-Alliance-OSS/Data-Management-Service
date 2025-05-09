@@ -83,7 +83,10 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+            var authorizationFilters = new[]
+            {
+                new AuthorizationFilter.EducationOrganization("EducationOrganization", "255901"),
+            };
 
             var authorizationSecurableInfo = new AuthorizationSecurableInfo(
                 SecurityElementNameConstants.StudentUniqueId
@@ -134,7 +137,10 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+            var authorizationFilters = new[]
+            {
+                new AuthorizationFilter.EducationOrganization("EducationOrganization", "255901"),
+            };
 
             var authorizationSecurableInfo = new AuthorizationSecurableInfo(
                 SecurityElementNameConstants.StudentUniqueId
@@ -176,7 +182,10 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255903") };
+            var authorizationFilters = new[]
+            {
+                new AuthorizationFilter.EducationOrganization("EducationOrganization", "255903"),
+            };
 
             var authorizationSecurableInfo = new AuthorizationSecurableInfo(
                 SecurityElementNameConstants.StudentUniqueId
@@ -268,7 +277,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+            var authorizationFilters = new[] { new AuthorizationFilter.EducationOrganization("EducationOrganization", "255901") };
 
             var authorizationSecurableInfo = new AuthorizationSecurableInfo(
                 SecurityElementNameConstants.ContactUniqueId
@@ -319,7 +328,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+            var authorizationFilters = new[] { new AuthorizationFilter.EducationOrganization("EducationOrganization", "255901") };
 
             var authorizationSecurableInfo = new AuthorizationSecurableInfo(
                 SecurityElementNameConstants.ContactUniqueId
@@ -361,7 +370,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255903") };
+            var authorizationFilters = new[] { new AuthorizationFilter.EducationOrganization("EducationOrganization", "255903") };
 
             var authorizationSecurableInfo = new AuthorizationSecurableInfo(
                 SecurityElementNameConstants.ContactUniqueId
@@ -413,7 +422,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+            var authorizationFilters = new[] { new AuthorizationFilter.EducationOrganization("EducationOrganization", "255901") };
 
             A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
                 .Returns([255901L]);
@@ -451,7 +460,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+            var authorizationFilters = new[] { new AuthorizationFilter.EducationOrganization("EducationOrganization", "255901") };
 
             A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
                 .Returns([255901L]);
@@ -498,7 +507,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+            var authorizationFilters = new[] { new AuthorizationFilter.EducationOrganization("EducationOrganization", "255901") };
 
             A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
                 .Returns([255901L]);
@@ -555,7 +564,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 []
             );
 
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+            var authorizationFilters = new[] { new AuthorizationFilter.EducationOrganization("EducationOrganization", "255901") };
 
             A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
                 .Returns([255901L]);
