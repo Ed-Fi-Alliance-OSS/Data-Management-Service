@@ -53,7 +53,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 Id = 5,
                 Name = "ReadChanges",
                 Uri = "uri://ed-fi.org/api/actions/readChanges",
-            }
+            },
         };
 
         return actions;
@@ -103,18 +103,16 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                    RETURNING Id;
                 """;
 
-            var parameters = new
-            {
-                ClaimSetName = command.Name,
-                IsSystemReserved = false,
-            };
+            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = false };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
             await transaction.CommitAsync();
 
             return new ClaimSetInsertResult.Success(id);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("idx_claimsetname"))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation && ex.Message.Contains("idx_claimsetname")
+            )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -334,11 +332,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                    RETURNING Id;
                 """;
 
-            var parameters = new
-            {
-                ClaimSetName = command.Name,
-                IsSystemReserved = false,
-            };
+            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = false };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
             await transaction.CommitAsync();
