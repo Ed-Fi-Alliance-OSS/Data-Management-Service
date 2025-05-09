@@ -30,6 +30,23 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISq
         return organizationIds.Distinct().ToArray();
     }
 
+    public async Task<long[]> GetEducationOrganizationsForContact(string contactUniqueId)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        JsonElement? response = await sqlAction.GetContactStudentSchoolAuthorizationEducationOrganizationIds(
+            contactUniqueId,
+            connection,
+            transaction
+        );
+        if (response == null)
+        {
+            return [];
+        }
+        long[] edOrgIds = JsonSerializer.Deserialize<long[]>(response.Value) ?? [];
+        return edOrgIds;
+    }
+
     public async Task<long[]> GetEducationOrganizationsForStudent(string studentUniqueId)
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
