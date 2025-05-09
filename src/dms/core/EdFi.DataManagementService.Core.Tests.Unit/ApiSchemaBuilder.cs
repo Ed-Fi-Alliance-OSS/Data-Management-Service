@@ -168,6 +168,7 @@ public class ApiSchemaBuilder
             ["queryFieldMapping"] = new JsonObject(),
             ["securableElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
             ["authorizationPathways"] = new JsonArray(),
+            ["arrayUniquenessConstraints"] = new JsonArray(),
         };
 
         string endpointName = ToEndpointName(resourceName);
@@ -846,6 +847,53 @@ public class ApiSchemaBuilder
             ["newSchemas"] = newSchemas,
             ["newTags"] = newTags,
         };
+        return this;
+    }
+
+    /// <summary>
+    /// Add array uniqueness constraints to a resource.
+    /// </summary>
+    /// Example for parameters:
+    /// [
+    ///   [
+    ///     "$.identificationCodes[*].assessmentIdentificationSystemDescriptor"
+    ///   ],
+    ///   [
+    ///     "$.performanceLevels[*].assessmentReportingMethodDescriptor",
+    ///     "$.performanceLevels[*].performanceLevelDescriptor"
+    ///   ],
+    ///   [
+    ///     "$.periods[*].assessmentPeriodDescriptor"
+    ///   ],
+    ///   [
+    ///     "$.scores[*].assessmentReportingMethodDescriptor"
+    ///   ]
+    /// ]
+    public ApiSchemaBuilder WithArrayUniquenessConstraints(IEnumerable<IEnumerable<string>> constraints)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        var outerArray = new JsonArray();
+
+        foreach (var group in constraints)
+        {
+            var innerArray = new JsonArray();
+            foreach (string path in group)
+            {
+                innerArray.Add(JsonValue.Create(path));
+            }
+            outerArray.Add(innerArray);
+        }
+
+        _currentResourceNode["arrayUniquenessConstraints"] = outerArray;
+
         return this;
     }
 }

@@ -11,12 +11,13 @@ namespace EdFi.DataManagementService.Core.Extraction;
 
 internal static class ArrayUniquenessConstraintExtractor
 {
-    public static string[] ExtractUniquenessConstraints(this ResourceSchema resourceSchema, ILogger logger)
+    public static Dictionary<string, JsonPath[]> ExtractUniquenessConstraints(
+        this ResourceSchema resourceSchema,
+        ILogger logger
+    )
     {
         logger.LogDebug("ArrayUniquenessConstraintExtractor.ExtractUniquenessConstraints");
 
-        string[] result = resourceSchema.ArrayUniquenessConstraints.Select(path => path.ToString()).ToArray();
-
-        return result;
+        return resourceSchema.ArrayUniquenessConstraints;
     }
 }

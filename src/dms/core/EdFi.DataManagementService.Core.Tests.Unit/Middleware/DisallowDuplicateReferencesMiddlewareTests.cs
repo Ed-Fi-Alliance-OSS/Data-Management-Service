@@ -298,6 +298,14 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 "ResultDatatypeTypeDescriptor",
                 "$.scores[*].resultDatatypeTypeDescriptor"
             )
+            .WithArrayUniquenessConstraints(
+                [
+                    [
+                        "$.performanceLevels[*].assessmentReportingMethodDescriptor",
+                        "$.performanceLevels[*].performanceLevelDescriptor",
+                    ],
+                ]
+            )
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithEndProject()

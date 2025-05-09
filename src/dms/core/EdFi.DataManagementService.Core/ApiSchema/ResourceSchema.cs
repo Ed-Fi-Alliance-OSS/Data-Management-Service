@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
@@ -423,19 +424,22 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public IEnumerable<string> AuthorizationPathways => _authorizationPathways.Value;
 
-    private readonly Lazy<IEnumerable<JsonPath>> _arrayUniquenessConstraints = new(() =>
+    private readonly Lazy<Dictionary<string, JsonPath[]>> _arrayUniquenessConstraints = new(() =>
     {
-        var outerArray = _resourceSchemaNode["arrayUniquenessConstraints"]?.AsArray();
-        if (outerArray == null)
-        {
-            throw new InvalidOperationException(
+        var outerArray =
+            (_resourceSchemaNode["arrayUniquenessConstraints"]?.AsArray())
+            ?? throw new InvalidOperationException(
                 "Expected arrayUniquenessConstraints to be on ResourceSchema, invalid ApiSchema"
             );
-        }
 
         var paths = outerArray
-            .SelectMany(innerNode => innerNode!.AsArray())
-            .Select(valueNode => new JsonPath(valueNode!.GetValue<string>()));
+            .SelectMany(innerNode => innerNode.Deserialize<Json.Path.JsonPath[]>()!)
+            .GroupBy(x => x.Segments[0].ToString().TrimStart('.'))
+            .Select(group => new KeyValuePair<string, JsonPath[]>(
+                group.Key,
+                group.Select(x => new JsonPath(x.ToString())).ToArray()
+            ))
+            .ToDictionary();
 
         return paths;
     });
@@ -443,5 +447,5 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// <summary>
     /// The ArrayUniquenessConstraints the resource is part of.
     /// </summary>
-    public IEnumerable<JsonPath> ArrayUniquenessConstraints => _arrayUniquenessConstraints.Value;
+    public Dictionary<string, JsonPath[]> ArrayUniquenessConstraints => _arrayUniquenessConstraints.Value;
 }
