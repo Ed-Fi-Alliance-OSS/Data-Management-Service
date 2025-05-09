@@ -7,39 +7,30 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   | 2023       | true              | "year 2023"           |
               And the system has these descriptors
                   | descriptorValue                                                          |
-                  | uri://ed-fi.org/CourseAttemptResultDescriptor#Pass                       |
-                  | uri://ed-fi.org/TermDescriptor#Semester                                  |
-                  | uri://ed-fi.org/CourseIdentificationSystemDescriptor#CSSC course code    |
-                  | uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew              |
-                  | uri://ed-fi.org/PostSecondaryEventCategoryDescriptor#College Application |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade                         |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school           |
 
-    Rule: StudentSchoolAssociation CRUD is properly authorized
+    Rule: StudentContactAssociation CRUD is properly authorized
         Background:
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901901"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901901, 255901902"
               And the system has these "schools"
                   | schoolId  | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901901 | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+                  | 255901902 | Authorized school 2| [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
               And the system has these "students"
                   | studentUniqueId | firstName            | lastSurname | birthDate  |
                   | "S91111"         | Authorized student   | student-ln  | 2008-01-01 |
+                  | "S91112"         | Unauthorized student | student-ln  | 2008-01-01 |
               And the system has these "contacts"
                   | contactUniqueId | firstName            | lastSurname |
                   | "C91111"         | Authorized contact   | contact-ln  |
+                  | "C91112"         | Authorized contact   | contact-ln  |
+              And the system has these "studentSchoolAssociations"
+                  | schoolReference            | studentReference                  | entryGradeLevelDescriptor                               | entryDate  |
+                  | { "schoolId": 255901901 }  | { "studentUniqueId": "S91111" }   |  "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"     | 2023-08-01 |
+                  | { "schoolId": 255901902 }  | { "studentUniqueId": "S91112" }   |  "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"     | 2023-08-01 |
+
         Scenario: 01 Ensure client can create a StudentContactAssociation
-             When a POST request is made to "/ed-fi/studentSchoolAssociations" with
-                  """
-                  {
-                      "entryDate": "2023-08-01",
-                      "schoolReference": {
-                          "schoolId": 255901901
-                      },
-                      "studentReference": {
-                          "studentUniqueId": "S91111"
-                      },
-                      "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
-                  }
-                  """
-             Then it should respond with 201
 
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -54,3 +45,111 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   }
                   """
              Then it should respond with 201
+        Scenario: 02 Ensure client can retrieve a StudentContactAssociation
+            Given a POST request is made to "/ed-fi/studentContactAssociations" with
+                  """
+                  {
+                      "contactReference": {
+                          "contactUniqueId": "C91111"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "S91111"
+                      },
+                      "emergencyContactStatus": true
+                  }
+                  """
+             Then it should respond with 201 or 200
+             When a GET request is made to "/ed-fi/studentContactAssociations/{id}"
+             Then it should respond with 200
+
+        Scenario: 03 Ensure client can update a StudentContactAssociation
+            Given a POST request is made to "/ed-fi/studentContactAssociations" with
+                  """
+                  {
+                      "contactReference": {
+                          "contactUniqueId": "C91112"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "S91112"
+                      },
+                      "emergencyContactStatus": true
+                  }
+                  """
+             Then it should respond with 201 or 200
+
+             When a PUT request is made to "/ed-fi/studentContactAssociations/{id}" with
+                  """
+                  {
+                      "id":"{id}",
+                      "contactReference": {
+                          "contactUniqueId": "C91112"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "S91112"
+                      },
+                      "emergencyContactStatus": false
+                  }
+                  """
+             Then it should respond with 204
+
+        Scenario: 04 Ensure client can delete a StudentContactAssociation
+            Given  a POST request is made to "/ed-fi/studentContactAssociations" with
+                  """
+                  {
+                      "contactReference": {
+                          "contactUniqueId": "C91112"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "S91112"
+                      },
+                      "emergencyContactStatus": true
+                  }
+                  """
+             Then it should respond with 201 or 200
+
+             When a DELETE request is made to "/ed-fi/studentContactAssociations/{id}"
+             Then it should respond with 204
+
+Rule: Contact CRUD is properly authorized
+        Background:
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901901, 255901902"
+
+        Scenario: 05 Ensure client can create a Contact
+             When a POST request is made to "/ed-fi/contacts" with
+                  """
+                  {
+                      "contactUniqueId": "C81111",
+                      "firstName": "John",
+                      "lastSurname": "Doe"
+                  }
+                  """
+             Then it should respond with 201
+
+        Scenario: 06 Ensure client can retrieve a contact
+
+             When a POST request is made to "/ed-fi/contacts" with
+                  """
+                  {
+                      "contactUniqueId": "C81111",
+                      "firstName": "John",
+                      "lastSurname": "Doe"
+                  }
+                  """
+             Then it should respond with 201 or 200
+             When a GET request is made to "/ed-fi/contacts/{id}"
+             Then it should respond with 200
+
+        Scenario: 07 Ensure client can update a contact
+             When a PUT request is made to "/ed-fi/contacts/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contactUniqueId": "C81111",
+                    "firstName": "Peter",
+                    "lastSurname": "Doe"
+                  }
+                  """
+             Then it should respond with 204
+        Scenario: 18 Ensure client can delete a contact
+             When a DELETE request is made to "/ed-fi/contacts/{id}"
+             Then it should respond with 204
