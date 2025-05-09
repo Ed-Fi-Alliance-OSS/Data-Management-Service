@@ -261,38 +261,6 @@ public class OpenApiDocument(ILogger _logger)
             )
             .DeepClone();
 
-        #region [DMS-597] Workaround for DMS-633 SchoolYearType shouldn't be inlined in the OpenApi spec
-        if (documentSection == DocumentSection.Resource)
-        {
-            var resourceWithInlinedSchoolYearType = openApiSpecification["components"]!["schemas"]!
-                .AsObject()
-                .Select(schema =>
-                {
-                    var properties = schema
-                        .Value!["properties"]
-                        ?.AsObject()
-                        .Where(property =>
-                            property.Key == "schoolYearTypeReference" && property.Value!["properties"] != null
-                        )
-                        .ToList();
-
-                    return (schema, properties);
-                })
-                .Where(schema => schema.properties?.Any() == true)
-                .ToList();
-
-            foreach (var resource in resourceWithInlinedSchoolYearType)
-            {
-                foreach (var property in resource.properties!)
-                {
-                    resource.schema.Value!["properties"]![property.Key] = JsonNode.Parse(
-                        $"{{ \"$ref\": \"#/components/schemas/EdFi_SchoolYearTypeReference\" }}"
-                    );
-                }
-            }
-        }
-        #endregion
-
         #region [DMS-597] Workaround for DMS-627 Array references should not be partially inlined in the OpenApi spec
         if (documentSection == DocumentSection.Resource)
         {
