@@ -31,6 +31,10 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
             .AsEnumerable()
             .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId);
 
+        bool isContactSecurable = authorizationSecurableInfos
+            .AsEnumerable()
+            .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId);
+
         if (isStudentSecurable)
         {
             if (securityElements.Student.Length == 0)
@@ -64,6 +68,38 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                 );
                 string error =
                     $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'.";
+                return new ResourceAuthorizationResult.NotAuthorized([error]);
+            }
+        }
+
+        if (isContactSecurable)
+        {
+            if (securityElements.Contact.Length == 0)
+            {
+                string error =
+                    "No 'Contact' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
+                return new ResourceAuthorizationResult.NotAuthorized([error]);
+            }
+            var contactUniqueId = securityElements.Contact[0].Value;
+            var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForContact(
+                contactUniqueId
+            );
+            var authorizedEdOrgIds = authorizationFilters
+                .Select(f => long.TryParse(f.Value, out var id) ? (long?)id : null)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value);
+            bool isAuthorized =
+                educationOrgIds != null
+                && educationOrgIds.Length > 0
+                && authorizedEdOrgIds.Any(id => educationOrgIds.Contains(id));
+            if (!isAuthorized)
+            {
+                string edOrgIdsFromFilters = string.Join(
+                    ", ",
+                    authorizationFilters.Select(x => $"'{x.Value}'")
+                );
+                string error =
+                    $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: 'EducationOrganizationId', 'ContactUniqueId'.";
                 return new ResourceAuthorizationResult.NotAuthorized([error]);
             }
         }
