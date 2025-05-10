@@ -484,18 +484,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
             _logger.log.Information(url);
-
-            if (_openSearchEnabled && _featureContext.Get<bool>("_waitOnNextGetAll"))
-            {
-                var isGetById = Guid.TryParse(url.Split('/')[^1], out Guid _);
-                if (!isGetById)
-                {
-                    // Sleep before executing GetAll requests so that OpenSearch gets up to date
-                    await Task.Delay(5000);
-                    _featureContext["_waitOnNextGetAll"] = false;
-                }
-            }
-
+            await WaitForOpenSearch(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 url,
                 new() { Headers = GetHeaders() }
@@ -912,6 +901,20 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             input = input.StartsWith("metadata") ? input : $"data/{input}";
 
             return input;
+        }
+
+        private async Task WaitForOpenSearch(string requestUrl)
+        {
+            if (_openSearchEnabled && _featureContext.Get<bool>("_waitOnNextGetAll"))
+            {
+                var isGetById = Guid.TryParse(requestUrl.Split('/')[^1], out Guid _);
+                if (!isGetById)
+                {
+                    // Sleep before executing GetAll requests so that OpenSearch gets up to date
+                    await Task.Delay(5000);
+                    _featureContext["_waitOnNextGetAll"] = false;
+                }
+            }
         }
 
         private void AddRelationships(string[]? relationTags, IAPIResponse apiResponse, string entityType)
