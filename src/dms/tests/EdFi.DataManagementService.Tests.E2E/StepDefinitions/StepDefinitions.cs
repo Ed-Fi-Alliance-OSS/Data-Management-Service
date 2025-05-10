@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -20,12 +19,28 @@ using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
     [Binding]
-    public partial class StepDefinitions(
-        PlaywrightContext _playwrightContext,
-        TestLogger _logger,
-        ScenarioContext _scenarioContext
-    )
+    public partial class StepDefinitions
     {
+        private readonly PlaywrightContext _playwrightContext;
+        private readonly TestLogger _logger;
+        private readonly ScenarioContext _scenarioContext;
+        private readonly FeatureContext _featureContext;
+
+        public StepDefinitions(
+            PlaywrightContext playwrightContext,
+            TestLogger logger,
+            ScenarioContext scenarioContext,
+            FeatureContext featureContext
+        )
+        {
+            _playwrightContext = playwrightContext;
+            _logger = logger;
+            _scenarioContext = scenarioContext;
+            _featureContext = featureContext;
+
+            _featureContext.TryAdd("_waitOnNextGetAll", false);
+        }
+
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
         private string _location = string.Empty;
@@ -35,7 +50,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private ScenarioVariables _scenarioVariables = new();
         private string _dmsToken = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
-        private bool _waitOnNextGetAll;
         private Dictionary<string, string> _relationships = [];
 
         #region Given
@@ -155,7 +169,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"{baseUrl}/{descriptor["descriptorName"]}",
                     new() { DataObject = descriptor, Headers = GetHeaders() }
                 )!;
-                _waitOnNextGetAll = true;
+                _featureContext["_waitOnNextGetAll"] = true;
                 _apiResponses.Add(response);
 
                 response
@@ -177,7 +191,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     dataUrl,
                     new() { Data = body, Headers = GetHeaders() }
                 )!;
-                _waitOnNextGetAll = true;
+                _featureContext["_waitOnNextGetAll"] = true;
                 _apiResponses.Add(response);
 
                 response
@@ -229,7 +243,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"{baseUrl}/{descriptorName}",
                     new() { DataObject = descriptorBody, Headers = GetHeaders() }
                 )!;
-                _waitOnNextGetAll = true;
+                _featureContext["_waitOnNextGetAll"] = true;
 
                 string body = apiResponse.TextAsync().Result;
                 _logger.log.Information(body);
@@ -298,7 +312,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
-            _waitOnNextGetAll = true;
+            _featureContext["_waitOnNextGetAll"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -346,7 +360,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = httpHeaders }
             )!;
-            _waitOnNextGetAll = true;
+            _featureContext["_waitOnNextGetAll"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -360,7 +374,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
-            _waitOnNextGetAll = true;
+            _featureContext["_waitOnNextGetAll"] = true;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -383,7 +397,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
-            _waitOnNextGetAll = true;
+            _featureContext["_waitOnNextGetAll"] = true;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -400,7 +414,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
-            _waitOnNextGetAll = true;
+            _featureContext["_waitOnNextGetAll"] = true;
 
             if (_apiResponse.Status != 204)
             {
@@ -434,7 +448,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            _waitOnNextGetAll = true;
+            _featureContext["_waitOnNextGetAll"] = true;
         }
 
         [When("a relationship with {string} is deleted")]
@@ -447,7 +461,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            _waitOnNextGetAll = true;
+            _featureContext["_waitOnNextGetAll"] = true;
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
@@ -459,7 +473,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            _waitOnNextGetAll = true;
+            _featureContext["_waitOnNextGetAll"] = true;
         }
 
         [When("a GET request is made to {string}")]
@@ -471,14 +485,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information(url);
 
-            if (_openSearchEnabled && _waitOnNextGetAll)
+            if (_openSearchEnabled && _featureContext.Get<bool>("_waitOnNextGetAll"))
             {
                 var isGetById = Guid.TryParse(url.Split('/')[^1], out Guid _);
                 if (!isGetById)
                 {
                     // Sleep before executing GetAll requests so that OpenSearch gets up to date
                     await Task.Delay(5000);
-                    _waitOnNextGetAll = false;
+                    _featureContext["_waitOnNextGetAll"] = false;
                 }
             }
 
