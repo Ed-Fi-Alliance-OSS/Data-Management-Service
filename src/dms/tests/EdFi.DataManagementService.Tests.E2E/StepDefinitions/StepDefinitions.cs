@@ -458,7 +458,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information(url);
 
-            if (_scenarioContext.ScenarioInfo.Tags.Contains("addwait") && _openSearchEnabled)
+            if (_openSearchEnabled)
             {
                 var isGetById = Guid.TryParse(url.Split('/')[^1], out Guid _);
                 if (!isGetById)
