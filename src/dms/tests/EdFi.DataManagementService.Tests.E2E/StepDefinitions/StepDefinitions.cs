@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -207,8 +208,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _ = await ProcessDataTable(entityType, dataTable);
 
             _logger.log.Information($"Responses for Given(the system has these {entityType})");
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("the system has these descriptors")]
@@ -233,8 +232,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
                 apiResponse.Status.Should().BeOneOf(OkCreated, $"Request failed:\n{body}");
             }
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         private readonly int[] OkCreated = [200, 201];
@@ -300,7 +297,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         private string extractDataFromResponseAndReturnIdIfAvailable(IAPIResponse apiResponse)
@@ -348,7 +344,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a POST request is made for dependent resource {string} with")]
@@ -361,7 +356,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a PUT request is made to {string} with")]
@@ -384,7 +378,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )!;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
@@ -417,7 +410,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     );
                 }
             }
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("a DELETE request is made to {string}")]
@@ -432,8 +424,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a relationship with {string} is deleted")]
@@ -457,7 +447,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a GET request is made to {string}")]
@@ -468,6 +457,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
             _logger.log.Information(url);
+
+            if (_scenarioContext.ScenarioInfo.Tags.Contains("addwait") && _openSearchEnabled)
+            {
+                var isGetById = Guid.TryParse(url.Split('/')[^1], out Guid _);
+                if (!isGetById)
+                {
+                    // Sleep before executing GetAll requests so that OpenSearch gets up to date
+                    await Task.Delay(5000);
+                }
+            }
+
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 url,
                 new() { Headers = GetHeaders() }
@@ -884,14 +884,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             input = input.StartsWith("metadata") ? input : $"data/{input}";
 
             return input;
-        }
-
-        private void WaitForOpenSearch(string[]? waitTags)
-        {
-            if (waitTags != null && waitTags.Contains("addwait") && _openSearchEnabled)
-            {
-                Thread.Sleep(5000);
-            }
         }
 
         private void AddRelationships(string[]? relationTags, IAPIResponse apiResponse, string entityType)
