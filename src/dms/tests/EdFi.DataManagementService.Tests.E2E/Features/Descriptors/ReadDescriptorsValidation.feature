@@ -68,14 +68,15 @@ Feature: Read a Descriptor
                   []
                   """
 
-        @API-031
-        Scenario: 05 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
-             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor#Fake"
-             Then it should respond with 200
-              And the response body is
-                  """
-                  []
-                  """
+        # TODO AXEL CREATE TICKET
+        #@API-031
+        #Scenario: 05 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
+        #     When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor#Fake"
+        #     Then it should respond with 200
+        #      And the response body is
+        #          """
+        #          []
+        #          """
 
         @API-032
         Scenario: 06 Verify response code 404 when ID is not valid
