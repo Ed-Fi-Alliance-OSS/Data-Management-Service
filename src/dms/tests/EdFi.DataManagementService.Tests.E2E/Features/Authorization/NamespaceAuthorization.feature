@@ -71,7 +71,6 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 403
              
-        @addwait
         Scenario: 17 Ensure clients can GET information when querying a resource in the ns2 namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ns2.org"
               And a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
@@ -208,7 +207,6 @@ Feature: Namespace Authorization
                   """
              Then it should respond with 200
 
-        @addwait
         Scenario: 19 Ensure client can get a resource in the ed-fi namespace
             Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org"
               And a POST request is made to "/ed-fi/surveys" with

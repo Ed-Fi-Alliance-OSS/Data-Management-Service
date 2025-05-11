@@ -755,7 +755,6 @@ Feature: Resources "Create" Operation validations
                   }
                   """
 
-        @addwait
         Scenario: 29 Ensure prunning of an empty collection
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
@@ -787,43 +786,43 @@ Feature: Resources "Create" Operation validations
                       "namespace": "uri://ed-fi.org"
                   }
                   """
-    @addwait
-    Scenario: 30 Insert the same school after deletion
-        When a POST request is made to "/ed-fi/schools" with
-          """
-                {
-               "schoolId":255901001,
-               "nameOfInstitution":"Test school",
-               "gradeLevels":[    
-                  {
-                     "gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                  }
-               ],
-               "educationOrganizationCategories":[
-                  {
-                     "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
-                  }
-               ]
-            }
-          """
-       Then it should respond with 201
-       When a DELETE request is made to "/ed-fi/schools/{id}"
-       Then it should respond with 204
-       When a POST request is made to "/ed-fi/schools" with
-          """
-                {
-               "schoolId":255901001,
-               "nameOfInstitution":"Test school",
-               "gradeLevels":[    
-                  {
-                     "gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                  }
-               ],
-               "educationOrganizationCategories":[
-                  {
-                     "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
-                  }
-               ]
-            }
-          """
-          Then it should respond with 201
+
+        Scenario: 30 Insert the same school after deletion
+             When a POST request is made to "/ed-fi/schools" with
+                  """
+                        {
+                       "schoolId":255901001,
+                       "nameOfInstitution":"Test school",
+                       "gradeLevels":[    
+                          {
+                             "gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                          }
+                       ],
+                       "educationOrganizationCategories":[
+                          {
+                             "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                       ]
+                    }
+                  """
+             Then it should respond with 201
+             When a DELETE request is made to "/ed-fi/schools/{id}"
+             Then it should respond with 204
+             When a POST request is made to "/ed-fi/schools" with
+                  """
+                        {
+                       "schoolId":255901001,
+                       "nameOfInstitution":"Test school",
+                       "gradeLevels":[    
+                          {
+                             "gradeLevelDescriptor":"uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                          }
+                       ],
+                       "educationOrganizationCategories":[
+                          {
+                             "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                       ]
+                    }
+                  """
+             Then it should respond with 201
