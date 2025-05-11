@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -25,29 +26,38 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
         OperationType operationType
     )
     {
-        List<EducationOrganizationId> edOrgsFromRequest = securityElements
+        List<EducationOrganizationId> requestSecurableEdOrgIds = securityElements
             .EducationOrganization.Select(e => e.Id)
             .ToList();
 
-        if (!edOrgsFromRequest.Any())
+        if (!requestSecurableEdOrgIds.Any())
         {
             string error =
                 "No 'EducationOrganizationIds' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
             return new ResourceAuthorizationResult.NotAuthorized([error]);
         }
 
-        // Retrieve the hierarchy of the education organization ids from the request
-        var edOrgIdValues = edOrgsFromRequest.Select(e => e.Value).ToArray();
+        var requestEdOrgHierarchies = await Task.WhenAll(
+            requestSecurableEdOrgIds.Select(async edOrgId =>
+                new[] { edOrgId.Value }.Concat(
+                    await authorizationRepository.GetAncestorEducationOrganizationIds([edOrgId.Value])
+                )
+            )
+        );
 
-        var ancestorEducationOrganizationIds =
-            await authorizationRepository.GetAncestorEducationOrganizationIds(edOrgIdValues);
+        var filterEdOrgIds = authorizationFilters
+            .Select(filter =>
+                long.TryParse(filter.Value, out long filterEdOrgId) ? filterEdOrgId : (long?)null
+            )
+            .WhereNotNull()
+            .ToHashSet();
 
-        bool isAuthorized = authorizationFilters
-            .Select(filter => long.TryParse(filter.Value, out var edOrgId) ? edOrgId : (long?)null)
-            .Where(edOrgId => edOrgId.HasValue)
-            .Any(edOrgId =>
-                edOrgId != null && ancestorEducationOrganizationIds.ToList().Contains(edOrgId.Value)
-            );
+        // Token must have access to *all* edOrg hierarchies
+        var isAuthorized = Array.TrueForAll(
+            requestEdOrgHierarchies,
+            requestEdOrgIdHierarchy =>
+                requestEdOrgIdHierarchy.Any(edOrgId => filterEdOrgIds.Contains(edOrgId))
+        );
 
         if (!isAuthorized)
         {

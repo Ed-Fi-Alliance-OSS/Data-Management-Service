@@ -226,4 +226,75 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
             _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
         }
     }
+
+    [TestFixture]
+    public class Given_Resource_With_Multiple_EducationOrganizationHierarchies
+        : RelationshipsWithEdOrgsOnlyValidatorTests
+    {
+        private DocumentSecurityElements? _documentSecurityElements;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Hierarchy 1
+            A.CallTo(() => _authorizationRepository.GetAncestorEducationOrganizationIds(new long[] { 1001 }))
+                .Returns([1]);
+
+            // Hierarchy 2
+            A.CallTo(() => _authorizationRepository.GetAncestorEducationOrganizationIds(new long[] { 2001 }))
+                .Returns([2]);
+
+            // Resource referencing both hierarchies
+            _documentSecurityElements = new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("SomeEdOrgReference1"),
+                        new EducationOrganizationId(1001)
+                    ),
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("SomeEdOrgReference2"),
+                        new EducationOrganizationId(2001)
+                    ),
+                ],
+                [],
+                []
+            );
+        }
+
+        [Test]
+        public async Task Should_Return_Unauthorized_When_Token_Only_Has_Access_To_One()
+        {
+            var tokenEdOrgs = new[] {
+                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "1")
+            };
+
+            var result = await new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository).ValidateAuthorization(
+                _documentSecurityElements!,
+                tokenEdOrgs,
+                [],
+                OperationType.Get
+            );
+
+            result.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+        }
+
+        [Test]
+        public async Task Should_Return_Authorized_When_Token_Has_Access_To_All()
+        {
+            var tokenEdOrgs = new[] {
+                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "1"),
+                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "2"),
+            };
+
+            var result = await new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository).ValidateAuthorization(
+                _documentSecurityElements!,
+                tokenEdOrgs,
+                [],
+                OperationType.Get
+            );
+
+            result.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
+        }
+    }
 }

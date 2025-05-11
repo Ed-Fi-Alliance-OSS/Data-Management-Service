@@ -160,29 +160,24 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
 
     /// <summary>
     /// Returns a dictionary where they Key is an EducationOrganization and the value is
-    /// a list of the parent EducationOrganization ResourceNames.
+    /// a list of the parent EducationOrganization paths.
     /// </summary>
-    public Dictionary<ResourceName, ResourceName[]> EducationOrganizationHierarchy =>
+    public Dictionary<ResourceName, string[]> EducationOrganizationHierarchy =>
         _educationOrganizationHierarchy.Value;
-    private readonly Lazy<Dictionary<ResourceName, ResourceName[]>> _educationOrganizationHierarchy = new(
-        () =>
-        {
-            JsonNode edOrgHierarchyNode = _projectSchemaNode.SelectRequiredNodeFromPath(
-                "$.educationOrganizationHierarchy",
-                _logger
-            );
+    private readonly Lazy<Dictionary<ResourceName, string[]>> _educationOrganizationHierarchy = new(() =>
+    {
+        JsonNode edOrgHierarchyNode = _projectSchemaNode.SelectRequiredNodeFromPath(
+            "$.educationOrganizationHierarchy",
+            _logger
+        );
 
-            return edOrgHierarchyNode
-                .AsObject()
-                .ToDictionary(
-                    kvp => new ResourceName(kvp.Key),
-                    kvp =>
-                        kvp.Value?.AsArray()
-                            .Select(v => new ResourceName(v?.ToString() ?? string.Empty))
-                            .ToArray() ?? []
-                );
-        }
-    );
+        return edOrgHierarchyNode
+            .AsObject()
+            .ToDictionary(
+                kvp => new ResourceName(kvp.Key),
+                kvp => kvp.Value?.AsObject().Select(v => v.Value?.ToString() ?? string.Empty).ToArray() ?? []
+            );
+    });
 
     /// <summary>
     /// Returns the list of EducationOrganization resource names

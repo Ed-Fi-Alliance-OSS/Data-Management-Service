@@ -852,6 +852,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     ]
                   }
                   """
+
     Rule: Search for a resource in the EducationOrganizationHierarchy with RelationshipsWithEdOrgsOnly authorization and LONG schoolId
         Background:
                       # Build a hierarchy
@@ -890,3 +891,151 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     }
                   ]
                   """
+
+    Rule: LEA CRUD is properly authorized
+        Background:
+            Given the claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" is authorized with educationOrganizationIds "255901"
+              And the system has these descriptors
+                  | descriptorValue                                                                       |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency        |
+                  | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district |
+
+        Scenario: 20 Ensure client can create an LEA
+             When a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Grand Bend SD",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+             Then it should respond with 201
+                  
+        Scenario: 21 Ensure client can retrieve an LEA
+            Given a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Grand Bend SD",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+              And the resulting id is stored in the "localEducationAgencyId" variable
+             Then it should respond with 201 or 200
+
+             When a GET request is made to "/ed-fi/localEducationAgencies/{localEducationAgencyId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                      "id": "{localEducationAgencyId}",
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Grand Bend SD",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+
+        @addwait
+        Scenario: 22 Ensure client can only query authorized LEAs
+            Given a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Grand Bend SD",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+              And the resulting id is stored in the "localEducationAgencyId" variable
+             Then it should respond with 201 or 200
+
+             When a GET request is made to "/ed-fi/localEducationAgencies"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                      {
+                          "id": "{localEducationAgencyId}",
+                          "localEducationAgencyId": 255901,
+                          "nameOfInstitution": "Grand Bend SD",
+                          "categories": [
+                              {
+                                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                              }
+                          ],
+                          "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                      }
+                  ]
+                  """
+
+        Scenario: 23 Ensure client can update an LEA
+            Given a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Grand Bend SD",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+              And the resulting id is stored in the "localEducationAgencyId" variable
+             Then it should respond with 201 or 200
+
+             When a PUT request is made to "/ed-fi/localEducationAgencies/{localEducationAgencyId}" with
+                  """
+                  {
+                     "id": "{localEducationAgencyId}",
+                     "localEducationAgencyId": 255901,
+                     "nameOfInstitution": "Grand Bend SD - Updated",
+                     "categories": [
+                         {
+                             "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                         }
+                     ],
+                     "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+             Then it should respond with 204
+
+        Scenario: 24 Ensure client can delete an LEA
+            Given a POST request is made to "/ed-fi/localEducationAgencies" with
+                  """
+                  {
+                      "localEducationAgencyId": 255901,
+                      "nameOfInstitution": "Grand Bend SD",
+                      "categories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+                          }
+                      ],
+                      "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Regular public school district"
+                  }
+                  """
+              And the resulting id is stored in the "localEducationAgencyId" variable
+             Then it should respond with 201 or 200
+
+             When a DELETE request is made to "/ed-fi/localEducationAgencies/{localEducationAgencyId}"
+             Then it should respond with 204
