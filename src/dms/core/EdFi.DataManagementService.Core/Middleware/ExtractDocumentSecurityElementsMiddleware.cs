@@ -7,7 +7,6 @@ using System.Diagnostics;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.Extraction.SecurityElementsExtractor;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 

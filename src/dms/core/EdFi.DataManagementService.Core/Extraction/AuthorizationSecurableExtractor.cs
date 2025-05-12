@@ -58,6 +58,14 @@ internal static class AuthorizationSecurableExtractor
                 new AuthorizationSecurableInfo(SecurityElementNameConstants.EducationOrganization)
             );
         }
+
+        var staffSecurablePaths = resourceSchema.StaffSecurityElementPaths;
+        if (staffSecurablePaths.Any())
+        {
+            authorizationSecurable.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.StaffUniqueId)
+            );
+        }
         return [.. authorizationSecurable];
     }
 }

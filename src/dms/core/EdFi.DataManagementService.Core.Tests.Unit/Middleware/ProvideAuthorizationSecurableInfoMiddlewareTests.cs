@@ -39,6 +39,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 .WithStudentSecurityElements(["$.studentUniqueId"]) // This indicates that the StudentUniqueId should be extracted for authorization
                 .WithContactSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
+                .WithStafftSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
                 .WithEndDocumentPathsMapping()
@@ -97,6 +98,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 .WithStartResource("Student")
                 .WithStudentSecurityElements([]) // No paths specified for Student Securable elements
                 .WithContactSecurityElements([])
+                .WithStafftSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
@@ -154,6 +156,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 .WithStartResource("StudentContactAssociation")
                 .WithStudentSecurityElements(["$.studentUniqueId"])
                 .WithContactSecurityElements(["$.contactReference.contactUniqueId"])
+                .WithStafftSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
@@ -233,6 +236,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 .WithStudentSecurityElements([])
                 .WithEducationOrganizationSecurityElements([])
                 .WithContactSecurityElements(["$.contactUniqueId"]) // This indicates that the ContactUniqueId should be extracted for authorization
+                .WithStafftSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("ContactUniqueId", "$.contactUniqueId")
                 .WithEndDocumentPathsMapping()
@@ -292,6 +296,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
                 .WithContactSecurityElements([]) // No paths specified for Student Securable elements
+                .WithStafftSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("ContactUniqueId", "$.contactUniqueId")
                 .WithEndDocumentPathsMapping()
@@ -330,6 +335,202 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
         public void It_does_not_have_securable_key()
         {
             context.AuthorizationSecurableInfo.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_document_with_a_StaffUniqueId : ProvideAuthorizationSecurableInfoMiddlewareTests
+    {
+        private PipelineContext context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Staff")
+                .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStafftSecurityElements(["$.staffUniqueId"])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathScalar("StaffUniqueId", "$.staffUniqueId")
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "staffs");
+
+            string body = """{"staffUniqueId": "S12345"}""";
+
+            context = new(
+                new(
+                    Body: body,
+                    QueryParameters: [],
+                    Path: "/ed-fi/staffs",
+                    TraceId: new TraceId("123"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                ),
+                RequestMethod.POST
+            )
+            {
+                ResourceSchema = resourceSchema,
+                ParsedBody = JsonNode.Parse(body)!,
+            };
+
+            await BuildMiddleware().Execute(context, NullNext);
+        }
+
+        [Test]
+        public void It_has_StaffUniqueId_as_securable_key()
+        {
+            context
+                .AuthorizationSecurableInfo[0]
+                .SecurableKey.Should()
+                .Be(SecurityElementNameConstants.StaffUniqueId);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_document_without_StaffAuthorizationSecurablePaths
+        : ProvideAuthorizationSecurableInfoMiddlewareTests
+    {
+        private PipelineContext context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Staff")
+                .WithStudentSecurityElements([])
+                .WithContactSecurityElements([])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStafftSecurityElements([])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathScalar("StaffUniqueId", "$.staffUniqueId")
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocuments, "staffs");
+
+            string body = """{"staffUniqueId": "S12345"}""";
+
+            context = new(
+                new(
+                    Body: body,
+                    QueryParameters: [],
+                    Path: "/ed-fi/staffs",
+                    TraceId: new TraceId("123"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                ),
+                RequestMethod.POST
+            )
+            {
+                ResourceSchema = resourceSchema,
+                ParsedBody = JsonNode.Parse(body)!,
+            };
+
+            await BuildMiddleware().Execute(context, NullNext);
+        }
+
+        [Test]
+        public void It_does_not_have_securable_key()
+        {
+            context.AuthorizationSecurableInfo.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_document_with_StaffReference_and_StudentUniqueId
+        : ProvideAuthorizationSecurableInfoMiddlewareTests
+    {
+        private PipelineContext context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("StudentStaffAssociation")
+                .WithStudentSecurityElements(["$.studentUniqueId"])
+                .WithContactSecurityElements([])
+                .WithStafftSecurityElements(["$.staffReference.staffUniqueId"])
+                .WithEducationOrganizationSecurityElements([])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathScalar("StudentUniqueId", "$.studentUniqueId")
+                .WithDocumentPathReference(
+                    "Staff",
+                    [new("$.staffUniqueId", "$.staffReference.staffUniqueId")]
+                )
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                apiSchemaDocuments,
+                "StudentStaffAssociations"
+            );
+
+            string body = """
+                {
+                 "studentUniqueId": "12345",
+                 "staffReference":
+                    {
+                      "staffUniqueId": "staff123"
+                    }
+                }
+                """;
+
+            context = new(
+                new(
+                    Body: body,
+                    QueryParameters: [],
+                    Path: "/ed-fi/StudentStaffAssociations",
+                    TraceId: new TraceId("123"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                ),
+                RequestMethod.POST
+            )
+            {
+                ResourceSchema = resourceSchema,
+                ParsedBody = JsonNode.Parse(body)!,
+            };
+
+            await BuildMiddleware().Execute(context, NullNext);
+        }
+
+        [Test]
+        public void It_has_StudentUniqueId_and_StaffUniqueId_as_securable_keys()
+        {
+            context.AuthorizationSecurableInfo.Length.Should().Be(2);
+            context
+                .AuthorizationSecurableInfo[0]
+                .SecurableKey.Should()
+                .Be(SecurityElementNameConstants.StudentUniqueId);
+            context
+                .AuthorizationSecurableInfo[1]
+                .SecurableKey.Should()
+                .Be(SecurityElementNameConstants.StaffUniqueId);
         }
     }
 }
