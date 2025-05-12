@@ -38,7 +38,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _scenarioContext = scenarioContext;
             _featureContext = featureContext;
 
-            _featureContext.TryAdd("_waitOnNextGetAll", false);
+            _featureContext.TryAdd("_waitOnNextQuery", false);
         }
 
         private IAPIResponse _apiResponse = null!;
@@ -169,7 +169,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"{baseUrl}/{descriptor["descriptorName"]}",
                     new() { DataObject = descriptor, Headers = GetHeaders() }
                 )!;
-                _featureContext["_waitOnNextGetAll"] = true;
+                _featureContext["_waitOnNextQuery"] = true;
                 _apiResponses.Add(response);
 
                 response
@@ -191,7 +191,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     dataUrl,
                     new() { Data = body, Headers = GetHeaders() }
                 )!;
-                _featureContext["_waitOnNextGetAll"] = true;
+                _featureContext["_waitOnNextQuery"] = true;
                 _apiResponses.Add(response);
 
                 response
@@ -243,7 +243,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"{baseUrl}/{descriptorName}",
                     new() { DataObject = descriptorBody, Headers = GetHeaders() }
                 )!;
-                _featureContext["_waitOnNextGetAll"] = true;
+                _featureContext["_waitOnNextQuery"] = true;
 
                 string body = apiResponse.TextAsync().Result;
                 _logger.log.Information(body);
@@ -312,7 +312,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextGetAll"] = true;
+            _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -360,7 +360,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = httpHeaders }
             )!;
-            _featureContext["_waitOnNextGetAll"] = true;
+            _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -374,7 +374,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextGetAll"] = true;
+            _featureContext["_waitOnNextQuery"] = true;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -397,7 +397,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextGetAll"] = true;
+            _featureContext["_waitOnNextQuery"] = true;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
@@ -414,7 +414,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextGetAll"] = true;
+            _featureContext["_waitOnNextQuery"] = true;
 
             if (_apiResponse.Status != 204)
             {
@@ -448,7 +448,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextGetAll"] = true;
+            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a relationship with {string} is deleted")]
@@ -461,7 +461,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextGetAll"] = true;
+            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
@@ -473,7 +473,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            _featureContext["_waitOnNextGetAll"] = true;
+            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a GET request is made to {string}")]
@@ -905,14 +905,14 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private async Task WaitForOpenSearch(string requestUrl)
         {
-            if (_openSearchEnabled && _featureContext.Get<bool>("_waitOnNextGetAll"))
+            if (_openSearchEnabled && _featureContext.Get<bool>("_waitOnNextQuery"))
             {
                 var isGetById = Guid.TryParse(requestUrl.Split('/')[^1], out Guid _);
                 if (!isGetById)
                 {
                     // Sleep before executing GetAll requests so that OpenSearch gets up to date
                     await Task.Delay(5000);
-                    _featureContext["_waitOnNextGetAll"] = false;
+                    _featureContext["_waitOnNextQuery"] = false;
                 }
             }
         }
