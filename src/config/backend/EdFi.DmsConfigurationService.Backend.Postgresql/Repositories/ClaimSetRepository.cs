@@ -436,6 +436,30 @@ public class ClaimSetRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
+            // Get the current claim set name to distinguish between Not Found and System Reserved responses
+            string getClaimSetSql = """
+                SELECT ClaimSetName, IsSystemReserved
+                FROM dmscs.ClaimSet
+                WHERE Id = @Id;
+                """;
+
+            var getClaimSetParameters = new { Id = id };
+
+            var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
+                string claimSetName,
+                bool isSystemReserved
+            )>(getClaimSetSql, getClaimSetParameters);
+
+            if (existingClaimSet == default)
+            {
+                return new ClaimSetDeleteResult.FailureNotFound();
+            }
+
+            if (existingClaimSet.isSystemReserved)
+            {
+                return new ClaimSetDeleteResult.FailureSystemReserved();
+            }
+
             string sql = """
                 DELETE FROM dmscs.ClaimSet WHERE Id = @Id
                 """;

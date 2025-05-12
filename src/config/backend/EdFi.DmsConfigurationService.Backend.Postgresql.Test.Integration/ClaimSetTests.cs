@@ -474,8 +474,9 @@ public class ClaimSetTests : DatabaseTest
             _id1 = ((ClaimSetInsertResult.Success)insertResult1).Id;
 
             var insertResult2 = await _repository.InsertClaimSet(
-                new ClaimSetInsertCommand() { Name = "Test-Two" }
+                new ClaimSetInsertCommand() { Name = "Test-Two", IsSystemReserved = true }
             );
+
             _id2 = ((ClaimSetInsertResult.Success)insertResult2).Id;
 
             var result = await _repository.DeleteClaimSet(_id1);
@@ -492,13 +493,31 @@ public class ClaimSetTests : DatabaseTest
         }
 
         [Test]
-        public async Task Should_get_test_claimSet_from_get_by_id()
+        public async Task Should_return_not_found_for_deleted_claim_set()
         {
             var result1 = await _repository.GetClaimSet(_id1, false);
             result1.Should().BeOfType<ClaimSetGetResult.FailureNotFound>();
+        }
 
+        [Test]
+        public async Task Should_get_remaining_test_claimSet_successfully()
+        {
             var result2 = await _repository.GetClaimSet(_id2, false);
             result2.Should().BeOfType<ClaimSetGetResult.Success>();
+        }
+
+        [Test]
+        public async Task Should_return_not_found_when_attempting_to_delete_non_existing_claim_set_id()
+        {
+            var deleteResult = await _repository.DeleteClaimSet(int.MaxValue);
+            deleteResult.Should().BeOfType<ClaimSetDeleteResult.FailureNotFound>();
+        }
+
+        [Test]
+        public async Task Should_return_system_reserved_error_when_attempting_to_delete_system_reserved_claim_set()
+        {
+            var deleteResult = await _repository.DeleteClaimSet(_id2);
+            deleteResult.Should().BeOfType<ClaimSetDeleteResult.FailureSystemReserved>();
         }
     }
 

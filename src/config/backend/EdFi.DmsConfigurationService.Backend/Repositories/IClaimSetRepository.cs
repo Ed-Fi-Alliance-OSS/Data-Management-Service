@@ -121,6 +121,11 @@ public record ClaimSetDeleteResult
     public record FailureNotFound() : ClaimSetDeleteResult();
 
     /// <summary>
+    /// Attempt was made to modify a system reserved claim set.
+    /// </summary>
+    public record FailureSystemReserved() : ClaimSetDeleteResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ClaimSetDeleteResult();

@@ -157,6 +157,26 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         )!;
     }
 
+    [When("a GET request is made to {string} for first {int} items")]
+    public async Task WhenAGETRequestIsMadeTo(string url, int limit)
+    {
+        url = ReplaceIds(url);
+        _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(
+            $"{url}?limit={limit}",
+            new() { Headers = _authHeaders }
+        )!;
+    }
+
+    [When("a GET request is made to {string} for next {int} items after skipping {int} items")]
+    public async Task WhenAGETRequestIsMadeTo(string url, int limit, int offset)
+    {
+        url = ReplaceIds(url);
+        _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(
+            $"{url}?limit={limit}&offset={offset}",
+            new() { Headers = _authHeaders }
+        )!;
+    }
+
     [When("a POST request is made to {string} with")]
     [Given("a POST request is made to {string} with")]
     public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)

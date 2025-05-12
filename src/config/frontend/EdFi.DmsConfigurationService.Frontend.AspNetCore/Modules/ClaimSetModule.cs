@@ -184,6 +184,13 @@ public class ClaimSetModule : IEndpointModule
         return result switch
         {
             ClaimSetDeleteResult.Success => Results.NoContent(),
+            ClaimSetDeleteResult.FailureSystemReserved => Results.Json(
+                FailureResponse.ForBadRequest(
+                    "The specified claim set is system-reserved and cannot be deleted.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
             ClaimSetDeleteResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound(
                     $"ClaimSet {id} not found. It may have been recently deleted.",
