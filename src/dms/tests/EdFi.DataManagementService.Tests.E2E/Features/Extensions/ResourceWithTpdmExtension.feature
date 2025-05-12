@@ -2,7 +2,7 @@ Feature: Resource with Tpdm extension
 
         Background:
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://tpdm.ed-fi.org"
-            And the system has these descriptors
+              And the system has these descriptors
                   | descriptorValue                                                                    |
                   | uri://ed-fi.org/OperationalStatusDescriptor#Active                                 |
                   | uri://ed-fi.org/PostSecondaryInstitutionLevelDescriptor#Four or more years         |
@@ -12,7 +12,7 @@ Feature: Resource with Tpdm extension
         Scenario: 01 Ensure clients can create a resource with tpdm extension reference
              When a POST request is made to "/ed-fi/postSecondaryInstitutions" with
                   """
-                 {
+                  {
                     "postSecondaryInstitutionId": 6000203,
                     "nameOfInstitution": "The University of Texas at Austin",
                     "operationalStatusDescriptor": "uri://ed-fi.org/OperationalStatusDescriptor#Active",
@@ -27,31 +27,31 @@ Feature: Resource with Tpdm extension
                   """
              Then it should respond with 201
              When a POST request is made to "/ed-fi/schools" with
-             """
-             {
-              "schoolId": "3",
-              "nameOfInstitution": "Extension Test Community College",
-              "educationOrganizationCategories": [
-                {
-                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
-                }
-              ],
-              "gradeLevels": [
-                {
-                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                }
-              ],
-              "_ext": {
-                "tpdm": {
-                  "postSecondaryInstitutionReference": {
-                    "postSecondaryInstitutionId": 6000203
-                  }
-                }
-                }
-              }
-             """
+                  """
+                  {
+                   "schoolId": "3",
+                   "nameOfInstitution": "Extension Test Community College",
+                   "educationOrganizationCategories": [
+                     {
+                       "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                     }
+                   ],
+                   "gradeLevels": [
+                     {
+                       "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                     }
+                   ],
+                   "_ext": {
+                     "tpdm": {
+                       "postSecondaryInstitutionReference": {
+                         "postSecondaryInstitutionId": 6000203
+                       }
+                     }
+                     }
+                   }
+                  """
              Then it should respond with 201
-             And the record can be retrieved with a GET request
+              And the record can be retrieved with a GET request
                   """
                   {
                      "id": "{id}",
@@ -77,11 +77,10 @@ Feature: Resource with Tpdm extension
                   }
                   """
 
-     @addwait
-     Scenario: 02 Ensure clients can get a resource with query
+        Scenario: 02 Ensure clients can get a resource with query
              When a POST request is made to "/ed-fi/postSecondaryInstitutions" with
                   """
-                 {
+                  {
                     "postSecondaryInstitutionId": 7000608,
                     "nameOfInstitution": "The University of Texas at Austin",
                     "operationalStatusDescriptor": "uri://ed-fi.org/OperationalStatusDescriptor#Active",
@@ -95,34 +94,34 @@ Feature: Resource with Tpdm extension
                   }
                   """
              Then it should respond with 201
-             Given a POST request is made to "/ed-fi/schools" with
-             """
-             {
-              "schoolId": "8",
-              "nameOfInstitution": "Test College",
-              "educationOrganizationCategories": [
-                {
-                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
-                }
-              ],
-              "gradeLevels": [
-                {
-                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                }
-              ],
-              "_ext": {
-                "tpdm": {
-                  "postSecondaryInstitutionReference": {
-                    "postSecondaryInstitutionId": 7000608
-                  }
-                }
-                }
-              }
-             """
+            Given a POST request is made to "/ed-fi/schools" with
+                  """
+                  {
+                   "schoolId": "8",
+                   "nameOfInstitution": "Test College",
+                   "educationOrganizationCategories": [
+                     {
+                       "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                     }
+                   ],
+                   "gradeLevels": [
+                     {
+                       "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                     }
+                   ],
+                   "_ext": {
+                     "tpdm": {
+                       "postSecondaryInstitutionReference": {
+                         "postSecondaryInstitutionId": 7000608
+                       }
+                     }
+                     }
+                   }
+                  """
              Then it should respond with 201
              When a GET request is made to "/ed-fi/schools?nameOfInstitution=Test+College"
              Then it should respond with 200
-             And the response body is
+              And the response body is
                   """
                   [{
                      "id": "{id}",
@@ -148,29 +147,29 @@ Feature: Resource with Tpdm extension
                   }]
                   """
 
-    Scenario: 03 Ensure clients can not create a resource when tpdm extension reference is unavailable
+        Scenario: 03 Ensure clients can not create a resource when tpdm extension reference is unavailable
              When a POST request is made to "/ed-fi/schools" with
-             """
-             {
-              "schoolId": "4",
-              "nameOfInstitution": "Extension Test Community College",
-              "educationOrganizationCategories": [
-                {
-                  "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
-                }
-              ],
-              "gradeLevels": [
-                {
-                  "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
-                }
-              ],
-              "_ext": {
-                "tpdm": {
-                  "postSecondaryInstitutionReference": {
-                    "postSecondaryInstitutionId": 6000204
-                  }
-                }
-                }
-              }
-             """
+                  """
+                  {
+                   "schoolId": "4",
+                   "nameOfInstitution": "Extension Test Community College",
+                   "educationOrganizationCategories": [
+                     {
+                       "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"
+                     }
+                   ],
+                   "gradeLevels": [
+                     {
+                       "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                     }
+                   ],
+                   "_ext": {
+                     "tpdm": {
+                       "postSecondaryInstitutionReference": {
+                         "postSecondaryInstitutionId": 6000204
+                       }
+                     }
+                     }
+                   }
+                  """
              Then it should respond with 409

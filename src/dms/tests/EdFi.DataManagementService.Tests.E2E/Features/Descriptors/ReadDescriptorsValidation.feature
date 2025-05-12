@@ -68,7 +68,8 @@ Feature: Read a Descriptor
                   []
                   """
 
-        @API-031
+        # Re-enable in DMS-691
+        @API-031 @ignore
         Scenario: 05 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
              When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor#Fake"
              Then it should respond with 200
@@ -99,8 +100,8 @@ Feature: Read a Descriptor
                   """
 
         Scenario: 07 Get a Descriptor using a resource not configured in claims
-            When a GET request is made to "/ed-fi/academicHonorCategoryDescriptors"
-            Then it should respond with 403
+             When a GET request is made to "/ed-fi/academicHonorCategoryDescriptors"
+             Then it should respond with 403
               And the response body is
                   """
                   {

@@ -3,7 +3,6 @@ Feature: Query String handling for GET requests for Resource Queries
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
-        @addwait
         Scenario: 00 Background
             Given the system has these "schools"
                   | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
@@ -268,7 +267,6 @@ Feature: Query String handling for GET requests for Resource Queries
                   ]
                   """
 
-        @addwait
         Scenario: 15 Ensure clients get midnight results when querying without a time component
             Given a POST request is made to "/ed-fi/studentAssessments" with
                   """

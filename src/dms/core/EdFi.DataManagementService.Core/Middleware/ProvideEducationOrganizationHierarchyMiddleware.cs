@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -81,20 +82,23 @@ internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) 
         return long.Parse(documentIdentity.DocumentIdentityElements[0].IdentityValue);
     }
 
-    private static long? FindParentEducationOrganizationId(PipelineContext context)
+    private long? FindParentEducationOrganizationId(PipelineContext context)
     {
         if (context.DocumentSecurityElements?.EducationOrganization == null)
         {
             return default;
         }
 
-        var parentTypes = context.ProjectSchema.EducationOrganizationHierarchy[
+        var parentPaths = context.ProjectSchema.EducationOrganizationHierarchy[
             context.ResourceSchema.ResourceName
         ];
 
-        return context
-            .DocumentSecurityElements.EducationOrganization.Where(e => parentTypes.Contains(e.ResourceName))
-            .Select(e => e.Id.Value)
+        return parentPaths
+            .SelectMany(parentPath =>
+                context
+                    .ParsedBody.SelectNodesFromArrayPathCoerceToStrings(parentPath, _logger)
+                    .Select(long.Parse)
+            )
             .Distinct()
             .FirstOrDefault();
     }
