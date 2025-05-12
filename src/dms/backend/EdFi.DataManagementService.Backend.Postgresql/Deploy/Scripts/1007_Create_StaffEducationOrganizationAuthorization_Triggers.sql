@@ -33,8 +33,10 @@ BEGIN
     UPDATE dms.Document d
     SET StaffEducationOrganizationAuthorizationEdOrgIds = (
         SELECT jsonb_agg(value)
-        FROM jsonb_array_elements(StaffEducationOrganizationAuthorizationEdOrgIds) AS value
-        WHERE NOT (value = ANY (jsonb_array_elements_text(ed_org_id_to_remove)))
+        FROM jsonb_array_elements(d.StaffEducationOrganizationAuthorizationEdOrgIds) AS value
+        WHERE value::text NOT IN (
+            SELECT jsonb_array_elements_text(ed_org_id_to_remove)
+        )
     )
     FROM dms.StaffEducationOrganizationAuthorization ssoa
     WHERE
@@ -139,6 +141,20 @@ BEGIN
     SELECT jsonb_agg(EducationOrganizationId)
     FROM dms.GetEducationOrganizationAncestors(new_ed_org_id)
     INTO ed_org_ids;
+
+    UPDATE dms.StaffEducationOrganizationAuthorization
+    SET StaffUniqueId = new_staff_id,
+        HierarchyEdOrgId = new_ed_org_id,
+        StaffEducationOrganizationAuthorizationEdOrgIds = ed_org_ids
+    WHERE
+        StaffEducationOrganizationId = new.Id AND
+        StaffEducationOrganizationPartitionKey = new.DocumentPartitionKey;
+
+    UPDATE dms.Document
+    SET StaffEducationOrganizationAuthorizationEdOrgIds = ed_org_ids
+    WHERE
+        Id = NEW.Id AND
+        DocumentPartitionKey = NEW.DocumentPartitionKey;
 
     PERFORM dms.SetStaffEducationOrganizationAuthorizationEdOrgIds(new_staff_id, ed_org_ids);
 
