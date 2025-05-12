@@ -26,132 +26,66 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
         OperationType operationType
     )
     {
-        bool isStudentSecurable = authorizationSecurableInfos
-            .AsEnumerable()
-            .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId);
+        var errorMessages = new List<string>();
 
-        bool isContactSecurable = authorizationSecurableInfos
-            .AsEnumerable()
-            .Any(x => x.SecurableKey == SecurityElementNameConstants.ContactUniqueId);
-
-        if (isStudentSecurable)
+        if (
+            RelationshipsBasedAuthorizationHelper.HasSecurable(
+                authorizationSecurableInfos,
+                SecurityElementNameConstants.StudentUniqueId
+            )
+        )
         {
-            return await ValidateStudentAuthorization(securityElements, authorizationFilters);
-        }
-
-        bool isStaffSecurable = authorizationSecurableInfos
-            .AsEnumerable()
-            .Any(x => x.SecurableKey == SecurityElementNameConstants.StaffUniqueId);
-
-        if (isStaffSecurable)
-        {
-            return await ValidateStaffAuthorization(securityElements, authorizationFilters);
-        }
-
-        return new ResourceAuthorizationResult.Authorized();
-    }
-
-    private async Task<ResourceAuthorizationResult> ValidateStudentAuthorization(
-        DocumentSecurityElements securityElements,
-        AuthorizationFilter[] authorizationFilters
-    )
-    {
-        if (securityElements.Student.Length == 0)
-        {
-            string error =
-                "No 'Student' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
-            return new ResourceAuthorizationResult.NotAuthorized([error]);
-        }
-
-        string studentUniqueId = securityElements.Student[0].Value;
-
-        long[] educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStudent(
-            studentUniqueId
-        );
-
-        var authorizedEdOrgIds = authorizationFilters
-            .Select(f => long.TryParse(f.Value, out long id) ? (long?)id : null)
-            .WhereNotNull()
-            .ToHashSet();
-
-        bool isAuthorized =
-            educationOrgIds.Length > 0 && authorizedEdOrgIds.Any(id => educationOrgIds.Contains(id));
-
-        if (!isAuthorized)
-        {
-            string edOrgIdsFromFilters = string.Join(", ", authorizationFilters.Select(x => $"'{x.Value}'"));
-            string error =
-                $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'.";
-            return new ResourceAuthorizationResult.NotAuthorized([error]);
-        }
-
-        return new ResourceAuthorizationResult.Authorized();
-    }
-
-    private async Task<ResourceAuthorizationResult> ValidateStaffAuthorization(
-        DocumentSecurityElements securityElements,
-        AuthorizationFilter[] authorizationFilters
-    )
-    {
-        if (securityElements.Staff.Length == 0)
-        {
-            string error =
-                "No 'Staff' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
-            return new ResourceAuthorizationResult.NotAuthorized([error]);
-        }
-
-        string staffUniqueId = securityElements.Staff[0].Value;
-
-        long[] educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStaff(
-            staffUniqueId
-        );
-
-        var authorizedEdOrgIds = authorizationFilters
-            .Select(f => long.TryParse(f.Value, out long id) ? (long?)id : null)
-            .WhereNotNull()
-            .ToHashSet();
-
-        bool isAuthorized =
-            educationOrgIds.Length > 0 && authorizedEdOrgIds.Any(id => educationOrgIds.Contains(id));
-
-        if (!isAuthorized)
-        {
-            string edOrgIdsFromFilters = string.Join(", ", authorizationFilters.Select(x => $"'{x.Value}'"));
-            string error =
-                $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'.";
-            return new ResourceAuthorizationResult.NotAuthorized([error]);
-        }
-
-        if (isContactSecurable)
-        {
-            if (securityElements.Contact.Length == 0)
-            {
-                string error =
-                    "No 'Contact' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
-                return new ResourceAuthorizationResult.NotAuthorized([error]);
-            }
-            var contactUniqueId = securityElements.Contact[0].Value;
-            var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForContact(
-                contactUniqueId
+            var studentResult = await RelationshipsBasedAuthorizationHelper.ValidateStudentAuthorization(
+                authorizationRepository,
+                securityElements,
+                authorizationFilters
             );
-            var authorizedEdOrgIds = authorizationFilters
-                .Select(f => long.TryParse(f.Value, out var id) ? (long?)id : null)
-                .Where(id => id.HasValue)
-                .Select(id => id!.Value);
-            bool isAuthorized =
-                educationOrgIds != null
-                && educationOrgIds.Length > 0
-                && authorizedEdOrgIds.Any(id => educationOrgIds.Contains(id));
-            if (!isAuthorized)
+            if (studentResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedStudent)
             {
-                string edOrgIdsFromFilters = string.Join(
-                    ", ",
-                    authorizationFilters.Select(x => $"'{x.Value}'")
-                );
-                string error =
-                    $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: 'EducationOrganizationId', 'ContactUniqueId'.";
-                return new ResourceAuthorizationResult.NotAuthorized([error]);
+                errorMessages.AddRange(notAuthorizedStudent.ErrorMessages);
             }
+        }
+
+        if (
+            RelationshipsBasedAuthorizationHelper.HasSecurable(
+                authorizationSecurableInfos,
+                SecurityElementNameConstants.StaffUniqueId
+            )
+        )
+        {
+            var staffResult = await RelationshipsBasedAuthorizationHelper.ValidateStaffAuthorization(
+                authorizationRepository,
+                securityElements,
+                authorizationFilters
+            );
+            if (staffResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedStaff)
+            {
+                errorMessages.AddRange(notAuthorizedStaff.ErrorMessages);
+            }
+        }
+
+        if (
+            RelationshipsBasedAuthorizationHelper.HasSecurable(
+                authorizationSecurableInfos,
+                SecurityElementNameConstants.ContactUniqueId
+            )
+        )
+        {
+            var contactResult = await RelationshipsBasedAuthorizationHelper.ValidateContactAuthorization(
+                authorizationRepository,
+                securityElements,
+                authorizationFilters
+            );
+            if (contactResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedContact)
+            {
+                errorMessages.AddRange(notAuthorizedContact.ErrorMessages);
+            }
+        }
+
+        // Return consolidated result
+        if (errorMessages.Count > 0)
+        {
+            return new ResourceAuthorizationResult.NotAuthorized([.. errorMessages]);
         }
 
         return new ResourceAuthorizationResult.Authorized();
