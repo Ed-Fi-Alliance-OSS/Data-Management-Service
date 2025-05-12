@@ -27,7 +27,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         {
             var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
             _expectedResult = await validator.ValidateAuthorization(
-                new DocumentSecurityElements([], [], [], []),
+                new DocumentSecurityElements([], [], [], [], []),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299501")],
                 [],
                 OperationType.Get
@@ -74,6 +74,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                         ),
                     ],
                     [],
+                    [],
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "255901")],
@@ -111,6 +112,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                             new EducationOrganizationId(289766)
                         ),
                     ],
+                    [],
                     [],
                     []
                 ),
@@ -164,6 +166,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                         ),
                     ],
                     [],
+                    [],
                     []
                 ),
                 [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "567")],
@@ -210,6 +213,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                             new EducationOrganizationId(255901)
                         ),
                     ],
+                    [],
                     [],
                     []
                 ),

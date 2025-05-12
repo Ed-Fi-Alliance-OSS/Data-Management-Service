@@ -40,6 +40,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements([])
                 .WithContactSecurityElements([])
+                .WithStafftSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("Namespace", "$.namespace")
                 .WithEndDocumentPathsMapping()
@@ -98,6 +99,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 .WithEducationOrganizationSecurityElements([("School", "$.schoolReference.schoolId")])
                 .WithStudentSecurityElements([])
                 .WithContactSecurityElements([])
+                .WithStafftSecurityElements([])
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathScalar("EducationOrganization", "$.schoolReference.schoolId")
                 .WithEndDocumentPathsMapping()
@@ -162,6 +164,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 .WithEducationOrganizationSecurityElements([])
                 .WithStudentSecurityElements(["$.studentReference.studentUniqueId"])
                 .WithContactSecurityElements(["$.contactReference.contactUniqueId"])
+                .WithStafftSecurityElements([])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
