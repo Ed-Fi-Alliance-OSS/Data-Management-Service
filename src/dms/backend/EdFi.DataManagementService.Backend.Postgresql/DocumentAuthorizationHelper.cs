@@ -18,7 +18,8 @@ public static class DocumentAuthorizationHelper
 {
     public static async Task<(
         JsonElement? StudentEdOrgIds,
-        JsonElement? ContactEdOrgIds
+        JsonElement? ContactEdOrgIds,
+        JsonElement? StaffEdOrgIds
     )> GetAuthorizationEducationOrganizationIds(
         object request,
         NpgsqlConnection connection,
@@ -71,7 +72,20 @@ public static class DocumentAuthorizationHelper
             );
         }
 
-        return (studentEdOrgIds, contactEdOrgIds);
+        JsonElement? staffEdOrgIds = null;
+        if (
+            HasSecurable(authInfo, SecurityElementNameConstants.StaffUniqueId)
+            && securityElements.Staff?.Length > 0
+        )
+        {
+            staffEdOrgIds = await sqlAction.GetStaffEducationOrganizationAuthorizationEdOrgIds(
+                securityElements.Staff[0].Value,
+                connection,
+                transaction
+            );
+        }
+
+        return (studentEdOrgIds, contactEdOrgIds, staffEdOrgIds);
     }
 
     // Helper method to check if a securable key exists
@@ -117,6 +131,20 @@ public static class DocumentAuthorizationHelper
                 transaction
             );
         }
+
+        if (
+            HasSecurable(securableInfo, SecurityElementNameConstants.StaffUniqueId)
+            && securityElements.Staff?.Length > 0
+        )
+        {
+            await sqlAction.InsertStaffSecurableDocument(
+                securityElements.Staff[0].Value,
+                newDocumentId,
+                documentPartitionKey,
+                connection,
+                transaction
+            );
+        }
     }
 
     public static async Task UpdateSecurableDocument(
@@ -144,6 +172,7 @@ public static class DocumentAuthorizationHelper
                 transaction
             );
         }
+
         if (
             HasSecurable(securableInfo, SecurityElementNameConstants.ContactUniqueId)
             && securityElements.Contact?.Length > 0
@@ -151,6 +180,20 @@ public static class DocumentAuthorizationHelper
         {
             await sqlAction.UpdateContactSecurableDocument(
                 securityElements.Contact[0].Value,
+                documentId,
+                documentPartitionKey,
+                connection,
+                transaction
+            );
+        }
+
+        if (
+            HasSecurable(securableInfo, SecurityElementNameConstants.StaffUniqueId)
+            && securityElements.Staff?.Length > 0
+        )
+        {
+            await sqlAction.UpdateStaffSecurableDocument(
+                securityElements.Staff[0].Value,
                 documentId,
                 documentPartitionKey,
                 connection,

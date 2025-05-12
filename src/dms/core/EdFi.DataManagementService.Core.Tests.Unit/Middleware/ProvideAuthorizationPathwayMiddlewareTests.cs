@@ -61,6 +61,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                     ),
                 ],
                 [new StudentUniqueId("987")],
+                [],
                 []
             );
             _context.Method = RequestMethod.POST;
@@ -181,6 +182,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                     ),
                 ],
                 [new StudentUniqueId("987")],
+                [],
                 []
             );
             _context.Method = RequestMethod.POST;
@@ -217,6 +219,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                     ),
                 ],
                 [],
+                [],
                 []
             );
             _context.Method = RequestMethod.POST;
@@ -248,6 +251,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [],
                 [],
                 [new StudentUniqueId("987")],
+                [],
                 []
             );
             _context.Method = RequestMethod.POST;
@@ -285,7 +289,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                     ),
                 ],
                 [new StudentUniqueId("987")],
-                [new ContactUniqueId("898")]
+                [new ContactUniqueId("898")],
+                []
             );
             _context.Method = RequestMethod.POST;
         }
@@ -369,7 +374,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                     ),
                 ],
                 [],
-                [new ContactUniqueId("898")]
+                [new ContactUniqueId("898")],
+                []
             );
             _context.Method = RequestMethod.POST;
         }
@@ -402,6 +408,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [],
                 [],
                 [new StudentUniqueId("987")],
+                [],
                 []
             );
             _context.Method = RequestMethod.POST;
