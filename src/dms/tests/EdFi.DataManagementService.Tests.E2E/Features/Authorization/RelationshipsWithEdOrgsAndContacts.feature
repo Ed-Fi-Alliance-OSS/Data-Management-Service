@@ -1,7 +1,7 @@
 Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
         Background:
-            Given the claimSet "EdFiAPIPublisherWriter" is authorized with educationOrganizationIds "255901001, 244901"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901001"
               And the system has these "schoolYearTypes"
                   | schoolYear | currentSchoolYear | schoolYearDescription |
                   | 2023       | true              | "year 2023"           |
@@ -12,7 +12,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
     Rule: StudentContactAssociation CRUD is properly authorized
         Background:
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901901, 255901902"
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901, 255901902"
               And the system has these "schools"
                   | schoolId  | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901901 | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
@@ -31,7 +31,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   | { "schoolId": 255901902 } | { "studentUniqueId": "S91112" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
 
         Scenario: 01 Ensure client can create a StudentContactAssociation
-
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901"
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -45,7 +45,21 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   }
                   """
              Then it should respond with 201
+              And the response body is
+                  """
+                  {
+                      "id": "{id}",
+                      "contactReference": {
+                          "contactUniqueId": "C91111"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "S91111"
+                      },
+                      "emergencyContactStatus": true
+                  }
+                  """
         Scenario: 02 Ensure client can retrieve a StudentContactAssociation
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901"
             Given a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -63,6 +77,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              Then it should respond with 200
 
         Scenario: 03 Ensure client can update a StudentContactAssociation
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901902"
             Given a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -93,6 +108,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              Then it should respond with 204
 
         Scenario: 04 Ensure client can delete a StudentContactAssociation
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901902"
             Given  a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -111,6 +127,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              Then it should respond with 204
 
         Scenario: 05 Ensure client get the required validation error when studentContactAssociations is created with empty contactReference
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901902"
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -138,7 +155,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
         Scenario: 06 Ensure invalid claimSet  can not get a studentContactAssociations
-            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with educationOrganizationIds "255901902"
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901902"
              When a GET request is made to "/ed-fi/studentContactAssociations/{id}"
              Then it should respond with 403
               And the response body is
@@ -153,10 +170,9 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                      }
                   """
     Rule: Contact CRUD is properly authorized
-        Background:
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901901"
 
         Scenario: 07 Ensure client can create a Contact
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901"
              When a POST request is made to "/ed-fi/contacts" with
                   """
                   {
@@ -168,7 +184,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              Then it should respond with 201
 
         Scenario: 08 Ensure client can retrieve a contact
-
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901"
              When a POST request is made to "/ed-fi/contacts" with
                   """
                   {
@@ -182,6 +198,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              Then it should respond with 200
 
         Scenario: 09 Ensure client can update a contact
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901"
             Given a POST request is made to "/ed-fi/contacts/" with
                   """
                   {
@@ -203,6 +220,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              Then it should respond with 204
 
         Scenario: 10 Ensure client can delete a contact
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901"
              When a POST request is made to "/ed-fi/contacts" with
                   """
                   {
@@ -226,6 +244,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
              When a DELETE request is made to "/ed-fi/contacts/{id}"
              Then it should respond with 204
         Scenario: 11  Ensure client get the required validation error when contact is created with empty firstName
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901"
              When a POST request is made to "/ed-fi/contacts" with
                   """
                   {
@@ -252,7 +271,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     }
                   """
         Scenario: 12 Ensure invalid claimSet can not get a contacts
-            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with educationOrganizationIds "255901902"
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901902"
              When a GET request is made to "/ed-fi/contacts{id}"
              Then it should respond with 403
               And the response body is
