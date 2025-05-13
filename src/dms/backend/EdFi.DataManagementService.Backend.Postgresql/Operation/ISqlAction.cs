@@ -64,6 +64,8 @@ public interface ISqlAction
         JsonElement edfiDoc,
         JsonElement securityElements,
         JsonElement? studentSchoolAuthorizationEdOrgIds,
+        JsonElement? contactStudentSchoolAuthorizationEdOrgIds,
+        JsonElement? staffEducationOrganizationAuthorizationEdOrgIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
@@ -170,6 +172,18 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
+    public Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
+        string contactUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<JsonElement?> GetStaffEducationOrganizationAuthorizationEdOrgIds(
+        string staffUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
     public Task<int> InsertStudentSecurableDocument(
         string studentUniqueId,
         long documentId,
@@ -178,8 +192,40 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
+    public Task<int> InsertContactSecurableDocument(
+        string contactUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<int> InsertStaffSecurableDocument(
+        string staffUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
     public Task<int> UpdateStudentSecurableDocument(
         string studentUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<int> UpdateContactSecurableDocument(
+        string contactUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<int> UpdateStaffSecurableDocument(
+        string staffUniqueId,
         long documentId,
         short documentPartitionKey,
         NpgsqlConnection connection,

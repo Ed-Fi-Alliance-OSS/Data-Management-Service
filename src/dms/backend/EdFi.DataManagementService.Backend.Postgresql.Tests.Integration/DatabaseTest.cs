@@ -173,6 +173,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         long educationOrganizationId = 0,
         long? parentEducationOrganizationId = default,
         bool isStudentAuthorizationSecurable = false,
+        bool isContactAuthorizationSecurable = false,
+        bool isStaffAuthorizationSecurable = false,
         string? studentUniqueId = default
     )
     {
@@ -187,10 +189,40 @@ public abstract class DatabaseTest : DatabaseTestBase
                 educationOrganizationId,
                 parentEducationOrganizationId
             ),
-            AuthorizationSecurableInfo: isStudentAuthorizationSecurable
-                ? [new AuthorizationSecurableInfo(SecurityElementNameConstants.StudentUniqueId)]
-                : []
+            AuthorizationSecurableInfo: GetAuthorizationSecurableInfos(
+                isStudentAuthorizationSecurable,
+                isContactAuthorizationSecurable,
+                isStaffAuthorizationSecurable
+            )
         );
+    }
+
+    protected static AuthorizationSecurableInfo[] GetAuthorizationSecurableInfos(
+        bool isStudentAuthorizationSecurable,
+        bool isContactAuthorizationSecurable,
+        bool isStaffAuthorizationSecurable
+    )
+    {
+        var authorizationSecurableInfos = new List<AuthorizationSecurableInfo>();
+        if (isStudentAuthorizationSecurable)
+        {
+            authorizationSecurableInfos.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.StudentUniqueId)
+            );
+        }
+        if (isContactAuthorizationSecurable)
+        {
+            authorizationSecurableInfos.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.ContactUniqueId)
+            );
+        }
+        if (isStaffAuthorizationSecurable)
+        {
+            authorizationSecurableInfos.Add(
+                new AuthorizationSecurableInfo(SecurityElementNameConstants.StaffUniqueId)
+            );
+        }
+        return [.. authorizationSecurableInfos];
     }
 
     protected static DocumentInfo CreateDocumentInfo(
@@ -269,12 +301,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         long? parentEducationOrganizationId = null,
         TraceId? traceId = null,
         string projectName = "ProjectName",
-        bool isStudentAuthorizationSecurable = false
+        bool isStudentAuthorizationSecurable = false,
+        bool isContactAuthorizationSecurable = false,
+        bool isStaffAuthorizationSecurable = false
     )
     {
         if (documentSecurityElements == null)
         {
-            documentSecurityElements = new([], [], [], []);
+            documentSecurityElements = new([], [], [], [], []);
         }
         if (traceId == null)
         {
@@ -290,7 +324,9 @@ public abstract class DatabaseTest : DatabaseTestBase
                     isInEducationOrganizationHierarchy,
                     educationOrganizationId,
                     parentEducationOrganizationId,
-                    isStudentAuthorizationSecurable
+                    isStudentAuthorizationSecurable,
+                    isContactAuthorizationSecurable,
+                    isStaffAuthorizationSecurable
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,
@@ -340,12 +376,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         long? parentEducationOrganizationId = null,
         TraceId? traceId = null,
         string projectName = "ProjectName",
-        bool isStudentAuthorizationSecurable = false
+        bool isStudentAuthorizationSecurable = false,
+        bool isContactAuthorizationSecurable = false,
+        bool isStaffAuthorizationSecurable = false
     )
     {
         if (documentSecurityElements == null)
         {
-            documentSecurityElements = new([], [], [], []);
+            documentSecurityElements = new([], [], [], [], []);
         }
 
         if (traceId == null)
@@ -362,7 +400,9 @@ public abstract class DatabaseTest : DatabaseTestBase
                     isInEducationOrganizationHierarchy,
                     educationOrganizationId,
                     parentEducationOrganizationId,
-                    isStudentAuthorizationSecurable
+                    isStudentAuthorizationSecurable,
+                    isContactAuthorizationSecurable,
+                    isStaffAuthorizationSecurable
                 ),
                 DocumentInfo = CreateDocumentInfo(
                     referentialIdGuid,

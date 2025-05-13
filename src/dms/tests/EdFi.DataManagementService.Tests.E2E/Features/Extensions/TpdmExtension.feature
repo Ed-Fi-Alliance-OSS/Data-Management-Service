@@ -73,9 +73,9 @@ Feature: Tpdm extension resources and descriptors
                       "effectiveEndDate": "2024-05-14"
                   }
                   """
-        @addwait
+
         Scenario: 03 Ensure clients can retrieve a descriptor by requesting through a valid codeValue
-             Given a POST request is made to "/tpdm/accreditationStatusDescriptors" with
+            Given a POST request is made to "/tpdm/accreditationStatusDescriptors" with
                   """
                   {
                       "codeValue": "Not Accredited",
@@ -105,7 +105,7 @@ Feature: Tpdm extension resources and descriptors
                   """
 
         Scenario: 04 Ensure clients can delete a descriptor
-             Given a POST request is made to "/tpdm/accreditationStatusDescriptors" with
+            Given a POST request is made to "/tpdm/accreditationStatusDescriptors" with
                   """
                   {
                       "codeValue": "Delete Accredited",
@@ -196,9 +196,9 @@ Feature: Tpdm extension resources and descriptors
                       "lastSurname": "LNUpdated"
                   }
                   """
-        @addwait
+
         Scenario: 07 Ensure clients can query a resource
-             Given a POST request is made to "/tpdm/candidates" with
+            Given a POST request is made to "/tpdm/candidates" with
                   """
                   {
                       "candidateIdentifier": "10000414",
@@ -224,7 +224,7 @@ Feature: Tpdm extension resources and descriptors
                   """
 
         Scenario: 08 Ensure clients can delete a resource
-             Given a POST request is made to "/tpdm/candidates" with
+            Given a POST request is made to "/tpdm/candidates" with
                   """
                   {
                       "candidateIdentifier": "10000415",

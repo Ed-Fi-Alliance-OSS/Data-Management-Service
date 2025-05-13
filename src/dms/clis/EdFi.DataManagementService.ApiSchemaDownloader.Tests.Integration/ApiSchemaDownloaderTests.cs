@@ -87,7 +87,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
             {
                 // Arrange
                 string packageId = "EdFi.DataStandard52.ApiSchema";
-                string packageVersion = "1.0.175";
+                string packageVersion = "1.0.205";
                 string feedUrl =
                     "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 

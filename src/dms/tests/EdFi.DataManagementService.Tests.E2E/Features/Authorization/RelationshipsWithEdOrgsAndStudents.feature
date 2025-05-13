@@ -97,7 +97,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a GET request is made to "/ed-fi/studentSchoolAssociations/{id}"
              Then it should respond with 403
 
-        @addwait
         Scenario: 05 Ensure client can only query authorized StudentSchoolAssociation
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
                   """
@@ -314,7 +313,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a GET request is made to "/ed-fi/students/{UnassociatedStudentId}"
              Then it should respond with 403
 
-        @addwait
         Scenario: 14 Ensure client can only query authorized Students
              When a GET request is made to "/ed-fi/students"
              Then it should respond with 200
@@ -517,7 +515,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a GET request is made to "/ed-fi/PostSecondaryEvents/{id}"
              Then it should respond with 403
 
-        @addwait
         Scenario: 25 Ensure client can only query authorized Student-securables
             # Set up a Student-securable for an unassociated Student
             Given a POST request is made to "/ed-fi/studentSchoolAssociations" with
@@ -809,7 +806,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
         #           """
         #      Then it should respond with 403
 
-        @addwait
         Scenario: 33 Ensure client can no longer CRUD a Student and a Student-securable after the StudentSchoolAssociation's SchoolId changed
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901931, 255901932"
              When a PUT request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}" with
@@ -895,7 +891,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
              Then it should respond with 204
 
-        @addwait
         Scenario: 34 Ensure client can no longer CRUD a Student and a Student-securable after the StudentSchoolAssociation is deleted
              When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
              Then it should respond with 204
@@ -961,7 +956,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/postSecondaryEvents/{PostSecondaryEventId}"
              Then it should respond with 403
 
-        @addwait
         Scenario: 35 Ensure client can CRUD a Student and a Student-securable after the StudentSchoolAssociation is re-created
              When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
              Then it should respond with 204
@@ -1315,14 +1309,14 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | localEducationAgencyId | nameOfInstitution | stateEducationAgencyReference   | categories                                                                                                          | localEducationAgencyCategoryDescriptor                       |
                   | 301                    | Test LEA          | { "stateEducationAgencyId": 3 } | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
               And the system has these "schools"
-                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference    |
-                  | 30101    | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 301} |
+                  | schoolId    | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference    |
+                  | 30101999999 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 301} |
               And the system has these "students"
                   | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | "11111"         | student-fn | student-ln  | 2008-01-01 |
               And the system has these "studentSchoolAssociations"
-                  | studentReference               | schoolReference       | entryGradeLevelDescriptor                          | entryDate  | exitGradeLevel                                     | exitWithdrawTypeDescriptor                                    |
-                  | { "studentUniqueId": "11111" } | { "schoolId": 30101 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew" |
+                  | studentReference               | schoolReference             | entryGradeLevelDescriptor                          | entryDate  | exitGradeLevel                                     | exitWithdrawTypeDescriptor                                    |
+                  | { "studentUniqueId": "11111" } | { "schoolId": 30101999999 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | "uri://ed-fi.org/ExitWithdrawTypeDescriptor#Student withdrew" |
         @addrelationships
         Scenario: 41 Ensure client can not delete or get a PostSecondaryEvent with out student school association
 
@@ -1384,7 +1378,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   """
 
     Rule: Edge cases are properly authorized
-        @addwait
         Scenario: 42 Ensure client can CRUD a PostSecondaryEvent using the NoFurtherAuthorizationRequired strategy
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901101, 255901102"
               And the system has these "schools"
@@ -1448,7 +1441,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/PostSecondaryEvents/{id}"
              Then it should respond with 204
 
-        @addwait
         Scenario: 43 Ensure client without education organization access can CRUD a PostSecondaryEvent using the NoFurtherAuthorizationRequired strategy
             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "255901201, 255901202"
               And the system has these "schools"
@@ -1513,7 +1505,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/PostSecondaryEvents/{id}"
              Then it should respond with 204
 
-        @addwait
         Scenario: 44 Ensure client with LEA access can CRUD a PostSecondaryEvent
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "25590"
               And the system has these "localEducationAgencies"

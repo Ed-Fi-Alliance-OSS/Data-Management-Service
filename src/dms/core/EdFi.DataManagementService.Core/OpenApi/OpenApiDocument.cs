@@ -19,7 +19,11 @@ public class OpenApiDocument(ILogger _logger)
     /// Inserts exts from extension OpenAPI fragments into the _ext section of the corresponding
     /// core OpenAPI endpoint.
     /// </summary>
-    private void InsertExts(JsonObject openApiExtensionFragmentList, JsonNode openApiCoreResources)
+    private void InsertExts(
+        JsonObject openApiExtensionFragmentList,
+        JsonNode openApiCoreResources,
+        string projectName
+    )
     {
         foreach ((string componentSchemaName, JsonNode? extObject) in openApiExtensionFragmentList)
         {
@@ -39,15 +43,60 @@ public class OpenApiDocument(ILogger _logger)
                     $"OpenAPI extension fragment expects Core to have '$.components.schemas.{componentSchemaName}.properties'. Extension fragment validation failed?"
                 );
 
-            // If _ext has already been added by another extension, we don't support a second one
-            if (locationForExt["_ext"] != null)
+            string extensionSchemaName = $"{componentSchemaName}Extension";
+
+            // Add _ext if is not already there
+            if (locationForExt["_ext"] == null)
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second _ext to '$.components.schemas.{componentSchemaName}.properties', which is not supported. Extension fragment validation failed?"
+                locationForExt.Add(
+                    "_ext",
+                    JsonNode.Parse($"{{ \"$ref\": \"#/components/schemas/{extensionSchemaName}\" }}")
                 );
             }
 
-            locationForExt.Add("_ext", extObject.DeepClone());
+            JsonObject componentsSchemas =
+                openApiCoreResources.SelectNodeFromPath("$.components.schemas", _logger)?.AsObject()
+                ?? throw new InvalidOperationException(
+                    $"OpenAPI core resources missing 'components.schemas'."
+                );
+
+            if (!componentsSchemas.ContainsKey(extensionSchemaName))
+            {
+                componentsSchemas.Add(
+                    extensionSchemaName,
+                    new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }
+                );
+            }
+
+            JsonObject extensionSchema =
+                componentsSchemas[extensionSchemaName]?.AsObject()
+                ?? throw new InvalidOperationException(
+                    $"Extension schema '{extensionSchemaName}' is not an object."
+                );
+
+            JsonObject extensionProperties =
+                extensionSchema["properties"]?.AsObject()
+                ?? throw new InvalidOperationException(
+                    $"Extension schema '{extensionSchemaName}' missing 'properties'."
+                );
+
+            // Name of the specific project schema
+            string projectExtensionSchemaName = $"{projectName}_{componentSchemaName}Extension";
+
+            // Add reference to the specific project schema
+            if (!extensionProperties.ContainsKey(projectName))
+            {
+                extensionProperties.Add(
+                    projectName,
+                    JsonNode.Parse($"{{ \"$ref\": \"#/components/schemas/{projectExtensionSchemaName}\" }}")
+                );
+            }
+
+            // Add the specific project schema if it doesn't exist
+            if (!componentsSchemas.ContainsKey(projectExtensionSchemaName))
+            {
+                componentsSchemas.Add(projectExtensionSchemaName, extObject.DeepClone());
+            }
         }
     }
 
@@ -159,12 +208,15 @@ public class OpenApiDocument(ILogger _logger)
             // If tag has already been added by another extension, we don't support a second one
             if (existingTagNames.Contains(tagObjectName))
             {
-                throw new InvalidOperationException(
-                    $"OpenAPI extension fragment tried to add a second tag named '{tagObjectName}', which is not supported. Extension fragment validation failed?"
+                _logger.LogDebug(
+                    "OpenAPI extension fragment tried to add a second tag named '{TagObjectName}', skipping.",
+                    tagObjectName
                 );
             }
-
-            globalTags.Add(newTagObject.DeepClone());
+            else
+            {
+                globalTags.Add(newTagObject.DeepClone());
+            }
         }
     }
 
@@ -208,55 +260,6 @@ public class OpenApiDocument(ILogger _logger)
                 _logger
             )
             .DeepClone();
-
-        #region [DMS-597] Workaround for DMS-628 Descriptor OpenApi Schemas should have the 'Descriptor' suffix
-        if (documentSection == DocumentSection.Descriptor)
-        {
-            var openApiJsonSpec = openApiSpecification.ToJsonString();
-            foreach (
-                var schemaKey in openApiSpecification["components"]!["schemas"]!
-                    .AsObject()
-                    .Select(schema => schema.Key)
-            )
-            {
-                openApiJsonSpec = openApiJsonSpec.Replace(schemaKey, $"{schemaKey}Descriptor");
-            }
-
-            openApiSpecification = JsonNode.Parse(openApiJsonSpec)!;
-        }
-        #endregion
-
-        #region [DMS-597] Workaround for DMS-633 SchoolYearType shouldn't be inlined in the OpenApi spec
-        if (documentSection == DocumentSection.Resource)
-        {
-            var resourceWithInlinedSchoolYearType = openApiSpecification["components"]!["schemas"]!
-                .AsObject()
-                .Select(schema =>
-                {
-                    var properties = schema
-                        .Value!["properties"]
-                        ?.AsObject()
-                        .Where(property =>
-                            property.Key == "schoolYearTypeReference" && property.Value!["properties"] != null
-                        )
-                        .ToList();
-
-                    return (schema, properties);
-                })
-                .Where(schema => schema.properties?.Any() == true)
-                .ToList();
-
-            foreach (var resource in resourceWithInlinedSchoolYearType)
-            {
-                foreach (var property in resource.properties!)
-                {
-                    resource.schema.Value!["properties"]![property.Key] = JsonNode.Parse(
-                        $"{{ \"$ref\": \"#/components/schemas/EdFi_SchoolYearTypeReference\" }}"
-                    );
-                }
-            }
-        }
-        #endregion
 
         #region [DMS-597] Workaround for DMS-627 Array references should not be partially inlined in the OpenApi spec
         if (documentSection == DocumentSection.Resource)
@@ -313,11 +316,19 @@ public class OpenApiDocument(ILogger _logger)
                 documentSection.ToString()
             );
 
+            string projectName =
+                (
+                    extensionApiSchemaRootNode
+                        .SelectNodeFromPath("$.projectSchema.projectName", _logger)
+                        ?.GetValue<string>()
+                )?.ToLower() ?? string.Empty;
+
             foreach (JsonNode openApiExtensionFragment in openApiExtensionFragments)
             {
                 InsertExts(
                     openApiExtensionFragment.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
-                    openApiSpecification
+                    openApiSpecification,
+                    projectName
                 );
 
                 InsertNewPaths(

@@ -41,6 +41,12 @@ public class SqlAction() : ISqlAction
             StudentSchoolAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
                 reader.GetOrdinal("StudentSchoolAuthorizationEdOrgIds")
             ),
+            ContactStudentSchoolAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
+                reader.GetOrdinal("ContactStudentSchoolAuthorizationEdOrgIds")
+            ),
+            StaffEducationOrganizationAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
+                reader.GetOrdinal("StaffEducationOrganizationAuthorizationEdOrgIds")
+            ),
             CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
             LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
@@ -225,12 +231,12 @@ public class SqlAction() : ISqlAction
         await using var command = new NpgsqlCommand(
             @"
             WITH Documents AS (
-            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, StudentSchoolAuthorizationEdOrgIds, LastModifiedTraceId)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, StudentSchoolAuthorizationEdOrgIds, ContactStudentSchoolAuthorizationEdOrgIds, StaffEducationOrganizationAuthorizationEdOrgIds, LastModifiedTraceId)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
               RETURNING Id
             )
             INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
-              SELECT $11, $12, Id, $1 FROM Documents RETURNING DocumentId;
+              SELECT $13, $14, Id, $1 FROM Documents RETURNING DocumentId;
             ",
             connection,
             transaction
@@ -252,6 +258,18 @@ public class SqlAction() : ISqlAction
                         ? document.StudentSchoolAuthorizationEdOrgIds
                         : DBNull.Value,
                 },
+                new()
+                {
+                    Value = document.ContactStudentSchoolAuthorizationEdOrgIds.HasValue
+                        ? document.ContactStudentSchoolAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
+                new()
+                {
+                    Value = document.StaffEducationOrganizationAuthorizationEdOrgIds.HasValue
+                        ? document.StaffEducationOrganizationAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
                 new() { Value = document.LastModifiedTraceId },
                 new() { Value = referentialPartitionKey },
                 new() { Value = referentialId },
@@ -271,6 +289,8 @@ public class SqlAction() : ISqlAction
         JsonElement edfiDoc,
         JsonElement securityElements,
         JsonElement? studentSchoolAuthorizationEdOrgIds,
+        JsonElement? contactStudentSchoolAuthorizationEdOrgIds,
+        JsonElement? staffEducationOrganizationAuthorizationEdOrgIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
@@ -278,7 +298,13 @@ public class SqlAction() : ISqlAction
     {
         await using var command = new NpgsqlCommand(
             @"UPDATE dms.Document
-              SET EdfiDoc = $1, LastModifiedAt = clock_timestamp(), LastModifiedTraceId = $4, SecurityElements = $5, StudentSchoolAuthorizationEdOrgIds = $6
+              SET EdfiDoc = $1,
+                LastModifiedAt = clock_timestamp(),
+                LastModifiedTraceId = $4,
+                SecurityElements = $5,
+                StudentSchoolAuthorizationEdOrgIds = $6,
+                ContactStudentSchoolAuthorizationEdOrgIds = $7,
+                StaffEducationOrganizationAuthorizationEdOrgIds = $8
               WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
               RETURNING Id;",
             connection,
@@ -296,6 +322,18 @@ public class SqlAction() : ISqlAction
                 {
                     Value = studentSchoolAuthorizationEdOrgIds.HasValue
                         ? studentSchoolAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
+                new()
+                {
+                    Value = contactStudentSchoolAuthorizationEdOrgIds.HasValue
+                        ? contactStudentSchoolAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
+                new()
+                {
+                    Value = staffEducationOrganizationAuthorizationEdOrgIds.HasValue
+                        ? staffEducationOrganizationAuthorizationEdOrgIds
                         : DBNull.Value,
                 },
             },
@@ -765,6 +803,66 @@ public class SqlAction() : ISqlAction
             : JsonSerializer.Deserialize<JsonElement>((string)result);
     }
 
+    public async Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
+        string contactUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $"""
+                SELECT jsonb_agg(DISTINCT value)
+                FROM (
+                    SELECT DISTINCT jsonb_array_elements(ContactStudentSchoolAuthorizationEducationOrganizationIds) AS value
+                    FROM dms.ContactStudentSchoolAuthorization
+                    WHERE ContactUniqueId = $1
+                ) subquery;
+            """,
+            connection,
+            transaction
+        )
+        {
+            Parameters = { new() { Value = contactUniqueId } },
+        };
+
+        await command.PrepareAsync();
+        object? result = await command.ExecuteScalarAsync();
+
+        return result == DBNull.Value || result == null
+            ? null
+            : JsonSerializer.Deserialize<JsonElement>((string)result);
+    }
+
+    public async Task<JsonElement?> GetStaffEducationOrganizationAuthorizationEdOrgIds(
+        string staffUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $"""
+                SELECT jsonb_agg(DISTINCT value)
+                FROM (
+                    SELECT DISTINCT jsonb_array_elements(staffeducationorganizationauthorizationedorgids) AS value
+                    FROM dms.StaffEducationOrganizationAuthorization
+                    WHERE StaffUniqueId = $1
+                ) subquery;
+            """,
+            connection,
+            transaction
+        )
+        {
+            Parameters = { new() { Value = staffUniqueId } },
+        };
+
+        await command.PrepareAsync();
+        object? result = await command.ExecuteScalarAsync();
+
+        return result == DBNull.Value || result == null
+            ? null
+            : JsonSerializer.Deserialize<JsonElement>((string)result);
+    }
+
     public async Task<int> InsertStudentSecurableDocument(
         string studentUniqueId,
         long documentId,
@@ -792,6 +890,60 @@ public class SqlAction() : ISqlAction
         return await command.ExecuteNonQueryAsync();
     }
 
+    public async Task<int> InsertContactSecurableDocument(
+        string contactUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"INSERT INTO dms.contactsecurabledocument(
+	            contactuniqueid, contactsecurabledocumentid, contactsecurabledocumentpartitionkey)
+	          VALUES ($1, $2, $3);",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = contactUniqueId },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<int> InsertStaffSecurableDocument(
+        string staffUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"INSERT INTO dms.staffsecurabledocument(
+	            staffuniqueid, staffsecurabledocumentid, staffsecurabledocumentpartitionkey)
+	          VALUES ($1, $2, $3);",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = staffUniqueId },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
+
     public async Task<int> UpdateStudentSecurableDocument(
         string studentUniqueId,
         long documentId,
@@ -811,6 +963,60 @@ public class SqlAction() : ISqlAction
             Parameters =
             {
                 new() { Value = studentUniqueId },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<int> UpdateContactSecurableDocument(
+        string contactUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"UPDATE dms.contactsecurabledocument
+	            SET contactuniqueid = $1
+                WHERE contactsecurabledocumentid = $2 AND contactsecurabledocumentpartitionkey = $3",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = contactUniqueId },
+                new() { Value = documentId },
+                new() { Value = documentPartitionKey },
+            },
+        };
+        await command.PrepareAsync();
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<int> UpdateStaffSecurableDocument(
+        string staffUniqueId,
+        long documentId,
+        short documentPartitionKey,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $@"UPDATE dms.staffsecurabledocument
+	            SET staffuniqueid = $1
+                WHERE staffsecurabledocumentid = $2 AND staffsecurabledocumentpartitionkey = $3",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = staffUniqueId },
                 new() { Value = documentId },
                 new() { Value = documentPartitionKey },
             },

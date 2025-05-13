@@ -19,12 +19,28 @@ using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
     [Binding]
-    public partial class StepDefinitions(
-        PlaywrightContext _playwrightContext,
-        TestLogger _logger,
-        ScenarioContext _scenarioContext
-    )
+    public partial class StepDefinitions
     {
+        private readonly PlaywrightContext _playwrightContext;
+        private readonly TestLogger _logger;
+        private readonly ScenarioContext _scenarioContext;
+        private readonly FeatureContext _featureContext;
+
+        public StepDefinitions(
+            PlaywrightContext playwrightContext,
+            TestLogger logger,
+            ScenarioContext scenarioContext,
+            FeatureContext featureContext
+        )
+        {
+            _playwrightContext = playwrightContext;
+            _logger = logger;
+            _scenarioContext = scenarioContext;
+            _featureContext = featureContext;
+
+            _featureContext.TryAdd("_waitOnNextQuery", false);
+        }
+
         private IAPIResponse _apiResponse = null!;
         private string _id = string.Empty;
         private string _location = string.Empty;
@@ -153,6 +169,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"{baseUrl}/{descriptor["descriptorName"]}",
                     new() { DataObject = descriptor, Headers = GetHeaders() }
                 )!;
+                _featureContext["_waitOnNextQuery"] = true;
                 _apiResponses.Add(response);
 
                 response
@@ -174,6 +191,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     dataUrl,
                     new() { Data = body, Headers = GetHeaders() }
                 )!;
+                _featureContext["_waitOnNextQuery"] = true;
                 _apiResponses.Add(response);
 
                 response
@@ -207,8 +225,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _ = await ProcessDataTable(entityType, dataTable);
 
             _logger.log.Information($"Responses for Given(the system has these {entityType})");
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("the system has these descriptors")]
@@ -227,14 +243,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     $"{baseUrl}/{descriptorName}",
                     new() { DataObject = descriptorBody, Headers = GetHeaders() }
                 )!;
+                _featureContext["_waitOnNextQuery"] = true;
 
                 string body = apiResponse.TextAsync().Result;
                 _logger.log.Information(body);
 
                 apiResponse.Status.Should().BeOneOf(OkCreated, $"Request failed:\n{body}");
             }
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         private readonly int[] OkCreated = [200, 201];
@@ -297,10 +312,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
+            _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         private string extractDataFromResponseAndReturnIdIfAvailable(IAPIResponse apiResponse)
@@ -345,10 +360,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = httpHeaders }
             )!;
+            _featureContext["_waitOnNextQuery"] = true;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a POST request is made for dependent resource {string} with")]
@@ -359,9 +374,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
+            _featureContext["_waitOnNextQuery"] = true;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a PUT request is made to {string} with")]
@@ -382,9 +397,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
+            _featureContext["_waitOnNextQuery"] = true;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [When("a PUT request is made to referenced resource {string} with")]
@@ -399,6 +414,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Data = body, Headers = GetHeaders() }
             )!;
+            _featureContext["_waitOnNextQuery"] = true;
+
             if (_apiResponse.Status != 204)
             {
                 var result = _apiResponse.TextAsync().Result;
@@ -417,7 +434,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                     );
                 }
             }
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
         }
 
         [Given("a DELETE request is made to {string}")]
@@ -432,8 +448,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
+            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a relationship with {string} is deleted")]
@@ -446,6 +461,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
+            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a DELETE request is made to referenced resource {string}")]
@@ -457,7 +473,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
-            WaitForOpenSearch(_scenarioContext.ScenarioInfo.Tags);
+            _featureContext["_waitOnNextQuery"] = true;
         }
 
         [When("a GET request is made to {string}")]
@@ -468,6 +484,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
             _logger.log.Information(url);
+            await WaitForOpenSearch(url);
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 url,
                 new() { Headers = GetHeaders() }
@@ -886,11 +903,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             return input;
         }
 
-        private void WaitForOpenSearch(string[]? waitTags)
+        private async Task WaitForOpenSearch(string requestUrl)
         {
-            if (waitTags != null && waitTags.Contains("addwait") && _openSearchEnabled)
+            if (_openSearchEnabled && _featureContext.Get<bool>("_waitOnNextQuery"))
             {
-                Thread.Sleep(5000);
+                var isGetById = Guid.TryParse(requestUrl.Split('/')[^1], out Guid _);
+                if (!isGetById)
+                {
+                    // Sleep before executing GetAll requests so that OpenSearch gets up to date
+                    await Task.Delay(5000);
+                    _featureContext["_waitOnNextQuery"] = false;
+                }
             }
         }
 

@@ -19,25 +19,25 @@ public class OpenApiDocumentTests
     {
         JsonObject descriptorSchemas = new()
         {
-            ["EdFi_AbsenceEventCategory"] = new JsonObject
+            ["EdFi_AbsenceEventCategoryDescriptor"] = new JsonObject
             {
                 ["description"] = "An Ed-Fi Descriptor",
                 ["properties"] = new JsonObject(),
                 ["type"] = "string",
             },
-            ["EdFi_AcademicHonorCategory"] = new JsonObject
+            ["EdFi_AcademicHonorCategoryDescriptor"] = new JsonObject
             {
                 ["description"] = "An Ed-Fi Descriptor",
                 ["properties"] = new JsonObject(),
                 ["type"] = "string",
             },
-            ["EdFi_AcademicSubject"] = new JsonObject
+            ["EdFi_AcademicSubjectDescriptor"] = new JsonObject
             {
                 ["description"] = "An Ed-Fi Descriptor",
                 ["properties"] = new JsonObject(),
                 ["type"] = "string",
             },
-            ["EdFi_Accommodation"] = new JsonObject
+            ["EdFi_AccommodationDescriptor"] = new JsonObject
             {
                 ["description"] = "An Ed-Fi Descriptor",
                 ["properties"] = new JsonObject(),
@@ -105,12 +105,32 @@ public class OpenApiDocumentTests
         };
 
         JsonArray tags = [];
-        tags.Add(new JsonObject { ["name"] = "academicWeeks", ["description"] = "AcademicWeeks Description" });
-        tags.Add(new JsonObject { ["name"] = "accountabilityRating", ["description"] = "AccountabilityRatings Description" });
+        tags.Add(
+            new JsonObject { ["name"] = "academicWeeks", ["description"] = "AcademicWeeks Description" }
+        );
+        tags.Add(
+            new JsonObject
+            {
+                ["name"] = "accountabilityRating",
+                ["description"] = "AccountabilityRatings Description",
+            }
+        );
 
         JsonArray descriptorsTags = [];
-        descriptorsTags.Add(new JsonObject { ["name"] = "academicSubjects", ["description"] = "AcademicSubjects Descriptors Description" });
-        descriptorsTags.Add(new JsonObject { ["name"] = "accommodations", ["description"] = "Accommodations Descriptors Description" });
+        descriptorsTags.Add(
+            new JsonObject
+            {
+                ["name"] = "academicSubjects",
+                ["description"] = "AcademicSubjects Descriptors Description",
+            }
+        );
+        descriptorsTags.Add(
+            new JsonObject
+            {
+                ["name"] = "accommodations",
+                ["description"] = "Accommodations Descriptors Description",
+            }
+        );
 
         return new ApiSchemaBuilder()
             .WithStartProject("ed-fi", "5.0.0")
@@ -171,18 +191,34 @@ public class OpenApiDocumentTests
 
         JsonArray newTags = [];
         newTags.Add(
-            new JsonObject { ["name"] = "ExtensionTagName1", ["description"] = "First Extension Description1" }
+            new JsonObject
+            {
+                ["name"] = "ExtensionTagName1",
+                ["description"] = "First Extension Description1",
+            }
         );
         newTags.Add(
-            new JsonObject { ["name"] = "ExtensionTagName2", ["description"] = "First Extension Description2" }
+            new JsonObject
+            {
+                ["name"] = "ExtensionTagName2",
+                ["description"] = "First Extension Description2",
+            }
         );
 
         JsonArray descriptorNewTags = [];
         newTags.Add(
-            new JsonObject { ["name"] = "ExtensionTagName1", ["description"] = "First Extension Descriptor Description1" }
+            new JsonObject
+            {
+                ["name"] = "ExtensionTagName1",
+                ["description"] = "First Extension Descriptor Description1",
+            }
         );
         newTags.Add(
-            new JsonObject { ["name"] = "ExtensionTagName2", ["description"] = "First Extension Descriptor Description2" }
+            new JsonObject
+            {
+                ["name"] = "ExtensionTagName2",
+                ["description"] = "First Extension Descriptor Description2",
+            }
         );
 
         return new ApiSchemaBuilder()
@@ -249,18 +285,34 @@ public class OpenApiDocumentTests
 
         JsonArray newTags = [];
         newTags.Add(
-            new JsonObject { ["name"] = "ExtensionTagName3", ["description"] = "Second Extension Description3" }
+            new JsonObject
+            {
+                ["name"] = "ExtensionTagName3",
+                ["description"] = "Second Extension Description3",
+            }
         );
         newTags.Add(
-            new JsonObject { ["name"] = "ExtensionTagName4", ["description"] = "Second Extension Description4" }
+            new JsonObject
+            {
+                ["name"] = "ExtensionTagName4",
+                ["description"] = "Second Extension Description4",
+            }
         );
 
         JsonArray descriptorNewTags = [];
         newTags.Add(
-            new JsonObject { ["name"] = "ExtensionTagName3", ["description"] = "Second Extension Descriptor Description3" }
+            new JsonObject
+            {
+                ["name"] = "ExtensionTagName3",
+                ["description"] = "Second Extension Descriptor Description3",
+            }
         );
         newTags.Add(
-            new JsonObject { ["name"] = "ExtensionTagName4", ["description"] = "Second Extension Descriptor Description4" }
+            new JsonObject
+            {
+                ["name"] = "ExtensionTagName4",
+                ["description"] = "Second Extension Descriptor Description4",
+            }
         );
 
         return new ApiSchemaBuilder()
@@ -301,61 +353,61 @@ public class OpenApiDocumentTests
         public void It_should_be_the_simple_resources_result()
         {
             string expectedResult = """
-            {
-              "components": {
-                "schemas": {
-                  "EdFi_AcademicWeek": {
-                    "description": "AcademicWeek description",
-                    "properties": {},
-                    "type": "string"
-                  },
-                  "EdFi_AccountabilityRating": {
-                    "description": "AccountabilityRating description",
-                    "properties": {},
-                    "type": "string"
-                  },
-                  "EdFi_School": {
-                    "description": "School description",
-                    "properties": {},
-                    "type": "string"
-                  },
-                  "EdFi_SurveyResponse": {
-                    "description": "SurveyResponse description",
-                    "properties": {},
-                    "type": "string"
-                  }
-                }
-              },
-              "paths": {
-                "/ed-fi/academicWeeks": {
-                  "get": {
-                    "description": "academicWeek get description"
-                  },
-                  "post": {
-                    "description": "academicWeek post description"
-                  }
-                },
-                "/ed-fi/academicWeeks/{id}": {
-                  "get": {
-                    "description": "academicWeek id get description"
-                  },
-                  "delete": {
-                    "description": "academicWeek delete description"
-                  }
-                }
-              },
-              "tags": [
                 {
-                  "name": "academicWeeks",
-                  "description": "AcademicWeeks Description"
-                },
-                {
-                  "name": "accountabilityRating",
-                  "description": "AccountabilityRatings Description"
+                  "components": {
+                    "schemas": {
+                      "EdFi_AcademicWeek": {
+                        "description": "AcademicWeek description",
+                        "properties": {},
+                        "type": "string"
+                      },
+                      "EdFi_AccountabilityRating": {
+                        "description": "AccountabilityRating description",
+                        "properties": {},
+                        "type": "string"
+                      },
+                      "EdFi_School": {
+                        "description": "School description",
+                        "properties": {},
+                        "type": "string"
+                      },
+                      "EdFi_SurveyResponse": {
+                        "description": "SurveyResponse description",
+                        "properties": {},
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "paths": {
+                    "/ed-fi/academicWeeks": {
+                      "get": {
+                        "description": "academicWeek get description"
+                      },
+                      "post": {
+                        "description": "academicWeek post description"
+                      }
+                    },
+                    "/ed-fi/academicWeeks/{id}": {
+                      "get": {
+                        "description": "academicWeek id get description"
+                      },
+                      "delete": {
+                        "description": "academicWeek delete description"
+                      }
+                    }
+                  },
+                  "tags": [
+                    {
+                      "name": "academicWeeks",
+                      "description": "AcademicWeeks Description"
+                    },
+                    {
+                      "name": "accountabilityRating",
+                      "description": "AccountabilityRatings Description"
+                    }
+                  ]
                 }
-              ]
-            }
-            """;
+                """;
 
             string result = openApiResourcesResult.ToJsonString(new() { WriteIndented = true });
 
@@ -452,13 +504,12 @@ public class OpenApiDocumentTests
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
             openApiResourcesResult = openApiDocument.CreateDocument(
                 new(coreSchemaRootNode, extensionSchemaRootNodes),
-                 OpenApiDocument.DocumentSection.Resource
+                OpenApiDocument.DocumentSection.Resource
             );
             openApiDescriptorsResult = openApiDocument.CreateDocument(
-              new(coreSchemaRootNode, extensionSchemaRootNodes),
-              OpenApiDocument.DocumentSection.Descriptor
+                new(coreSchemaRootNode, extensionSchemaRootNodes),
+                OpenApiDocument.DocumentSection.Descriptor
             );
-
         }
 
         [Test]
@@ -500,11 +551,7 @@ public class OpenApiDocumentTests
                   }
                 }
                 """;
-            AssertResults(
-                "$.paths",
-                openApiResourcesResult,
-                expectedResult
-            );
+            AssertResults("$.paths", openApiResourcesResult, expectedResult);
         }
 
         [Test]
@@ -516,8 +563,7 @@ public class OpenApiDocumentTests
                     "description": "AcademicWeek description",
                     "properties": {
                       "_ext": {
-                        "description": "ext AcademicWeek description",
-                        "type": "string"
+                        "$ref": "#/components/schemas/EdFi_AcademicWeekExtension"
                       }
                     },
                     "type": "string"
@@ -531,8 +577,7 @@ public class OpenApiDocumentTests
                     "description": "School description",
                     "properties": {
                       "_ext": {
-                        "description": "ext School description",
-                        "type": "string"
+                        "$ref": "#/components/schemas/EdFi_SchoolExtension"
                       }
                     },
                     "type": "string"
@@ -542,8 +587,32 @@ public class OpenApiDocumentTests
                     "properties": {},
                     "type": "string"
                   },
+                  "EdFi_AcademicWeekExtension": {
+                    "type": "object",
+                    "properties": {
+                      "tpdm": {
+                        "$ref": "#/components/schemas/tpdm_EdFi_AcademicWeekExtension"
+                      }
+                    }
+                  },
+                  "tpdm_EdFi_AcademicWeekExtension": {
+                    "description": "ext AcademicWeek description",
+                    "type": "string"
+                  },
                   "TPDM_Credential": {
                     "description": "TPDM credential description",
+                    "type": "string"
+                  },
+                  "EdFi_SchoolExtension": {
+                    "type": "object",
+                    "properties": {
+                      "tpdm": {
+                        "$ref": "#/components/schemas/tpdm_EdFi_SchoolExtension"
+                      }
+                    }
+                  },
+                  "tpdm_EdFi_SchoolExtension": {
+                    "description": "ext School description",
                     "type": "string"
                   },
                   "TPDM_Candidate": {
@@ -553,104 +622,99 @@ public class OpenApiDocumentTests
                 }
                 """;
 
-            AssertResults(
-                "$.components.schemas",
-                openApiResourcesResult,
-                expectedResult
-            );
+            AssertResults("$.components.schemas", openApiResourcesResult, expectedResult);
         }
 
         [Test]
         public void It_should_merge_in_openApiCoreResources_tags()
         {
             string expectedResult = """
-             [
-               {
-                 "name": "academicWeeks",
-                 "description": "AcademicWeeks Description"
-               },
-               {
-                 "name": "accountabilityRating",
-                 "description": "AccountabilityRatings Description"
-               },
-               {
-                 "name": "ExtensionTagName1",
-                 "description": "First Extension Description1"
-               },
-               {
-                 "name": "ExtensionTagName2",
-                 "description": "First Extension Description2"
-               },
-               {
-                 "name": "ExtensionTagName1",
-                 "description": "First Extension Descriptor Description1"
-               },
-               {
-                 "name": "ExtensionTagName2",
-                 "description": "First Extension Descriptor Description2"
-               },
-               {
-                 "name": "ExtensionTagName3",
-                 "description": "Second Extension Description3"
-               },
-               {
-                 "name": "ExtensionTagName4",
-                 "description": "Second Extension Description4"
-               },
-               {
-                 "name": "ExtensionTagName3",
-                 "description": "Second Extension Descriptor Description3"
-               },
-               {
-                 "name": "ExtensionTagName4",
-                 "description": "Second Extension Descriptor Description4"
-               }
-             ]
-             """;
+                [
+                  {
+                    "name": "academicWeeks",
+                    "description": "AcademicWeeks Description"
+                  },
+                  {
+                    "name": "accountabilityRating",
+                    "description": "AccountabilityRatings Description"
+                  },
+                  {
+                    "name": "ExtensionTagName1",
+                    "description": "First Extension Description1"
+                  },
+                  {
+                    "name": "ExtensionTagName2",
+                    "description": "First Extension Description2"
+                  },
+                  {
+                    "name": "ExtensionTagName1",
+                    "description": "First Extension Descriptor Description1"
+                  },
+                  {
+                    "name": "ExtensionTagName2",
+                    "description": "First Extension Descriptor Description2"
+                  },
+                  {
+                    "name": "ExtensionTagName3",
+                    "description": "Second Extension Description3"
+                  },
+                  {
+                    "name": "ExtensionTagName4",
+                    "description": "Second Extension Description4"
+                  },
+                  {
+                    "name": "ExtensionTagName3",
+                    "description": "Second Extension Descriptor Description3"
+                  },
+                  {
+                    "name": "ExtensionTagName4",
+                    "description": "Second Extension Descriptor Description4"
+                  }
+                ]
+                """;
 
             AssertResults("$.tags", openApiResourcesResult, expectedResult);
         }
-
 
         [Test]
         public void It_should_merge_in_openApiCoreDescriptor_paths()
         {
             string expectedResult = """
-            {
-              "/ed-fi/accommodationDescriptors": {
-                "get": {
-                  "description": "accommodationDescriptors get description"
-                },
-                "post": {
-                  "description": "accommodationDescriptors post description"
+                {
+                  "/ed-fi/accommodationDescriptors": {
+                    "get": {
+                      "description": "accommodationDescriptors get description"
+                    },
+                    "post": {
+                      "description": "accommodationDescriptors post description"
+                    }
+                  },
+                  "/ed-fi/accommodationDescriptors/{id}": {
+                    "get": {
+                      "description": "accommodationDescriptors id get description"
+                    },
+                    "delete": {
+                      "description": "accommodationDescriptors delete description"
+                    }
+                  },
+                  "/tpdm/credentialDecriptor": {
+                    "get": {
+                      "description": "credential decriptor get"
+                    },
+                    "post": {
+                      "description": "credential decriptor post"
+                    }
+                  },
+                  "/tpdm/candidateDescriptor/{id}": {
+                    "get": {
+                      "description": "candidate descriptor id get"
+                    },
+                    "delete": {
+                      "description": "candidate descriptor delete"
+                    }
+                  }
                 }
-              },
-              "/ed-fi/accommodationDescriptors/{id}": {
-                "get": {
-                  "description": "accommodationDescriptors id get description"
-                },
-                "delete": {
-                  "description": "accommodationDescriptors delete description"
-                }
-              },
-              "/tpdm/credentialDecriptor": {
-                "get": {
-                  "description": "credential decriptor get"
-                },
-                "post": {
-                  "description": "credential decriptor post"
-                }
-              },
-              "/tpdm/candidateDescriptor/{id}": {
-                "get": {
-                  "description": "candidate descriptor id get"
-                },
-                "delete": {
-                  "description": "candidate descriptor delete"
-                }
-              }
-            }
-            """;
+                """;
 
             AssertResults("$.paths", openApiDescriptorsResult, expectedResult);
         }
@@ -659,37 +723,37 @@ public class OpenApiDocumentTests
         public void It_should_merge_in_openApiCoreDescriptor_schemas()
         {
             string expectedResult = """
-            {
-              "EdFi_AbsenceEventCategoryDescriptor": {
-                "description": "An Ed-Fi Descriptor",
-                "properties": {},
-                "type": "string"
-              },
-              "EdFi_AcademicHonorCategoryDescriptor": {
-                "description": "An Ed-Fi Descriptor",
-                "properties": {},
-                "type": "string"
-              },
-              "EdFi_AcademicSubjectDescriptor": {
-                "description": "An Ed-Fi Descriptor",
-                "properties": {},
-                "type": "string"
-              },
-              "EdFi_AccommodationDescriptor": {
-                "description": "An Ed-Fi Descriptor",
-                "properties": {},
-                "type": "string"
-              },
-              "TPDM_CredentialDecriptor": {
-                "description": "TPDM credential decriptor description",
-                "type": "string"
-              },
-              "TPDM_CandidateDescriptor": {
-                "description": "TPDM candidate descriptor description",
-                "type": "string"
-              }
-            }
-            """;
+                {
+                  "EdFi_AbsenceEventCategoryDescriptor": {
+                    "description": "An Ed-Fi Descriptor",
+                    "properties": {},
+                    "type": "string"
+                  },
+                  "EdFi_AcademicHonorCategoryDescriptor": {
+                    "description": "An Ed-Fi Descriptor",
+                    "properties": {},
+                    "type": "string"
+                  },
+                  "EdFi_AcademicSubjectDescriptor": {
+                    "description": "An Ed-Fi Descriptor",
+                    "properties": {},
+                    "type": "string"
+                  },
+                  "EdFi_AccommodationDescriptor": {
+                    "description": "An Ed-Fi Descriptor",
+                    "properties": {},
+                    "type": "string"
+                  },
+                  "TPDM_CredentialDecriptor": {
+                    "description": "TPDM credential decriptor description",
+                    "type": "string"
+                  },
+                  "TPDM_CandidateDescriptor": {
+                    "description": "TPDM candidate descriptor description",
+                    "type": "string"
+                  }
+                }
+                """;
 
             AssertResults("$.components.schemas", openApiDescriptorsResult, expectedResult);
         }
@@ -698,21 +762,20 @@ public class OpenApiDocumentTests
         public void It_should_merge_in_openApiCoreDescriptor_tags()
         {
             string expectedResult = """
-            [
-              {
-                "name": "academicSubjects",
-                "description": "AcademicSubjects Descriptors Description"
-              },
-              {
-                "name": "accommodations",
-                "description": "Accommodations Descriptors Description"
-              }
-            ]
-            """;
+                [
+                  {
+                    "name": "academicSubjects",
+                    "description": "AcademicSubjects Descriptors Description"
+                  },
+                  {
+                    "name": "accommodations",
+                    "description": "Accommodations Descriptors Description"
+                  }
+                ]
+                """;
 
             AssertResults("$.tags", openApiDescriptorsResult, expectedResult);
         }
-
 
         public static void AssertResults(
             string jsonPathSource,
