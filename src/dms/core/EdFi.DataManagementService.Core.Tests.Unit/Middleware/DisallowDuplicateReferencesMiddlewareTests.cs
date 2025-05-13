@@ -298,11 +298,20 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 "ResultDatatypeTypeDescriptor",
                 "$.scores[*].resultDatatypeTypeDescriptor"
             )
+            .WithDocumentPathDescriptor(
+                "AssessmentItemResultDescriptor",
+                "$.items[*].assessmentItemResultDescriptor"
+            )
             .WithArrayUniquenessConstraints(
                 [
                     [
                         "$.performanceLevels[*].assessmentReportingMethodDescriptor",
                         "$.performanceLevels[*].performanceLevelDescriptor",
+                    ],
+                    [
+                        "$.items[*].assessmentItemReference.assessmentIdentifier",
+                        "$.items[*].assessmentItemReference.identificationCode",
+                        "$.items[*].assessmentItemReference.namespace",
                     ],
                 ]
             )
@@ -652,6 +661,105 @@ public class DisallowDuplicateReferencesMiddlewareTests
         public void It_should_not_have_response()
         {
             _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Pipeline_Context_Has_Combined_Unique_References
+        : DisallowDuplicateReferencesMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonBody = """
+                {
+                 "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                 "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                 "assessmentTitle": "3rd Grade Reading 1st Six Weeks 2021-2022",
+                 "academicSubjects": [
+                   {
+                     "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                   }
+                 ],
+                 "performanceLevels": [
+                   {
+                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Advanced",
+                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale score",
+                     "minimumScore": "23",
+                     "maximumScore": "26"
+                   }
+                 ],
+                 "items": [
+                   {
+                     "assessmentResponse": "G",
+                     "responseIndicatorDescriptor": "uri://ed-fi.org/ResponseIndicatorDescriptor#Nonscorable response",
+                     "assessmentItemResultDescriptor": "uri://ed-fi.org/AssessmentItemResultDescriptor#Correct",
+                     "assessmentItemReference": {
+                       "identificationCode": "9848478",
+                       "assessmentIdentifier": "ae049cb3-33d0-431f-b0f3-a751df7217ef",
+                       "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                     }
+                   },
+                   {
+                     "assessmentResponse": "G",
+                     "responseIndicatorDescriptor": "uri://ed-fi.org/ResponseIndicatorDescriptor#Nonscorable response",
+                     "assessmentItemResultDescriptor": "uri://ed-fi.org/AssessmentItemResultDescriptor#Correct",
+                     "assessmentItemReference": {
+                       "identificationCode": "9848478",
+                       "assessmentIdentifier": "ae049cb3-33d0-431f-b0f3-a751df7217ef",
+                       "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                     }
+                   }
+                 ],
+                 "scores": [
+                   {
+                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score",
+                     "maximumScore": "10",
+                     "minimumScore": "0",
+                     "resultDatatypeTypeDescriptor": "uri://ed-fi.org/ResultDatatypeTypeDescriptor#Integer"
+                   }
+                 ]
+                }
+                """;
+
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/assessments",
+                Body: jsonBody,
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
+
+            _context = DuplicateDescRefContext(frontEndRequest, RequestMethod.POST);
+
+            await BuildResourceInfo().Execute(_context, NullNext);
+            await ExtractDocument().Execute(_context, NullNext);
+
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context.FrontendResponse.StatusCode.Should().Be(400);
+
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain(
+                    """
+                    "validationErrors":{"$.items[*].assessmentItemResultDescriptor":["The 2nd item of the items has the same identifying values as another item earlier in the list."]}
+                    """
+                );
         }
     }
 }

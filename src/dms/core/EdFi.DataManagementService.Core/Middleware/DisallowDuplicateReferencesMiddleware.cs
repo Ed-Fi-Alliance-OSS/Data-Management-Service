@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Text;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Model;
@@ -25,8 +26,6 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         options: RegexOptions.Compiled
     );
 
-    // [DMS-597] Workaround for DMS-632 Duplicate array items validation considers all the references instead of only the ones part of identity
-
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         logger.LogDebug(
@@ -35,8 +34,6 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         );
 
         var validationErrors = new Dictionary<string, string[]>();
-
-        var arrayUniqueness = context.DocumentInfo.ArrayUniquenessConstraints.GroupBy(x => x.Key);
 
         // Find duplicates in document references
         if (context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
@@ -60,57 +57,37 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             // Find the names of arrays to which the DescriptorReferences belong.
             var arraysWithDescriptorReferences = groupedReferences.Select(gr => gr.key).ToHashSet();
 
-            var constrainedArrays = arraysWithDescriptorReferences.Intersect(
-                arrayUniqueness.Select(group => group.Key)
-            );
+            var constrainedArrays = arraysWithDescriptorReferences
+                .Intersect(context.DocumentInfo.ArrayUniquenessConstraints.Select(group => group.Key))
+                .ToList();
 
             var combinedIds = new List<string>();
-            foreach (var descriptorReferences in groupedReferences)
+            foreach (var descriptorReferences in groupedReferences.Where(x => x.indexGroups.Count > 1))
             {
-                // If a descriptor is inside an array belong to uniquenessConstraint, it is not considered for evaluation
-                if (
-                    descriptorReferences.indexGroups.Count > 1
-                    && !arrayUniqueness.Any(group => group.Key == descriptorReferences.key)
-                )
+                foreach (var indexGroup in descriptorReferences.indexGroups)
                 {
-                    foreach (var indexGroup in descriptorReferences.indexGroups)
+                    var combinedId = new StringBuilder();
+
+                    if (constrainedArrays.Contains(descriptorReferences.key))
                     {
-                        var combinedId = new StringBuilder();
+                        // if the array is constrained, the index value is not included in the combinedId
+                        combinedId.Append(descriptorReferences.key);
+                    }
+                    else
+                    {
                         foreach (var reference in indexGroup.references)
                         {
                             combinedId.Append(reference.ReferentialId.Value);
                         }
-
-                        combinedIds.Add(combinedId.ToString());
                     }
+
+                    combinedIds.Add(combinedId.ToString());
                 }
             }
 
-            // [DMS-597] Workaround for DMS-632 Duplicate array items validation considers all the references instead of only the ones part of identity
-            if (combinedIds.GroupBy(d => d).Any(g => g.Count() > 1) && constrainedArrays.Any())
+            if (combinedIds.GroupBy(d => d).Any(g => g.Count() > 1))
             {
                 // if duplicates are found, they should be reported
-                ValidateDuplicates(
-                    context.DocumentInfo.DescriptorReferences,
-                    item => item.ReferentialId.Value,
-                    item => item.Path.Value,
-                    validationErrors,
-                    true
-                );
-            }
-
-            var nonConstrainedDuplicates = groupedReferences
-                .Where(group => !arrayUniqueness.Any(ug => ug.Key == group.key))
-                .SelectMany(group => group.indexGroups, (group, indexGroup) => new { group, indexGroup })
-                .SelectMany(
-                    x => x.indexGroup.references,
-                    (x, reference) => new { Key = $"{x.group.key}[*]", Id = reference.ReferentialId.Value }
-                )
-                .GroupBy(x => x.Id)
-                .Where(g => g.Count() > 1);
-
-            if (nonConstrainedDuplicates.Any())
-            {
                 ValidateDuplicates(
                     context.DocumentInfo.DescriptorReferences,
                     item => item.ReferentialId.Value,
