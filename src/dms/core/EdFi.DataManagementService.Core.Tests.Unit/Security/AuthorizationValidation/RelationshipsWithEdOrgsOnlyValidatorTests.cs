@@ -270,16 +270,14 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         [Test]
         public async Task Should_Return_Unauthorized_When_Token_Only_Has_Access_To_One()
         {
-            var tokenEdOrgs = new[] {
-                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "1")
+            var tokenEdOrgs = new[]
+            {
+                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "1"),
             };
 
-            var result = await new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository).ValidateAuthorization(
-                _documentSecurityElements!,
-                tokenEdOrgs,
-                [],
-                OperationType.Get
-            );
+            var result = await new RelationshipsWithEdOrgsOnlyValidator(
+                _authorizationRepository
+            ).ValidateAuthorization(_documentSecurityElements!, tokenEdOrgs, [], OperationType.Get);
 
             result.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
         }
@@ -287,17 +285,15 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         [Test]
         public async Task Should_Return_Authorized_When_Token_Has_Access_To_All()
         {
-            var tokenEdOrgs = new[] {
+            var tokenEdOrgs = new[]
+            {
                 new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "1"),
                 new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "2"),
             };
 
-            var result = await new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository).ValidateAuthorization(
-                _documentSecurityElements!,
-                tokenEdOrgs,
-                [],
-                OperationType.Get
-            );
+            var result = await new RelationshipsWithEdOrgsOnlyValidator(
+                _authorizationRepository
+            ).ValidateAuthorization(_documentSecurityElements!, tokenEdOrgs, [], OperationType.Get);
 
             result.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
         }
