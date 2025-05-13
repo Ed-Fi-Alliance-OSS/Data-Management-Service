@@ -1,0 +1,309 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed to the Ed-Fi Alliance under one or more agreements.
+ * The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+ * See the LICENSE and NOTICES files in the project root for more information.
+ */
+
+#5126 or 8081
+@configPort=8081
+
+#5198 or 8080
+@dmsPort=8080
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+#
+# Create a new system administrator and create a token
+#
+
+### Create the system administrator credentials
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+### Create a token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+#
+# Create vendor, application, and new DMS client credentials
+#
+
+### Create a new vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Demo Vendor",
+    "contactName": "George Washington",
+    "contactEmailAddress": "george@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
+
+### Create a new application
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Demo application",
+    "claimSetName": "EdFiSandbox",
+    "educationOrganizationIds": [6001010, 6001011]
+}
+
+###
+@clientKey={{createApplication.response.body.key}}
+@clientSecret={{createApplication.response.body.secret}}
+
+### Read the Token URL from the Discovery API
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+@tokenUrl={{discovery.response.body.urls.oauth}}
+
+### Create a DMS token
+# @name dmsTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{clientKey}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken={{dmsTokenRequest.response.body.access_token}}
+
+### Create descriptor
+#
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsToken}}
+
+{
+    "namespace": "uri://ed-fi.org/educationOrganizationCategoryDescriptor",
+    "codeValue": "XYZ",
+    "shortDescription": "XYZ"
+}
+
+### Create descriptor
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsToken}}
+
+{
+    "namespace": "uri://ed-fi.org/gradeLevelDescriptor",
+    "codeValue": "Tenth Grade",
+    "shortDescription": "Tenth Grade"
+}
+
+###
+POST {{dataApi}}/ed-fi/staffClassificationDescriptors
+Authorization: bearer {{dmsToken}}
+
+{
+    "namespace": "uri://ed-fi.org/staffClassificationDescriptor",
+    "codeValue": "XYZ",
+    "shortDescription": "XYZ"
+}
+
+### Create School
+# @name createSchool
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+
+{
+    "schoolId": 6001010,
+    "nameOfInstitution": "Bayside High School",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade"
+        }
+    ]
+}
+
+### Create School
+# @name createSchool2
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+
+{
+    "schoolId": 6001011,
+    "nameOfInstitution": "Westside High School",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/educationOrganizationCategoryDescriptor#XYZ"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/gradeLevelDescriptor#Tenth Grade"
+        }
+    ]
+}
+
+### Create Staff
+# @name createStaff
+POST {{dataApi}}/ed-fi/staffs
+Authorization: bearer {{dmsToken}}
+
+{
+    "staffUniqueId": "123",
+    "firstName": "Suzy",
+    "lastSurname": "Smith"
+}
+
+### Create Staff
+# @name createStaff2
+POST {{dataApi}}/ed-fi/staffs
+Authorization: bearer {{dmsToken}}
+
+{
+    "staffUniqueId": "124",
+    "firstName": "John",
+    "lastSurname": "Wilson"
+}
+
+### Create staffEducationOrganizationAssignmentAssociations
+# @name staffEducationOrganizationAssignmentAssociations1
+POST {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations
+Authorization: bearer {{dmsToken}}
+
+{
+    "beginDate": "2021-08-23",
+    "staffClassificationDescriptor": "uri://ed-fi.org/staffClassificationDescriptor#XYZ",
+    "educationOrganizationReference": {
+      "educationOrganizationId": 6001010
+    },
+    "staffReference": {
+      "staffUniqueId": "123"
+    }
+}
+
+### Create staffEducationOrganizationAssignmentAssociations
+# @name staffEducationOrganizationAssignmentAssociations2
+POST {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations
+Authorization: bearer {{dmsToken}}
+
+{
+    "beginDate": "2021-08-23",
+    "staffClassificationDescriptor": "uri://ed-fi.org/staffClassificationDescriptor#XYZ",
+    "educationOrganizationReference": {
+      "educationOrganizationId": 6001011
+    },
+    "staffReference": {
+      "staffUniqueId": "124"
+    }
+}
+
+### GET StudentSchoolAssociation
+# @name staffEducationOrganizationAssignmentAssociation1
+GET {{staffEducationOrganizationAssignmentAssociations1.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+@staffEducationOrganizationAssignmentAssociationId1 = {{staffEducationOrganizationAssignmentAssociation1.response.body.id}}
+
+### GET StudentSchoolAssociation
+# @name staffEducationOrganizationAssignmentAssociation2
+GET {{staffEducationOrganizationAssignmentAssociations2.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+@staffEducationOrganizationAssignmentAssociationId2 = {{staffEducationOrganizationAssignmentAssociation2.response.body.id}}
+
+### Create a new application
+# @name createApplication2
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Demo application 2",
+    "claimSetName": "EdFiSandbox",
+    "educationOrganizationIds": [6001010]
+}
+
+###
+@clientKey2={{createApplication2.response.body.key}}
+@clientSecret2={{createApplication2.response.body.secret}}
+
+### Create a DMS token
+# @name sandboxTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{clientKey2}}:{{clientSecret2}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@sandboxToken={{sandboxTokenRequest.response.body.access_token}}
+
+### Query Contacts - should return no records with this token
+###
+GET {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations
+Authorization: bearer {{sandboxToken}}
+
+### Update staffEducationOrganizationAssignmentAssociations
+PUT {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations/{{staffEducationOrganizationAssignmentAssociationId1}}
+Authorization: bearer {{dmsToken}}
+
+{
+    "id": "{{staffEducationOrganizationAssignmentAssociationId1}}",
+    "beginDate": "2021-08-23",
+    "staffClassificationDescriptors": "uri://ed-fi.org/staffClassificationDescriptor#XYZ",
+    "educationOrganizationReference": {
+      "educationOrganizationId": 6001010
+    },
+    "staffReference": {
+      "staffUniqueId": "123"
+    }
+}
+
+### Update staffEducationOrganizationAssignmentAssociations
+PUT {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations/{{staffEducationOrganizationAssignmentAssociationId2}}
+Authorization: bearer {{dmsToken}}
+
+{
+    "id": "{{staffEducationOrganizationAssignmentAssociationId2}}",
+    "beginDate": "2021-08-23",
+    "staffClassificationDescriptors": "uri://ed-fi.org/staffClassificationDescriptor#XYZ",
+    "educationOrganizationReference": {
+      "educationOrganizationId": 6001011
+    },
+    "staffReference": {
+      "staffUniqueId": "124"
+    }
+}

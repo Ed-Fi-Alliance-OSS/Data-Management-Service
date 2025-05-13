@@ -36,6 +36,11 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
                             context.DocumentSecurityElements,
                             context.Method
                         ),
+                    "StaffEducationOrganizationAuthorization" =>
+                        BuildStaffEducationOrganizationAuthorizationPathway(
+                            context.DocumentSecurityElements,
+                            context.Method
+                        ),
 
                     _ => throw new InvalidOperationException(
                         $"Unrecognized Authorization Pathway '{authorizationPathway}'."
@@ -95,6 +100,30 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
         return new AuthorizationPathway.StudentContactAssociation(
             documentSecurityElements.Student.FirstOrDefault(),
             documentSecurityElements.Contact.FirstOrDefault()
+        );
+    }
+
+    private static AuthorizationPathway.StaffEducationOrganizationAssociation BuildStaffEducationOrganizationAuthorizationPathway(
+        DocumentSecurityElements documentSecurityElements,
+        RequestMethod requestMethod
+    )
+    {
+        if (
+            requestMethod is RequestMethod.POST or RequestMethod.PUT
+            && (
+                documentSecurityElements.Staff.Length == 0
+                || documentSecurityElements.EducationOrganization.Length == 0
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "The StaffUniqueId and/or EducationOrganizationId are missing from the request body."
+            );
+        }
+
+        return new AuthorizationPathway.StaffEducationOrganizationAssociation(
+            documentSecurityElements.Staff.FirstOrDefault(),
+            documentSecurityElements.EducationOrganization.FirstOrDefault()?.Id ?? default
         );
     }
 }

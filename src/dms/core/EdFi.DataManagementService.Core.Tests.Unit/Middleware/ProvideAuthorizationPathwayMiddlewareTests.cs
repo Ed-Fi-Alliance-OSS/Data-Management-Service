@@ -41,6 +41,14 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         .WithEndProject()
         .ToApiSchemaDocuments();
 
+    private readonly ApiSchemaDocuments _staffEducationOrganizationApiSchema = new ApiSchemaBuilder()
+        .WithStartProject()
+        .WithStartResource("StaffEducationOrganizationAssignmentAssociation")
+        .WithAuthorizationPathways(["StaffEducationOrganizationAuthorization"])
+        .WithEndResource()
+        .WithEndProject()
+        .ToApiSchemaDocuments();
+
     [TestFixture]
     public class Given_A_StudentSchoolAssociation_Post : ProvideAuthorizationPathwayMiddlewareTests
     {
@@ -410,6 +418,165 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [new StudentUniqueId("987")],
                 [],
                 []
+            );
+            _context.Method = RequestMethod.POST;
+        }
+
+        [Test]
+        public void Throws_exception()
+        {
+            // Act & Assert
+            Assert.ThrowsAsync<InvalidOperationException>(
+                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_StaffEducationOrganizationAssociation_Post
+        : ProvideAuthorizationPathwayMiddlewareTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            _context.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StaffEducationOrganizationAssignmentAssociations")
+                )!
+            );
+
+            _context.DocumentSecurityElements = new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("EducationOrganization"),
+                        new EducationOrganizationId(456)
+                    ),
+                ],
+                [],
+                [],
+                [new StaffUniqueId("S123")]
+            );
+            _context.Method = RequestMethod.POST;
+        }
+
+        [Test]
+        public async Task Initializes_StaffEducationOrganizationAssociationAuthorizationPathway_In_The_Pipeline_Context()
+        {
+            // Act
+            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+
+            // Assert
+            _context.AuthorizationPathways.Count.Should().Be(1);
+            _context
+                .AuthorizationPathways.Single()
+                .Should()
+                .BeOfType<AuthorizationPathway.StaffEducationOrganizationAssociation>();
+
+            var pathway = (AuthorizationPathway.StaffEducationOrganizationAssociation)
+                _context.AuthorizationPathways.Single();
+            pathway.StaffUniqueId.Should().Be(new StaffUniqueId("S123"));
+            pathway.EducationOrganizationId.Should().Be(new EducationOrganizationId(456));
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_StaffEducationOrganizationAssociation_Get
+        : ProvideAuthorizationPathwayMiddlewareTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            _context.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StaffEducationOrganizationAssignmentAssociations")
+                )!
+            );
+
+            _context.Method = RequestMethod.GET;
+        }
+
+        [Test]
+        public async Task Initializes_StaffEducationOrganizationAssociationAuthorizationPathway_In_The_Pipeline_Context()
+        {
+            // Act
+            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+
+            // Assert
+            _context.AuthorizationPathways.Count.Should().Be(1);
+            _context
+                .AuthorizationPathways.Single()
+                .Should()
+                .BeOfType<AuthorizationPathway.StaffEducationOrganizationAssociation>();
+
+            var pathway = (AuthorizationPathway.StaffEducationOrganizationAssociation)
+                _context.AuthorizationPathways.Single();
+            pathway.StaffUniqueId.Should().Be(default(StaffUniqueId));
+            pathway.EducationOrganizationId.Should().Be(default(EducationOrganizationId));
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_StaffEducationOrganizationAssociation_Post_With_No_StaffId
+        : ProvideAuthorizationPathwayMiddlewareTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            _context.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StaffEducationOrganizationAssignmentAssociations")
+                )!
+            );
+
+            _context.DocumentSecurityElements = new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new ResourceName("EducationOrganization"),
+                        new EducationOrganizationId(456)
+                    ),
+                ],
+                [],
+                [],
+                []
+            );
+            _context.Method = RequestMethod.POST;
+        }
+
+        [Test]
+        public void Throws_exception()
+        {
+            // Act & Assert
+            Assert.ThrowsAsync<InvalidOperationException>(
+                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_StaffEducationOrganizationAssociation_Post_With_No_EducationOrganizationId
+        : ProvideAuthorizationPathwayMiddlewareTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            _context.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StaffEducationOrganizationAssignmentAssociations")
+                )!
+            );
+
+            _context.DocumentSecurityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [],
+                [],
+                [new StaffUniqueId("S123")]
             );
             _context.Method = RequestMethod.POST;
         }
