@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -12,13 +11,17 @@ using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Polly;
 using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
 using AuthorizationStrategy = EdFi.DmsConfigurationService.DataModel.Model.ClaimSets.AuthorizationStrategy;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
-public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogger<ClaimSetRepository> logger)
-    : IClaimSetRepository
+public class ClaimSetRepository(
+    IOptions<DatabaseOptions> databaseOptions,
+    ILogger<ClaimSetRepository> logger,
+    IClaimsHierarchyRepository claimsHierarchyRepository
+) : IClaimSetRepository
 {
     public IEnumerable<Action> GetActions()
     {
@@ -53,7 +56,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                 Id = 5,
                 Name = "ReadChanges",
                 Uri = "uri://ed-fi.org/api/actions/readChanges",
-            }
+            },
         };
 
         return actions;
@@ -103,18 +106,16 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                    RETURNING Id;
                 """;
 
-            var parameters = new
-            {
-                ClaimSetName = command.Name,
-                IsSystemReserved = false,
-            };
+            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = command.IsSystemReserved };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
             await transaction.CommitAsync();
 
             return new ClaimSetInsertResult.Success(id);
         }
-        catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("idx_claimsetname"))
+        catch (PostgresException ex)
+            when (ex.SqlState == PostgresErrorCodes.UniqueViolation && ex.Message.Contains("idx_claimsetname")
+            )
         {
             logger.LogWarning(ex, "ClaimSetName must be unique");
             await transaction.RollbackAsync();
@@ -230,36 +231,203 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
+
         try
         {
-            string sql = """
-                UPDATE dmscs.ClaimSet
-                SET ClaimSetName=@ClaimSetName, IsSystemReserved=@IsSystemReserved
+            // Get the current claim set name
+            string getClaimSetSql = """
+                SELECT ClaimSetName, IsSystemReserved
+                FROM dmscs.ClaimSet
                 WHERE Id = @Id;
                 """;
 
-            var parameters = new
-            {
-                command.Id,
-                ClaimSetName = command.Name,
-                IsSystemReserved = false,
-            };
+            var getClaimSetParameters = new { Id = command.Id };
 
-            int affectedRows = await connection.ExecuteAsync(sql, parameters);
+            var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
+                string claimSetName,
+                bool isSystemReserved
+            )>(getClaimSetSql, getClaimSetParameters, transaction);
+
+            if (existingClaimSet == default)
+            {
+                return new ClaimSetUpdateResult.FailureNotFound();
+            }
+
+            if (existingClaimSet.isSystemReserved)
+            {
+                return new ClaimSetUpdateResult.FailureSystemReserved();
+            }
+
+            string? oldClaimSetName = existingClaimSet.claimSetName;
+
+            string renameClaimSetSql = """
+                UPDATE dmscs.ClaimSet
+                SET ClaimSetName=@ClaimSetName
+                WHERE Id = @Id;
+                """;
+
+            string newClaimSetName = command.Name;
+
+            var renameClaimSetParameters = new { command.Id, ClaimSetName = newClaimSetName };
+
+            int affectedRows = await connection.ExecuteAsync(
+                renameClaimSetSql,
+                renameClaimSetParameters,
+                transaction
+            );
 
             if (affectedRows == 0)
             {
                 return new ClaimSetUpdateResult.FailureNotFound();
             }
-            await transaction.CommitAsync();
 
-            return new ClaimSetUpdateResult.Success();
+            var updateApplicationParameters = new
+            {
+                NewClaimSetName = newClaimSetName,
+                OldClaimSetName = oldClaimSetName,
+            };
+
+            string updateApplicationSql = """
+                UPDATE dmscs.Application
+                SET ClaimSetName = @NewClaimSetName
+                WHERE ClaimSetName = @OldClaimSetName;
+                """;
+
+            await connection.ExecuteAsync(updateApplicationSql, updateApplicationParameters, transaction);
+
+            // Polly retry policy for handling multi-user conflicts
+            var retryPolicy = Policy
+                .HandleResult<ClaimsHierarchySaveResult>(result =>
+                    result is ClaimsHierarchySaveResult.FailureMultiUserConflict
+                )
+                .RetryAsync(
+                    3,
+                    onRetry: (result, retryCount) =>
+                    {
+                        logger.LogWarning(
+                            "Retrying ApplyNameChangeToClaimsHierarchy due to multi-user conflict. Attempt {RetryCount}.",
+                            retryCount
+                        );
+                    }
+                );
+
+            ClaimsHierarchySaveResult nameChangeResult =
+                (
+                    await retryPolicy.ExecuteAsync(
+                        () => ApplyNameChangeToClaimsHierarchy(oldClaimSetName, newClaimSetName)
+                    )
+                )
+                ?? new ClaimsHierarchySaveResult.FailureUnknown(
+                    "No claim set name change result was returned."
+                );
+
+            ClaimSetUpdateResult result = nameChangeResult switch
+            {
+                ClaimsHierarchySaveResult.Success or ClaimsHierarchySaveResult.FailureHierarchyNotFound =>
+                    new ClaimSetUpdateResult.Success(),
+                ClaimsHierarchySaveResult.FailureMultipleHierarchiesFound =>
+                    new ClaimSetUpdateResult.FailureMultipleHierarchiesFound(),
+                ClaimsHierarchySaveResult.FailureMultiUserConflict =>
+                    new ClaimSetUpdateResult.FailureMultiUserConflict(),
+                ClaimsHierarchySaveResult.FailureUnknown unknown => new ClaimSetUpdateResult.FailureUnknown(
+                    unknown.FailureMessage
+                ),
+                _ => new ClaimSetUpdateResult.FailureUnknown(
+                    $"Unhandled ClaimsHierarchyGetResult of type '{nameChangeResult.GetType().Name}'"
+                ),
+            };
+
+            if (result is ClaimSetUpdateResult.Success)
+            {
+                await transaction.CommitAsync();
+            }
+            else
+            {
+                await transaction.RollbackAsync();
+            }
+
+            if (result is ClaimSetUpdateResult.FailureUnknown failureUnknown)
+            {
+                logger.LogError(failureUnknown.FailureMessage);
+            }
+
+            return result;
+        }
+        catch (PostgresException ex)
+            when (ex is { SqlState: PostgresErrorCodes.UniqueViolation, ConstraintName: "idx_claimsetname" })
+        {
+            logger.LogWarning(ex, "ClaimSetName must be unique");
+            await transaction.RollbackAsync();
+            return new ClaimSetUpdateResult.FailureDuplicateClaimSetName();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Update claim set failure");
             await transaction.RollbackAsync();
             return new ClaimSetUpdateResult.FailureUnknown(ex.Message);
+        }
+
+        void RenameClaimSetInHierarchy(List<Claim> claims, string oldClaimSetName, string newClaimSetName)
+        {
+            foreach (var claim in claims)
+            {
+                foreach (var claimSet in claim.ClaimSets)
+                {
+                    if (claimSet.Name == oldClaimSetName)
+                    {
+                        claimSet.Name = newClaimSetName;
+                    }
+                }
+
+                if (claim.Claims.Any())
+                {
+                    RenameClaimSetInHierarchy(claim.Claims, oldClaimSetName, newClaimSetName);
+                }
+            }
+        }
+
+        async Task<ClaimsHierarchySaveResult> ApplyNameChangeToClaimsHierarchy(
+            string oldClaimSetName,
+            string newClaimSetName
+        )
+        {
+            // Update all occurrences of claim set name in JSON hierarchy
+            var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
+
+            return hierarchyResult switch
+            {
+                ClaimsHierarchyGetResult.FailureHierarchyNotFound =>
+                    new ClaimsHierarchySaveResult.FailureHierarchyNotFound(),
+                ClaimsHierarchyGetResult.FailureMultipleHierarchiesFound =>
+                    new ClaimsHierarchySaveResult.FailureMultipleHierarchiesFound(),
+                ClaimsHierarchyGetResult.FailureUnknown unknownFailure =>
+                    new ClaimsHierarchySaveResult.FailureUnknown(unknownFailure.FailureMessage),
+                ClaimsHierarchyGetResult.Success success => await RenameAndSaveClaimsHierarchy(
+                    oldClaimSetName,
+                    newClaimSetName,
+                    success.Claims,
+                    success.LastModifiedDate
+                ),
+                _ => new ClaimsHierarchySaveResult.FailureUnknown(
+                    $"Unhandled ClaimsHierarchyGetResult of type '{hierarchyResult.GetType().Name}'"
+                ),
+            };
+        }
+
+        async Task<ClaimsHierarchySaveResult> RenameAndSaveClaimsHierarchy(
+            string oldClaimSetName,
+            string newClaimSetName,
+            List<Claim> claimsHierarchy,
+            DateTime lastModifiedDate
+        )
+        {
+            RenameClaimSetInHierarchy(claimsHierarchy, oldClaimSetName, newClaimSetName);
+
+            return await claimsHierarchyRepository.SaveClaimsHierarchy(
+                claimsHierarchy,
+                lastModifiedDate,
+                transaction
+            );
         }
     }
 
@@ -268,6 +436,30 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
+            // Get the current claim set name to distinguish between Not Found and System Reserved responses
+            string getClaimSetSql = """
+                SELECT ClaimSetName, IsSystemReserved
+                FROM dmscs.ClaimSet
+                WHERE Id = @Id;
+                """;
+
+            var getClaimSetParameters = new { Id = id };
+
+            var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
+                string claimSetName,
+                bool isSystemReserved
+            )>(getClaimSetSql, getClaimSetParameters);
+
+            if (existingClaimSet == default)
+            {
+                return new ClaimSetDeleteResult.FailureNotFound();
+            }
+
+            if (existingClaimSet.isSystemReserved)
+            {
+                return new ClaimSetDeleteResult.FailureSystemReserved();
+            }
+
             string sql = """
                 DELETE FROM dmscs.ClaimSet WHERE Id = @Id
                 """;
@@ -334,11 +526,7 @@ public class ClaimSetRepository(IOptions<DatabaseOptions> databaseOptions, ILogg
                    RETURNING Id;
                 """;
 
-            var parameters = new
-            {
-                ClaimSetName = command.Name,
-                IsSystemReserved = false,
-            };
+            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = false };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
             await transaction.CommitAsync();

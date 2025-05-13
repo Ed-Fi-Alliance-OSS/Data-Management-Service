@@ -9,12 +9,12 @@ namespace EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 
 public interface IAuthorizationMetadataResponseFactory
 {
-    AuthorizationMetadataResponse Create(string claimSetName, Claim[] hierarchy);
+    AuthorizationMetadataResponse Create(string claimSetName, List<Claim> hierarchy);
 }
 
 public class AuthorizationMetadataResponseFactory : IAuthorizationMetadataResponseFactory
 {
-    public AuthorizationMetadataResponse Create(string claimSetName, Claim[] hierarchy)
+    public AuthorizationMetadataResponse Create(string claimSetName, List<Claim> hierarchy)
     {
         const int UninitializedId = 0;
         int nextAuthorizationId = 1;
@@ -32,7 +32,8 @@ public class AuthorizationMetadataResponseFactory : IAuthorizationMetadataRespon
         // Prepare response
         AuthorizationMetadataResponse response = new(
             Claims: responseClaims.OrderBy(c => c.Name).ToList(),
-            Authorizations: responseAuthorizations.ToList());
+            Authorizations: responseAuthorizations.ToList()
+        );
 
         return response;
 
@@ -59,12 +60,14 @@ public class AuthorizationMetadataResponseFactory : IAuthorizationMetadataRespon
                 while (currentClaim != null)
                 {
                     // Capture the defaults for any actions that have not yet been encountered while processing the lineage
-                    currentClaim.DefaultAuthorization?.Actions.ForEach(
-                        a => actionDefaultsByName.TryAdd(a.Name, a));
+                    currentClaim.DefaultAuthorization?.Actions.ForEach(a =>
+                        actionDefaultsByName.TryAdd(a.Name, a)
+                    );
 
                     // Look for claim set specific metadata defined on the current claim
-                    var matchingClaimSet = currentClaim.ClaimSets.FirstOrDefault(
-                        cs => cs.Name.Equals(claimSetName, StringComparison.OrdinalIgnoreCase));
+                    var matchingClaimSet = currentClaim.ClaimSets.FirstOrDefault(cs =>
+                        cs.Name.Equals(claimSetName, StringComparison.OrdinalIgnoreCase)
+                    );
 
                     if (matchingClaimSet != null)
                     {
@@ -81,7 +84,9 @@ public class AuthorizationMetadataResponseFactory : IAuthorizationMetadataRespon
                                     action.Name,
                                     action
                                         .AuthorizationStrategyOverrides.Select(
-                                            aso => new AuthorizationMetadataResponse.AuthorizationStrategy(aso.Name)
+                                            aso => new AuthorizationMetadataResponse.AuthorizationStrategy(
+                                                aso.Name
+                                            )
                                         )
                                         .ToArray()
                                 );
@@ -101,13 +106,17 @@ public class AuthorizationMetadataResponseFactory : IAuthorizationMetadataRespon
                     // Add the claim to the response, with the associated authorizationId
                     responseClaims.Add(new AuthorizationMetadataResponse.Claim(claim.Name, authorizationId));
 
-
-                    int ApplyAuthorizationToResponse(AuthorizationMetadataResponse.Authorization proposedAuthorization)
+                    int ApplyAuthorizationToResponse(
+                        AuthorizationMetadataResponse.Authorization proposedAuthorization
+                    )
                     {
                         // Look for an existing equivalent authorization
-                        if (authorizationIdByHashCode.TryGetValue(
+                        if (
+                            authorizationIdByHashCode.TryGetValue(
                                 proposedAuthorization.GetHashCode(),
-                                out int existingAuthorizationId))
+                                out int existingAuthorizationId
+                            )
+                        )
                         {
                             return existingAuthorizationId;
                         }
@@ -135,7 +144,9 @@ public class AuthorizationMetadataResponseFactory : IAuthorizationMetadataRespon
                                 .Select(kvp => new AuthorizationMetadataResponse.Action(
                                     kvp.Key,
                                     kvp.Value.AuthorizationStrategies.Select(
-                                            s => new AuthorizationMetadataResponse.AuthorizationStrategy(s.Name)
+                                            s => new AuthorizationMetadataResponse.AuthorizationStrategy(
+                                                s.Name
+                                            )
                                         )
                                         .ToArray()
                                 ))
@@ -163,7 +174,9 @@ public class AuthorizationMetadataResponseFactory : IAuthorizationMetadataRespon
                                     actionName,
                                     defaultAction
                                         .AuthorizationStrategies.Select(
-                                            s => new AuthorizationMetadataResponse.AuthorizationStrategy(s.Name)
+                                            s => new AuthorizationMetadataResponse.AuthorizationStrategy(
+                                                s.Name
+                                            )
                                         )
                                         .ToArray()
                                 );

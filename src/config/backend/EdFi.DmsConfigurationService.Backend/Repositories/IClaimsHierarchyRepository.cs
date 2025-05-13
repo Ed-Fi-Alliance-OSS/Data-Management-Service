@@ -5,32 +5,73 @@
 
 // ReSharper disable ClassNeverInstantiated.Global
 
+using System.Data;
+using System.Data.Common;
 using System.Text.Json.Serialization;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IClaimsHierarchyRepository
 {
-    Task<ClaimsHierarchyResult> GetClaimsHierarchy();
+    Task<ClaimsHierarchyGetResult> GetClaimsHierarchy();
+
+    Task<ClaimsHierarchySaveResult> SaveClaimsHierarchy(
+        List<Claim> claimsHierarchy,
+        DateTime existingLastModifiedDate,
+        DbTransaction? transaction = null
+    );
 }
 
-public abstract record ClaimsHierarchyResult
+public abstract record ClaimsHierarchyGetResult
 {
     /// <summary>
     /// Successfully loaded and deserialized the claim set hierarchy.
     /// </summary>
     /// <param name="Claims"></param>
-    public record Success(Claim[] Claims) : ClaimsHierarchyResult;
-
-    /// <summary>
-    /// The claims hierarchy was not found.
-    /// </summary>
-    public record FailureHierarchyNotFound() : ClaimsHierarchyResult;
+    public record Success(List<Claim> Claims, DateTime LastModifiedDate) : ClaimsHierarchyGetResult;
 
     /// <summary>
     /// Unexpected exception thrown and caught.
     /// </summary>
-    public record FailureUnknown(string FailureMessage) : ClaimsHierarchyResult;
+    public record FailureUnknown(string FailureMessage) : ClaimsHierarchyGetResult;
+
+    /// <summary>
+    /// There was more than one claims hierarchy, which is all that is currently expected.
+    /// </summary>
+    public record FailureHierarchyNotFound() : ClaimsHierarchyGetResult;
+
+    /// <summary>
+    /// There was more than one claims hierarchy, which is all that is currently expected.
+    /// </summary>
+    public record FailureMultipleHierarchiesFound() : ClaimsHierarchyGetResult;
+}
+
+public abstract record ClaimsHierarchySaveResult
+{
+    /// <summary>
+    /// Successfully saved the claim set hierarchy.
+    /// </summary>
+    public record Success() : ClaimsHierarchySaveResult;
+
+    /// <summary>
+    /// Unexpected exception thrown and caught.
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ClaimsHierarchySaveResult;
+
+    /// <summary>
+    /// The claims hierarchy was modified by another user.
+    /// </summary>
+    public record FailureMultiUserConflict() : ClaimsHierarchySaveResult;
+
+    /// <summary>
+    /// There was more than one claims hierarchy, which is all that is currently expected.
+    /// </summary>
+    public record FailureHierarchyNotFound() : ClaimsHierarchySaveResult;
+
+    /// <summary>
+    /// There was more than one claims hierarchy, which is all that is currently expected.
+    /// </summary>
+    public record FailureMultipleHierarchiesFound() : ClaimsHierarchySaveResult;
 }
 
 public class Claim

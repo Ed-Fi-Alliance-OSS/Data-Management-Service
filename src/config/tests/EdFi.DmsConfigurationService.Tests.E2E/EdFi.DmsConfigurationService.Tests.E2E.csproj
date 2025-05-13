@@ -34,4 +34,10 @@
     <Folder Include="Extensions\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Update="Features\ClaimSets.feature.cs">
+      <DependentUpon>ClaimSets.feature</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
 </Project>
