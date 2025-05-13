@@ -134,132 +134,198 @@ public static partial class QueryOpenSearch
     /// <returns>List of JSON objects representing authorization filters</returns>
     public static List<JsonObject> BuildAuthorizationFilters(IQueryRequest queryRequest, ILogger logger)
     {
-        var authorizationFilters = queryRequest
+        // Helper to get all EdOrg IDs from filters
+        List<string> GetEdOrgIds() =>
+            queryRequest
+                .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
+                    evaluator
+                        .Filters.Where(f =>
+                            f.FilterPath == SecurityElementNameConstants.EducationOrganization
+                        )
+                        .Select(f => f.Value?.ToString())
+                        .Where(id => !string.IsNullOrEmpty(id))
+                        .Cast<string>()
+                )
+                .Distinct()
+                .ToList();
+
+        // Helper to get all namespaces from filters
+        List<string> GetNamespaces() =>
+            queryRequest
+                .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
+                    evaluator
+                        .Filters.Where(f => f.FilterPath == SecurityElementNameConstants.Namespace)
+                        .Select(f => f.Value?.ToString())
+                        .Where(ns => !string.IsNullOrEmpty(ns))
+                        .Cast<string>()
+                )
+                .Distinct()
+                .ToList();
+
+        return queryRequest
             .AuthorizationSecurableInfo.Select(authorizationSecurableInfo =>
             {
-                JsonObject? filter = null;
-
-                if (authorizationSecurableInfo.SecurableKey == SecurityElementNameConstants.Namespace)
+                switch (authorizationSecurableInfo.SecurableKey)
                 {
-                    // Get all namespaces from the filters array where filterPath matches Namespace
-                    var namespaces = queryRequest
-                        .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
-                            evaluator
-                                .Filters.Where(f => f.FilterPath == SecurityElementNameConstants.Namespace)
-                                .Select(f => f.Value?.ToString())
-                                .Where(ns => !string.IsNullOrEmpty(ns))
-                                .Cast<string>()
-                        )
-                        .Distinct()
-                        .ToList();
-
-                    // If we have multiple namespaces, use a terms query (OR)
-                    if (namespaces.Count > 1)
-                    {
-                        filter = new JsonObject
+                    case SecurityElementNameConstants.Namespace:
+                        var namespaces = GetNamespaces();
+                        if (namespaces.Count > 1)
                         {
-                            ["terms"] = new JsonObject
+                            return new JsonObject
                             {
-                                [$"securityelements.{SecurityElementNameConstants.Namespace}"] =
-                                    new JsonArray(namespaces.Select(ns => JsonValue.Create(ns)).ToArray()),
-                            },
-                        };
-                    }
-                    // If we have just one namespace, use a match_phrase query
-                    else if (namespaces.Count == 1)
-                    {
-                        filter = new JsonObject
-                        {
-                            ["match_phrase"] = new JsonObject
-                            {
-                                [$"securityelements.{SecurityElementNameConstants.Namespace}"] = namespaces[
-                                    0
-                                ],
-                            },
-                        };
-                    }
-                }
-                else if (
-                    authorizationSecurableInfo.SecurableKey
-                    == SecurityElementNameConstants.EducationOrganization
-                )
-                {
-                    // Get all education organization IDs from the filters
-                    var edOrgIds = queryRequest
-                        .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
-                            evaluator
-                                .Filters.Where(f =>
-                                    f.FilterPath == SecurityElementNameConstants.EducationOrganization
-                                )
-                                .Select(f => f.Value?.ToString())
-                                .Where(id => !string.IsNullOrEmpty(id))
-                                .Cast<string>()
-                        )
-                        .Distinct()
-                        .ToList();
-
-                    if (edOrgIds.Count > 0)
-                    {
-                        // If we have education organization IDs, use them in the filter
-                        // Use first ID for now as the lookup id - may need to handle multiple differently
-                        filter = new JsonObject
-                        {
-                            ["terms"] = new JsonObject
-                            {
-                                [
-                                    $"securityelements.{SecurityElementNameConstants.EducationOrganization}.Id"
-                                ] = new JsonObject
+                                ["terms"] = new JsonObject
                                 {
-                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
-                                    ["id"] = edOrgIds[0],
-                                    ["path"] = "hierarchy.array",
+                                    [$"securityelements.{SecurityElementNameConstants.Namespace}"] =
+                                        new JsonArray(
+                                            namespaces.Select(ns => JsonValue.Create(ns)!).ToArray()
+                                        ),
                                 },
-                            },
-                        };
-                    }
-                }
-                else if (
-                    authorizationSecurableInfo.SecurableKey == SecurityElementNameConstants.StudentUniqueId
-                )
-                {
-                    // Get all education organization IDs from the filters
-                    var edOrgIds = queryRequest
-                        .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
-                            evaluator
-                                .Filters.Where(f =>
-                                    f.FilterPath == SecurityElementNameConstants.EducationOrganization
-                                )
-                                .Select(f => f.Value?.ToString())
-                                .Where(id => !string.IsNullOrEmpty(id))
-                                .Cast<string>()
-                        )
-                        .Distinct()
-                        .ToList();
-
-                    if (edOrgIds.Count > 0)
-                    {
-                        filter = new JsonObject
+                            };
+                        }
+                        else if (namespaces.Count == 1)
                         {
-                            ["terms"] = new JsonObject
+                            return new JsonObject
                             {
-                                [$"studentschoolauthorizationedorgids.array"] = new JsonObject
+                                ["match_phrase"] = new JsonObject
                                 {
-                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
-                                    ["id"] = edOrgIds[0],
-                                    ["path"] = "hierarchy.array",
+                                    [$"securityelements.{SecurityElementNameConstants.Namespace}"] =
+                                        namespaces[0],
                                 },
-                            },
-                        };
-                    }
-                }
+                            };
+                        }
+                        break;
 
-                return filter;
+                    case SecurityElementNameConstants.EducationOrganization:
+                        var edOrgIds = GetEdOrgIds();
+                        if (edOrgIds.Count == 1)
+                        {
+                            return new JsonObject
+                            {
+                                ["terms"] = new JsonObject
+                                {
+                                    [
+                                        $"securityelements.{SecurityElementNameConstants.EducationOrganization}.Id"
+                                    ] = new JsonObject
+                                    {
+                                        ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                        ["id"] = edOrgIds[0],
+                                        ["path"] = "hierarchy.array",
+                                    },
+                                },
+                            };
+                        }
+                        else if (edOrgIds.Count > 1)
+                        {
+                            // OR together each EdOrgId as a separate terms filter
+                            var shouldArray = new JsonArray(
+                                edOrgIds
+                                    .Select(id => new JsonObject
+                                    {
+                                        ["terms"] = new JsonObject
+                                        {
+                                            [
+                                                $"securityelements.{SecurityElementNameConstants.EducationOrganization}.Id"
+                                            ] = new JsonObject
+                                            {
+                                                ["index"] =
+                                                    "edfi.dms.educationorganizationhierarchytermslookup",
+                                                ["id"] = id,
+                                                ["path"] = "hierarchy.array",
+                                            },
+                                        },
+                                    })
+                                    .ToArray()
+                            );
+                            return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
+                        }
+                        break;
+
+                    case SecurityElementNameConstants.StudentUniqueId:
+                        var studentEdOrgIds = GetEdOrgIds();
+                        if (studentEdOrgIds.Count == 1)
+                        {
+                            return new JsonObject
+                            {
+                                ["terms"] = new JsonObject
+                                {
+                                    ["studentschoolauthorizationedorgids.array"] = new JsonObject
+                                    {
+                                        ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                        ["id"] = studentEdOrgIds[0],
+                                        ["path"] = "hierarchy.array",
+                                    },
+                                },
+                            };
+                        }
+                        else if (studentEdOrgIds.Count > 1)
+                        {
+                            var shouldArray = new JsonArray(
+                                studentEdOrgIds
+                                    .Select(id => new JsonObject
+                                    {
+                                        ["terms"] = new JsonObject
+                                        {
+                                            ["studentschoolauthorizationedorgids.array"] = new JsonObject
+                                            {
+                                                ["index"] =
+                                                    "edfi.dms.educationorganizationhierarchytermslookup",
+                                                ["id"] = id,
+                                                ["path"] = "hierarchy.array",
+                                            },
+                                        },
+                                    })
+                                    .ToArray()
+                            );
+                            return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
+                        }
+                        break;
+
+                    case SecurityElementNameConstants.ContactUniqueId:
+                        var contactEdOrgIds = GetEdOrgIds();
+                        if (contactEdOrgIds.Count == 1)
+                        {
+                            return new JsonObject
+                            {
+                                ["terms"] = new JsonObject
+                                {
+                                    ["contactstudentschoolauthorizationedorgids.array"] = new JsonObject
+                                    {
+                                        ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                        ["id"] = contactEdOrgIds[0],
+                                        ["path"] = "hierarchy.array",
+                                    },
+                                },
+                            };
+                        }
+                        else if (contactEdOrgIds.Count > 1)
+                        {
+                            var shouldArray = new JsonArray(
+                                contactEdOrgIds
+                                    .Select(id => new JsonObject
+                                    {
+                                        ["terms"] = new JsonObject
+                                        {
+                                            ["contactstudentschoolauthorizationedorgids.array"] =
+                                                new JsonObject
+                                                {
+                                                    ["index"] =
+                                                        "edfi.dms.educationorganizationhierarchytermslookup",
+                                                    ["id"] = id,
+                                                    ["path"] = "hierarchy.array",
+                                                },
+                                        },
+                                    })
+                                    .ToArray()
+                            );
+                            return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
+                        }
+                        break;
+                }
+                return null;
             })
             .Where(filter => filter != null)
             .Cast<JsonObject>()
             .ToList();
-
-        return authorizationFilters;
     }
 
     /// <summary>
