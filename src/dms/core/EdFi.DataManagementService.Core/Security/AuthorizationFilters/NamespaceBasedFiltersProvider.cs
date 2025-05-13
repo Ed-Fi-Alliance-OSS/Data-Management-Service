@@ -28,12 +28,7 @@ public class NamespaceBasedFiltersProvider : IAuthorizationFiltersProvider
         }
         foreach (var namespacePrefix in namespacePrefixesFromClaim)
         {
-            filters.Add(
-                new AuthorizationFilter.Namespace(
-                    SecurityElementNameConstants.Namespace,
-                    namespacePrefix.Value
-                )
-            );
+            filters.Add(new AuthorizationFilter.Namespace(namespacePrefix.Value));
         }
 
         return new AuthorizationStrategyEvaluator(AuthorizationStrategyName, [.. filters], FilterOperator.Or);

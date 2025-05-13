@@ -11,10 +11,6 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// </summary>
 public abstract record AuthorizationFilter(
     /// <summary>
-    /// The column name in Document and the element name in the search engine index
-    /// </summary>
-    string FilteringMetadataElementName,
-    /// <summary>
     /// The expected value used
     /// </summary>
     string Value
@@ -22,49 +18,38 @@ public abstract record AuthorizationFilter(
 {
     /// <summary>
     /// Education Organization based authorization filter
-    /// <param name="FilteringMetadataElementName">The column name in Document and the element name in the search engine index</param>
     /// <param name="EducationOrganizationId"></param>
     /// </summary>
-    public record EducationOrganization(string FilteringMetadataElementName, string EducationOrganizationId)
-        : AuthorizationFilter(FilteringMetadataElementName, EducationOrganizationId);
+    public record EducationOrganization(string EducationOrganizationId)
+        : AuthorizationFilter(EducationOrganizationId);
 
     /// <summary>
     /// Education Organization based authorization filter
-    /// <param name="FilteringMetadataElementName">The column name in Document and the element name in the search engine index</param>
     /// <param name="NamespacePrefix"></param>
     /// </summary>
-    public record Namespace(string FilteringMetadataElementName, string NamespacePrefix)
-        : AuthorizationFilter(FilteringMetadataElementName, NamespacePrefix);
+    public record Namespace(string NamespacePrefix) : AuthorizationFilter(NamespacePrefix);
 
     /// <summary>
     /// Education Organization based authorization filter
-    /// <param name="FilteringMetadataElementName">The column name in Document and the element name in the search engine index</param>
     /// <param name="UniqueId"></param>
     /// </summary>
-    public record StudentUniqueId(string FilteringMetadataElementName, string UniqueId)
-        : AuthorizationFilter(FilteringMetadataElementName, UniqueId);
+    public record StudentUniqueId(string UniqueId) : AuthorizationFilter(UniqueId);
 
     /// <summary>
     /// Education Organization based authorization filter
-    /// <param name="FilteringMetadataElementName">The column name in Document and the element name in the search engine index</param>
     /// <param name="UniqueId"></param>
     /// </summary>
-    public record StaffUniqueId(string FilteringMetadataElementName, string UniqueId)
-        : AuthorizationFilter(FilteringMetadataElementName, UniqueId);
+    public record StaffUniqueId(string UniqueId) : AuthorizationFilter(UniqueId);
 
     /// <summary>
     /// Parent based authorization filter
-    /// <param name="FilteringMetadataElementName">The column name in Document and the element name in the search engine index</param>
     /// <param name="UniqueId"></param>
     /// </summary>
-    public record ParentUniqueId(string FilteringMetadataElementName, string UniqueId)
-        : AuthorizationFilter(FilteringMetadataElementName, UniqueId);
+    public record ParentUniqueId(string UniqueId) : AuthorizationFilter(UniqueId);
 
     /// <summary>
     /// Contact based authorization filter
-    /// <param name="FilteringMetadataElementName">The column name in Document and the element name in the search engine index</param>
     /// <param name="UniqueId"></param>
     /// </summary>
-    public record ContactUniqueId(string FilteringMetadataElementName, string UniqueId)
-        : AuthorizationFilter(FilteringMetadataElementName, UniqueId);
+    public record ContactUniqueId(string UniqueId) : AuthorizationFilter(UniqueId);
 }

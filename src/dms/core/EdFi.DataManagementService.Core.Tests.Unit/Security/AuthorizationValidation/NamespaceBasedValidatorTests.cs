@@ -24,12 +24,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements([], [], [], [], []),
-                [
-                    new AuthorizationFilter.Namespace(
-                        SecurityElementNameConstants.Namespace,
-                        "uri://namespace"
-                    ),
-                ],
+                [new AuthorizationFilter.Namespace("uri://namespace")],
                 [],
                 OperationType.Get
             );
@@ -64,12 +59,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://namespace/resource"], [], [], [], []),
-                [
-                    new AuthorizationFilter.Namespace(
-                        SecurityElementNameConstants.Namespace,
-                        "uri://namespace"
-                    ),
-                ],
+                [new AuthorizationFilter.Namespace("uri://namespace")],
                 [],
                 OperationType.Get
             );
@@ -94,12 +84,7 @@ public class NamespaceBasedValidatorTests
             var validator = new NamespaceBasedValidator();
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements(["uri://not-matching/resource"], [], [], [], []),
-                [
-                    new AuthorizationFilter.Namespace(
-                        SecurityElementNameConstants.Namespace,
-                        "uri://namespace"
-                    ),
-                ],
+                [new AuthorizationFilter.Namespace("uri://namespace")],
                 [],
                 OperationType.Get
             );
@@ -141,14 +126,8 @@ public class NamespaceBasedValidatorTests
                     []
                 ),
                 [
-                    new AuthorizationFilter.Namespace(
-                        SecurityElementNameConstants.Namespace,
-                        "uri://matching"
-                    ),
-                    new AuthorizationFilter.Namespace(
-                        SecurityElementNameConstants.Namespace,
-                        "uri://matching1"
-                    ),
+                    new AuthorizationFilter.Namespace("uri://matching"),
+                    new AuthorizationFilter.Namespace("uri://matching1"),
                 ],
                 [],
                 OperationType.Get
