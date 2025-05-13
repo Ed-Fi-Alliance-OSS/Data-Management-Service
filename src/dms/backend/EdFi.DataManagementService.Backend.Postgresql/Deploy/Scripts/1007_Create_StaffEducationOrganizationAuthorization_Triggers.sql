@@ -167,20 +167,20 @@ DROP TRIGGER IF EXISTS StaffEducationOrganizationAuthorizationTrigger_Insert ON 
 CREATE TRIGGER StaffEducationOrganizationAuthorizationTrigger_Insert
 AFTER INSERT ON dms.Document
     FOR EACH ROW
-    WHEN (NEW.ProjectName = 'Ed-Fi' AND (NEW.ResourceName = 'StaffEducationOrganizationEmploymentAssociation' OR NEW.ResourceName = 'StaffEducationOrganizationAssignmentAssociation '))
+    WHEN (NEW.ProjectName = 'Ed-Fi' AND (NEW.ResourceName = 'StaffEducationOrganizationEmploymentAssociation' OR NEW.ResourceName = 'StaffEducationOrganizationAssignmentAssociation'))
     EXECUTE PROCEDURE dms.StaffEducationOrganizationAuthorizationInsertFunction();
 
 DROP TRIGGER IF EXISTS StaffEducationOrganizationAuthorizationTrigger_Update ON dms.Document;
 CREATE TRIGGER StaffEducationOrganizationAuthorizationTrigger_Update
 AFTER UPDATE OF EdfiDoc ON dms.Document
     FOR EACH ROW
-    WHEN (NEW.ProjectName = 'Ed-Fi' AND (NEW.ResourceName = 'StaffEducationOrganizationEmploymentAssociation' OR NEW.ResourceName = 'StaffEducationOrganizationAssignmentAssociation '))
+    WHEN (NEW.ProjectName = 'Ed-Fi' AND (NEW.ResourceName = 'StaffEducationOrganizationEmploymentAssociation' OR NEW.ResourceName = 'StaffEducationOrganizationAssignmentAssociation'))
     EXECUTE PROCEDURE dms.StaffEducationOrganizationAuthorizationUpdateFunction();
 
 DROP TRIGGER IF EXISTS StaffEducationOrganizationAuthorizationTrigger_Delete ON dms.Document;
 CREATE TRIGGER StaffEducationOrganizationAuthorizationTrigger_Delete
 AFTER DELETE ON dms.Document
     FOR EACH ROW
-    WHEN (OLD.ProjectName = 'Ed-Fi' AND (OLD.ResourceName = 'StaffEducationOrganizationEmploymentAssociation' OR OLD.ResourceName = 'StaffEducationOrganizationAssignmentAssociation '))
+    WHEN (OLD.ProjectName = 'Ed-Fi' AND (OLD.ResourceName = 'StaffEducationOrganizationEmploymentAssociation' OR OLD.ResourceName = 'StaffEducationOrganizationAssignmentAssociation'))
     EXECUTE PROCEDURE dms.StaffEducationOrganizationAuthorizationDeleteFunction();
 

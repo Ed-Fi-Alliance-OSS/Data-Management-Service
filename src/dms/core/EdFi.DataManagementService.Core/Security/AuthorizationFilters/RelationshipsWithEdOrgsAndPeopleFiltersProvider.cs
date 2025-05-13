@@ -9,7 +9,7 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 
 /// <summary>
-/// Provides authorization filters for RelationshipsWithEdOrgsOnly authorization strategy
+/// Provides authorization filters for RelationshipsWithEdOrgsAndPeople authorization strategy
 /// </summary>
 [AuthorizationStrategyName(AuthorizationStrategyName)]
 public class RelationshipsWithEdOrgsAndPeopleFiltersProvider : IAuthorizationFiltersProvider

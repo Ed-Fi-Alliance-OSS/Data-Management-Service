@@ -23,11 +23,22 @@ public record AuthorizationPathway
     /// <summary>
     /// Authorization Pathway that uses StudentContactAssociation to calculate the Contacts that can reach the related Securable Document(s).
     /// </summary>
-    /// <param name="StudentUniqueId"></param>
-    /// <param name="ContactUniqueId"></param>
+    /// <param name="StudentUniqueId">Extracted from the request body. Has its default value if the request method is GET or DELETE.</param>
+    /// <param name="ContactUniqueId">Extracted from the request body. Has its default value if the request method is GET or DELETE.</param>
     public record StudentContactAssociation(
         StudentUniqueId? StudentUniqueId,
         ContactUniqueId? ContactUniqueId
+    ) : AuthorizationPathway;
+
+    /// <summary>
+    /// Authorization Pathway that uses StaffEducationOrganizationAssignmentAssociation or StaffEducationOrganizationEmploymentAssociation to
+    /// calculate the EducationOrganizations that can reach the related Securable Document(s)
+    /// </summary>
+    /// <param name="StaffUniqueId">Extracted from the request body. Has its default value if the request method is GET or DELETE.</param>
+    /// <param name="EducationOrganizationId">Extracted from the request body. Has its default value if the request method is GET or DELETE.</param>
+    public record StaffEducationOrganizationAssociation(
+        StaffUniqueId? StaffUniqueId,
+        EducationOrganizationId? EducationOrganizationId
     ) : AuthorizationPathway;
 
     private AuthorizationPathway() { }
