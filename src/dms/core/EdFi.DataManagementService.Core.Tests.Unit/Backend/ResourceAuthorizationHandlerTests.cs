@@ -196,7 +196,7 @@ public class ResourceAuthorizationHandlerTests
 
             var authStrategyEvaluators = new AuthorizationStrategyEvaluator(
                 "RelationshipsWithEdOrgsOnly",
-                [new AuthorizationFilter.Namespace("6001")],
+                [new AuthorizationFilter.EducationOrganization("6001")],
                 FilterOperator.Or
             );
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };

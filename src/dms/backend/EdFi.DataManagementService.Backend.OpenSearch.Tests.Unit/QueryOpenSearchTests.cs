@@ -290,7 +290,7 @@ public class QueryOpenSearchTests
         AuthorizationSecurableInfo securableInfo = new AuthorizationSecurableInfo("StaffUniqueId");
         AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
             "StaffBased",
-            [new AuthorizationFilter.EducationOrganization("EducationOrganization", "6001")],
+            [new AuthorizationFilter.EducationOrganization("6001")],
             FilterOperator.Or
         );
         IQueryRequest queryRequest = A.Fake<IQueryRequest>();
@@ -329,8 +329,8 @@ public class QueryOpenSearchTests
         AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
             "StaffBased",
             [
-                new AuthorizationFilter.EducationOrganization("EducationOrganization", "6001"),
-                new AuthorizationFilter.EducationOrganization("EducationOrganization", "7002"),
+                new AuthorizationFilter.EducationOrganization("6001"),
+                new AuthorizationFilter.EducationOrganization("7002"),
             ],
             FilterOperator.Or
         );
