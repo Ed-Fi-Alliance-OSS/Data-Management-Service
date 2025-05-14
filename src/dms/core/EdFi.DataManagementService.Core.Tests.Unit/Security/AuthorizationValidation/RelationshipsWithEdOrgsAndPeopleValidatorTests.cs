@@ -25,6 +25,8 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         _validator = new RelationshipsWithEdOrgsAndPeopleValidator(_authorizationRepository);
     }
 
+    // Student authorization tests
+
     [TestFixture]
     public class Given_Request_Has_No_Student_Info : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -109,7 +111,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "No relationships have been established between the caller's education organization id claims ('255901') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
+                        "No relationships have been established between the caller's education organization id claims ('255901') and one or more of the following properties of the resource item: 'StudentUniqueId'."
                     );
             }
         }
@@ -145,43 +147,6 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 securityElements,
                 authorizationFilters,
                 [authorizationSecurableInfo],
-                OperationType.Get
-            );
-        }
-
-        [Test]
-        public void Should_Return_Expected_AuthorizationResult()
-        {
-            _expectedResult.Should().NotBeNull();
-            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
-        }
-    }
-
-    [TestFixture]
-    public class Given_Resource_Is_Not_Student_Securable : RelationshipsWithEdOrgsAndPeopleValidatorTests
-    {
-        private ResourceAuthorizationResult? _expectedResult;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var securityElements = new DocumentSecurityElements(
-                [],
-                [],
-                [new StudentUniqueId("12345")],
-                [],
-                []
-            );
-
-            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
-
-            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
-                .Returns([255901L]);
-
-            _expectedResult = await _validator.ValidateAuthorization(
-                securityElements,
-                authorizationFilters,
-                [],
                 OperationType.Get
             );
         }
@@ -240,7 +205,391 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "No relationships have been established between the caller's education organization id claims ('255903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
+                        "No relationships have been established between the caller's education organization id claims ('255903') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                    );
+            }
+        }
+    }
+
+    // Contact authorization tests
+    [TestFixture]
+    public class Given_Request_Has_No_Contact_Info : RelationshipsWithEdOrgsAndPeopleValidatorTests
+    {
+        private ResourceAuthorizationResult? _expectedResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var securityElements = new DocumentSecurityElements([], [], [], [], []);
+            var authorizationFilters = Array.Empty<AuthorizationFilter>();
+            var authorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.ContactUniqueId
+            );
+            _expectedResult = await _validator!.ValidateAuthorization(
+                securityElements,
+                authorizationFilters,
+                [authorizationSecurableInfo],
+                OperationType.Get
+            );
+        }
+
+        [Test]
+        public void Should_Return_Expected_AuthorizationResult()
+        {
+            _expectedResult.Should().NotBeNull();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "No 'Contact' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?"
+                    );
+            }
+        }
+    }
+
+    [TestFixture]
+    public class Given_Resource_With_Contact_Reference_Has_No_Associated_EdOrgs
+        : RelationshipsWithEdOrgsAndPeopleValidatorTests
+    {
+        private ResourceAuthorizationResult? _expectedResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [],
+                [new ContactUniqueId("12345")],
+                []
+            );
+
+            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+
+            var authorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.ContactUniqueId
+            );
+
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForContact("12345")).Returns([]);
+
+            _expectedResult = await _validator.ValidateAuthorization(
+                securityElements,
+                authorizationFilters,
+                [authorizationSecurableInfo],
+                OperationType.Get
+            );
+        }
+
+        [Test]
+        public void Should_Return_Expected_AuthorizationResult()
+        {
+            _expectedResult.Should().NotBeNull();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "No relationships have been established between the caller's education organization id claims ('255901') and one or more of the following properties of the resource item: 'ContactUniqueId'."
+                    );
+            }
+        }
+    }
+
+    [TestFixture]
+    public class Given_Resource_With_Contact_Reference_Has_Matching_EdOrg
+        : RelationshipsWithEdOrgsAndPeopleValidatorTests
+    {
+        private ResourceAuthorizationResult? _expectedResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [],
+                [new ContactUniqueId("12345")],
+                []
+            );
+
+            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+
+            var authorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.ContactUniqueId
+            );
+
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForContact("12345"))
+                .Returns([255901L]);
+
+            _expectedResult = await _validator.ValidateAuthorization(
+                securityElements,
+                authorizationFilters,
+                [authorizationSecurableInfo],
+                OperationType.Get
+            );
+        }
+
+        [Test]
+        public void Should_Return_Expected_AuthorizationResult()
+        {
+            _expectedResult.Should().NotBeNull();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
+        }
+    }
+
+    [TestFixture]
+    public class Given_Resource_With_Contact_Reference_Has_No_Matching_EdOrg
+        : RelationshipsWithEdOrgsAndPeopleValidatorTests
+    {
+        private ResourceAuthorizationResult? _expectedResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [],
+                [new ContactUniqueId("12345")],
+                []
+            );
+
+            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255903") };
+
+            var authorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.ContactUniqueId
+            );
+
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForContact("12345"))
+                .Returns([255901L]);
+
+            _expectedResult = await _validator.ValidateAuthorization(
+                securityElements,
+                authorizationFilters,
+                [authorizationSecurableInfo],
+                OperationType.Get
+            );
+        }
+
+        [Test]
+        public void Should_Return_Expected_AuthorizationResult()
+        {
+            _expectedResult.Should().NotBeNull();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "No relationships have been established between the caller's education organization id claims ('255903') and one or more of the following properties of the resource item: 'ContactUniqueId'."
+                    );
+            }
+        }
+    }
+
+    [TestFixture]
+    public class Given_Resource_Is_Not_Student_Or_Contact_Securable
+        : RelationshipsWithEdOrgsAndPeopleValidatorTests
+    {
+        private ResourceAuthorizationResult? _expectedResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId("12345")],
+                [new ContactUniqueId("89898")],
+                []
+            );
+
+            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
+                .Returns([255901L]);
+
+            _expectedResult = await _validator.ValidateAuthorization(
+                securityElements,
+                authorizationFilters,
+                [],
+                OperationType.Get
+            );
+        }
+
+        [Test]
+        public void Should_Return_Expected_AuthorizationResult()
+        {
+            _expectedResult.Should().NotBeNull();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
+        }
+    }
+
+    [TestFixture]
+    public class Given_Resource_Is_Student_And_Contact_Securable
+        : RelationshipsWithEdOrgsAndPeopleValidatorTests
+    {
+        private ResourceAuthorizationResult? _expectedResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId("12345")],
+                [new ContactUniqueId("89898")],
+                []
+            );
+
+            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
+                .Returns([255901L]);
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForContact("89898"))
+                .Returns([255901L]);
+
+            var studentAuthorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.StudentUniqueId
+            );
+            var contactAuthorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.ContactUniqueId
+            );
+
+            _expectedResult = await _validator.ValidateAuthorization(
+                securityElements,
+                authorizationFilters,
+                [studentAuthorizationSecurableInfo, contactAuthorizationSecurableInfo],
+                OperationType.Get
+            );
+        }
+
+        [Test]
+        public void Should_Return_Expected_AuthorizationResult()
+        {
+            _expectedResult.Should().NotBeNull();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.Authorized));
+        }
+    }
+
+    [TestFixture]
+    public class Given_Resource_Is_Student_And_Contact_Securable_Missing_Student_Info
+        : RelationshipsWithEdOrgsAndPeopleValidatorTests
+    {
+        private ResourceAuthorizationResult? _expectedResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [],
+                [new ContactUniqueId("89898")],
+                []
+            );
+
+            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
+                .Returns([255901L]);
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForContact("89898"))
+                .Returns([255901L]);
+
+            var studentAuthorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.StudentUniqueId
+            );
+            var contactAuthorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.ContactUniqueId
+            );
+
+            _expectedResult = await _validator.ValidateAuthorization(
+                securityElements,
+                authorizationFilters,
+                [studentAuthorizationSecurableInfo, contactAuthorizationSecurableInfo],
+                OperationType.Get
+            );
+        }
+
+        [Test]
+        public void Should_Return_Expected_AuthorizationResult()
+        {
+            _expectedResult.Should().NotBeNull();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "No 'Student' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?"
+                    );
+            }
+        }
+    }
+
+    [TestFixture]
+    public class Given_Resource_Is_Student_And_Contact_Securable_Missing_Contact_Info
+        : RelationshipsWithEdOrgsAndPeopleValidatorTests
+    {
+        private ResourceAuthorizationResult? _expectedResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var securityElements = new DocumentSecurityElements(
+                [],
+                [],
+                [new StudentUniqueId("12345")],
+                [],
+                []
+            );
+
+            var authorizationFilters = new[] { new AuthorizationFilter("EducationOrganization", "255901") };
+
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
+                .Returns([255901L]);
+            A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForContact("89898"))
+                .Returns([255901L]);
+
+            var studentAuthorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.StudentUniqueId
+            );
+            var contactAuthorizationSecurableInfo = new AuthorizationSecurableInfo(
+                SecurityElementNameConstants.ContactUniqueId
+            );
+
+            _expectedResult = await _validator.ValidateAuthorization(
+                securityElements,
+                authorizationFilters,
+                [studentAuthorizationSecurableInfo, contactAuthorizationSecurableInfo],
+                OperationType.Get
+            );
+        }
+
+        [Test]
+        public void Should_Return_Expected_AuthorizationResult()
+        {
+            _expectedResult.Should().NotBeNull();
+            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                notAuthorized!.ErrorMessages.Should().HaveCount(1);
+                notAuthorized!
+                    .ErrorMessages[0]
+                    .Should()
+                    .Be(
+                        "No 'Contact' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?"
                     );
             }
         }

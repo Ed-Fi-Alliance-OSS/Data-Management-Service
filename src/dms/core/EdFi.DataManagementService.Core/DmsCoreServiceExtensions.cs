@@ -55,9 +55,11 @@ public static class DmsCoreServiceExtensions
             .AddTransient<NamespaceBasedValidator>()
             .AddTransient<RelationshipsWithEdOrgsOnlyValidator>()
             .AddTransient<RelationshipsWithEdOrgsAndPeopleValidator>()
+            .AddTransient<RelationshipsWithStudentsOnlyValidator>()
             .AddTransient<RelationshipsWithEdOrgsOnlyFiltersProvider>()
             .AddTransient<RelationshipsWithEdOrgsAndPeopleFiltersProvider>()
             .AddTransient<NoFurtherAuthorizationRequiredFiltersProvider>()
+            .AddTransient<RelationshipsWithStudentsOnlyFiltersProvider>()
             .AddTransient<NamespaceBasedFiltersProvider>()
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline);
 

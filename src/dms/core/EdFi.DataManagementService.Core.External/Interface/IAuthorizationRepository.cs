@@ -13,4 +13,5 @@ public interface IAuthorizationRepository
     public Task<long[]> GetAncestorEducationOrganizationIds(long[] educationOrganizationIds);
     public Task<long[]> GetEducationOrganizationsForStudent(string studentUniqueId);
     public Task<long[]> GetEducationOrganizationsForStaff(string staffUniqueId);
+    public Task<long[]> GetEducationOrganizationsForContact(string contactUniqueId);
 }
