@@ -83,6 +83,19 @@ Rule: StudentContactAssociation CRUD is properly authorized
                   }
                   """
              Then it should respond with 403
+             And the response body is
+                """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                          "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                        ]
+                  }
+                """
 
         Scenario: 04 Ensure client can not get StudentContactAssociation with wrong educationOrganizationId
             When a POST request is made to "/ed-fi/studentContactAssociations" with
@@ -115,7 +128,29 @@ Rule: StudentContactAssociation CRUD is properly authorized
                    }
                 """
 
-        Scenario: 05 Ensure client can update a StudentContactAssociation
+        Scenario: 05 Ensure client can not search StudentContactAssociation with wrong educationOrganizationId
+            When a POST request is made to "/ed-fi/studentContactAssociations" with
+                  """
+                  {
+                      "contactReference": {
+                          "contactUniqueId": "C91112"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "S91112"
+                      },
+                      "emergencyContactStatus": true
+                  }
+                  """
+             Then it should respond with 201 or 200
+             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901903"
+             When a GET request is made to "/ed-fi/studentContactAssociations"
+             Then it should respond with 200
+             And the response body is
+                """
+                   []
+                """
+
+        Scenario: 06 Ensure client can update a StudentContactAssociation
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -154,7 +189,7 @@ Rule: StudentContactAssociation CRUD is properly authorized
                   """
              Then it should respond with 204
 
-        Scenario: 06 Ensure client can not update a StudentContactAssociation with wrong educationOrganizationId
+        Scenario: 07 Ensure client can not update a StudentContactAssociation with wrong educationOrganizationId
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -193,8 +228,21 @@ Rule: StudentContactAssociation CRUD is properly authorized
                   }
                   """
              Then it should respond with 403
+              And the response body is
+                """
+                   {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                          "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                        ]
+                   }
+                """
 
-        Scenario: 07 Ensure client can delete a StudentContactAssociation
+        Scenario: 08 Ensure client can delete a StudentContactAssociation
             When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -211,7 +259,7 @@ Rule: StudentContactAssociation CRUD is properly authorized
              When a DELETE request is made to "/ed-fi/studentContactAssociations/{id}"
              Then it should respond with 204
 
-        Scenario: 08 Ensure client can not delete a StudentContactAssociation with wrong educationOrganizationId
+        Scenario: 09 Ensure client can not delete a StudentContactAssociation with wrong educationOrganizationId
             When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -228,8 +276,21 @@ Rule: StudentContactAssociation CRUD is properly authorized
              Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901903"
              When a DELETE request is made to "/ed-fi/studentContactAssociations/{id}"
              Then it should respond with 403
+             And the response body is
+                """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                          "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                        ]
+                  }
+                """
 
-        Scenario: 09 Ensure client get the required validation error when studentContactAssociations is created with empty contactReference
+        Scenario: 10 Ensure client get the required validation error when studentContactAssociations is created with empty contactReference
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901902"
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
@@ -260,7 +321,7 @@ Rule: StudentContactAssociation CRUD is properly authorized
 
 Rule: Contact CRUD is properly authorized
 
-        Scenario: 10 Ensure client can create a Contact
+        Scenario: 11 Ensure client can create a Contact
              When a POST request is made to "/ed-fi/contacts" with
                   """
                   {
@@ -287,7 +348,7 @@ Rule: Contact CRUD is properly authorized
                   """
              Then it should respond with 201
 
-        Scenario: 11 Ensure client can not retrieve a contact with out student contact association
+        Scenario: 12 Ensure client can not retrieve a contact with out student contact association
              When a POST request is made to "/ed-fi/contacts" with
                   """
                   {
@@ -313,7 +374,7 @@ Rule: Contact CRUD is properly authorized
                        }
                     """
 
-        Scenario: 12 Ensure client can not update a contact when it's unassociated
+        Scenario: 13 Ensure client can not update a contact when it's unassociated
             Given a POST request is made to "/ed-fi/contacts/" with
                   """
                   {
@@ -363,7 +424,7 @@ Rule: Contact CRUD is properly authorized
                   }
                 """
 
-        Scenario: 13 Ensure client can delete a contact when it's unused and should return 204 nocontent
+        Scenario: 14 Ensure client can delete a contact when it's unused and should return 204 nocontent
              When a POST request is made to "/ed-fi/contacts" with
                   """
                   {
@@ -376,7 +437,7 @@ Rule: Contact CRUD is properly authorized
              When a DELETE request is made to "/ed-fi/contacts/{id}"
              Then it should respond with 204
 
-        Scenario: 14 Ensure client can not delete a contact when it's associated with a student
+        Scenario: 15 Ensure client can not delete a contact when it's associated with a student
             When a POST request is made to "/ed-fi/contacts" with
                 """
                 {
@@ -414,7 +475,7 @@ Rule: Contact CRUD is properly authorized
                   }
                 """
 
-        Scenario: 15 Ensure client can retrieve a contact with student contact association
+        Scenario: 16 Ensure client can retrieve a contact with student contact association
              When a POST request is made to "/ed-fi/contacts" with
                   """
                   {
@@ -450,7 +511,7 @@ Rule: Contact CRUD is properly authorized
                     }
                     """
 
-        Scenario: 16 Ensure client can not update a contact When it's unassociated
+        Scenario: 17 Ensure client can not update a contact When it's unassociated
             Given a POST request is made to "/ed-fi/contacts/" with
                   """
                   {
@@ -486,8 +547,22 @@ Rule: Contact CRUD is properly authorized
                   }
                   """
              Then it should respond with 403
+              And the response body is
+                """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                          "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and one or more of the following properties of the resource item: 'ContactUniqueId'."
+                        ]
+                  }
+                """
 
-        Scenario: 17 Ensure client can update a contact When it's associated
+
+        Scenario: 18 Ensure client can update a contact When it's associated
             Given a POST request is made to "/ed-fi/contacts/" with
                   """
                   {
@@ -538,7 +613,7 @@ Rule: Contact CRUD is properly authorized
                   """
              Then it should respond with 204
 
-        Scenario: 18 Ensure client can not update a contact with wrong educationOrganizationId
+        Scenario: 19 Ensure client can not update a contact with wrong educationOrganizationId
              Given a POST request is made to "/ed-fi/contacts/" with
                   """
                   {
@@ -589,8 +664,21 @@ Rule: Contact CRUD is properly authorized
                   }
                   """
              Then it should respond with 403
+              And the response body is
+                """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                          "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'ContactUniqueId'."
+                        ]
+                  }
+                """
 
-        Scenario: 19 Ensure client should get 403 When associating a nonexistent student
+        Scenario: 20 Ensure client should get 403 When associating a nonexistent student
              When a POST request is made to "/ed-fi/contacts" with
                   """
                   {
@@ -614,10 +702,23 @@ Rule: Contact CRUD is properly authorized
                   }
                   """
              Then it should respond with 403
+              And the response body is
+                """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                          "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                        ]
+                  }
+                """
 
 Rule: Associate more than one students with a contact
 
-        Scenario: 20 Ensure client can retrieve the contact using any associated student's edorg id when associated with multiple students
+        Scenario: 21 Ensure client can retrieve the contact using any associated student's edorg id when associated with multiple students
 
             When a POST request is made to "/ed-fi/contacts" with
                 """
@@ -696,7 +797,7 @@ Background:
                   | schoolReference           | studentReference                | entryGradeLevelDescriptor                          | entryDate  |
                   | { "schoolId": 255901904 } | { "studentUniqueId": "S91114" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
               
-        Scenario: 21 Ensure client can retrieve the contacts using associated student's edorg id
+        Scenario: 22 Ensure client can retrieve only the associated contacts using student's edorg id
             When a POST request is made to "/ed-fi/contacts" with
                 """
                 {
@@ -717,6 +818,16 @@ Background:
                  }
                 """
             And the resulting id is stored in the "AssociatedContactId2" variable
+            Then it should respond with 201
+
+            When a POST request is made to "/ed-fi/contacts" with
+                """
+                {
+                    "contactUniqueId": "C81132",
+                    "firstName": "NotAssociatedFN",
+                    "lastSurname": "NotAssociatedLN"
+                 }
+                """
             Then it should respond with 201
 
             When a POST request is made to "/ed-fi/studentContactAssociations" with
