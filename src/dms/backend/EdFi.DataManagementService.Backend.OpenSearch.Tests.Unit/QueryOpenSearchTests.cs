@@ -284,6 +284,100 @@ public class QueryOpenSearchTests
     }
 
     [Test]
+    public void BuildAuthorizationFilters_WithStaffUniqueIdSecurableKey_ReturnsStaffTermsFilter()
+    {
+        // Arrange
+        AuthorizationSecurableInfo securableInfo = new AuthorizationSecurableInfo("StaffUniqueId");
+        AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
+            "StaffBased",
+            [new AuthorizationFilter("EducationOrganization", "6001")],
+            FilterOperator.Or
+        );
+        IQueryRequest queryRequest = A.Fake<IQueryRequest>();
+        A.CallTo(() => queryRequest.AuthorizationSecurableInfo).Returns([securableInfo]);
+        A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns([strategyEvaluator]);
+        string expectedJson = """
+            {
+                "terms": {
+                    "staffeducationorganizationauthorizationedorgids.array": {
+                        "index": "edfi.dms.educationorganizationhierarchytermslookup",
+                        "id": "6001",
+                        "path": "hierarchy.array"
+                    }
+                }
+            }
+            """;
+
+        // Act
+        List<JsonObject> result = QueryOpenSearch.BuildAuthorizationFilters(
+            queryRequest,
+            NullLogger.Instance
+        );
+
+        // Assert
+        result.Should().ContainSingle();
+        JsonObject? expected = JsonNode.Parse(expectedJson) as JsonObject;
+        expected.Should().NotBeNull();
+        result[0].ToJsonString().Should().Be(expected!.ToJsonString());
+    }
+
+    [Test]
+    public void BuildAuthorizationFilters_WithStaffUniqueIdSecurableKeyAndMultipleEdOrgs_ReturnsStaffBoolShouldFilter()
+    {
+        // Arrange
+        AuthorizationSecurableInfo securableInfo = new AuthorizationSecurableInfo("StaffUniqueId");
+        AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
+            "StaffBased",
+            [
+                new AuthorizationFilter("EducationOrganization", "6001"),
+                new AuthorizationFilter("EducationOrganization", "7002"),
+            ],
+            FilterOperator.Or
+        );
+        IQueryRequest queryRequest = A.Fake<IQueryRequest>();
+        A.CallTo(() => queryRequest.AuthorizationSecurableInfo).Returns([securableInfo]);
+        A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns([strategyEvaluator]);
+        string expectedJson = """
+            {
+                "bool": {
+                    "should": [
+                        {
+                            "terms": {
+                                "staffeducationorganizationauthorizationedorgids.array": {
+                                    "index": "edfi.dms.educationorganizationhierarchytermslookup",
+                                    "id": "6001",
+                                    "path": "hierarchy.array"
+                                }
+                            }
+                        },
+                        {
+                            "terms": {
+                                "staffeducationorganizationauthorizationedorgids.array": {
+                                    "index": "edfi.dms.educationorganizationhierarchytermslookup",
+                                    "id": "7002",
+                                    "path": "hierarchy.array"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+            """;
+
+        // Act
+        List<JsonObject> result = QueryOpenSearch.BuildAuthorizationFilters(
+            queryRequest,
+            NullLogger.Instance
+        );
+
+        // Assert
+        result.Should().ContainSingle();
+        JsonObject? expected = JsonNode.Parse(expectedJson) as JsonObject;
+        expected.Should().NotBeNull();
+        result[0].ToJsonString().Should().Be(expected!.ToJsonString());
+    }
+
+    [Test]
     public void BuildQueryObject_WithBasicQueryAndPagination_ReturnsExpectedJson()
     {
         // Arrange

@@ -243,6 +243,10 @@ Authorization: bearer {{dmsToken}}
 
 @staffEducationOrganizationAssignmentAssociationId2 = {{staffEducationOrganizationAssignmentAssociation2.response.body.id}}
 
+### Get All staffEducationOrganizationAssignmentAssociations
+GET {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations
+Authorization: bearer {{dmsToken}}
+
 ### Create a new application
 # @name createApplication2
 POST http://localhost:{{configPort}}/v2/applications
@@ -307,3 +311,7 @@ Authorization: bearer {{dmsToken}}
       "staffUniqueId": "124"
     }
 }
+
+### Get staffEducationOrganizationAssignmentAssociations - should only get one
+GET {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations
+Authorization: bearer {{sandboxToken}}
