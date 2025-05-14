@@ -304,7 +304,7 @@ Authorization: bearer {{dmsToken}}
      }
  }
 
-### GET Contact
+### GET student contact association
 # @name getStudentContactAssociation2
 GET {{createStudentContactAssociation2.response.headers.location}}
 Authorization: bearer {{dmsToken}}
@@ -380,7 +380,122 @@ grant_type=client_credentials
 ###
 @sandboxToken={{sandboxTokenRequest.response.body.access_token}}
 
-### Query Contacts - should return no records with this token
+### Get Contacts
 ###
 GET {{dataApi}}/ed-fi/contacts
 Authorization: bearer {{sandboxToken}}
+
+### Create a new application with EdFiSandbox claim set
+# @name createApplication3
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Demo application 3",
+    "claimSetName": "EdFiSandbox",
+    "educationOrganizationIds": [6001011]
+}
+
+###
+@clientKey3={{createApplication3.response.body.key}}
+@clientSecret3={{createApplication3.response.body.secret}}
+
+### Create a DMS token
+# @name sandboxTokenResponse
+POST {{tokenUrl}}
+Authorization: basic {{clientKey3}}:{{clientSecret3}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@EdFiSandboxToken={{sandboxTokenResponse.response.body.access_token}}
+
+### Create contact
+# @name createContact
+POST {{dataApi}}/ed-fi/contacts
+Authorization: bearer {{EdFiSandboxToken}}
+
+ {
+     "contactUniqueId": "77777",
+     "firstName": "contactfirstname",
+     "lastSurname": "contactlastname"
+ }
+
+### Create second student contact association with same contact
+# @name createStudentContactAssociation3
+POST {{dataApi}}/ed-fi/studentcontactassociations
+Authorization: bearer {{EdFiSandboxToken}}
+
+{
+      "studentReference": {
+       "studentUniqueId": "604824"
+     },
+     "contactReference": {
+       "contactUniqueId": "77777"
+     }
+}
+
+
+### GET contact
+# @name getContact
+GET {{createContact.response.headers.location}}
+Authorization: bearer {{EdFiSandboxToken}}
+
+###
+@contactId={{getContact.response.body.id}}
+
+### Update contact
+# @name updateContact
+PUT {{createContact.response.headers.location}}
+Authorization: bearer {{EdFiSandboxToken}}
+
+{
+    "id": "{{contactId}}",
+    "contactUniqueId": "77777",
+    "firstName": "contactfirstname-update",
+    "lastSurname": "contactlastname-update"
+}
+
+### Get student contact association
+# @name getStudentContactAssociation3
+GET {{createStudentContactAssociation3.response.headers.location}}
+Authorization: bearer {{EdFiSandboxToken}}
+
+###
+@studentContactAssociationId3={{getStudentContactAssociation3.response.body.id}}
+
+### Update StudentContactAssociation
+# @name updateStudentContactAssociation3
+PUT {{createStudentContactAssociation3.response.headers.location}}
+Authorization: bearer {{EdFiSandboxToken}}
+
+{
+    "id": "{{studentContactAssociationId3}}",
+    "studentReference": {
+       "studentUniqueId": "604824"
+     },
+     "contactReference": {
+       "contactUniqueId": "77777"
+     },
+     "contactPriority": 1
+}
+
+### Get Contacts should return 2 records
+GET {{dataApi}}/ed-fi/contacts
+Authorization: bearer {{EdFiSandboxToken}}
+
+### Delete student contact association (604824->77777)
+DELETE {{createStudentContactAssociation3.response.headers.location}}
+Authorization: bearer {{EdFiSandboxToken}}
+
+### Get Contacts should return 1 record
+GET {{dataApi}}/ed-fi/contacts
+Authorization: bearer {{EdFiSandboxToken}}
+
+### No student school association, should be able to delete contact 77777
+DELETE {{createContact.response.headers.location}}
+Authorization: bearer {{EdFiSandboxToken}}
+
