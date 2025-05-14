@@ -68,18 +68,37 @@ Feature: Read a Descriptor
                   []
                   """
 
-        # Re-enable in DMS-691
-        @API-031 @ignore
+        @API-031
         Scenario: 05 Ensure clients cannot retrieve a descriptor by requesting through a non existing namespace
-             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor#Fake"
+             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DoesNotExistDescriptor"
              Then it should respond with 200
               And the response body is
                   """
                   []
                   """
 
+        Scenario: 06 Ensure clients cannot retrieve a descriptor by requesting a valid namespace with valid codeValue attached
+        # Descriptors are referenced in resources by attaching the namespace and codeValue like so: uri://ed-fi.org/DisabilityDescriptor#Blindness
+        # but you cannot search for a descriptor by using this combination.
+            Given a POST request is made to "/ed-fi/disabilityDescriptors" with
+                  """
+                    {
+                      "namespace": "uri://ed-fi.org/DisabilityDescriptor",
+                      "codeValue": "Blindness",
+                      "shortDescription": "Blindness"
+                    }
+                  """
+            # %23 is the url encoded value for #.
+             When a GET request is made to "/ed-fi/disabilityDescriptors?namespace=uri://ed-fi.org/DisabilityDescriptor%23Blindness"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
+                  """
+
+
         @API-032
-        Scenario: 06 Verify response code 404 when ID is not valid
+        Scenario: 07 Verify response code 404 when ID is not valid
              When a GET request is made to "/ed-fi/absenceEventCategoryDescriptors/00112233445566"
              Then it should respond with 400
               And the response body is
@@ -99,7 +118,7 @@ Feature: Read a Descriptor
                   }
                   """
 
-        Scenario: 07 Get a Descriptor using a resource not configured in claims
+        Scenario: 08 Get a Descriptor using a resource not configured in claims
              When a GET request is made to "/ed-fi/academicHonorCategoryDescriptors"
              Then it should respond with 403
               And the response body is
