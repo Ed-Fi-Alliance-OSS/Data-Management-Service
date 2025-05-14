@@ -39,7 +39,6 @@ public class OpenSearchContainerSetup : ContainerSetupBase
             var index in indices.Records.Where(x =>
                 (
                     x.Index.Contains("ed-fi$")
-                    && !x.Index.Equals("ed-fi$schoolyeartype", StringComparison.InvariantCultureIgnoreCase)
                 )
                 || x.Index.Contains("tpdm$")
                 || x.Index.Contains("sample$")
