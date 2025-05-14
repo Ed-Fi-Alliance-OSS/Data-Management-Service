@@ -41,7 +41,7 @@
     "transforms.extractPlainId.field": "id",
 
     "transforms.expandDocumentJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
-    "transforms.expandDocumentJson.sourceFields": "edfidoc, securityelements, studentschoolauthorizationedorgids, contactstudentschoolauthorizationedorgids",
+    "transforms.expandDocumentJson.sourceFields": "edfidoc, securityelements, studentschoolauthorizationedorgids, contactstudentschoolauthorizationedorgids, staffeducationorganizationauthorizationedorgids",
     "transforms.expandDocumentJson.predicate": "isDocumentTable",
 
     "transforms.expandHierarchyJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",

@@ -320,6 +320,47 @@ public static partial class QueryOpenSearch
                             return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
                         }
                         break;
+
+                    case SecurityElementNameConstants.StaffUniqueId:
+                        var staffEdOrgIds = GetEdOrgIds();
+                        if (staffEdOrgIds.Count == 1)
+                        {
+                            return new JsonObject
+                            {
+                                ["terms"] = new JsonObject
+                                {
+                                    ["staffeducationorganizationauthorizationedorgids.array"] = new JsonObject
+                                    {
+                                        ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                        ["id"] = staffEdOrgIds[0],
+                                        ["path"] = "hierarchy.array",
+                                    },
+                                },
+                            };
+                        }
+                        else if (staffEdOrgIds.Count > 1)
+                        {
+                            var shouldArray = new JsonArray(
+                                staffEdOrgIds
+                                    .Select(id => new JsonObject
+                                    {
+                                        ["terms"] = new JsonObject
+                                        {
+                                            ["staffeducationorganizationauthorizationedorgids.array"] =
+                                                new JsonObject
+                                                {
+                                                    ["index"] =
+                                                        "edfi.dms.educationorganizationhierarchytermslookup",
+                                                    ["id"] = id,
+                                                    ["path"] = "hierarchy.array",
+                                                },
+                                        },
+                                    })
+                                    .ToArray()
+                            );
+                            return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
+                        }
+                        break;
                 }
                 return null;
             })
