@@ -341,7 +341,7 @@ public class ResourceAuthorizationHandlerTests
                 ),
                 new AuthorizationStrategyEvaluator(
                     "RelationshipsWithPeopleOnly",
-                    [new AuthorizationFilter.EducationOrganization("9879898")],
+                    [new AuthorizationFilter.StudentUniqueId("9879898")],
                     FilterOperator.And
                 ),
             };

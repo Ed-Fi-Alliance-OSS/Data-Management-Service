@@ -17,5 +17,5 @@ public class RelationshipsWithEdOrgsAndPeopleFiltersProvider : AuthorizationFilt
         : base(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople) { }
 
     public override AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations) =>
-        GetNamespaceFilters(authorizations);
+        GetRelationshipFilters(authorizations);
 }
