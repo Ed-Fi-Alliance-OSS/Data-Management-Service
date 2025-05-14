@@ -682,6 +682,20 @@ Rule: Associate more than one students with a contact
 
 Rule: Associate more than one contacts with a student
 
+Background:
+          Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901904"
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
+                  | 255901904 | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+
+              And the system has these "students"
+                  | studentUniqueId | firstName            | lastSurname | birthDate  |
+                  | "S91114"        | Unauthorized student | student-ln  | 2008-01-01 |
+
+              And the system has these "studentSchoolAssociations"
+                  | schoolReference           | studentReference                | entryGradeLevelDescriptor                          | entryDate  |
+                  | { "schoolId": 255901904 } | { "studentUniqueId": "S91114" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
+              
         Scenario: 21 Ensure client can retrieve the contacts using associated student's edorg id
             When a POST request is made to "/ed-fi/contacts" with
                 """
@@ -712,7 +726,7 @@ Rule: Associate more than one contacts with a student
                         "contactUniqueId": "C81130"
                     },
                     "studentReference": {
-                        "studentUniqueId": "S91111"
+                        "studentUniqueId": "S91114"
                     },
                    "emergencyContactStatus": true
                 }
@@ -725,13 +739,12 @@ Rule: Associate more than one contacts with a student
                         "contactUniqueId": "C81131"
                     },
                     "studentReference": {
-                        "studentUniqueId": "S91111"
+                        "studentUniqueId": "S91114"
                     },
                    "emergencyContactStatus": true
                 }
                 """
             Then it should respond with 201 or 200
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901"
             When a GET request is made to "/ed-fi/contacts"
             Then it should respond with 200
             And the response body is
