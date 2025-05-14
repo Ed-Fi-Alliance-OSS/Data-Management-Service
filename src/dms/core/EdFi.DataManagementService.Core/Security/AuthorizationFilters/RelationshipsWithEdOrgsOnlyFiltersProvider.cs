@@ -10,13 +10,12 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 /// <summary>
 /// Provides authorization filters for RelationshipsWithEdOrgsOnly authorization strategy
 /// </summary>
-[AuthorizationStrategyName(AuthorizationStrategyName)]
-public class RelationshipsWithEdOrgsOnlyFiltersProvider : IAuthorizationFiltersProvider
+[AuthorizationStrategyName(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
+public class RelationshipsWithEdOrgsOnlyFiltersProvider : AuthorizationFiltersProviderBase
 {
-    private const string AuthorizationStrategyName = "RelationshipsWithEdOrgsOnly";
+    public RelationshipsWithEdOrgsOnlyFiltersProvider()
+        : base(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly) { }
 
-    public AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations)
-    {
-        return RelationshipsFiltersProvider.GetFilters(authorizations, AuthorizationStrategyName);
-    }
+    public override AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations) =>
+        GetRelationshipFilters(authorizations);
 }
