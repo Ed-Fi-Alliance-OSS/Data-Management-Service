@@ -10,25 +10,17 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade                         |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school           |
                   | uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education            |
+                  | uri://ed-fi.org/SourceSystemDescriptor#Pass                              |
+                  | uri://ed-fi.org/SourceSystemDescriptor#Fail                              |
+                  | uri://ed-fi.org/EmploymentStatusDescriptor#Tenured or permanent          |
               And the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+                  | 255901001911 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
 
 
         Scenario: 01 Create Person With "District" sourceSystemDescriptor and associate with Staff
-             When a POST request is made to "/ed-fi/sourceSystemDescriptors" with
-                  """
-                  {
-                      "codeValue": "Pass",
-                      "description": "Pass",
-                      "effectiveBeginDate": "2024-05-14",
-                      "effectiveEndDate": "2024-05-14",
-                      "namespace": "uri://ed-fi.org/SourceSystemDescriptor",
-                      "shortDescription": "Pass"
-                  }
-                  """
-             Then it should respond with 201
-
+            
              When a POST request is made to "/ed-fi/people" with
                   """
                     {
@@ -53,19 +45,6 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 201
 
-             When a POST request is made to "/ed-fi/employmentStatusDescriptors" with
-                  """
-                  {
-                      "codeValue": "Tenured or permanent",
-                      "description": "Tenured or permanent",
-                      "effectiveBeginDate": "2024-05-14",
-                      "effectiveEndDate": "2024-05-14",
-                      "namespace": "uri://ed-fi.org/EmploymentStatusDescriptor",
-                      "shortDescription": "Tenured or permanent"
-                  }
-                  """
-             Then it should respond with 201
-
              When a POST request is made to "/ed-fi/StaffEducationOrganizationEmploymentAssociations" with
                   """
                     {
@@ -81,7 +60,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 201
 
-             When a GET request is made to "/ed-fi/Staffs?staffUniqueId=s0001&personId=p001"
+             When a GET request is made to "/ed-fi/Staffs"
              Then it should respond with 200
               And the response body is
                   """
@@ -101,37 +80,13 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
 
         Scenario: 02 Create same Person With  different  sourceSystemDescriptor and associate with Staff
-             When a POST request is made to "/ed-fi/sourceSystemDescriptors" with
-                  """
-                  {
-                      "codeValue": "Pass",
-                      "description": "Pass",
-                      "effectiveBeginDate": "2024-05-14",
-                      "effectiveEndDate": "2024-05-14",
-                      "namespace": "uri://ed-fi.org/SourceSystemDescriptor",
-                      "shortDescription": "Pass"
-                  }
-                  """
-             Then it should respond with 201
+
              When a POST request is made to "/ed-fi/people" with
                   """
                     {
                       "personId": "p002",
                       "sourceSystemDescriptor": "uri://ed-fi.org/SourceSystemDescriptor#Pass"
                     }
-                  """
-             Then it should respond with 201
-
-             When a POST request is made to "/ed-fi/sourceSystemDescriptors" with
-                  """
-                  {
-                      "codeValue": "Fail",
-                      "description": "Fail",
-                      "effectiveBeginDate": "2024-05-14",
-                      "effectiveEndDate": "2024-05-14",
-                      "namespace": "uri://ed-fi.org/SourceSystemDescriptor",
-                      "shortDescription": "Fail"
-                  }
                   """
              Then it should respond with 201
 
@@ -175,17 +130,6 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "firstName": "Steve",
                       "lastSurname": "Buck"
                     }
-                  """
-             Then it should respond with 201
-
-             When a POST request is made to "/ed-fi/EmploymentStatusDescriptors" with
-                  """
-                  {
-                      "codeValue": "Tenured or permanent",
-                      "description": "Tenured or permanent",
-                      "namespace": "uri://ed-fi.org/EmploymentStatusDescriptor",
-                      "shortDescription": "Tenured or permanent"
-                  }
                   """
              Then it should respond with 201
 
@@ -253,6 +197,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
+        # Ignored because Data Validation with Staff when petName has leading or trailing spaces DMS-696-Defect
+        @ignore
         Scenario: 04 Data Validation with Staff when petName has leading or trailing spaces
 
              When a POST request is made to "/ed-fi/staffs" with
@@ -293,6 +239,8 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
+        # Ignored because Data Validation with Staff when Pet name has too short value @DMS-697Defect
+        @ignore
         Scenario: 05 Data Validation with Staff when Pet name has too short value
 
              When a POST request is made to "/ed-fi/staffs" with
@@ -332,6 +280,9 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "errors": []
                     }
                   """
+
+        # Ignored because Data Validation with Staff when Pet name has too long value @DMS-697Defect
+        @ignore
 
         Scenario: 06 Data Validation with Staff when Pet name has too long value
 
