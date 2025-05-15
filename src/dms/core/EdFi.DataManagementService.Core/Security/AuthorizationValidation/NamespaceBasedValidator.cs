@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 [AuthorizationStrategyName(AuthorizationStrategyName)]
 public class NamespaceBasedValidator : IAuthorizationValidator
 {
-    private const string AuthorizationStrategyName = "NamespaceBased";
+    private const string AuthorizationStrategyName = AuthorizationStrategyNameConstants.NamespaceBased;
 
     public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,

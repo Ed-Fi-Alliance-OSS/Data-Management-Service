@@ -9,13 +9,47 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// Represents an authorization filter with a specified
 /// JSON element name for extracting data, and the expected value
 /// </summary>
-public record AuthorizationFilter(
-    /// <summary>
-    /// The JSON element name used to extract the relevant data
-    /// </summary>
-    string FilterPath,
+public abstract record AuthorizationFilter(
     /// <summary>
     /// The expected value used
     /// </summary>
     string Value
-);
+)
+{
+    /// <summary>
+    /// Education Organization based authorization filter
+    /// <param name="EducationOrganizationId"></param>
+    /// </summary>
+    public record EducationOrganization(string EducationOrganizationId)
+        : AuthorizationFilter(EducationOrganizationId);
+
+    /// <summary>
+    /// Education Organization based authorization filter
+    /// <param name="NamespacePrefix"></param>
+    /// </summary>
+    public record Namespace(string NamespacePrefix) : AuthorizationFilter(NamespacePrefix);
+
+    /// <summary>
+    /// Education Organization based authorization filter
+    /// <param name="UniqueId"></param>
+    /// </summary>
+    public record StudentUniqueId(string UniqueId) : AuthorizationFilter(UniqueId);
+
+    /// <summary>
+    /// Education Organization based authorization filter
+    /// <param name="UniqueId"></param>
+    /// </summary>
+    public record StaffUniqueId(string UniqueId) : AuthorizationFilter(UniqueId);
+
+    /// <summary>
+    /// Parent based authorization filter
+    /// <param name="UniqueId"></param>
+    /// </summary>
+    public record ParentUniqueId(string UniqueId) : AuthorizationFilter(UniqueId);
+
+    /// <summary>
+    /// Contact based authorization filter
+    /// <param name="UniqueId"></param>
+    /// </summary>
+    public record ContactUniqueId(string UniqueId) : AuthorizationFilter(UniqueId);
+}

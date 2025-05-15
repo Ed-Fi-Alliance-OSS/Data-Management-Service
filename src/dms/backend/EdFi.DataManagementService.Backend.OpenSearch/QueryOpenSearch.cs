@@ -134,27 +134,14 @@ public static partial class QueryOpenSearch
     /// <returns>List of JSON objects representing authorization filters</returns>
     public static List<JsonObject> BuildAuthorizationFilters(IQueryRequest queryRequest, ILogger logger)
     {
-        // Helper to get all EdOrg IDs from filters
-        List<string> GetEdOrgIds() =>
+        // Helper to get all values from filters based on the filter type
+        List<string> GetFilterValues(
+            string filterType = SecurityElementNameConstants.EducationOrganization
+        ) =>
             queryRequest
                 .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
                     evaluator
-                        .Filters.Where(f =>
-                            f.FilterPath == SecurityElementNameConstants.EducationOrganization
-                        )
-                        .Select(f => f.Value?.ToString())
-                        .Where(id => !string.IsNullOrEmpty(id))
-                        .Cast<string>()
-                )
-                .Distinct()
-                .ToList();
-
-        // Helper to get all namespaces from filters
-        List<string> GetNamespaces() =>
-            queryRequest
-                .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
-                    evaluator
-                        .Filters.Where(f => f.FilterPath == SecurityElementNameConstants.Namespace)
+                        .Filters.Where(f => f.GetType().Name == filterType)
                         .Select(f => f.Value?.ToString())
                         .Where(ns => !string.IsNullOrEmpty(ns))
                         .Cast<string>()
@@ -168,205 +155,227 @@ public static partial class QueryOpenSearch
                 switch (authorizationSecurableInfo.SecurableKey)
                 {
                     case SecurityElementNameConstants.Namespace:
-                        var namespaces = GetNamespaces();
-                        if (namespaces.Count > 1)
-                        {
-                            return new JsonObject
-                            {
-                                ["terms"] = new JsonObject
-                                {
-                                    [$"securityelements.{SecurityElementNameConstants.Namespace}"] =
-                                        new JsonArray(
-                                            namespaces.Select(ns => JsonValue.Create(ns)!).ToArray()
-                                        ),
-                                },
-                            };
-                        }
-                        else if (namespaces.Count == 1)
-                        {
-                            return new JsonObject
-                            {
-                                ["match_phrase"] = new JsonObject
-                                {
-                                    [$"securityelements.{SecurityElementNameConstants.Namespace}"] =
-                                        namespaces[0],
-                                },
-                            };
-                        }
-                        break;
+                        var namespaces = GetFilterValues(SecurityElementNameConstants.Namespace);
+                        return BuildNamespaceFilter(namespaces);
 
                     case SecurityElementNameConstants.EducationOrganization:
-                        var edOrgIds = GetEdOrgIds();
-                        if (edOrgIds.Count == 1)
-                        {
-                            return new JsonObject
-                            {
-                                ["terms"] = new JsonObject
-                                {
-                                    [
-                                        $"securityelements.{SecurityElementNameConstants.EducationOrganization}.Id"
-                                    ] = new JsonObject
-                                    {
-                                        ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
-                                        ["id"] = edOrgIds[0],
-                                        ["path"] = "hierarchy.array",
-                                    },
-                                },
-                            };
-                        }
-                        else if (edOrgIds.Count > 1)
-                        {
-                            // OR together each EdOrgId as a separate terms filter
-                            var shouldArray = new JsonArray(
-                                edOrgIds
-                                    .Select(id => new JsonObject
-                                    {
-                                        ["terms"] = new JsonObject
-                                        {
-                                            [
-                                                $"securityelements.{SecurityElementNameConstants.EducationOrganization}.Id"
-                                            ] = new JsonObject
-                                            {
-                                                ["index"] =
-                                                    "edfi.dms.educationorganizationhierarchytermslookup",
-                                                ["id"] = id,
-                                                ["path"] = "hierarchy.array",
-                                            },
-                                        },
-                                    })
-                                    .ToArray()
-                            );
-                            return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
-                        }
-                        break;
+                        var edOrgIds = GetFilterValues();
+                        return BuildEducationOrganizationFilter(edOrgIds);
 
                     case SecurityElementNameConstants.StudentUniqueId:
-                        var studentEdOrgIds = GetEdOrgIds();
-                        if (studentEdOrgIds.Count == 1)
-                        {
-                            return new JsonObject
-                            {
-                                ["terms"] = new JsonObject
-                                {
-                                    ["studentschoolauthorizationedorgids.array"] = new JsonObject
-                                    {
-                                        ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
-                                        ["id"] = studentEdOrgIds[0],
-                                        ["path"] = "hierarchy.array",
-                                    },
-                                },
-                            };
-                        }
-                        else if (studentEdOrgIds.Count > 1)
-                        {
-                            var shouldArray = new JsonArray(
-                                studentEdOrgIds
-                                    .Select(id => new JsonObject
-                                    {
-                                        ["terms"] = new JsonObject
-                                        {
-                                            ["studentschoolauthorizationedorgids.array"] = new JsonObject
-                                            {
-                                                ["index"] =
-                                                    "edfi.dms.educationorganizationhierarchytermslookup",
-                                                ["id"] = id,
-                                                ["path"] = "hierarchy.array",
-                                            },
-                                        },
-                                    })
-                                    .ToArray()
-                            );
-                            return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
-                        }
-                        break;
+                        var studentEdOrgIds = GetFilterValues();
+                        return BuildStudentFilter(studentEdOrgIds);
 
                     case SecurityElementNameConstants.ContactUniqueId:
-                        var contactEdOrgIds = GetEdOrgIds();
-                        if (contactEdOrgIds.Count == 1)
-                        {
-                            return new JsonObject
-                            {
-                                ["terms"] = new JsonObject
-                                {
-                                    ["contactstudentschoolauthorizationedorgids.array"] = new JsonObject
-                                    {
-                                        ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
-                                        ["id"] = contactEdOrgIds[0],
-                                        ["path"] = "hierarchy.array",
-                                    },
-                                },
-                            };
-                        }
-                        else if (contactEdOrgIds.Count > 1)
-                        {
-                            var shouldArray = new JsonArray(
-                                contactEdOrgIds
-                                    .Select(id => new JsonObject
-                                    {
-                                        ["terms"] = new JsonObject
-                                        {
-                                            ["contactstudentschoolauthorizationedorgids.array"] =
-                                                new JsonObject
-                                                {
-                                                    ["index"] =
-                                                        "edfi.dms.educationorganizationhierarchytermslookup",
-                                                    ["id"] = id,
-                                                    ["path"] = "hierarchy.array",
-                                                },
-                                        },
-                                    })
-                                    .ToArray()
-                            );
-                            return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
-                        }
-                        break;
+                        var contactEdOrgIds = GetFilterValues();
+                        return BuildContactFilter(contactEdOrgIds);
 
                     case SecurityElementNameConstants.StaffUniqueId:
-                        var staffEdOrgIds = GetEdOrgIds();
-                        if (staffEdOrgIds.Count == 1)
-                        {
-                            return new JsonObject
-                            {
-                                ["terms"] = new JsonObject
-                                {
-                                    ["staffeducationorganizationauthorizationedorgids.array"] = new JsonObject
-                                    {
-                                        ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
-                                        ["id"] = staffEdOrgIds[0],
-                                        ["path"] = "hierarchy.array",
-                                    },
-                                },
-                            };
-                        }
-                        else if (staffEdOrgIds.Count > 1)
-                        {
-                            var shouldArray = new JsonArray(
-                                staffEdOrgIds
-                                    .Select(id => new JsonObject
-                                    {
-                                        ["terms"] = new JsonObject
-                                        {
-                                            ["staffeducationorganizationauthorizationedorgids.array"] =
-                                                new JsonObject
-                                                {
-                                                    ["index"] =
-                                                        "edfi.dms.educationorganizationhierarchytermslookup",
-                                                    ["id"] = id,
-                                                    ["path"] = "hierarchy.array",
-                                                },
-                                        },
-                                    })
-                                    .ToArray()
-                            );
-                            return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
-                        }
-                        break;
+                        var staffEdOrgIds = GetFilterValues();
+                        return BuildStaffFilter(staffEdOrgIds);
                 }
                 return null;
             })
             .Where(filter => filter != null)
             .Cast<JsonObject>()
             .ToList();
+
+        JsonObject? BuildNamespaceFilter(List<string> namespaces)
+        {
+            if (namespaces.Count > 1)
+            {
+                return new JsonObject
+                {
+                    ["terms"] = new JsonObject
+                    {
+                        [$"securityelements.{SecurityElementNameConstants.Namespace}"] = new JsonArray(
+                            namespaces.Select(ns => JsonValue.Create(ns)).ToArray()
+                        ),
+                    },
+                };
+            }
+            else if (namespaces.Count == 1)
+            {
+                return new JsonObject
+                {
+                    ["match_phrase"] = new JsonObject
+                    {
+                        [$"securityelements.{SecurityElementNameConstants.Namespace}"] = namespaces[0],
+                    },
+                };
+            }
+
+            return null;
+        }
+
+        JsonObject? BuildEducationOrganizationFilter(List<string> edOrgIds)
+        {
+            if (edOrgIds.Count == 1)
+            {
+                // If we have education organization IDs, use them in the filter
+                // Use first ID for now as the lookup id - may need to handle multiple differently
+                return new JsonObject
+                {
+                    ["terms"] = new JsonObject
+                    {
+                        [$"securityelements.{SecurityElementNameConstants.EducationOrganization}.Id"] =
+                            new JsonObject
+                            {
+                                ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                ["id"] = edOrgIds[0],
+                                ["path"] = "hierarchy.array",
+                            },
+                    },
+                };
+            }
+            else if (edOrgIds.Count > 1)
+            {
+                var shouldArray = new JsonArray(
+                    edOrgIds
+                        .Select(id => new JsonObject
+                        {
+                            ["terms"] = new JsonObject
+                            {
+                                [
+                                    $"securityelements.{SecurityElementNameConstants.EducationOrganization}.Id"
+                                ] = new JsonObject
+                                {
+                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                    ["id"] = id,
+                                    ["path"] = "hierarchy.array",
+                                },
+                            },
+                        })
+                        .ToArray()
+                );
+                return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
+            }
+
+            return null;
+        }
+
+        JsonObject? BuildStudentFilter(List<string> studentEdOrgIds)
+        {
+            if (studentEdOrgIds.Count == 1)
+            {
+                return new JsonObject
+                {
+                    ["terms"] = new JsonObject
+                    {
+                        [$"studentschoolauthorizationedorgids.array"] = new JsonObject
+                        {
+                            ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                            ["id"] = studentEdOrgIds[0],
+                            ["path"] = "hierarchy.array",
+                        },
+                    },
+                };
+            }
+            else if (studentEdOrgIds.Count > 1)
+            {
+                var shouldArray = new JsonArray(
+                    studentEdOrgIds
+                        .Select(id => new JsonObject
+                        {
+                            ["terms"] = new JsonObject
+                            {
+                                ["studentschoolauthorizationedorgids.array"] = new JsonObject
+                                {
+                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                    ["id"] = id,
+                                    ["path"] = "hierarchy.array",
+                                },
+                            },
+                        })
+                        .ToArray()
+                );
+                return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
+            }
+
+            return null;
+        }
+
+        JsonObject? BuildContactFilter(List<string> contactEdOrgIds)
+        {
+            if (contactEdOrgIds.Count == 1)
+            {
+                return new JsonObject
+                {
+                    ["terms"] = new JsonObject
+                    {
+                        [$"contactstudentschoolauthorizationedorgids.array"] = new JsonObject
+                        {
+                            ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                            ["id"] = contactEdOrgIds[0],
+                            ["path"] = "hierarchy.array",
+                        },
+                    },
+                };
+            }
+            else if (contactEdOrgIds.Count > 1)
+            {
+                var shouldArray = new JsonArray(
+                    contactEdOrgIds
+                        .Select(id => new JsonObject
+                        {
+                            ["terms"] = new JsonObject
+                            {
+                                ["contactstudentschoolauthorizationedorgids.array"] = new JsonObject
+                                {
+                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                    ["id"] = id,
+                                    ["path"] = "hierarchy.array",
+                                },
+                            },
+                        })
+                        .ToArray()
+                );
+                return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
+            }
+
+            return null;
+        }
+
+        JsonObject? BuildStaffFilter(List<string> staffEdOrgIds)
+        {
+            if (staffEdOrgIds.Count == 1)
+            {
+                return new JsonObject
+                {
+                    ["terms"] = new JsonObject
+                    {
+                        ["staffeducationorganizationauthorizationedorgids.array"] = new JsonObject
+                        {
+                            ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                            ["id"] = staffEdOrgIds[0],
+                            ["path"] = "hierarchy.array",
+                        },
+                    },
+                };
+            }
+            else if (staffEdOrgIds.Count > 1)
+            {
+                var shouldArray = new JsonArray(
+                    staffEdOrgIds
+                        .Select(id => new JsonObject
+                        {
+                            ["terms"] = new JsonObject
+                            {
+                                ["staffeducationorganizationauthorizationedorgids.array"] = new JsonObject
+                                {
+                                    ["index"] = "edfi.dms.educationorganizationhierarchytermslookup",
+                                    ["id"] = id,
+                                    ["path"] = "hierarchy.array",
+                                },
+                            },
+                        })
+                        .ToArray()
+                );
+                return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
+            }
+
+            return null;
+        }
     }
 
     /// <summary>

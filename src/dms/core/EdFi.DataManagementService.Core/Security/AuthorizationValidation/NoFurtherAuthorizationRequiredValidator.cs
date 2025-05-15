@@ -14,7 +14,8 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 [AuthorizationStrategyName(AuthorizationStrategyName)]
 public class NoFurtherAuthorizationRequiredValidator : IAuthorizationValidator
 {
-    private const string AuthorizationStrategyName = "NoFurtherAuthorizationRequired";
+    private const string AuthorizationStrategyName =
+        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired;
 
     public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
