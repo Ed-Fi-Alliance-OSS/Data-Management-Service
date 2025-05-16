@@ -15,6 +15,11 @@ Feature: The Discovery API provides information about the application version, s
                         "informationalVersion": "The Ed-Fi Data Standard v5.2.0"
                       },
                       {
+                        "name": "Homograph",
+                        "version": "1.0.0",
+                        "informationalVersion": ""
+                      },
+                      {
                         "name": "Sample",
                         "version": "1.0.0",
                         "informationalVersion": ""
@@ -22,11 +27,6 @@ Feature: The Discovery API provides information about the application version, s
                       {
                         "name": "TPDM",
                         "version": "1.1.0",
-                        "informationalVersion": ""
-                      },
-                      {
-                        "name": "Homograph",
-                        "version": "1.0.0",
                         "informationalVersion": ""
                       }
                     ],

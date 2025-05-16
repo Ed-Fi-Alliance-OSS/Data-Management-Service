@@ -32,6 +32,7 @@ public class DiscoveryEndpointModule : IEndpointModule
             version: versionProvider.Version,
             applicationName: versionProvider.ApplicationName,
             dataModelInfos
+                .OrderBy(x => x.ProjectName)
                 .Select(x => new DataModel(x.ProjectName, x.ProjectVersion, x.Description))
                 .ToArray(),
             GetUrlsByName()
