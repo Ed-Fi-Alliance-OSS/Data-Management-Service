@@ -4,7 +4,7 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 
--- Helper function to set StudentSchoolAuthorizationEdOrgIds for a student
+-- Helper function to set StaffEducationOrganizationAuthorizationEdOrgIds for a staff member
 CREATE OR REPLACE FUNCTION dms.SetStaffEducationOrganizationAuthorizationEdOrgIds(
     staff_id text,
     ed_org_ids jsonb
