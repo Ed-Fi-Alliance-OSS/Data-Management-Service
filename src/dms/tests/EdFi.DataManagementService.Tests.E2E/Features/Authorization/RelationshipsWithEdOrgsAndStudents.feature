@@ -1639,11 +1639,13 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the resulting token is stored in the "EdFiSandbox_full_access" variable
               And the system has these "localEducationAgencies"
                   | localEducationAgencyId | nameOfInstitution | categories                                                                                                          | localEducationAgencyCategoryDescriptor                       |
-                  | 11                     | Test LEA          | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
+                  | 11                     | Test LEA 11       | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
+                  | 22                     | Test LEA 22       | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
               And the system has these "schools"
-                  | schoolId | nameOfInstitution  | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference   |
-                  | 1        | Test school        | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 11} |
-                  | 2        | Test school no LEA | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | null                            |
+                  | schoolId | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference   |
+                  | 1        | Test school 1     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 11} |
+                  | 2        | Test school 2     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 22} |
+                  | 5        | Test school 5     | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | null                            |
               And the system has these "students"
                   | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | "A"             | student-fn | student-ln  | 2008-01-01 |
@@ -1652,7 +1654,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | StudentASchool1AssociationId | { "studentUniqueId": "A" } | { "schoolId": 1 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
                   | StudentASchool2AssociationId | { "studentUniqueId": "A" } | { "schoolId": 2 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
         Scenario: 46 Ensure client with access to both schools can query multiple student school associations
-            When a GET request is made to "/ed-fi/StudentSchoolAssociations?studentUniqueId=A&offset=0&limit=10"
+             When a GET request is made to "/ed-fi/StudentSchoolAssociations?studentUniqueId=A&offset=0&limit=10"
              Then it should respond with 200
               And the response body is
                   """
@@ -1682,7 +1684,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   """
         Scenario: 47 Ensure client with access to one school can query one student school associations
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1"
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "11"
              When a GET request is made to "/ed-fi/StudentSchoolAssociations?studentUniqueId=A"
              Then it should respond with 200
               And the response body is
@@ -1698,6 +1700,45 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                       "schoolReference": {
                         "schoolId": 1
                       }
+                    }
+                  ]
+                  """
+        Scenario: 48 Ensure search still works when the student association is updated and deleted
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1,2,5"
+             When a PUT request is made to "/ed-fi/StudentSchoolAssociations/{StudentASchool1AssociationId}" with
+                  """
+                  {
+                      "id":"{StudentASchool1AssociationId}",
+                      "entryDate": "2023-08-01",
+                      "schoolReference": {
+                          "schoolId": 5
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "A"
+                      },
+                      "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+                  }
+                  """
+             Then it should respond with 204
+
+             When a DELETE request is made to "/ed-fi/StudentSchoolAssociations/{StudentASchool2AssociationId}"
+             Then it should respond with 204
+
+             When a GET request is made to "/ed-fi/StudentSchoolAssociations?studentUniqueId=A&offset=0&limit=10"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
+                        "entryDate": "2023-08-01",
+                        "id": "{id}",
+                        "schoolReference": {
+                            "schoolId": 5
+                        },
+                        "studentReference": {
+                            "studentUniqueId": "A"
+                        }
                     }
                   ]
                   """
