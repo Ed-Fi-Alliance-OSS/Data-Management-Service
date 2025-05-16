@@ -4,14 +4,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901,255901001"
               And the system has these descriptors
                   | descriptorValue                                                                |
-                  | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade                               |
-                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school                 |
                   | uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education                  |
-                  | uri://ed-fi.org/SourceSystemDescriptor#Pass                                    |
-                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency |
-                  | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Charter                 |
-                  | uri://ed-fi.org/StaffClassificationDescriptor#Teacher                          |
-                  | uri://ed-fi.org/employmentStatusDescriptor#Teacher                             |
 
               And the system has these "localEducationAgencies"
                   | localEducationAgencyId | categories                                                                                                                         | localEducationAgencyCategoryDescriptor                         | nameOfInstitution |
@@ -129,39 +122,14 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                           ]
                       }
                   """
-        Scenario: 04 Ensure client can POST staffEducationOrganizationAssignmentAssociations
 
-             When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
-                  """
-                    {
-                      "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
-                      "staffReference": {  "staffUniqueId": "s0002"  },
-                      "beginDate": "2018-08-20",
-                      "positionTitle": "Math Teacher"
-                    }
-                  """
-             Then it should respond with 201
-
-        Scenario: 05 Ensure client can Search staffEducationOrganizationAssignmentAssociations
+        Scenario: 04 Ensure client can Search staffEducationOrganizationAssignmentAssociations
 
                      When a GET request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations"
                      Then it should respond with 200
                       And the response body is
                           """
-                             [
-                              {
-                                "beginDate": "2018-08-20",
-                                "positionTitle": "Math Teacher",
-                                "educationOrganizationReference": {
-                                  "educationOrganizationId": 255901001
-                                },
-                                "staffReference": {
-                                  "staffUniqueId": "s0002"
-                                },
-                                "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                                "id": "{id}"
-                              },
+                            [
                               {
                                 "beginDate": "2020-10-10",
                                 "educationOrganizationReference": {
@@ -175,6 +143,22 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                               }
                             ]
                           """
+
+        Scenario: 05 Ensure client can POST staffEducationOrganizationAssignmentAssociations
+
+             When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
+                  """
+                    {
+                      "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
+                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "staffReference": {  "staffUniqueId": "s0002"  },
+                      "beginDate": "2018-08-20",
+                      "positionTitle": "Math Teacher"
+                    }
+                  """
+             Then it should respond with 201
+
+
 
         Scenario: 06 Ensure client can Get staffEducationOrganizationAssignmentAssociations
 
@@ -459,38 +443,13 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       }
                   """
 
-        Scenario: 16 Ensure client can POST staffEducationOrganizationEmploymentAssociations
-
-             When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
-                  """
-                    {
-                      "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
-                      "staffReference": {  "staffUniqueId": "s0005"  },
-                      "hireDate": "2018-08-20",
-                      "positionTitle": "Math Teacher"
-                    }
-                  """
-             Then it should respond with 201
-
-        Scenario: 17 Ensure client can GET staffEducationOrganizationEmploymentAssociations
+        Scenario: 16 Ensure client can GET staffEducationOrganizationEmploymentAssociations
 
              When a GET request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations/"
              Then it should respond with 200
               And the response body is
                   """
                     [
-                      {
-                        "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                        "hireDate": "2018-08-20",
-                        "educationOrganizationReference": {
-                          "educationOrganizationId": 255901001
-                        },
-                        "staffReference": {
-                          "staffUniqueId": "s0005"
-                        },
-                        "id": "{id}"
-                      },
                       {
                         "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
                         "hireDate": "2020-10-10",
@@ -504,6 +463,20 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       }
                     ]
                   """
+
+        Scenario: 17 Ensure client can POST staffEducationOrganizationEmploymentAssociations
+
+             When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
+                  """
+                    {
+                      "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
+                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "staffReference": {  "staffUniqueId": "s0005"  },
+                      "hireDate": "2018-08-20",
+                      "positionTitle": "Math Teacher"
+                    }
+                  """
+             Then it should respond with 201
 
         Scenario: 18 Ensure client can GET staffEducationOrganizationEmploymentAssociations
 
