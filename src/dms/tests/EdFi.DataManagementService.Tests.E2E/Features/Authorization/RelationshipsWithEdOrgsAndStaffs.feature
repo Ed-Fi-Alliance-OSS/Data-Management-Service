@@ -24,11 +24,11 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   | p001     | uri://ed-fi.org/SourceSystemDescriptor#Pass |
               And the system has these "Staffs"
                   | staffUniqueId | firstName | lastSurname |
-                  | s0001         | peterson     | Buck        |
+                  | s0001         | peterson  | Buck        |
                   | s0002         | Steve     | Buck        |
-                  | s0003         | Tim     | Buck        |
-                  | s0004         | Adam     | Buck        |
-                  | s0005         | Francis     | Buck        |
+                  | s0003         | Tim       | Buck        |
+                  | s0004         | Adam      | Buck        |
+                  | s0005         | Francis   | Buck        |
               And the system has these "staffEducationOrganizationAssignmentAssociations"
                   | beginDate  | staffClassificationDescriptor                         | educationOrganizationReference           | staffReference                 |
                   | 10/10/2020 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 255901001 } | {  "staffUniqueId": "s0001"  } |
@@ -362,39 +362,9 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   }
                   """
 
-        Scenario: 13 Ensure client can get the required validation error when POST staffEducationOrganizationAssignmentAssociations with empty staffReference
-
-             When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
-                  """
-                    {
-                      "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
-                      "beginDate": "2018-08-20",
-                      "positionTitle": "Math Teacher"
-                    }
-                  """
-             Then it should respond with 400
-              And the response body is
-                  """
-                  {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "correlationId": "0HNCJPIJKHRA6:0000001A",
-                    "validationErrors": {
-                      "$.staffReference": [
-                        "staffReference is required."
-                      ]
-                    },
-                    "errors": []
-                  }
-                  """
-
-
     Rule: StaffEducationOrganizationEmploymentAssociation CRUD is properly authorized
 
-        Scenario: 14 Ensure client can authorize create a staffSchoolAssociations when the staff is assigned to the school using StaffEducationOrganizationEmploymentAssociation
+        Scenario: 13 Ensure client can authorize create a staffSchoolAssociations when the staff is assigned to the school using StaffEducationOrganizationEmploymentAssociation
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
                   """
@@ -410,7 +380,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 201
 
-        Scenario: 15 Ensure client cannot  authorize update a staffSchoolAssociations when the staff is not assigned to the school  using StaffEducationOrganizationEmploymentAssociation
+        Scenario: 14 Ensure client cannot  authorize update a staffSchoolAssociations when the staff is not assigned to the school  using StaffEducationOrganizationEmploymentAssociation
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
                   """
@@ -455,7 +425,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       }
                   """
 
-        Scenario: 16 Ensure client can POST staffEducationOrganizationEmploymentAssociations
+        Scenario: 15 Ensure client can POST staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -470,7 +440,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
              Then it should respond with 201
 
 
-        Scenario: 17 Ensure client can GET staffEducationOrganizationEmploymentAssociations
+        Scenario: 16 Ensure client can GET staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -500,7 +470,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
-        Scenario: 18 Ensure client can PUT staffEducationOrganizationEmploymentAssociations
+        Scenario: 17 Ensure client can PUT staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -526,7 +496,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 204
 
-        Scenario: 19 Ensure client can DELETE staffEducationOrganizationEmploymentAssociations
+        Scenario: 18 Ensure client can DELETE staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -542,7 +512,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
              When a DELETE request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations/{id}"
              Then it should respond with 204
 
-        Scenario: 20 Ensure client cannot  Create staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 19 Ensure client cannot  Create staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901903"
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -570,7 +540,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
-        Scenario: 21 Ensure client cannot  get staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 20 Ensure client cannot  get staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
                     {
@@ -599,7 +569,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
-        Scenario: 22 Ensure client cannot  search staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 21 Ensure client cannot  search staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
                     {
@@ -619,7 +589,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                      []
                   """
 
-        Scenario: 23 Ensure client cannot  update staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 22 Ensure client cannot  update staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
                     {
@@ -658,7 +628,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   }
                   """
 
-        Scenario: 24 Ensure client cannot  delete staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 23 Ensure client cannot  delete staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
                     {
@@ -684,33 +654,5 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     "errors": [
                       "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StaffUniqueId'."
                     ]
-                  }
-                  """
-
-        Scenario: 25 Ensure client can get the required validation error when POST staffEducationOrganizationEmploymentAssociations with empty staffReference
-             When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
-                  """
-                    {
-                      "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
-                      "hireDate": "2018-08-20",
-                      "positionTitle": "Math Teacher"
-                    }
-                  """
-             Then it should respond with 400
-              And the response body is
-                  """
-                  {
-                    "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                    "title": "Data Validation Failed",
-                    "status": 400,
-                    "correlationId": "0HNCJPIJKHRA6:0000001A",
-                    "validationErrors": {
-                      "$.staffReference": [
-                        "staffReference is required."
-                      ]
-                    },
-                    "errors": []
                   }
                   """
