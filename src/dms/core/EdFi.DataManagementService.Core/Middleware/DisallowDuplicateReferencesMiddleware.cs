@@ -3,8 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data;
-using System.Text;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -16,16 +15,6 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
 {
-    private static readonly Regex _numericIndexRegex = new(
-        pattern: @"\[\d+\]",
-        options: RegexOptions.Compiled
-    );
-
-    private static readonly Regex _arrayNameRegex = new(
-        pattern: @"\$\.(\w+)\[(\d+)\]",
-        options: RegexOptions.Compiled
-    );
-
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         logger.LogDebug(
@@ -35,68 +24,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         var validationErrors = new Dictionary<string, string[]>();
 
-        // Find duplicates in document references
-        if (context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
-        {
-            // if duplicates are found, they should be reported
-            ValidateDuplicates(
-                context.DocumentInfo.DocumentReferences,
-                item => item.ReferentialId.Value,
-                item => item.ResourceInfo.ResourceName.Value,
-                validationErrors
-            );
-        }
-
-        // Find duplicates in descriptor references
-        if (context.DocumentInfo.DescriptorReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
-        {
-            var groupedReferences = GroupByArrayNameAndIndex(
-                context.DocumentInfo.DescriptorReferences.Select(x => x).ToList()
-            );
-
-            // Find the names of arrays to which the DescriptorReferences belong.
-            var arraysWithDescriptorReferences = groupedReferences.Select(gr => gr.key).ToHashSet();
-
-            var constrainedArrays = arraysWithDescriptorReferences
-                .Intersect(context.DocumentInfo.ArrayUniquenessConstraints.Select(group => group.Key))
-                .ToList();
-
-            var combinedIds = new List<string>();
-            foreach (var descriptorReferences in groupedReferences.Where(x => x.indexGroups.Count > 1))
-            {
-                foreach (var indexGroup in descriptorReferences.indexGroups)
-                {
-                    var combinedId = new StringBuilder();
-
-                    if (constrainedArrays.Contains(descriptorReferences.key))
-                    {
-                        // if the array is constrained, the index value is not included in the combinedId
-                        combinedId.Append(descriptorReferences.key);
-                    }
-                    else
-                    {
-                        foreach (var reference in indexGroup.references)
-                        {
-                            combinedId.Append(reference.ReferentialId.Value);
-                        }
-                    }
-
-                    combinedIds.Add(combinedId.ToString());
-                }
-            }
-
-            if (combinedIds.GroupBy(d => d).Any(g => g.Count() > 1))
-            {
-                // if duplicates are found, they should be reported
-                ValidateDuplicates(
-                    context.DocumentInfo.DescriptorReferences,
-                    item => item.ReferentialId.Value,
-                    item => item.Path.Value,
-                    validationErrors,
-                    true
-                );
-            }
-        }
+        // Only need Validation for values on ArrayUniquenessConstraints
+        ValidateArrayUniquenessConstraints(context, validationErrors);
 
         if (validationErrors.Any())
         {
@@ -118,58 +47,98 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         await next();
     }
 
-    private static void ValidateDuplicates<T>(
-        IEnumerable<T> items,
-        Func<T, Guid> getReferentialId,
-        Func<T, string> getPath,
-        Dictionary<string, string[]> validationErrors,
-        bool IsDescriptor = false
+    private static void ValidateArrayUniquenessConstraints(
+        PipelineContext context,
+        Dictionary<string, string[]> validationErrors
     )
     {
-        var seenItems = new HashSet<Guid>();
-        var positions = new Dictionary<string, int>();
+        var constraints = context.ResourceSchema.ArrayUniquenessConstraints;
+        var body = context.ParsedBody;
 
-        foreach (var item in items)
+        foreach (var group in constraints)
         {
-            Guid referentialId = getReferentialId(item);
-            string path = getPath(item);
+            // Obtain the base path (without the last level)
+            string fullPath = group[0].Value; // Eg: "$.items[*].assessmentItemReference.assessmentIdentifier"
+            int lastDot = fullPath.LastIndexOf('.');
+            string propertyName = lastDot > 0 ? fullPath.Substring(0, lastDot) : fullPath; // "$.items[*].assessmentItemReference"
 
-            // The descriptor reference path includes index value, which groups error messages by index.
-            // To prevent this, converting the index to *
-            if (IsDescriptor)
+            var arrayPathMatch = Regex.Match(propertyName, @"^\$\.(.+?)\[\*\]");
+            if (!arrayPathMatch.Success)
             {
-                path = _numericIndexRegex.Replace(path, "[*]");
+                continue;
             }
 
-            // the propertyName varies according to the origin (DescriptorReference or DocumentReferences)
-            string propertyName = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
-                ? path
-                : $"$.{path}";
-
-            positions.TryAdd(propertyName, 1);
-
-            if (!seenItems.Add(referentialId))
+            string arrayName = arrayPathMatch.Groups[1].Value;
+            var arrayNode = GetNodeOrValueFromPath(body, arrayName) as JsonArray;
+            if (arrayNode == null)
             {
-                path = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
-                    ? ExtractArrayName(path)
-                    : path;
+                continue;
+            }
 
-                string errorMessage =
-                    $"The {GetOrdinal(positions[propertyName])} item of the {path} has the same identifying values as another item earlier in the list.";
+            var fieldPaths = group.Select(p => Regex.Replace(p.Value, @"^\$\.\w+\[\*\]\.", "")).ToList();
+            var lastSeen = new Dictionary<string, int>();
 
-                if (validationErrors.TryGetValue(propertyName, out string[]? value))
+            for (int i = arrayNode.Count - 1; i >= 0; i--)
+            {
+                var item = arrayNode[i] as JsonObject;
+                if (item == null)
                 {
-                    var existingMessages = value.ToList();
-                    existingMessages.Add(errorMessage);
-                    validationErrors[propertyName] = [.. existingMessages];
+                    continue;
+                }
+
+                var keyParts = new List<string>();
+                foreach (string fieldPath in fieldPaths)
+                {
+                    var value = GetNodeOrValueFromPath(item, fieldPath);
+                    keyParts.Add(value?.ToString() ?? "");
+                }
+                string compositeKey = string.Join("|", keyParts);
+
+                if (lastSeen.ContainsKey(compositeKey))
+                {
+                    string[] arrayNameParts = arrayName.Split('.');
+                    string shortArrayName =
+                        arrayNameParts.Length > 0 ? arrayNameParts[arrayNameParts.Length - 1] : arrayName;
+
+                    string errorMessage =
+                        $"The {GetOrdinal(lastSeen[compositeKey] + 1)} item of the {shortArrayName} has the same identifying values as another item earlier in the list.";
+                    if (validationErrors.TryGetValue(propertyName, out var existingMessages))
+                    {
+                        if (!existingMessages.Contains(errorMessage))
+                        {
+                            validationErrors[propertyName] = existingMessages.Append(errorMessage).ToArray();
+                        }
+                    }
+                    else
+                    {
+                        validationErrors[propertyName] = new[] { errorMessage };
+                    }
                 }
                 else
                 {
-                    validationErrors[propertyName] = [errorMessage];
+                    lastSeen[compositeKey] = i;
                 }
             }
-            positions[propertyName]++;
         }
+    }
+
+    // Helper to get nested property value from a JsonObject using dot notation
+    private static JsonNode? GetNodeOrValueFromPath(JsonNode node, string path)
+    {
+        string[] parts = path.Split('.');
+        JsonNode? current = node;
+        foreach (string part in parts)
+        {
+            if (current is JsonObject obj && obj.TryGetPropertyValue(part, out var next))
+            {
+                current = next;
+            }
+            else
+            {
+                return null;
+            }
+        }
+        return current;
     }
 
     private static string GetOrdinal(int number)
@@ -185,60 +154,6 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             3 => $"{number}rd",
             _ => $"{number}th",
         };
-    }
-
-    private static string ExtractArrayName(string path)
-    {
-        // Logic to extract the array name from the JSON path, e.g., "gradeLevels".
-        string[] parts = path.Split('.');
-        string result = parts.Length > 1 ? parts[1].Trim('[', ']', '*') : string.Empty;
-        return result;
-    }
-
-    private static List<KeyReferenceGroup> GroupByArrayNameAndIndex(IList<DescriptorReference> jsonNodes)
-    {
-        // Select reference node and match ( e.g., match = $.performanceLevels[1])
-        var descriptorReferenceMatches = jsonNodes
-            .Select(reference => new
-            {
-                Node = reference,
-                Match = _arrayNameRegex.Match(reference.Path.Value),
-            })
-            .Where(x => x.Match.Success);
-
-        // Group by reference array name (e.g., Key = "performanceLevels", Value = {Index = 0, Node = DescriptorReference})
-        // Selects DescriptorReference with index value
-        var groupedByReferenceArrayName = descriptorReferenceMatches.GroupBy(
-            reference => reference.Match.Groups[1].Value,
-            reference => new { Index = int.Parse(reference.Match.Groups[2].Value), reference.Node }
-        );
-
-        // Inner group by index
-        // e.g., Key : performanceLevels
-        //           Key: 0
-        //           Value:[
-        //                  PerformanceLevelDescriptor reference
-        //                  AssessmentReportingMethodDescriptor reference
-        //                 ]
-        //           Key: 1
-        //           Value:[
-        //                  PerformanceLevelDescriptor reference
-        //                  AssessmentReportingMethodDescriptor reference
-        //                 ]
-        var groupedByIndex = groupedByReferenceArrayName
-            .Select(group => new KeyReferenceGroup(
-                group.Key,
-                group
-                    .GroupBy(reference => reference.Index)
-                    .Select(indexGroup => new IndexedReferenceGroup(
-                        indexGroup.Key,
-                        indexGroup.Select(x => x.Node).ToList()
-                    ))
-                    .ToList()
-            ))
-            .ToList();
-
-        return groupedByIndex;
     }
 }
 

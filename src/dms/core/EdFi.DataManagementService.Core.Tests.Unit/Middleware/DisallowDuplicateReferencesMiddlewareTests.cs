@@ -302,20 +302,22 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 "AssessmentItemResultDescriptor",
                 "$.items[*].assessmentItemResultDescriptor"
             )
+            .WithEndDocumentPathsMapping()
+            .WithStartArrayUniquenessConstraints()
             .WithArrayUniquenessConstraints(
                 [
-                    [
-                        "$.performanceLevels[*].assessmentReportingMethodDescriptor",
-                        "$.performanceLevels[*].performanceLevelDescriptor",
-                    ],
-                    [
-                        "$.items[*].assessmentItemReference.assessmentIdentifier",
-                        "$.items[*].assessmentItemReference.identificationCode",
-                        "$.items[*].assessmentItemReference.namespace",
-                    ],
+                    "$.performanceLevels[*].assessmentReportingMethodDescriptor",
+                    "$.performanceLevels[*].performanceLevelDescriptor",
                 ]
             )
-            .WithEndDocumentPathsMapping()
+            .WithArrayUniquenessConstraints(
+                [
+                    "$.items[*].assessmentItemReference.assessmentIdentifier",
+                    "$.items[*].assessmentItemReference.identificationCode",
+                    "$.items[*].assessmentItemReference.namespace",
+                ]
+            )
+            .WithEndArrayUniquenessConstraints()
             .WithEndResource()
             .WithEndProject()
             .ToApiSchemaDocuments();
@@ -606,7 +608,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.performanceLevels[*].performanceLevelDescriptor":["The 2nd item of the performanceLevels has the same identifying values as another item earlier in the list."],"$.performanceLevels[*].assessmentReportingMethodDescriptor":["The 2nd item of the performanceLevels has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.performanceLevels":["The 2nd item of the performanceLevels has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }
@@ -757,7 +759,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.items[*].assessmentItemResultDescriptor":["The 2nd item of the items has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.items":["The 2nd item of the items has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }

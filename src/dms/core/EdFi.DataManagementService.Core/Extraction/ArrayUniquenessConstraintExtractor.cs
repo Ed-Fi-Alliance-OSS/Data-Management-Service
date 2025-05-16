@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Core.Extraction;
 
 internal static class ArrayUniquenessConstraintExtractor
 {
-    public static Dictionary<string, JsonPath[]> ExtractUniquenessConstraints(
+    public static IReadOnlyList<IReadOnlyList<JsonPath>> ExtractUniquenessConstraints(
         this ResourceSchema resourceSchema,
         ILogger logger
     )

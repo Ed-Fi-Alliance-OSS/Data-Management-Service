@@ -30,6 +30,8 @@ public class ApiSchemaBuilder
 
     private JsonNode? _currentQueryFieldMappingNode = null;
 
+    private JsonNode? _currentArrayUniquenessConstraints = null;
+
     /// <summary>
     /// A naive decapitalizer and pluralizer, which should be adequate for tests
     /// </summary>
@@ -871,6 +873,40 @@ public class ApiSchemaBuilder
         return this;
     }
 
+    public ApiSchemaBuilder WithStartArrayUniquenessConstraints()
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentArrayUniquenessConstraints = _currentResourceNode["arrayUniquenessConstraints"];
+        return this;
+    }
+
+    public ApiSchemaBuilder WithEndArrayUniquenessConstraints()
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentArrayUniquenessConstraints == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentArrayUniquenessConstraints = null;
+        return this;
+    }
+
     /// <summary>
     /// Add array uniqueness constraints to a resource.
     /// </summary>
@@ -890,7 +926,7 @@ public class ApiSchemaBuilder
     ///     "$.scores[*].assessmentReportingMethodDescriptor"
     ///   ]
     /// ]
-    public ApiSchemaBuilder WithArrayUniquenessConstraints(IEnumerable<IEnumerable<string>> constraints)
+    public ApiSchemaBuilder WithArrayUniquenessConstraints(List<string> constraints)
     {
         if (_currentProjectNode == null)
         {
@@ -901,19 +937,15 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
-        var outerArray = new JsonArray();
+        var jsonArray = new JsonArray(constraints.Select(s => JsonValue.Create(s)!).ToArray());
 
-        foreach (var group in constraints)
+        if (_currentResourceNode["arrayUniquenessConstraints"] is not JsonArray constraintsArray)
         {
-            var innerArray = new JsonArray();
-            foreach (string path in group)
-            {
-                innerArray.Add(JsonValue.Create(path));
-            }
-            outerArray.Add(innerArray);
+            constraintsArray = new JsonArray();
+            _currentResourceNode["arrayUniquenessConstraints"] = constraintsArray;
         }
 
-        _currentResourceNode["arrayUniquenessConstraints"] = outerArray;
+        constraintsArray.Add(jsonArray);
 
         return this;
     }

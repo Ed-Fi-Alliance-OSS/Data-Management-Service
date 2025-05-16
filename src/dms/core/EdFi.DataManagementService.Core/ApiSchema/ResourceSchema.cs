@@ -436,28 +436,25 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public IEnumerable<string> AuthorizationPathways => _authorizationPathways.Value;
 
-    private readonly Lazy<Dictionary<string, JsonPath[]>> _arrayUniquenessConstraints = new(() =>
+    private readonly Lazy<IReadOnlyList<IReadOnlyList<JsonPath>>> _arrayUniquenessConstraints = new(() =>
     {
-        var outerArray =
-            (_resourceSchemaNode["arrayUniquenessConstraints"]?.AsArray())
+        string? rawText = _resourceSchemaNode["arrayUniquenessConstraints"]?.ToJsonString();
+
+        var stringGroups = JsonSerializer.Deserialize<List<List<string>>>(rawText!);
+
+        var result = stringGroups
+            ?.Select(group => group.Select(path => new JsonPath(path)).ToList())
+            .ToList();
+
+        return result
             ?? throw new InvalidOperationException(
                 "Expected arrayUniquenessConstraints to be on ResourceSchema, invalid ApiSchema"
             );
-
-        var paths = outerArray
-            .SelectMany(innerNode => innerNode.Deserialize<Json.Path.JsonPath[]>()!)
-            .GroupBy(x => x.Segments[0].ToString().TrimStart('.'))
-            .Select(group => new KeyValuePair<string, JsonPath[]>(
-                group.Key,
-                group.Select(x => new JsonPath(x.ToString())).ToArray()
-            ))
-            .ToDictionary();
-
-        return paths;
     });
 
     /// <summary>
     /// The ArrayUniquenessConstraints the resource is part of.
     /// </summary>
-    public Dictionary<string, JsonPath[]> ArrayUniquenessConstraints => _arrayUniquenessConstraints.Value;
+    public IReadOnlyList<IReadOnlyList<JsonPath>> ArrayUniquenessConstraints =>
+        _arrayUniquenessConstraints.Value;
 }

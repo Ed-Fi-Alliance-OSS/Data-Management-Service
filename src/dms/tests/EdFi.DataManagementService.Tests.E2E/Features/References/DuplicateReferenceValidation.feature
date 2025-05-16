@@ -150,10 +150,7 @@ Feature: Validate the duplicate references
                       "status": 400,
                       "correlationId": null,
                       "validationErrors": {
-                          "$.performanceLevels[*].assessmentReportingMethodDescriptor": [
-                              "The 2nd item of the performanceLevels has the same identifying values as another item earlier in the list."
-                          ],
-                          "$.performanceLevels[*].performanceLevelDescriptor": [
+                          "$.performanceLevels": [
                               "The 2nd item of the performanceLevels has the same identifying values as another item earlier in the list."
                           ]
                       },

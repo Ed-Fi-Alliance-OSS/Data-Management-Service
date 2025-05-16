@@ -30,7 +30,7 @@ public record DocumentInfo(
     /// </summary>
     SuperclassIdentity? SuperclassIdentity,
     /// <summary>
-    /// A disctionary of array uniqueness constraints, where the key is the JsonPath to the array
+    /// List of array uniqueness constraints, where the key is the JsonPath to the array
     /// </summary>
-    Dictionary<string, JsonPath[]> ArrayUniquenessConstraints
+    IReadOnlyList<IReadOnlyList<JsonPath>> ArrayUniquenessConstraints
 );
