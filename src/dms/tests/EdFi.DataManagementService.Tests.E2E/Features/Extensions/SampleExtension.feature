@@ -513,3 +513,130 @@ Feature: Sample extension resources
                     "errors": []
                   }
                   """
+# Ignored because Data Validation with Staff when petName has leading or trailing spaces DMS-696-Defect
+        @ignore
+        Scenario: 11 Data Validation with Staff when petName has leading or trailing spaces
+
+             When a POST request is made to "/ed-fi/staffs" with
+                  """
+                      {
+                        "staffUniqueId": "TEST-StringLength",
+                        "birthDate": "1976-08-19",
+                        "firstName": "Barry",
+                        "hispanicLatinoEthnicity": false,
+                        "lastSurname": "Peterson",
+                        "_ext": {
+                          "Sample": {
+                            "pets": [
+                              {
+                                "petName": "         ",
+                                "isFixed": true
+                              }
+                            ]
+                          }
+                        }
+                      }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                     {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": "0HNCIHNFRNK0C:00000002",
+                      "validationErrors": {
+                        "$.petName": [
+                          "petName cannot contain leading or trailing spaces."
+                        ]
+                      },
+                      "errors": []
+                    }
+                  """
+
+        # Ignored because Data Validation with Staff when Pet name has too short value @DMS-697Defect
+        @ignore
+        Scenario: 12 Data Validation with Staff when Pet name has too short value
+
+             When a POST request is made to "/ed-fi/staffs" with
+                  """
+                      {
+                        "staffUniqueId": "TEST-StringLength",
+                        "birthDate": "1976-08-19",
+                        "firstName": "Barry",
+                        "hispanicLatinoEthnicity": false,
+                        "lastSurname": "Peterson",
+                        "_ext": {
+                          "Sample": {
+                            "pets": [
+                              {
+                                "petName": "it",
+                                "isFixed": true
+                              }
+                            ]
+                          }
+                        }
+                      }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                     {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": "0HNCIHNFRNK0C:00000002",
+                      "validationErrors": {
+                        "$.petName": [
+                          "petName must be between 3 and 20 characters in length."
+                        ]
+                      },
+                      "errors": []
+                    }
+                  """
+
+        # Ignored because Data Validation with Staff when Pet name has too long value @DMS-697Defect
+        @ignore
+
+        Scenario: 13 Data Validation with Staff when Pet name has too long value
+
+             When a POST request is made to "/ed-fi/staffs" with
+                  """
+                      {
+                        "staffUniqueId": "TEST-StringLength",
+                        "birthDate": "1976-08-19",
+                        "firstName": "Barry",
+                        "hispanicLatinoEthnicity": false,
+                        "lastSurname": "Peterson",
+                        "_ext": {
+                          "Sample": {
+                            "pets": [
+                              {
+                                "petName": "John Jacob Jingleheimer Schmidt",
+                                "isFixed": true
+                              }
+                            ]
+                          }
+                        }
+                      }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                     {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": "0HNCIHNFRNK0C:00000002",
+                      "validationErrors": {
+                        "$.petName": [
+                          "PetName must be between 3 and 20 characters in length."
+                        ]
+                      },
+                      "errors": []
+                    }
+                  """
+
