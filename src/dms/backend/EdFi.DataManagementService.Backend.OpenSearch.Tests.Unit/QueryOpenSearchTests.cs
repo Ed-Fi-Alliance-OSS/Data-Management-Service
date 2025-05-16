@@ -471,7 +471,7 @@ public class QueryOpenSearchTests
                             },
                             {
                                 "bool": {
-                                    "should": [
+                                    "must": [
                                         {
                                             "match_phrase": {
                                                 "securityelements.Namespace": "uri://ed-fi.org"
