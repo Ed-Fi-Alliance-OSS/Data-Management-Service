@@ -1632,3 +1632,72 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   }
                   """
              Then it should respond with 201 or 200
+
+    Rule: Multiple relationships are properly authorized
+        Background:
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1, 2"
+              And the resulting token is stored in the "EdFiSandbox_full_access" variable
+              And the system has these "localEducationAgencies"
+                  | localEducationAgencyId | nameOfInstitution | categories                                                                                                          | localEducationAgencyCategoryDescriptor                       |
+                  | 11                     | Test LEA          | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | "uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC" |
+              And the system has these "schools"
+                  | schoolId | nameOfInstitution  | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference   |
+                  | 1        | Test school        | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 11} |
+                  | 2        | Test school no LEA | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | null                            |
+              And the system has these "students"
+                  | studentUniqueId | firstName  | lastSurname | birthDate  |
+                  | "A"             | student-fn | student-ln  | 2008-01-01 |
+              And the system has these "studentSchoolAssociations"
+                  | _storeResultingIdInVariable  | studentReference           | schoolReference   | entryGradeLevelDescriptor                          | entryDate  |
+                  | StudentASchool1AssociationId | { "studentUniqueId": "A" } | { "schoolId": 1 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
+                  | StudentASchool2AssociationId | { "studentUniqueId": "A" } | { "schoolId": 2 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
+        Scenario: 46 Ensure client with access to both schools can query multiple student school associations
+            When a GET request is made to "/ed-fi/StudentSchoolAssociations?studentUniqueId=A&offset=0&limit=10"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
+                        "entryDate": "2023-08-01",
+                        "id": "{id}",
+                        "schoolReference": {
+                            "schoolId": 2
+                        },
+                        "studentReference": {
+                            "studentUniqueId": "A"
+                        }
+                  },
+                  {
+                        "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
+                        "entryDate": "2023-08-01",
+                        "id": "{id}",
+                        "schoolReference": {
+                            "schoolId": 1
+                        },
+                        "studentReference": {
+                            "studentUniqueId": "A"
+                        }
+                    }
+                  ]
+                  """
+        Scenario: 47 Ensure client with access to one school can query one student school associations
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1"
+             When a GET request is made to "/ed-fi/StudentSchoolAssociations?studentUniqueId=A"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                      "id": "{id}",
+                      "entryDate": "2023-08-01",
+                      "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
+                      "studentReference": {
+                        "studentUniqueId": "A"
+                      },
+                      "schoolReference": {
+                        "schoolId": 1
+                      }
+                    }
+                  ]
+                  """
