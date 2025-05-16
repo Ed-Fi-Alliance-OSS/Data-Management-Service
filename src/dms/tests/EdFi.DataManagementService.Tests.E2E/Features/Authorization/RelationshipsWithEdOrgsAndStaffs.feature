@@ -143,8 +143,40 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 201
 
+        Scenario: 05 Ensure client can Search staffEducationOrganizationAssignmentAssociations
 
-        Scenario: 05 Ensure client can Get staffEducationOrganizationAssignmentAssociations
+                     When a GET request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations"
+                     Then it should respond with 200
+                      And the response body is
+                          """
+                             [
+                              {
+                                "beginDate": "2018-08-20",
+                                "positionTitle": "Math Teacher",
+                                "educationOrganizationReference": {
+                                  "educationOrganizationId": 255901001
+                                },
+                                "staffReference": {
+                                  "staffUniqueId": "s0002"
+                                },
+                                "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
+                                "id": "{id}"
+                              },
+                              {
+                                "beginDate": "2020-10-10",
+                                "educationOrganizationReference": {
+                                  "educationOrganizationId": 255901001
+                                },
+                                "staffReference": {
+                                  "staffUniqueId": "s0001"
+                                },
+                                "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
+                                "id": "{id}"
+                              }
+                            ]
+                          """
+
+        Scenario: 06 Ensure client can Get staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
@@ -175,7 +207,9 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       }
                   """
 
-        Scenario: 06 Ensure client can PUT staffEducationOrganizationAssignmentAssociations
+
+
+        Scenario: 07 Ensure client can PUT staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
@@ -201,7 +235,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 204
 
-        Scenario: 07 Ensure client can DELETE staffEducationOrganizationAssignmentAssociations
+        Scenario: 08 Ensure client can DELETE staffEducationOrganizationAssignmentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
@@ -217,7 +251,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
              When a DELETE request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations/{id}"
              Then it should respond with 204
 
-        Scenario: 08 Ensure client cannot  Create staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 09 Ensure client cannot  Create staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901903"
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
@@ -245,7 +279,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
-        Scenario: 09 Ensure client cannot get staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 10 Ensure client cannot get staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
                     {
@@ -274,7 +308,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
-        Scenario: 10  Ensure client cannot search staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 11  Ensure client cannot search staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
                     {
@@ -294,7 +328,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                      []
                   """
 
-        Scenario: 11  Ensure client cannot update staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 12  Ensure client cannot update staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
                     {
@@ -333,7 +367,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   }
                   """
 
-        Scenario: 12  Ensure client cannot delete staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 13  Ensure client cannot delete staffEducationOrganizationAssignmentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations" with
                   """
                     {
@@ -364,7 +398,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
     Rule: StaffEducationOrganizationEmploymentAssociation CRUD is properly authorized
 
-        Scenario: 13 Ensure client can authorize create a staffSchoolAssociations when the staff is assigned to the school using StaffEducationOrganizationEmploymentAssociation
+        Scenario: 14 Ensure client can authorize create a staffSchoolAssociations when the staff is assigned to the school using StaffEducationOrganizationEmploymentAssociation
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
                   """
@@ -380,7 +414,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 201
 
-        Scenario: 14 Ensure client cannot  authorize update a staffSchoolAssociations when the staff is not assigned to the school  using StaffEducationOrganizationEmploymentAssociation
+        Scenario: 15 Ensure client cannot  authorize update a staffSchoolAssociations when the staff is not assigned to the school  using StaffEducationOrganizationEmploymentAssociation
 
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
                   """
@@ -425,7 +459,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       }
                   """
 
-        Scenario: 15 Ensure client can POST staffEducationOrganizationEmploymentAssociations
+        Scenario: 16 Ensure client can POST staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -439,8 +473,39 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 201
 
+        Scenario: 17 Ensure client can GET staffEducationOrganizationEmploymentAssociations
 
-        Scenario: 16 Ensure client can GET staffEducationOrganizationEmploymentAssociations
+             When a GET request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations/"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    [
+                      {
+                        "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
+                        "hireDate": "2018-08-20",
+                        "educationOrganizationReference": {
+                          "educationOrganizationId": 255901001
+                        },
+                        "staffReference": {
+                          "staffUniqueId": "s0005"
+                        },
+                        "id": "{id}"
+                      },
+                      {
+                        "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
+                        "hireDate": "2020-10-10",
+                        "educationOrganizationReference": {
+                          "educationOrganizationId": 255901001
+                        },
+                        "staffReference": {
+                          "staffUniqueId": "s0004"
+                        },
+                        "id": "{id}"
+                      }
+                    ]
+                  """
+
+        Scenario: 18 Ensure client can GET staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -470,7 +535,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
-        Scenario: 17 Ensure client can PUT staffEducationOrganizationEmploymentAssociations
+        Scenario: 19 Ensure client can PUT staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -496,7 +561,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
              Then it should respond with 204
 
-        Scenario: 18 Ensure client can DELETE staffEducationOrganizationEmploymentAssociations
+        Scenario: 20 Ensure client can DELETE staffEducationOrganizationEmploymentAssociations
 
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -512,7 +577,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
              When a DELETE request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations/{id}"
              Then it should respond with 204
 
-        Scenario: 19 Ensure client cannot  Create staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 21 Ensure client cannot  Create staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901903"
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
@@ -540,7 +605,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
-        Scenario: 20 Ensure client cannot  get staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 22 Ensure client cannot  get staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
                     {
@@ -569,7 +634,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     }
                   """
 
-        Scenario: 21 Ensure client cannot  search staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 23 Ensure client cannot  search staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
                     {
@@ -589,7 +654,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                      []
                   """
 
-        Scenario: 22 Ensure client cannot  update staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 24 Ensure client cannot  update staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
                     {
@@ -628,7 +693,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   }
                   """
 
-        Scenario: 23 Ensure client cannot  delete staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
+        Scenario: 25 Ensure client cannot  delete staffEducationOrganizationEmploymentAssociations with client does not have access it to educationOrganizationId
              When a POST request is made to "/ed-fi/staffEducationOrganizationEmploymentAssociations" with
                   """
                     {
