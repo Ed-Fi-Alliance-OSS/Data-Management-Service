@@ -29,6 +29,19 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
     {
         var errorMessages = new List<string>();
 
+        // Validate Education Organization authorization
+        var edOrgResult = await RelationshipsBasedAuthorizationHelper.ValidateEdOrgAuthorization(
+            authorizationRepository,
+            securityElements,
+            authorizationFilters,
+            operationType
+        );
+        if (edOrgResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedEdOrg)
+        {
+            errorMessages.AddRange(notAuthorizedEdOrg.ErrorMessages);
+        }
+
+        // Validate authorization for each type of person
         if (
             RelationshipsBasedAuthorizationHelper.HasSecurable(
                 authorizationSecurableInfos,
