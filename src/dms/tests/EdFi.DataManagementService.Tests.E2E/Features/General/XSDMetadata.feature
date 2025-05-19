@@ -19,16 +19,16 @@ Feature: XSD Metadata Endpoint
                         "files": "http://localhost:8080/metadata/xsd/sample/files"
                       },
                       {
-                        "description": "Extension (TPDM) blended with Core schema files for the data model",
-                        "name": "tpdm",
-                        "version": "1.1.0",
-                        "files": "http://localhost:8080/metadata/xsd/tpdm/files"
-                      },
-                      {
                         "description": "Extension (Homograph) blended with Core schema files for the data model",
                         "name": "homograph",
                         "version": "1.0.0",
                         "files": "http://localhost:8080/metadata/xsd/homograph/files"
+                      },
+                      {
+                        "description": "Extension (TPDM) blended with Core schema files for the data model",
+                        "name": "tpdm",
+                        "version": "1.1.0",
+                        "files": "http://localhost:8080/metadata/xsd/tpdm/files"
                       }
                     ]
                   """

@@ -7,36 +7,36 @@ Feature: The Discovery API provides information about the application version, s
               And the general response body is
                   """
                   {
-                    "applicationName": "Ed-Fi Alliance Data Management Service",
-                    "dataModels": [
-                      {
-                        "name": "Ed-Fi",
-                        "version": "5.2.0",
-                        "informationalVersion": "The Ed-Fi Data Standard v5.2.0"
-                      },
-                      {
-                        "name": "Sample",
-                        "version": "1.0.0",
-                        "informationalVersion": ""
-                      },
-                      {
-                        "name": "TPDM",
-                        "version": "1.1.0",
-                        "informationalVersion": ""
-                      },
-                      {
-                        "name": "Homograph",
-                        "version": "1.0.0",
-                        "informationalVersion": ""
-                      }
-                    ],
-                    "urls": {
-                      "dependencies": "{BASE_URL}/metadata/dependencies",
-                      "openApiMetadata": "{BASE_URL}/metadata/specifications",
-                      "oauth": "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token",
-                      "dataManagementApi": "{BASE_URL}/data",
-                      "xsdMetadata": "{BASE_URL}/metadata/xsd"
-                    }
+                  "applicationName": "Ed-Fi Alliance Data Management Service",
+                  "dataModels": [
+                  {
+                    "name": "Ed-Fi",
+                    "version": "5.2.0",
+                    "informationalVersion": "The Ed-Fi Data Standard v5.2.0"
+                  },
+                  {
+                    "name": "Sample",
+                    "version": "1.0.0",
+                    "informationalVersion": ""
+                  },
+                  {
+                    "name": "Homograph",
+                    "version": "1.0.0",
+                    "informationalVersion": ""
+                  },
+                  {
+                    "name": "TPDM",
+                    "version": "1.1.0",
+                    "informationalVersion": ""
+                  }
+                  ],
+                  "urls": {
+                  "dependencies": "http://localhost:8080/metadata/dependencies",
+                  "openApiMetadata": "http://localhost:8080/metadata/specifications",
+                  "oauth": "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token",
+                  "dataManagementApi": "http://localhost:8080/data",
+                  "xsdMetadata": "http://localhost:8080/metadata/xsd"
+                  }
                   }
                   """
 
