@@ -233,6 +233,9 @@ public class DisallowDuplicateReferencesMiddlewareTests
             .WithStartDocumentPathsMapping()
             .WithDocumentPathDescriptor("GradeLevelDescriptor", "$.gradeLevels[*].gradeLevelDescriptor")
             .WithEndDocumentPathsMapping()
+            .WithStartArrayUniquenessConstraints()
+            .WithArrayUniquenessConstraints(["$.gradeLevels[*].gradeLevelDescriptor"])
+            .WithEndArrayUniquenessConstraints()
             .WithEndResource()
             .WithEndProject()
             .ToApiSchemaDocuments();
@@ -449,7 +452,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.gradeLevels[*].gradeLevelDescriptor":["The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 4th item of the gradeLevels has the same identifying values as another item earlier in the list.","The 11th item of the gradeLevels has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.gradeLevels":["The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 4th item of the gradeLevels has the same identifying values as another item earlier in the list.","The 11th item of the gradeLevels has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }
@@ -759,7 +762,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.items":["The 2nd item of the items has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.items.assessmentItemReference":["The 2nd item of the items has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }
