@@ -4,11 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Net;
+using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
+using QuickGraph;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
 
@@ -880,6 +883,142 @@ public class UpdateTests : DatabaseTest
                 .EdfiDoc.ToJsonString()
                 .Should()
                 .Contain("Fourth Quarter");
+        }
+
+        [TestFixture]
+        public class Given_An_Update_Of_A_Document_Cascade_Security_Updates_ : UpdateTests
+        {
+            private static readonly Guid _locationUuid = Guid.NewGuid();
+            private static readonly Guid _xyzUuid = Guid.NewGuid();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                IUpsertRequest locationUpsertRequest = CreateUpsertRequest(
+                    "Location",
+                    _locationUuid,
+                    Guid.NewGuid(),
+                    """
+                    {
+                        "schoolReference": {
+                            "schoolId": "12345"
+                        }
+                    }
+                    """,
+                    allowIdentityUpdates: true,
+                    documentIdentityElements:
+                    [
+                        new DocumentIdentityElement(new JsonPath("$.schoolReference.schoolId"), "12345"),
+                    ],
+                    documentSecurityElements: new DocumentSecurityElements(
+                        [],
+                        [
+                            new EducationOrganizationSecurityElement(
+                                new ResourceName("School"),
+                                new EducationOrganizationId(12345)
+                            ),
+                        ],
+                        [],
+                        [],
+                        []
+                    )
+                );
+
+                await CreateUpsert().Upsert(locationUpsertRequest, Connection!, Transaction!);
+
+                // xyz is a hypothetical extension element that references location as part of its identity
+                IUpsertRequest xyzUpsertRequest = CreateUpsertRequest(
+                    "XYZ",
+                    _xyzUuid,
+                    Guid.NewGuid(),
+                    """
+                    {
+                        "locationReference": {
+                            "schoolId": "12345"
+                        }
+                    }
+                    """,
+                    allowIdentityUpdates: true,
+                    documentIdentityElements:
+                    [
+                        new DocumentIdentityElement(new JsonPath("$.locationReference.schoolId"), "12345"),
+                    ],
+                    documentSecurityElements: new DocumentSecurityElements(
+                        [],
+                        [
+                            new EducationOrganizationSecurityElement(
+                                new ResourceName("School"),
+                                new EducationOrganizationId(12345)
+                            ),
+                        ],
+                        [],
+                        [],
+                        []
+                    )
+                );
+
+                await CreateUpsert().Upsert(xyzUpsertRequest, Connection!, Transaction!);
+            }
+
+            [Test]
+            public async Task It_should_cascade_the_security_elements_on_update()
+            {
+                IUpdateRequest locationUpdateRequest = CreateUpdateRequest(
+                    "Location",
+                    _locationUuid,
+                    Guid.NewGuid(),
+                    """
+                    {
+                        "schoolReference": {
+                            "schoolId": "111"
+                        }
+                    }
+                    """,
+                    allowIdentityUpdates: true,
+                    documentIdentityElements:
+                    [
+                        new DocumentIdentityElement(new JsonPath("$.schoolReference.schoolId"), "111"),
+                    ],
+                    documentSecurityElements: new DocumentSecurityElements(
+                        [],
+                        [
+                            new EducationOrganizationSecurityElement(
+                                new ResourceName("School"),
+                                new EducationOrganizationId(111)
+                            ),
+                        ],
+                        [],
+                        [],
+                        []
+                    )
+                );
+
+                await CreateUpdate().UpdateById(locationUpdateRequest, Connection!, Transaction!);
+
+                DocumentSummary? xyzSummary = await CreateSqlAction()
+                    .FindDocumentEdfiDocByDocumentUuid(
+                        new DocumentUuid(_xyzUuid),
+                        "XYZ",
+                        PartitionUtility.PartitionKeyFor(new DocumentUuid(_xyzUuid)),
+                        Connection!,
+                        Transaction!,
+                        new TraceId()
+                    );
+
+                xyzSummary!.SecurityElements.Should().NotBeNull();
+                xyzSummary
+                    .SecurityElements.GetProperty("EducationOrganization")
+                    .GetArrayLength()
+                    .Should()
+                    .Be(1);
+
+                xyzSummary
+                    .SecurityElements.GetProperty("EducationOrganization")[0]
+                    .GetProperty("Id")
+                    .GetString()
+                    .Should()
+                    .Be("111");
+            }
         }
     }
     // Future tests - from Meadowlark
