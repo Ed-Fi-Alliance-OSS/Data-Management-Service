@@ -31,11 +31,11 @@ Feature: The Discovery API provides information about the application version, s
                   }
                   ],
                   "urls": {
-                  "dependencies": "http://localhost:8080/metadata/dependencies",
-                  "openApiMetadata": "http://localhost:8080/metadata/specifications",
+                  "dependencies": "{BASE_URL}/metadata/dependencies",
+                  "openApiMetadata": "{BASE_URL}/metadata/specifications",
                   "oauth": "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token",
-                  "dataManagementApi": "http://localhost:8080/data",
-                  "xsdMetadata": "http://localhost:8080/metadata/xsd"
+                  "dataManagementApi": "{BASE_URL}/data",
+                  "xsdMetadata": "{BASE_URL}/metadata/xsd"
                   }
                   }
                   """
