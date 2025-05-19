@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
 using static EdFi.DataManagementService.Core.Handler.Utility;
+using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -108,8 +109,14 @@ internal class UpdateByIdHandler(
                 Headers: []
             ),
             UpdateFailureIdentityConflict failure => new FrontendResponse(
-                StatusCode: 400,
-                Body: failure.ReferencingDocumentInfo,
+                StatusCode: 409,
+                Body: ForIdentityConflict(
+                    [
+                        $"A natural key conflict occurred when attempting to update a resource {failure.ResourceName.Value} with a duplicate key. "
+                            + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}",
+                    ],
+                    traceId: context.FrontendRequest.TraceId
+                ),
                 Headers: []
             ),
             UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),

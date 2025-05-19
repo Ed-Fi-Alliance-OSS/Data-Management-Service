@@ -32,13 +32,18 @@ public record UpdateResult
     /// A failure because referenced descriptors in the updated document do not exist
     /// </summary>
     /// <param name="InvalidDescriptorReferences">The invalid descriptor references</param>
-    public record UpdateFailureDescriptorReference(List<DescriptorReference> InvalidDescriptorReferences) : UpdateResult();
+    public record UpdateFailureDescriptorReference(List<DescriptorReference> InvalidDescriptorReferences)
+        : UpdateResult();
 
     /// <summary>
     /// A failure because there is a different document with the same identity
     /// </summary>
-    /// <param name="ReferencingDocumentInfo">Information about the existing document</param>
-    public record UpdateFailureIdentityConflict(string ReferencingDocumentInfo) : UpdateResult();
+    /// <param name="ResourceName">The name of the resource that failed to update</param>
+    /// <param name="DuplicateIdentityValues">The identity names and values on the attempted update</param>
+    public record UpdateFailureIdentityConflict(
+        ResourceName ResourceName,
+        IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues
+    ) : UpdateResult();
 
     /// <summary>
     /// A transient failure due to a retryable transaction write conflict, for example a serialization issue

@@ -365,6 +365,24 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             );
             return new UpdateResult.UpdateFailureWriteConflict();
         }
+        catch (PostgresException pe) when (pe.SqlState == PostgresErrorCodes.UniqueViolation)
+        {
+            _logger.LogInformation(
+                pe,
+                "Failure: alias identity already exists - {TraceId}",
+                updateRequest.TraceId.Value
+            );
+
+            return new UpdateResult.UpdateFailureIdentityConflict(
+                updateRequest.ResourceInfo.ResourceName,
+                updateRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(
+                    d => new KeyValuePair<string, string>(
+                        d.IdentityJsonPath.Value.Substring(d.IdentityJsonPath.Value.LastIndexOf('.') + 1),
+                        d.IdentityValue
+                    )
+                )
+            );
+        }
         catch (Exception ex)
         {
             _logger.LogError(
