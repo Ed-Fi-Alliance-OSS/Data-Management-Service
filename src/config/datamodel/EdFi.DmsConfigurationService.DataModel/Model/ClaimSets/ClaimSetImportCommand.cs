@@ -9,9 +9,5 @@ public class ClaimSetImportCommand : IClaimSetCommand
 {
     public required string Name { get; set; }
 
-    public class Validator(IClaimSetDataProvider claimSetDataProvider)
-        : ClaimSetCommandValidator<ClaimSetImportCommand>(
-            claimSetDataProvider,
-            isResourceClaimsOptional: false
-        );
+    public class Validator() : ClaimSetCommandValidator<ClaimSetImportCommand>();
 }

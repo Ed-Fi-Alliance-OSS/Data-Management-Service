@@ -8,11 +8,8 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public class ClaimSetInsertCommand : IClaimSetCommand
 {
     public required string Name { get; set; }
-    public List<ResourceClaim>? ResourceClaims { get; set; }
 
-    public class Validator(IClaimSetDataProvider claimSetDataProvider)
-        : ClaimSetCommandValidator<ClaimSetInsertCommand>(
-            claimSetDataProvider,
-            isResourceClaimsOptional: true
-        );
+    public bool IsSystemReserved { get; set; }
+
+    public class Validator() : ClaimSetCommandValidator<ClaimSetInsertCommand>();
 }

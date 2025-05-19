@@ -4,18 +4,21 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 
 /// <summary>
-/// Validates the authorization strategy that performs no additional authorization.
+/// Validates whether a client is authorized to access a resource based on relationships
+/// with students.
 /// </summary>
 [AuthorizationStrategyName(AuthorizationStrategyName)]
-public class NoFurtherAuthorizationRequiredValidator : IAuthorizationValidator
+public class RelationshipsWithStudentsOnlyValidator(IAuthorizationRepository authorizationRepository)
+    : IAuthorizationValidator
 {
     private const string AuthorizationStrategyName =
-        AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired;
+        AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly;
 
     public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
@@ -24,6 +27,19 @@ public class NoFurtherAuthorizationRequiredValidator : IAuthorizationValidator
         OperationType operationType
     )
     {
-        return await Task.FromResult(new ResourceAuthorizationResult.Authorized());
+        if (
+            RelationshipsBasedAuthorizationHelper.HasSecurable(
+                authorizationSecurableInfos,
+                SecurityElementNameConstants.StudentUniqueId
+            )
+        )
+        {
+            return await RelationshipsBasedAuthorizationHelper.ValidateStudentAuthorization(
+                authorizationRepository,
+                securityElements,
+                authorizationFilters
+            );
+        }
+        return new ResourceAuthorizationResult.Authorized();
     }
 }

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -18,7 +17,8 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository authorizationRepository)
     : IAuthorizationValidator
 {
-    private const string AuthorizationStrategyName = "RelationshipsWithEdOrgsAndPeople";
+    private const string AuthorizationStrategyName =
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsAndPeople;
 
     public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,
@@ -27,45 +27,66 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
         OperationType operationType
     )
     {
-        bool isStudentSecurable = authorizationSecurableInfos
-            .AsEnumerable()
-            .Any(x => x.SecurableKey == SecurityElementNameConstants.StudentUniqueId);
+        var errorMessages = new List<string>();
 
-        if (isStudentSecurable)
+        if (
+            RelationshipsBasedAuthorizationHelper.HasSecurable(
+                authorizationSecurableInfos,
+                SecurityElementNameConstants.StudentUniqueId
+            )
+        )
         {
-            if (securityElements.Student.Length == 0)
-            {
-                string error =
-                    "No 'Student' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
-                return new ResourceAuthorizationResult.NotAuthorized([error]);
-            }
-
-            var studentUniqueId = securityElements.Student[0].Value;
-
-            var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStudent(
-                studentUniqueId
+            var studentResult = await RelationshipsBasedAuthorizationHelper.ValidateStudentAuthorization(
+                authorizationRepository,
+                securityElements,
+                authorizationFilters
             );
-
-            var authorizedEdOrgIds = authorizationFilters
-                .Select(f => long.TryParse(f.Value, out var id) ? (long?)id : null)
-                .Where(id => id.HasValue)
-                .Select(id => id!.Value);
-
-            bool isAuthorized =
-                educationOrgIds != null
-                && educationOrgIds.Length > 0
-                && authorizedEdOrgIds.Any(id => educationOrgIds.Contains(id));
-
-            if (!isAuthorized)
+            if (studentResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedStudent)
             {
-                string edOrgIdsFromFilters = string.Join(
-                    ", ",
-                    authorizationFilters.Select(x => $"'{x.Value}'")
-                );
-                string error =
-                    $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'.";
-                return new ResourceAuthorizationResult.NotAuthorized([error]);
+                errorMessages.AddRange(notAuthorizedStudent.ErrorMessages);
             }
+        }
+
+        if (
+            RelationshipsBasedAuthorizationHelper.HasSecurable(
+                authorizationSecurableInfos,
+                SecurityElementNameConstants.StaffUniqueId
+            )
+        )
+        {
+            var staffResult = await RelationshipsBasedAuthorizationHelper.ValidateStaffAuthorization(
+                authorizationRepository,
+                securityElements,
+                authorizationFilters
+            );
+            if (staffResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedStaff)
+            {
+                errorMessages.AddRange(notAuthorizedStaff.ErrorMessages);
+            }
+        }
+
+        if (
+            RelationshipsBasedAuthorizationHelper.HasSecurable(
+                authorizationSecurableInfos,
+                SecurityElementNameConstants.ContactUniqueId
+            )
+        )
+        {
+            var contactResult = await RelationshipsBasedAuthorizationHelper.ValidateContactAuthorization(
+                authorizationRepository,
+                securityElements,
+                authorizationFilters
+            );
+            if (contactResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedContact)
+            {
+                errorMessages.AddRange(notAuthorizedContact.ErrorMessages);
+            }
+        }
+
+        // Return consolidated result
+        if (errorMessages.Count > 0)
+        {
+            return new ResourceAuthorizationResult.NotAuthorized([.. errorMessages]);
         }
 
         return new ResourceAuthorizationResult.Authorized();

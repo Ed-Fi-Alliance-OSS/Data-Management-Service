@@ -86,9 +86,29 @@ public record ClaimSetUpdateResult
     public record FailureNotFound() : ClaimSetUpdateResult();
 
     /// <summary>
+    /// The supplied claim set name already exists.
+    /// </summary>
+    public record FailureDuplicateClaimSetName() : ClaimSetUpdateResult();
+
+    /// <summary>
+    /// Multiple hierarchies were found in the configuration store (not currently supported).
+    /// </summary>
+    public record FailureMultipleHierarchiesFound() : ClaimSetUpdateResult();
+
+    /// <summary>
+    /// Persistent multi-user conflicts prevent update attempts.
+    /// </summary>
+    public record FailureMultiUserConflict() : ClaimSetUpdateResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ClaimSetUpdateResult();
+
+    /// <summary>
+    /// Attempt was made to modify a system reserved claim set.
+    /// </summary>
+    public record FailureSystemReserved() : ClaimSetUpdateResult();
 }
 
 public record ClaimSetDeleteResult
@@ -99,6 +119,11 @@ public record ClaimSetDeleteResult
     /// ClaimSet id not found
     /// </summary>
     public record FailureNotFound() : ClaimSetDeleteResult();
+
+    /// <summary>
+    /// Attempt was made to modify a system reserved claim set.
+    /// </summary>
+    public record FailureSystemReserved() : ClaimSetDeleteResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -163,7 +188,8 @@ public record ClaimSetImportResult
 
 public record AuthorizationStrategyGetResult
 {
-    public record Success(IEnumerable<DataModel.Model.ClaimSets.AuthorizationStrategy> AuthorizationStrategy) : AuthorizationStrategyGetResult();
+    public record Success(IEnumerable<DataModel.Model.ClaimSets.AuthorizationStrategy> AuthorizationStrategy)
+        : AuthorizationStrategyGetResult();
 
     public record FailureUnknown(string FailureMessage) : AuthorizationStrategyGetResult();
 }

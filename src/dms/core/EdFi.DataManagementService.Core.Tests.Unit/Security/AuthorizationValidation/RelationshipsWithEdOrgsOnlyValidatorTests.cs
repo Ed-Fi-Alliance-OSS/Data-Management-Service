@@ -28,7 +28,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
             var validator = new RelationshipsWithEdOrgsOnlyValidator(_authorizationRepository);
             _expectedResult = await validator.ValidateAuthorization(
                 new DocumentSecurityElements([], [], [], [], []),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299501")],
+                [new AuthorizationFilter.EducationOrganization("299501")],
                 [],
                 OperationType.Get
             );
@@ -77,7 +77,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     []
                 ),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "255901")],
+                [new AuthorizationFilter.EducationOrganization("255901")],
                 [],
                 OperationType.Get
             );
@@ -116,7 +116,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     []
                 ),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "2455")],
+                [new AuthorizationFilter.EducationOrganization("2455")],
                 [],
                 OperationType.Get
             );
@@ -169,7 +169,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     []
                 ),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "567")],
+                [new AuthorizationFilter.EducationOrganization("567")],
                 [],
                 OperationType.Upsert
             );
@@ -217,7 +217,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     []
                 ),
-                [new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "299")],
+                [new AuthorizationFilter.EducationOrganization("299")],
                 [],
                 OperationType.Get
             );
@@ -270,10 +270,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         [Test]
         public async Task Should_Return_Unauthorized_When_Token_Only_Has_Access_To_One()
         {
-            var tokenEdOrgs = new[]
-            {
-                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "1"),
-            };
+            var tokenEdOrgs = new[] { new AuthorizationFilter.EducationOrganization("1") };
 
             var result = await new RelationshipsWithEdOrgsOnlyValidator(
                 _authorizationRepository
@@ -287,8 +284,8 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
         {
             var tokenEdOrgs = new[]
             {
-                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "1"),
-                new AuthorizationFilter(SecurityElementNameConstants.EducationOrganization, "2"),
+                new AuthorizationFilter.EducationOrganization("1"),
+                new AuthorizationFilter.EducationOrganization("2"),
             };
 
             var result = await new RelationshipsWithEdOrgsOnlyValidator(

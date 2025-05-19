@@ -8,13 +8,13 @@ using EdFi.DataManagementService.Core.External.Model;
 namespace EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 
 /// <summary>
-/// Provides authorization filters for RelationshipsWithEdOrgsOnly authorization strategy
+/// Provides authorization filters for RelationshipsWithStudentsOnly authorization strategy
 /// </summary>
-[AuthorizationStrategyName(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)]
-public class RelationshipsWithEdOrgsOnlyFiltersProvider : AuthorizationFiltersProviderBase
+[AuthorizationStrategyName(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly)]
+public class RelationshipsWithStudentsOnlyFiltersProvider : AuthorizationFiltersProviderBase
 {
-    public RelationshipsWithEdOrgsOnlyFiltersProvider()
-        : base(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly) { }
+    public RelationshipsWithStudentsOnlyFiltersProvider()
+        : base(AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly) { }
 
     public override AuthorizationStrategyEvaluator GetFilters(ClientAuthorizations authorizations) =>
         GetRelationshipFilters(authorizations);

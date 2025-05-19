@@ -17,7 +17,8 @@ namespace EdFi.DataManagementService.Core.Security.AuthorizationValidation;
 public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository authorizationRepository)
     : IAuthorizationValidator
 {
-    private const string AuthorizationStrategyName = "RelationshipsWithEdOrgsOnly";
+    private const string AuthorizationStrategyName =
+        AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly;
 
     public async Task<ResourceAuthorizationResult> ValidateAuthorization(
         DocumentSecurityElements securityElements,

@@ -102,7 +102,7 @@ public class QueryOpenSearchTests
         AuthorizationSecurableInfo securableInfo = new AuthorizationSecurableInfo("Namespace");
         AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
             "NamespaceBased",
-            [new AuthorizationFilter("Namespace", "uri://ed-fi.org")],
+            [new AuthorizationFilter.Namespace("uri://ed-fi.org")],
             FilterOperator.Or
         );
         IQueryRequest queryRequest = A.Fake<IQueryRequest>();
@@ -137,8 +137,8 @@ public class QueryOpenSearchTests
         AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
             "NamespaceBased",
             [
-                new AuthorizationFilter("Namespace", "uri://ed-fi.org"),
-                new AuthorizationFilter("Namespace", "uri://other.org"),
+                new AuthorizationFilter.Namespace("uri://ed-fi.org"),
+                new AuthorizationFilter.Namespace("uri://other.org"),
             ],
             FilterOperator.Or
         );
@@ -176,7 +176,7 @@ public class QueryOpenSearchTests
         AuthorizationSecurableInfo securableInfo = new AuthorizationSecurableInfo("EducationOrganization");
         AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
             "EdOrgBased",
-            [new AuthorizationFilter("EducationOrganization", "6001")],
+            [new AuthorizationFilter.EducationOrganization("6001")],
             FilterOperator.Or
         );
         IQueryRequest queryRequest = A.Fake<IQueryRequest>();
@@ -214,7 +214,7 @@ public class QueryOpenSearchTests
         AuthorizationSecurableInfo securableInfo = new AuthorizationSecurableInfo("StudentUniqueId");
         AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
             "StudentBased",
-            [new AuthorizationFilter("EducationOrganization", "6001")],
+            [new AuthorizationFilter.EducationOrganization("6001")],
             FilterOperator.Or
         );
         IQueryRequest queryRequest = A.Fake<IQueryRequest>();
@@ -252,7 +252,7 @@ public class QueryOpenSearchTests
         AuthorizationSecurableInfo securableInfo = new AuthorizationSecurableInfo("ContactUniqueId");
         AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
             "ContactBased",
-            [new AuthorizationFilter("EducationOrganization", "6001")],
+            [new AuthorizationFilter.EducationOrganization("6001")],
             FilterOperator.Or
         );
         IQueryRequest queryRequest = A.Fake<IQueryRequest>();
@@ -266,6 +266,100 @@ public class QueryOpenSearchTests
                         "id": "6001",
                         "path": "hierarchy.array"
                     }
+                }
+            }
+            """;
+
+        // Act
+        List<JsonObject> result = QueryOpenSearch.BuildAuthorizationFilters(
+            queryRequest,
+            NullLogger.Instance
+        );
+
+        // Assert
+        result.Should().ContainSingle();
+        JsonObject? expected = JsonNode.Parse(expectedJson) as JsonObject;
+        expected.Should().NotBeNull();
+        result[0].ToJsonString().Should().Be(expected!.ToJsonString());
+    }
+
+    [Test]
+    public void BuildAuthorizationFilters_WithStaffUniqueIdSecurableKey_ReturnsStaffTermsFilter()
+    {
+        // Arrange
+        AuthorizationSecurableInfo securableInfo = new AuthorizationSecurableInfo("StaffUniqueId");
+        AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
+            "StaffBased",
+            [new AuthorizationFilter.EducationOrganization("6001")],
+            FilterOperator.Or
+        );
+        IQueryRequest queryRequest = A.Fake<IQueryRequest>();
+        A.CallTo(() => queryRequest.AuthorizationSecurableInfo).Returns([securableInfo]);
+        A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns([strategyEvaluator]);
+        string expectedJson = """
+            {
+                "terms": {
+                    "staffeducationorganizationauthorizationedorgids.array": {
+                        "index": "edfi.dms.educationorganizationhierarchytermslookup",
+                        "id": "6001",
+                        "path": "hierarchy.array"
+                    }
+                }
+            }
+            """;
+
+        // Act
+        List<JsonObject> result = QueryOpenSearch.BuildAuthorizationFilters(
+            queryRequest,
+            NullLogger.Instance
+        );
+
+        // Assert
+        result.Should().ContainSingle();
+        JsonObject? expected = JsonNode.Parse(expectedJson) as JsonObject;
+        expected.Should().NotBeNull();
+        result[0].ToJsonString().Should().Be(expected!.ToJsonString());
+    }
+
+    [Test]
+    public void BuildAuthorizationFilters_WithStaffUniqueIdSecurableKeyAndMultipleEdOrgs_ReturnsStaffBoolShouldFilter()
+    {
+        // Arrange
+        AuthorizationSecurableInfo securableInfo = new AuthorizationSecurableInfo("StaffUniqueId");
+        AuthorizationStrategyEvaluator strategyEvaluator = new AuthorizationStrategyEvaluator(
+            "StaffBased",
+            [
+                new AuthorizationFilter.EducationOrganization("6001"),
+                new AuthorizationFilter.EducationOrganization("7002"),
+            ],
+            FilterOperator.Or
+        );
+        IQueryRequest queryRequest = A.Fake<IQueryRequest>();
+        A.CallTo(() => queryRequest.AuthorizationSecurableInfo).Returns([securableInfo]);
+        A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns([strategyEvaluator]);
+        string expectedJson = """
+            {
+                "bool": {
+                    "should": [
+                        {
+                            "terms": {
+                                "staffeducationorganizationauthorizationedorgids.array": {
+                                    "index": "edfi.dms.educationorganizationhierarchytermslookup",
+                                    "id": "6001",
+                                    "path": "hierarchy.array"
+                                }
+                            }
+                        },
+                        {
+                            "terms": {
+                                "staffeducationorganizationauthorizationedorgids.array": {
+                                    "index": "edfi.dms.educationorganizationhierarchytermslookup",
+                                    "id": "7002",
+                                    "path": "hierarchy.array"
+                                }
+                            }
+                        }
+                    ]
                 }
             }
             """;
@@ -351,7 +445,7 @@ public class QueryOpenSearchTests
         var securableInfo = new AuthorizationSecurableInfo("Namespace");
         var strategyEvaluator = new AuthorizationStrategyEvaluator(
             "NamespaceBased",
-            new[] { new AuthorizationFilter("Namespace", "uri://ed-fi.org") },
+            new[] { new AuthorizationFilter.Namespace("uri://ed-fi.org") },
             FilterOperator.Or
         );
         var queryRequest = A.Fake<IQueryRequest>();

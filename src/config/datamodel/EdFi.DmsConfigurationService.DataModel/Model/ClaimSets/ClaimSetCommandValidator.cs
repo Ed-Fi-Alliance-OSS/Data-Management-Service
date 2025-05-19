@@ -12,10 +12,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public class ClaimSetCommandValidator<T> : AbstractValidator<T>
     where T : IClaimSetCommand
 {
-    public ClaimSetCommandValidator(
-        IClaimSetDataProvider claimSetDataProvider,
-        bool isResourceClaimsOptional = false
-    )
+    protected ClaimSetCommandValidator()
     {
         RuleFor(c => c.Name)
             .NotEmpty()
@@ -27,9 +24,5 @@ public class ClaimSetCommandValidator<T> : AbstractValidator<T>
             .Matches(new Regex(ValidationConstants.ClaimSetNameNoWhiteSpaceRegex))
             .When(m => !string.IsNullOrEmpty(m.Name))
             .WithMessage(ValidationConstants.ClaimSetNameNoWhiteSpaceMessage);
-
-        List<string> dbActions = claimSetDataProvider.GetActions();
-        List<string> dbAuthStrategies = claimSetDataProvider.GetAuthorizationStrategies().Result;
-
     }
 }

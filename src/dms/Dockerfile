@@ -8,7 +8,6 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0.401-alpine3.20@sha256:658c93223111638f9bb5
 WORKDIR /source
 
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
-COPY frontend/EdFi.DataManagementService.Frontend.SchoolYearLoader/ ./frontend/EdFi.DataManagementService.Frontend.SchoolYearLoader/
 COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
 COPY core/EdFi.DataManagementService.Core.External/ core/EdFi.DataManagementService.Core.External/
 COPY backend/EdFi.DataManagementService.Backend.Installer/ backend/EdFi.DataManagementService.Backend.Installer/
@@ -27,14 +26,9 @@ COPY --from=parentdir Directory.Packages.props ./
 # hadolint ignore=DL3022
 COPY --from=parentdir nuget.config .
 
-RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.SchoolYearLoader/EdFi.DataManagementService.Frontend.SchoolYearLoader.csproj && \
-    dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj && \
+RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj && \
     dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj && \
     dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj
-
-WORKDIR /source/frontend/EdFi.DataManagementService.Frontend.SchoolYearLoader
-RUN dotnet build -c Release --no-restore && \
-    dotnet publish -c Release --no-build --no-restore -o /app/SchoolYearLoader
 
 WORKDIR /source/frontend/EdFi.DataManagementService.Frontend.AspNetCore
 RUN dotnet build -c Release --no-restore && \
@@ -82,13 +76,6 @@ COPY --from=build /app/Frontend/appsettings.json ./
 COPY --from=build /app/Frontend/*runtimeconfig.json ./
 COPY --from=build /app/Frontend/*.deps.json ./
 COPY --from=build /app/ApiSchemaDownloader/*.* ./ApiSchemaDownloader/
-COPY --from=build /app/SchoolYearLoader/*.dll ./SchoolYearLoader/
-COPY --from=build /app/SchoolYearLoader/ApiSchema/*.json ./SchoolYearLoader/ApiSchema/
-COPY --from=build /app/SchoolYearLoader/*.pdb ./SchoolYearLoader/
-COPY --from=build /app/SchoolYearLoader/appsettings.json ./SchoolYearLoader/
-COPY --from=build /app/SchoolYearLoader/*runtimeconfig.json ./SchoolYearLoader/
-COPY --from=build /app/SchoolYearLoader/*.deps.json ./SchoolYearLoader/
-
 COPY --chmod=700 run.sh /app/run.sh
 
 EXPOSE ${ASPNETCORE_HTTP_PORTS}

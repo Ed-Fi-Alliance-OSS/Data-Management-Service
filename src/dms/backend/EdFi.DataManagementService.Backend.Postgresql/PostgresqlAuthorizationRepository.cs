@@ -6,6 +6,7 @@
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -29,12 +30,46 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISq
         return organizationIds.Distinct().ToArray();
     }
 
+    public async Task<long[]> GetEducationOrganizationsForContact(string contactUniqueId)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        JsonElement? response = await sqlAction.GetContactStudentSchoolAuthorizationEducationOrganizationIds(
+            contactUniqueId,
+            connection,
+            transaction
+        );
+        if (response == null)
+        {
+            return [];
+        }
+        long[] edOrgIds = JsonSerializer.Deserialize<long[]>(response.Value) ?? [];
+        return edOrgIds;
+    }
+
     public async Task<long[]> GetEducationOrganizationsForStudent(string studentUniqueId)
     {
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         JsonElement? response = await sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
             studentUniqueId,
+            connection,
+            transaction
+        );
+        if (response == null)
+        {
+            return [];
+        }
+        long[] edOrgIds = JsonSerializer.Deserialize<long[]>(response.Value) ?? [];
+        return edOrgIds;
+    }
+
+    public async Task<long[]> GetEducationOrganizationsForStaff(string staffUniqueId)
+    {
+        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        JsonElement? response = await sqlAction.GetStaffEducationOrganizationAuthorizationEdOrgIds(
+            staffUniqueId,
             connection,
             transaction
         );

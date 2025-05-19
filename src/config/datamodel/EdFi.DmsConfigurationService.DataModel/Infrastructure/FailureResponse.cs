@@ -22,6 +22,7 @@ public static class FailureResponse
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _notFoundTypePrefix = $"{_typePrefix}:not-found";
+    private static readonly string _conflictTypePrefix = $"{_typePrefix}:conflict";
     private static readonly string _badGatewayTypePrefix = $"{_typePrefix}:bad-gateway";
     private static readonly string _unavailableType = $"{_typePrefix}:internal-server-error";
 
@@ -97,6 +98,16 @@ public static class FailureResponse
             type: _notFoundTypePrefix,
             title: "Not Found",
             status: 404,
+            correlationId: correlationId,
+            []
+        );
+
+    public static JsonNode ForConflict(string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: _conflictTypePrefix,
+            title: "Conflict",
+            status: 409,
             correlationId: correlationId,
             []
         );
