@@ -186,7 +186,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "No relationships have been established between the caller's education organization id claims ('567') and properties of the resource item."
+                        "No relationships have been established between the caller's education organization id claims ('567') and properties of the resource item: 'EducationOrganizationId'."
                     );
             }
         }

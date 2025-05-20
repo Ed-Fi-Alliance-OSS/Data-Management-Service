@@ -295,7 +295,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901001') and properties of the resource item."
+                        "No relationships have been established between the caller's education organization id claims ('255901001') and properties of the resource item: 'EducationOrganizationId'."
                       ]
                     }
                   """
@@ -359,7 +359,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901001') and properties of the resource item."
+                        "No relationships have been established between the caller's education organization id claims ('255901001') and properties of the resource item: 'EducationOrganizationId'."
                       ]
                   }
                   """
@@ -671,7 +671,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('3') and properties of the resource item."
+                          "No relationships have been established between the caller's education organization id claims ('3') and properties of the resource item: 'EducationOrganizationId'."
                        ]
                       }
                   """
@@ -844,7 +844,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('20101') and properties of the resource item."
+                      "No relationships have been established between the caller's education organization id claims ('20101') and properties of the resource item: 'EducationOrganizationId'."
                     ]
                   }
                   """
