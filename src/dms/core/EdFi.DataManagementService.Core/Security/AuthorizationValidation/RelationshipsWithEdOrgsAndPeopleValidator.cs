@@ -27,7 +27,8 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
         OperationType operationType
     )
     {
-        var errorMessages = new List<string>();
+        var missingProperties = new List<string>();
+        var notAuthorizedProperties = new List<string>();
 
         // Validate Education Organization authorization
         if (
@@ -43,9 +44,13 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                 authorizationFilters,
                 operationType
             );
-            if (edOrgResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedEdOrg)
+            if (edOrgResult.Type == AuthorizationResultType.MissingProperty)
             {
-                errorMessages.AddRange(notAuthorizedEdOrg.ErrorMessages);
+                missingProperties.Add(edOrgResult.PropertyName);
+            }
+            else if (edOrgResult.Type == AuthorizationResultType.NotAuthorized)
+            {
+                notAuthorizedProperties.Add(edOrgResult.PropertyName);
             }
         }
 
@@ -62,9 +67,13 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                 securityElements,
                 authorizationFilters
             );
-            if (studentResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedStudent)
+            if (studentResult.Type == AuthorizationResultType.MissingProperty)
             {
-                errorMessages.AddRange(notAuthorizedStudent.ErrorMessages);
+                missingProperties.Add(studentResult.PropertyName);
+            }
+            else if (studentResult.Type == AuthorizationResultType.NotAuthorized)
+            {
+                notAuthorizedProperties.Add(studentResult.PropertyName);
             }
         }
 
@@ -80,9 +89,13 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                 securityElements,
                 authorizationFilters
             );
-            if (staffResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedStaff)
+            if (staffResult.Type == AuthorizationResultType.MissingProperty)
             {
-                errorMessages.AddRange(notAuthorizedStaff.ErrorMessages);
+                missingProperties.Add(staffResult.PropertyName);
+            }
+            else if (staffResult.Type == AuthorizationResultType.NotAuthorized)
+            {
+                notAuthorizedProperties.Add(staffResult.PropertyName);
             }
         }
 
@@ -98,16 +111,24 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                 securityElements,
                 authorizationFilters
             );
-            if (contactResult is ResourceAuthorizationResult.NotAuthorized notAuthorizedContact)
+            if (contactResult.Type == AuthorizationResultType.MissingProperty)
             {
-                errorMessages.AddRange(notAuthorizedContact.ErrorMessages);
+                missingProperties.Add(contactResult.PropertyName);
+            }
+            else if (contactResult.Type == AuthorizationResultType.NotAuthorized)
+            {
+                notAuthorizedProperties.Add(contactResult.PropertyName);
             }
         }
 
-        // Return consolidated result
-        if (errorMessages.Count > 0)
+        if (missingProperties.Count != 0 || notAuthorizedProperties.Count != 0)
         {
-            return new ResourceAuthorizationResult.NotAuthorized([.. errorMessages]);
+            var errorMessage = RelationshipsBasedAuthorizationHelper.BuildErrorMessage(
+                authorizationFilters,
+                missingProperties,
+                notAuthorizedProperties
+            );
+            return new ResourceAuthorizationResult.NotAuthorized([errorMessage]);
         }
 
         return new ResourceAuthorizationResult.Authorized();

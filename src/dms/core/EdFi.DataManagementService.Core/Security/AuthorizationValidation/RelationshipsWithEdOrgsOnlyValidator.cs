@@ -27,11 +27,15 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
         OperationType operationType
     )
     {
-        return await RelationshipsBasedAuthorizationHelper.ValidateEdOrgAuthorization(
+        var edOrgResult = await RelationshipsBasedAuthorizationHelper.ValidateEdOrgAuthorization(
             authorizationRepository,
             securityElements,
             authorizationFilters,
             operationType
+        );
+        return RelationshipsBasedAuthorizationHelper.BuildResourceAuthorizationResult(
+            edOrgResult,
+            authorizationFilters
         );
     }
 }
