@@ -44,6 +44,8 @@ jobs:
   run-unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
     defaults:
       run:
         shell: pwsh
@@ -80,17 +82,19 @@ jobs:
           path: coveragereport
 
       - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        if: (success() || failure())
         with:
-          name: Unit Test Results
-          overwrite: true
-          path: |
-            **/*.trx
+          name: Unit Tests
+          path: '**/*.trx'
+          path-replace-backslashes: 'true'
+          reporter: dotnet-trx
 
   run-integration-tests:
     name: Run Integration Tests
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
     defaults:
       run:
         shell: pwsh
@@ -123,18 +127,20 @@ jobs:
         run: ./build-dms.ps1 IntegrationTest -Configuration Release
 
       - name: Upload Integration Test Results
-        if: always()
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        if: (success() || failure())
         with:
-          name: Integration Test Results
-          overwrite: true
-          path: |
-            **/*.trx
+          name: Integration Tests
+          path: '**/*.trx'
+          path-replace-backslashes: 'true'
+          reporter: dotnet-trx
 
   run-e2e-tests:
     name: Run E2E Tests
     needs: run-unit-tests
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
     defaults:
       run:
         shell: pwsh
@@ -164,13 +170,13 @@ jobs:
           retention-days: 10
 
       - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        if: (success() || failure())
         with:
           name: E2E Test Results
-          overwrite: true
-          path: |
-            **/*.trx
+          path: '**/*.trx'
+          path-replace-backslashes: 'true'
+          reporter: dotnet-trx
 
   event_file:
     name: Upload Event File
