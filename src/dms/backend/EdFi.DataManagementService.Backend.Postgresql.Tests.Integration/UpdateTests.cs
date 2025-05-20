@@ -954,6 +954,9 @@ public class UpdateTests : DatabaseTest
                         [],
                         [],
                         []
+                    ),
+                    documentReferences: CreateDocumentReferences(
+                        [new("Location", locationUpsertRequest.DocumentInfo.ReferentialId.Value)]
                     )
                 );
 
