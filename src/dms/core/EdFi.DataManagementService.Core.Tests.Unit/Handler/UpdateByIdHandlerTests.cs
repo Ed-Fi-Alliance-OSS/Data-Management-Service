@@ -151,7 +151,12 @@ public class UpdateByIdHandlerTests
 
             public override Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest)
             {
-                return Task.FromResult<UpdateResult>(new UpdateFailureIdentityConflict(ResponseBody));
+                return Task.FromResult<UpdateResult>(
+                    new UpdateFailureIdentityConflict(
+                        new(""),
+                        [new KeyValuePair<string, string>("key", "value")]
+                    )
+                );
             }
         }
 
@@ -167,8 +172,10 @@ public class UpdateByIdHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(400);
-            context.FrontendResponse.Body?.AsValue().ToString().Should().Be(Repository.ResponseBody);
+            context.FrontendResponse.StatusCode.Should().Be(409);
+            context.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
+            context.FrontendResponse.Headers.Should().BeEmpty();
+            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
