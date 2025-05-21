@@ -340,7 +340,7 @@ function Add_Scope([string] $scopeId) {
     Write-Output "Claim set scope added to client '$NewClientName'."
 }
 
-function Add_Cutom_Claim([string] $ClientId) {
+function Add_Custom_Claim([string] $ClientId) {
     # Add custom claim for "namespacePrefixes"
     $customClaimProtocolMapperPayload = @{
         name           = $ClaimName
@@ -431,9 +431,12 @@ else {
     Create_ClientScope $ClientScopeName
     $clientRole = Get_Role $ConfigServiceRole
     Assign_RealmRole $clientRole $clientId
-    Assign_Realm_Admin_Role $realmAdminRole $clientId
+    # Conditionally assign realm-admin role only if NewClientId is not read-only
+    if ($NewClientId -ne 'CMSAuthMetadataReadOnlyAccess' -and $NewClientId -ne 'CMSReadOnlyAccess') {
+        Assign_Realm_Admin_Role $realmAdminRole $clientId
+    }
     Add_Role_To_Token $clientId
     $clientScope = Get_ClientScope $ClientScopeName
     Add_Scope $clientScope.id
-    Add_Cutom_Claim $clientId
+    Add_Custom_Claim $clientId
 }
