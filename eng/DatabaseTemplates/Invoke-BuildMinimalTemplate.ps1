@@ -42,7 +42,7 @@ param (
 Import-Module ../Package-Management.psm1 -Force
 Import-Module ./DmsManagement.psm1 -Force
 
-$config = Import-PowerShellDataFile -Path "./MinimalTemplate/MinimalTemplateSettings.psd1"
+$config = Import-PowerShellDataFile -Path "./MinimalTemplateSettings.psd1"
 
 $BackupDirectory = './MinimalTemplate'
 
