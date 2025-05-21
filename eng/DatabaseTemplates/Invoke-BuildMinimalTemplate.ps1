@@ -259,7 +259,10 @@ function Invoke-BulkLoad {
     $host.UI.RawUI.ForegroundColor = $previousColor
 
     & dotnet $Paths.BulkLoaderExe @options
-
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "BulkLoad failed with exit code $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
     Write-Host
     Write-Host "BulkLoad executed successfully" -ForegroundColor Green -NoNewline
     Write-Host
