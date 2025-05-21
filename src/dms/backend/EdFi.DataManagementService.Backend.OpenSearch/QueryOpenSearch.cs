@@ -398,7 +398,7 @@ public static partial class QueryOpenSearch
             terms.Add(
                 new JsonObject
                 {
-                    ["bool"] = new JsonObject { ["should"] = new JsonArray(authorizationFilters.ToArray()) },
+                    ["bool"] = new JsonObject { ["must"] = new JsonArray(authorizationFilters.ToArray()) },
                 }
             );
         }
