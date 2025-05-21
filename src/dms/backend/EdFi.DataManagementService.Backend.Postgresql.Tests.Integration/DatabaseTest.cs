@@ -29,15 +29,19 @@ public abstract class DatabaseTest : DatabaseTestBase
               "projectSchema": {
                   "caseInsensitiveEndpointNameMapping": {
                     "courseofferings": "courseOfferings",
+                    "locations": "locations",
                     "sessions": "sessions",
-                    "sections": "sections"
+                    "sections": "sections",
+                    "xyzs": "xyzs"
                   },
                   "projectEndpointName": "projectName",
                   "projectName": "ProjectName",
                   "resourceNameMapping": {
                     "CourseOffering": "courseOfferings",
+                    "Location": "locations",
                     "Section": "sections",
-                    "Session": "sessions"
+                    "Session": "sessions",
+                    "XYZ": "xyzs"
                   },
                   "resourceSchemas": {
                     "courseOfferings": {
@@ -62,6 +66,27 @@ public abstract class DatabaseTest : DatabaseTestBase
                       "identityJsonPaths": [
                         "$.localCourseCode",
                         "$.sessionReference.sessionName"
+                      ]
+                    },
+                    "locations": {
+                      "documentPathsMapping": {
+                       "School": {
+                        "isDescriptor": false,
+                        "isReference": true,
+                        "isRequired": true,
+                        "projectName": "ProjectName",
+                        "referenceJsonPaths": [
+                          {
+                            "identityJsonPath": "$.schoolId",
+                            "referenceJsonPath": "$.schoolReference.schoolId",
+                            "type": "number"
+                          }
+                        ],
+                        "resourceName": "School"
+                       }
+                      },
+                      "identityJsonPaths": [
+                        "$.schoolReference.schoolId"
                       ]
                     },
                     "sections": {
@@ -99,6 +124,27 @@ public abstract class DatabaseTest : DatabaseTestBase
                       },
                       "identityJsonPaths": [
                         "$.sessionName"
+                      ]
+                    },
+                    "xyzs": {
+                      "documentPathsMapping": {
+                       "Location": {
+                        "isDescriptor": false,
+                        "isReference": true,
+                        "isRequired": true,
+                        "projectName": "ProjectName",
+                        "referenceJsonPaths": [
+                          {
+                            "identityJsonPath": "$.schoolReference.schoolId",
+                            "referenceJsonPath": "$.locationReference.schoolId",
+                            "type": "number"
+                          }
+                        ],
+                        "resourceName": "Location"
+                       }
+                      },
+                      "identityJsonPaths": [
+                        "$.locationReference.schoolId"
                       ]
                     }
                   }
