@@ -55,7 +55,7 @@ jobs:
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
-          ./Invoke-BuildMinimalTemplate.ps1 -SampleDataDirectory "./Ed-Fi-Data-Standard/Descriptors" -Extension "ed-fi" -BackupDirectory MinimalTemplate -PackageVersion $packageVersion
+          ./Invoke-BuildMinimalTemplate.ps1 -SampleDataDirectory "./Ed-Fi-Data-Standard/Descriptors" -Extension "ed-fi" -PackageVersion $packageVersion
         working-directory: eng/DatabaseTemplates/
 
       - name: Upload Minimal Template Package as Artifact
