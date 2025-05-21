@@ -438,18 +438,24 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
 
     private readonly Lazy<IReadOnlyList<IReadOnlyList<JsonPath>>> _arrayUniquenessConstraints = new(() =>
     {
-        string? rawText = _resourceSchemaNode["arrayUniquenessConstraints"]?.ToJsonString();
-
-        var stringGroups = JsonSerializer.Deserialize<List<List<string>>>(rawText!);
-
-        var result = stringGroups
-            ?.Select(group => group.Select(path => new JsonPath(path)).ToList())
-            .ToList();
-
-        return result
+        var outerArray =
+            _resourceSchemaNode["arrayUniquenessConstraints"]!.AsArray()
             ?? throw new InvalidOperationException(
                 "Expected arrayUniquenessConstraints to be on ResourceSchema, invalid ApiSchema"
             );
+
+        var result = outerArray
+            .Select(innerJsonElement =>
+                innerJsonElement!
+                    .AsArray()
+                    .Select(pathElement => new JsonPath(pathElement!.GetValue<string>()!))
+                    .ToList()
+                    .AsReadOnly()
+            )
+            .ToList()
+            .AsReadOnly();
+
+        return result;
     });
 
     /// <summary>
