@@ -48,7 +48,7 @@ jobs:
 
       - name: Start DMS Docker
         run: |
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch"
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -enableConfig
         working-directory: eng/docker-compose/
 
       - name: Generate Minimal Template package
