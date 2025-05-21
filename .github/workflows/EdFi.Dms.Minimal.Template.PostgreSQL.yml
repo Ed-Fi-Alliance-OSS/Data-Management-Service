@@ -12,7 +12,7 @@ on:
 
 env:
   STANDARD_REFERENCE: "v5.2.0"
-  PACKAGE_NAME: EdFi.Dms.Minimal.Template.PostgreSQL"
+  PACKAGE_NAME: "EdFi.Dms.Minimal.Template.PostgreSQL"
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
