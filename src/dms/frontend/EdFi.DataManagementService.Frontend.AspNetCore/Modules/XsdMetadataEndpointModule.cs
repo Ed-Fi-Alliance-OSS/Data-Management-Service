@@ -34,7 +34,7 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<XsdMetaDataSectionInfo> sections = [];
 
-        foreach (IDataModelInfo dataModelInfo in apiService.GetDataModelInfo())
+        foreach (IDataModelInfo dataModelInfo in apiService.GetDataModelInfo().OrderBy(x => x.ProjectName))
         {
             sections.Add(
                 new XsdMetaDataSectionInfo(

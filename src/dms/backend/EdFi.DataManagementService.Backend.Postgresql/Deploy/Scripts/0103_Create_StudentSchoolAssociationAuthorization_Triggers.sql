@@ -25,7 +25,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Helper function to set StudentSchoolAuthorizationEdOrgIds for a student
-CREATE OR REPLACE FUNCTION dms.SetStudentSchoolAuthorizationEdOrgIds(
+CREATE OR REPLACE FUNCTION dms.AddStudentSchoolAuthorizationEdOrgIds(
     student_id text,
     ed_org_ids jsonb
 )
@@ -33,7 +33,20 @@ RETURNS VOID
 AS $$
 BEGIN
     UPDATE dms.Document d
-    SET StudentSchoolAuthorizationEdOrgIds = ed_org_ids
+    SET StudentSchoolAuthorizationEdOrgIds = (
+        SELECT jsonb_agg(DISTINCT edOrgId)
+        FROM (
+            -- Include all existing Ed Org IDs for this student
+            SELECT jsonb_array_elements(ssa.StudentSchoolAuthorizationEducationOrganizationIds)::TEXT::JSONB AS edOrgId
+            FROM dms.StudentSchoolAssociationAuthorization ssa
+            WHERE ssa.StudentUniqueId = student_id
+
+            UNION ALL
+
+            -- Include the new Ed Org IDs being added
+            SELECT jsonb_array_elements(ed_org_ids) AS edOrgId
+        ) AS all_ed_orgs
+    )
     FROM dms.StudentSecurableDocument ssd
     WHERE
         ssd.StudentUniqueId = student_id AND
@@ -76,13 +89,26 @@ BEGIN
     );
 
     UPDATE dms.Document
-    SET StudentSchoolAuthorizationEdOrgIds = ed_org_ids
+    SET StudentSchoolAuthorizationEdOrgIds = (
+        SELECT jsonb_agg(DISTINCT edOrgId)
+        FROM (
+            -- Include all existing Ed Org IDs for this student
+            SELECT jsonb_array_elements(ssa.StudentSchoolAuthorizationEducationOrganizationIds)::TEXT::JSONB AS edOrgId
+            FROM dms.StudentSchoolAssociationAuthorization ssa
+            WHERE ssa.StudentUniqueId = student_id
+
+            UNION ALL
+
+            -- Include the new Ed Org IDs being added
+            SELECT jsonb_array_elements(ed_org_ids) AS edOrgId
+        ) AS all_ed_orgs
+    )
     WHERE
         Id = NEW.Id AND
         DocumentPartitionKey = NEW.DocumentPartitionKey;
 
     -- Update all student-securable documents for this student
-    PERFORM dms.SetStudentSchoolAuthorizationEdOrgIds(student_id, ed_org_ids);
+    PERFORM dms.AddStudentSchoolAuthorizationEdOrgIds(student_id, ed_org_ids);
 
     -- Insert student contact association records for this student school association
     FOR existing_contact IN
@@ -96,7 +122,7 @@ BEGIN
         ContactStudentSchoolAuthorizationEducationOrganizationIds,
         StudentContactAssociationId,
         StudentContactAssociationPartitionKey,
-        StudentSchoolAssociationId, 
+        StudentSchoolAssociationId,
         StudentSchoolAssociationPartitionKey
     )
     VALUES (
@@ -127,8 +153,12 @@ DECLARE
 BEGIN
     old_student_id := OLD.EdfiDoc->'studentReference'->>'studentUniqueId';
 
+    DELETE FROM dms.ContactStudentSchoolAuthorization
+    WHERE StudentUniqueId = old_student_id;
+
     -- Update all documents for the old student
     PERFORM dms.ClearStudentSchoolAuthorizationEdOrgIds(old_student_id);
+    PERFORM dms.AddStudentSchoolAuthorizationEdOrgIds(old_student_id, '[]');
 
     RETURN NULL;
 END;
@@ -173,14 +203,8 @@ BEGIN
         StudentSchoolAssociationId = NEW.Id AND
         StudentSchoolAssociationPartitionKey = NEW.DocumentPartitionKey;
 
-    UPDATE dms.Document
-    SET StudentSchoolAuthorizationEdOrgIds = ed_org_ids
-    WHERE
-        Id = NEW.Id AND
-        DocumentPartitionKey = NEW.DocumentPartitionKey;
-
     -- Update all documents for the new student
-    PERFORM dms.SetStudentSchoolAuthorizationEdOrgIds(new_student_id, ed_org_ids);
+    PERFORM dms.AddStudentSchoolAuthorizationEdOrgIds(new_student_id, ed_org_ids);
 
     RETURN NULL;
 END;
