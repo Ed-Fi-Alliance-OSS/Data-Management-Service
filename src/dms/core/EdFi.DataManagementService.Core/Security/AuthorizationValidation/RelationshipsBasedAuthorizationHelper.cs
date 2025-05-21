@@ -36,7 +36,7 @@ public static class RelationshipsBasedAuthorizationHelper
             if (notAuthorizedProperties.Count() > 1)
             {
                 notAuthorizedMessage =
-                    $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: {string.Join(", ", notAuthorizedProperties.Select(p => $"'{p}'"))}";
+                    $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and one or more of the following properties of the resource item: {string.Join(", ", notAuthorizedProperties.Select(p => $"'{p}'"))}.";
             }
             return notAuthorizedMessage;
         }

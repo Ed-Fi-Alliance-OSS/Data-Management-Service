@@ -72,7 +72,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "correlationId": "0HNCJPIJKHR7A:00000019",
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901', '255901001') and one or more of the following properties of the resource item: 'StaffUniqueId'."
+                        "No relationships have been established between the caller's education organization id claims ('255901', '255901001') and the resource item's StaffUniqueId value."
                       ]
                     }
                   """
@@ -118,7 +118,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                           "correlationId": "0HNCJPIJKHR7K:0000001A",
                           "validationErrors": {},
                           "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901', '255901001') and one or more of the following properties of the resource item: 'StaffUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901', '255901001') and the resource item's StaffUniqueId value."
                           ]
                       }
                   """
@@ -258,7 +258,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "correlationId": "0HNCJPIJKHR9A:0000001A",
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901903') and properties of the resource item."
+                        "No relationships have been established between the caller's education organization id claims ('255901903') and the resource item's EducationOrganizationId value."
                       ]
                     }
                   """
@@ -287,7 +287,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StaffUniqueId'."
+                        "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                       ]
                     }
                   """
@@ -346,7 +346,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StaffUniqueId'."
+                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                     ]
                   }
                   """
@@ -375,7 +375,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StaffUniqueId'."
+                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                     ]
                   }
                   """
@@ -438,7 +438,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                           "correlationId": "0HNCJPIJKHR7K:0000001A",
                           "validationErrors": {},
                           "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901', '255901001') and one or more of the following properties of the resource item: 'StaffUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901', '255901001') and the resource item's StaffUniqueId value."
                           ]
                       }
                   """
@@ -573,7 +573,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "correlationId": "0HNCJPIJKHR9A:0000001A",
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901903') and properties of the resource item."
+                        "No relationships have been established between the caller's education organization id claims ('255901903') and the resource item's EducationOrganizationId value."
                       ]
                     }
                   """
@@ -602,7 +602,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StaffUniqueId'."
+                        "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                       ]
                     }
                   """
@@ -661,7 +661,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StaffUniqueId'."
+                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                     ]
                   }
                   """
@@ -690,7 +690,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StaffUniqueId'."
+                      "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StaffUniqueId'."
                     ]
                   }
                   """
