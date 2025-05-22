@@ -34,6 +34,7 @@ public class ParseBodyMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: null,
+                Header: null,
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -80,6 +81,7 @@ public class ParseBodyMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: "",
+                Header: null,
                 QueryParameters: [],
                 new TraceId("traceId"),
                 new ClientAuthorizations(
@@ -126,6 +128,7 @@ public class ParseBodyMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: """{ "id":"value" "name":"firstname"}""",
+                Header: null,
                 QueryParameters: [],
                 new TraceId("traceId"),
                 new ClientAuthorizations(

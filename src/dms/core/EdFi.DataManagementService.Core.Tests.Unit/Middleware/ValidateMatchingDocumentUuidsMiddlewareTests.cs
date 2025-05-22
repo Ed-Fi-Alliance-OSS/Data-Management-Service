@@ -92,6 +92,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     $"ed-fi/academicweeks/{id}",
                     Body: jsonData,
+                    Header: null,
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
                     ClientAuthorizations: new ClientAuthorizations(
@@ -147,6 +148,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     $"ed-fi/academicweeks/{differentId}",
                     Body: jsonData,
+                    Header: null,
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
                     ClientAuthorizations: new ClientAuthorizations(
@@ -210,6 +212,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     $"ed-fi/academicweeks/{id}",
                     Body: jsonData,
+                    Header: null,
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
                     ClientAuthorizations: new ClientAuthorizations(
@@ -273,6 +276,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     $"ed-fi/academicweeks/{id}",
                     Body: jsonData,
+                    Header: null,
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
                     ClientAuthorizations: new ClientAuthorizations(

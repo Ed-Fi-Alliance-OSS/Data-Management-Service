@@ -88,6 +88,7 @@ public class APISchemaFileTests
                 FrontendRequest request = new(
                     new("/ed-fi/noresourcenames/123"),
                     null,
+                    null,
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
@@ -114,6 +115,7 @@ public class APISchemaFileTests
                 FrontendRequest request = new(
                     new("/ed-fi/noIsDescriptors/123"),
                     null,
+                    null,
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
@@ -139,6 +141,7 @@ public class APISchemaFileTests
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
                     new("/ed-fi/noallowidentityupdates/123"),
+                    null,
                     null,
                     [],
                     new TraceId(""),
@@ -171,6 +174,7 @@ public class APISchemaFileTests
                 FrontendRequest request = new(
                     new("/ed-fi/noIsSchoolYearEnumerations/123"),
                     null,
+                    null,
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
@@ -196,6 +200,7 @@ public class APISchemaFileTests
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
                     new("/ed-fi/noJsonSchemaForInserts/123"),
+                    null,
                     null,
                     [],
                     new TraceId(""),
@@ -223,6 +228,7 @@ public class APISchemaFileTests
                 FrontendRequest request = new(
                     new("/ed-fi/noidentityjsonpaths/123"),
                     null,
+                    null,
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
@@ -248,6 +254,7 @@ public class APISchemaFileTests
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
                     new("/ed-fi/noequalityconstraints/123"),
+                    null,
                     null,
                     [],
                     new TraceId(""),
@@ -275,6 +282,7 @@ public class APISchemaFileTests
                 FrontendRequest request = new(
                     new("/ed-fi/noIsSubclasses/123"),
                     null,
+                    null,
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
@@ -300,6 +308,7 @@ public class APISchemaFileTests
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
                     new("/ed-fi/noSubClassTypes/123"),
+                    null,
                     null,
                     [],
                     new TraceId(""),
@@ -327,6 +336,7 @@ public class APISchemaFileTests
                 FrontendRequest request = new(
                     new("/ed-fi/nosuperclassresourcenames/123"),
                     null,
+                    null,
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
@@ -352,6 +362,7 @@ public class APISchemaFileTests
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
                     new("/ed-fi/nosuperclassprojectnames/123"),
+                    null,
                     null,
                     [],
                     new TraceId(""),
@@ -379,6 +390,7 @@ public class APISchemaFileTests
                 FrontendRequest request = new(
                     new("/ed-fi/nosuperclassidentitydocumentkeys/123"),
                     null,
+                    null,
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
@@ -404,6 +416,7 @@ public class APISchemaFileTests
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
                     new("/ed-fi/noSubclassIdentityDocumentKeys/123"),
+                    null,
                     null,
                     [],
                     new TraceId(""),

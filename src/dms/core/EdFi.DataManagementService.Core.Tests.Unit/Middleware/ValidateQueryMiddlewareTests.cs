@@ -45,6 +45,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/schools",
                 Body: null,
+                Header: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -119,6 +120,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/schools",
                 Body: null,
+                Header: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -231,6 +233,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
+                Header: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -381,6 +384,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
+                Header: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -464,6 +468,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
+                Header: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -551,6 +556,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
+                Header: null,
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
                 ClientAuthorizations: new ClientAuthorizations(
