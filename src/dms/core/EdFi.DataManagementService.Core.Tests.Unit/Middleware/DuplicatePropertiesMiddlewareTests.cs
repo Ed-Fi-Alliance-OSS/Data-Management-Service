@@ -52,6 +52,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonBody,
+                Header: null,
                 QueryParameters: [],
                 new TraceId("traceId"),
                 new ClientAuthorizations(
@@ -120,6 +121,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonBody,
+                Header: null,
                 QueryParameters: [],
                 new TraceId("traceId"),
                 new ClientAuthorizations(
@@ -190,6 +192,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/bellschedules",
                 Body: jsonBody,
+                Header: null,
                 QueryParameters: [],
                 new TraceId("traceId"),
                 new ClientAuthorizations(
@@ -258,6 +261,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonBody,
+                Header: null,
                 QueryParameters: [],
                 new TraceId("traceId"),
                 new ClientAuthorizations(
@@ -326,6 +330,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonBody,
+                Header: null,
                 QueryParameters: [],
                 new TraceId("traceId"),
                 new ClientAuthorizations(
@@ -384,6 +389,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 $"ed-fi/students/{id}",
                 Body: jsonBody,
+                Header: null,
                 QueryParameters: [],
                 new TraceId("traceId"),
                 new ClientAuthorizations(
@@ -455,6 +461,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 $"ed-fi/schools/{id}",
                 Body: jsonBody,
+                Header: null,
                 QueryParameters: [],
                 new TraceId("traceId"),
                 new ClientAuthorizations(

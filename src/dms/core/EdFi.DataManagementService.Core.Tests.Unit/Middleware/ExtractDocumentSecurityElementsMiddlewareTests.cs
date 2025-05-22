@@ -55,6 +55,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
             context = new(
                 new(
                     Body: body,
+                    Header: null,
                     QueryParameters: [],
                     Path: "/ed-fi/assessments",
                     TraceId: new TraceId("123"),
@@ -120,6 +121,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
             context = new(
                 new(
                     Body: body,
+                    Header: null,
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",
                     TraceId: new TraceId("123"),
@@ -188,6 +190,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
             context = new(
                 new(
                     Body: body,
+                    Header: null,
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",
                     TraceId: new TraceId("123"),

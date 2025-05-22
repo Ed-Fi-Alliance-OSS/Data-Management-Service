@@ -177,6 +177,35 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 _sqlAction
             );
 
+            JsonElement existingEdfiDoc = documentFromDb.EdfiDoc;
+            JsonElement updatedRequestEdfiDoc = JsonSerializer.SerializeToElement(updateRequest.EdfiDoc.AsObject());
+
+            string? existingEtag = null;
+            string? ifMatch = null;
+            // Try to extract _etag from existingEdfiDoc
+            if (existingEdfiDoc.TryGetProperty("_etag", out JsonElement existingEtagElement))
+            {
+                existingEtag = existingEtagElement.GetString();
+            }
+
+            // Try to extract IfMatch from updatedRequestEdfiDoc
+            if (updatedRequestEdfiDoc.TryGetProperty("IfMatch", out JsonElement updatedIfMatchElement))
+            {
+                ifMatch = updatedIfMatchElement.GetString();
+            }
+
+            // Compare _etag with ifMatch
+            if (existingEtag != null && ifMatch != null && !existingEtag.Equals(ifMatch, StringComparison.OrdinalIgnoreCase))
+            {
+                // _etag mismatch
+                _logger.LogInformation(
+                    "Failure: _etag does not match on update - {TraceId}",
+                    updateRequest.TraceId.Value
+                );
+                return new UpdateResult.UpdateFailureETagMisMatch();
+            }
+
+
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
                 updateRequest.DocumentUuid.Value,
