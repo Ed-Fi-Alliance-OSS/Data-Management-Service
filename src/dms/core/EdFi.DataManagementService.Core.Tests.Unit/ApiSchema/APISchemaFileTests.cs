@@ -50,6 +50,7 @@ public class APISchemaFileTests
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
+                new DecimalValidator(),
                 NullLogger<ApiService>.Instance,
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
                 new NamedAuthorizationServiceFactory(serviceProvider),
