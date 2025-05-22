@@ -92,7 +92,7 @@ Rule: StudentContactAssociation CRUD is properly authorized
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901903') and the resource item's StudentUniqueId value."
                         ]
                   }
                 """
@@ -123,7 +123,7 @@ Rule: StudentContactAssociation CRUD is properly authorized
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901903') and the resource item's StudentUniqueId value."
                         ]
                    }
                 """
@@ -237,7 +237,7 @@ Rule: StudentContactAssociation CRUD is properly authorized
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901903') and the resource item's StudentUniqueId value."
                         ]
                    }
                 """
@@ -285,7 +285,7 @@ Rule: StudentContactAssociation CRUD is properly authorized
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901903') and the resource item's StudentUniqueId value."
                         ]
                   }
                 """
@@ -369,7 +369,7 @@ Rule: Contact CRUD is properly authorized
                         "status": 403,
                         "validationErrors": {},
                         "errors": [
-                              "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and one or more of the following properties of the resource item: 'ContactUniqueId'."
+                              "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and the resource item's ContactUniqueId value."
                             ]
                        }
                     """
@@ -419,7 +419,7 @@ Rule: Contact CRUD is properly authorized
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and one or more of the following properties of the resource item: 'ContactUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and the resource item's ContactUniqueId value."
                         ]
                   }
                 """
@@ -556,7 +556,7 @@ Rule: Contact CRUD is properly authorized
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and one or more of the following properties of the resource item: 'ContactUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and the resource item's ContactUniqueId value."
                         ]
                   }
                 """
@@ -673,7 +673,7 @@ Rule: Contact CRUD is properly authorized
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901903') and one or more of the following properties of the resource item: 'ContactUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901903') and the resource item's ContactUniqueId value."
                         ]
                   }
                 """
@@ -711,7 +711,7 @@ Rule: Contact CRUD is properly authorized
                     "status": 403,
                     "validationErrors": {},
                     "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and the resource item's StudentUniqueId value."
                         ]
                   }
                 """

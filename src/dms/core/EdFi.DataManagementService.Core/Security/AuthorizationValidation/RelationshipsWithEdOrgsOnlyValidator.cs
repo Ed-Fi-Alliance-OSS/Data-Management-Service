@@ -27,48 +27,15 @@ public class RelationshipsWithEdOrgsOnlyValidator(IAuthorizationRepository autho
         OperationType operationType
     )
     {
-        List<EducationOrganizationId> requestSecurableEdOrgIds = securityElements
-            .EducationOrganization.Select(e => e.Id)
-            .ToList();
-
-        if (!requestSecurableEdOrgIds.Any())
-        {
-            string error =
-                "No 'EducationOrganizationIds' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
-            return new ResourceAuthorizationResult.NotAuthorized([error]);
-        }
-
-        var requestEdOrgHierarchies = await Task.WhenAll(
-            requestSecurableEdOrgIds.Select(async edOrgId =>
-                new[] { edOrgId.Value }.Concat(
-                    await authorizationRepository.GetAncestorEducationOrganizationIds([edOrgId.Value])
-                )
-            )
+        var edOrgResult = await RelationshipsBasedAuthorizationHelper.ValidateEdOrgAuthorization(
+            authorizationRepository,
+            securityElements,
+            authorizationFilters,
+            operationType
         );
-
-        var filterEdOrgIds = authorizationFilters
-            .Select(filter =>
-                long.TryParse(filter.Value, out long filterEdOrgId) ? filterEdOrgId : (long?)null
-            )
-            .WhereNotNull()
-            .ToHashSet();
-
-        // Token must have access to *all* edOrg hierarchies
-        var isAuthorized = Array.TrueForAll(
-            requestEdOrgHierarchies,
-            requestEdOrgIdHierarchy =>
-                requestEdOrgIdHierarchy.Any(edOrgId => filterEdOrgIds.Contains(edOrgId))
+        return RelationshipsBasedAuthorizationHelper.BuildResourceAuthorizationResult(
+            edOrgResult,
+            authorizationFilters
         );
-
-        if (!isAuthorized)
-        {
-            string edOrgIdsFromFilters = string.Join(", ", authorizationFilters.Select(x => $"'{x.Value}'"));
-            string error =
-                (operationType == OperationType.Get || operationType == OperationType.Delete)
-                    ? $"Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: {edOrgIdsFromFilters}."
-                    : $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and properties of the resource item.";
-            return new ResourceAuthorizationResult.NotAuthorized([error]);
-        }
-        return new ResourceAuthorizationResult.Authorized();
     }
 }

@@ -34,12 +34,17 @@ public class RelationshipsWithStudentsOnlyValidator(IAuthorizationRepository aut
             )
         )
         {
-            return await RelationshipsBasedAuthorizationHelper.ValidateStudentAuthorization(
+            var studentResult = await RelationshipsBasedAuthorizationHelper.ValidateStudentAuthorization(
                 authorizationRepository,
                 securityElements,
                 authorizationFilters
             );
+            return RelationshipsBasedAuthorizationHelper.BuildResourceAuthorizationResult(
+                studentResult,
+                authorizationFilters
+            );
         }
+
         return new ResourceAuthorizationResult.Authorized();
     }
 }
