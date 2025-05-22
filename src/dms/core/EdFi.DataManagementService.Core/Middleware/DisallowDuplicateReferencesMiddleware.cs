@@ -61,9 +61,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
     private static void ValidateDuplicates<T>(
         IEnumerable<T> items,
         Func<T, Guid> getReferentialId,
-        Func<T, string> getPath,
-        Dictionary<string, string[]> validationErrors,
-        bool IsDescriptor = false
+        Func<T, string> getResourceNameFunc,
+        Dictionary<string, string[]> validationErrors
     )
     {
         var seenItems = new HashSet<Guid>();
@@ -72,30 +71,15 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         foreach (var item in items)
         {
             Guid referentialId = getReferentialId(item);
-            string path = getPath(item);
-
-            // The descriptor reference path includes index value, which groups error messages by index.
-            // To prevent this, converting the index to *
-            if (IsDescriptor)
-            {
-                continue;
-            }
-
-            // the propertyName varies according to the origin (DescriptorReference or DocumentReferences)
-            string propertyName = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
-                ? path
-                : $"$.{path}";
+            string resourceName = getResourceNameFunc(item);
+            string propertyName = $"$.{resourceName}";
 
             positions.TryAdd(propertyName, 1);
 
             if (!seenItems.Add(referentialId))
             {
-                path = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
-                    ? ExtractArrayName(path)
-                    : path;
-
                 string errorMessage =
-                    $"The {GetOrdinal(positions[propertyName])} item of the {path} has the same identifying values as another item earlier in the list.";
+                    $"The {GetOrdinal(positions[propertyName])} item of the {resourceName} has the same identifying values as another item earlier in the list.";
 
                 if (validationErrors.TryGetValue(propertyName, out string[]? value))
                 {
@@ -110,13 +94,6 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             }
             positions[propertyName]++;
         }
-    }
-
-    private static string ExtractArrayName(string path)
-    {
-        // Logic to extract the array name from the JSON path, e.g., "gradeLevels".
-        string[] parts = path.Split('.');
-        return parts.Length > 1 ? parts[1].Trim('[', ']', '*') : string.Empty;
     }
 
     private static void ValidateArrayUniquenessConstraints(
@@ -148,7 +125,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 continue;
             }
 
-            string errorKey = propertyName.Replace("[*]", "");
+            string errorKey = $"$.{arrayName}";
 
             var fieldPaths = group
                 .Select(p =>
@@ -177,9 +154,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
                 if (lastSeen.ContainsKey(compositeKey))
                 {
-                    string[] arrayNameParts = arrayName.Split('.');
-                    string shortArrayName =
-                        arrayNameParts.Length > 0 ? arrayNameParts[arrayNameParts.Length - 1] : arrayName;
+                    string shortArrayName = Regex.Match(arrayName, @"([^.]+)$").Groups[1].Value;
 
                     string errorMessage =
                         $"The {GetOrdinal(i + 1)} item of the {shortArrayName} has the same identifying values as another item earlier in the list.";
