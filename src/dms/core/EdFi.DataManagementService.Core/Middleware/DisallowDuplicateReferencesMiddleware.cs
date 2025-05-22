@@ -28,6 +28,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         ValidateArrayUniquenessConstraints(context, validationErrors);
 
         // Validation for Reference Ids
+        // Eg: BellSchedules has a collection of classPeriodReference that are not a part of the array uniqueness constraints
         if (context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
         {
             ValidateDuplicates(
