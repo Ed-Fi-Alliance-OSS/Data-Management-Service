@@ -827,8 +827,6 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 201
 
-        # Ignored because When posting a resource with decimal overflow DMS-703 Defect
-        @ignore
         Scenario: 31 When posting a resource with decimal overflow
              When a POST request is made to "/ed-fi/staffs" with
                   """
