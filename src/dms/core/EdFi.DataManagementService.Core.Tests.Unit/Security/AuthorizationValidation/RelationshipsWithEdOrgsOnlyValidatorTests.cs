@@ -46,7 +46,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "No 'EducationOrganizationIds' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?"
+                        "No 'EducationOrganizationId' property could be found on the resource in order to perform authorization. Should a different authorization strategy be used?"
                     );
             }
         }
@@ -133,7 +133,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: '2455'."
+                        "No relationships have been established between the caller's education organization id claims ('2455') and the resource item's EducationOrganizationId value."
                     );
             }
         }
@@ -186,7 +186,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "No relationships have been established between the caller's education organization id claims ('567') and properties of the resource item."
+                        "No relationships have been established between the caller's education organization id claims ('567') and the resource item's EducationOrganizationId value."
                     );
             }
         }

@@ -1238,7 +1238,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   "status": 403,
                   "validationErrors": {},
                   "errors": [
-                    "No relationships have been established between the caller's education organization id claims ('255901001', '244901') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                    "No relationships have been established between the caller's education organization id claims ('255901001', '244901') and the resource item's StudentUniqueId value."
                   ]
                   }
                   """
@@ -1288,7 +1288,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('255901001', '244901') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                      "No relationships have been established between the caller's education organization id claims ('255901001', '244901') and the resource item's StudentUniqueId value."
                       ]
                   }
                   """
@@ -1357,7 +1357,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                          "status": 403,
                          "validationErrors": {},
                          "errors": [
-                              "No relationships have been established between the caller's education organization id claims ('3', '301') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                              "No relationships have been established between the caller's education organization id claims ('3', '301') and the resource item's StudentUniqueId value."
                           ]
                         }
                   """
@@ -1372,7 +1372,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                         "status": 403,
                         "validationErrors": {},
                         "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('3', '301') and one or more of the following properties of the resource item: 'StudentUniqueId'."
+                          "No relationships have been established between the caller's education organization id claims ('3', '301') and the resource item's StudentUniqueId value."
                         ]
                       }
                   """

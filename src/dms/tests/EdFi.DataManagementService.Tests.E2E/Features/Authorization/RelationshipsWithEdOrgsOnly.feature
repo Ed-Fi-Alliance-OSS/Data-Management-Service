@@ -295,7 +295,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901001') and properties of the resource item."
+                        "No relationships have been established between the caller's education organization id claims ('255901001') and the resource item's EducationOrganizationId value."
                       ]
                     }
                   """
@@ -359,7 +359,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901001') and properties of the resource item."
+                        "No relationships have been established between the caller's education organization id claims ('255901001') and the resource item's EducationOrganizationId value."
                       ]
                   }
                   """
@@ -509,7 +509,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: '255901222'."
+                        "No relationships have been established between the caller's education organization id claims ('255901222') and the resource item's EducationOrganizationId value."
                     ]
                   }
                   """
@@ -548,7 +548,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                    "status": 403,
                    "validationErrors": {},
                    "errors": [
-                        "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: '255901223'."
+                        "No relationships have been established between the caller's education organization id claims ('255901223') and the resource item's EducationOrganizationId value."
                     ]
                   }
                   """
@@ -671,7 +671,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('3') and properties of the resource item."
+                          "No relationships have been established between the caller's education organization id claims ('3') and the resource item's EducationOrganizationId value."
                        ]
                       }
                   """
@@ -792,7 +792,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: '20101'."
+                      "No relationships have been established between the caller's education organization id claims ('20101') and the resource item's EducationOrganizationId value."
                     ]
                   }
                   """
@@ -810,7 +810,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "Access to the resource item could not be authorized based on the caller's EducationOrganizationIds claims: '20101'."
+                      "No relationships have been established between the caller's education organization id claims ('20101') and the resource item's EducationOrganizationId value."
                     ]
                   }
                   """
@@ -844,7 +844,7 @@ Feature: RelationshipsWithEdOrgsOnly Authorization
                     "correlationId": "0HNB05S3Q7LS5:00000084",
                     "validationErrors": {},
                     "errors": [
-                      "No relationships have been established between the caller's education organization id claims ('20101') and properties of the resource item."
+                      "No relationships have been established between the caller's education organization id claims ('20101') and the resource item's EducationOrganizationId value."
                     ]
                   }
                   """
