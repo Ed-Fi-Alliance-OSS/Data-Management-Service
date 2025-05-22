@@ -762,7 +762,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.items.assessmentItemReference":["The 2nd item of the items has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.items":["The 2nd item of the items has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }
