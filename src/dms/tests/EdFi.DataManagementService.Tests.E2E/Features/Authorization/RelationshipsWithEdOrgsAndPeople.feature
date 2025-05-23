@@ -788,23 +788,22 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   | 255901933                  | Authorized PSI    | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Post Secondary Institution"} ] |
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901931, 255901933"
 
-        # Uncomment when DMS-668 is done
-        # Scenario: 32 Ensure client can not update a StudentSchoolAssociation to an unauthorized education organization hierarchy
-        #      When a PUT request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}" with
-        #           """
-        #           {
-        #               "id": "{StudentSchoolAssociationId}",
-        #               "entryDate": "2023-08-01",
-        #               "schoolReference": {
-        #                   "schoolId": 255901932
-        #               },
-        #               "studentReference": {
-        #                   "studentUniqueId": "94111"
-        #               },
-        #               "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
-        #           }
-        #           """
-        #      Then it should respond with 403
+        Scenario: 32 Ensure client can not update a StudentSchoolAssociation to an unauthorized education organization hierarchy
+             When a PUT request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}" with
+                  """
+                  {
+                      "id": "{StudentSchoolAssociationId}",
+                      "entryDate": "2023-08-01",
+                      "schoolReference": {
+                          "schoolId": 255901932
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "94111"
+                      },
+                      "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+                  }
+                  """
+             Then it should respond with 403
 
         Scenario: 33 Ensure client can no longer CRUD a Student and a Student-securable after the StudentSchoolAssociation's SchoolId changed
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901931, 255901932"
