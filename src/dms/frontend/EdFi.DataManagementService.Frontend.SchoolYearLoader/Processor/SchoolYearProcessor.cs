@@ -41,6 +41,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
                 var request = new FrontendRequest(
                     new("/ed-fi/schoolYearTypes/"),
                     payload,
+                    Header: [],
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
