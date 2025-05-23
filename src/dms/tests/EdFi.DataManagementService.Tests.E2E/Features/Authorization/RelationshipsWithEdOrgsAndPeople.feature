@@ -789,7 +789,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901931, 255901933"
 
         Scenario: 32 Ensure client can not update a StudentSchoolAssociation to an unauthorized education organization hierarchy
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901931"
              When a PUT request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}" with
                   """
                   {
