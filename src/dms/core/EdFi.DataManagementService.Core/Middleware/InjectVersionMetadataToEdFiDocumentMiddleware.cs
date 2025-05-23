@@ -24,15 +24,11 @@ namespace EdFi.DataManagementService.Core.Middleware
             string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             context.ParsedBody["_lastModifiedDate"] = formattedUtcDateTime;
 
-            if (!string.IsNullOrEmpty(context.FrontendRequest.Header))
+            if (context.FrontendRequest.Header != null &&
+                 context.FrontendRequest.Header.TryGetValue("If-Match", out var ifMatch) &&
+                 !string.IsNullOrWhiteSpace(ifMatch))
             {
-                var headerJson = JsonDocument.Parse(context.FrontendRequest.Header);
-
-                if (headerJson.RootElement.TryGetProperty("IfMatch", out var ifMatchElement) &&
-                    ifMatchElement.ValueKind == JsonValueKind.String)
-                {
-                    context.ParsedBody["IfMatch"] = ifMatchElement.GetString();
-                }
+                context.ParsedBody["IfMatch"] = ifMatch;
             }
 
             string json = JsonSerializer.Serialize(context.ParsedBody);

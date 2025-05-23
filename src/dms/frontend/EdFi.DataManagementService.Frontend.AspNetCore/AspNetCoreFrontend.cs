@@ -40,39 +40,20 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Takes an HttpRequest and returns a deserialized request Headers
     /// </summary>
-    private static async Task<string?> ExtractJsonIfMatchFromAsync(HttpRequest request)
+    private static Task<Dictionary<string, string>> ExtractETagHeadersAsync(HttpRequest request)
     {
-        // Try to get If-Match from headers
+        var headers = new Dictionary<string, string>();
+
+        // Extract the If-Match header
         var ifMatch = request.Headers["If-Match"].FirstOrDefault();
-
-        if (string.IsNullOrEmpty(ifMatch))
-        {
-            // Enable buffering to safely read body
-            request.EnableBuffering();
-            request.Body.Position = 0;
-
-            using var reader = new StreamReader(request.Body, leaveOpen: true);
-            var body = await reader.ReadToEndAsync();
-            request.Body.Position = 0;
-
-            if (!string.IsNullOrWhiteSpace(body))
-            {
-                using var document = JsonDocument.Parse(body);
-                if (document.RootElement.TryGetProperty("IfMatch", out var ifMatchProp))
-                {
-                    ifMatch = ifMatchProp.GetString();
-                }
-            }
-        }
-
         if (!string.IsNullOrEmpty(ifMatch))
         {
-            var json = JsonSerializer.Serialize(new { IfMatch = ifMatch });
-            return json;
+            headers["If-Match"] = ifMatch;
         }
 
-        return null;
+        return Task.FromResult(headers);
     }
+
 
     /// <summary>
     /// Takes an HttpRequest and returns a unique trace identifier
@@ -118,7 +99,7 @@ public static class AspNetCoreFrontend
         var apiClientDetails = HttpRequest.HttpContext?.Items["ApiClientDetails"] as ClientAuthorizations;
         return new(
             Body: await ExtractJsonBodyFrom(HttpRequest),
-            Header: await ExtractJsonIfMatchFromAsync(HttpRequest),
+            Header: await ExtractETagHeadersAsync(HttpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
             TraceId: ExtractTraceIdFrom(HttpRequest, options),

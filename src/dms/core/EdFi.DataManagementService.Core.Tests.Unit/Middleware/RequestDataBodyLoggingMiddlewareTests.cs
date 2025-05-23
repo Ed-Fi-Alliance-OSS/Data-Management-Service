@@ -60,7 +60,7 @@ public class RequestDataBodyLoggingMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -114,7 +114,7 @@ public class RequestDataBodyLoggingMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{"schoolId":"12345","nameOfInstitution":"School Test"}""",
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -170,7 +170,7 @@ public class RequestDataBodyLoggingMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -224,7 +224,7 @@ public class RequestDataBodyLoggingMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
