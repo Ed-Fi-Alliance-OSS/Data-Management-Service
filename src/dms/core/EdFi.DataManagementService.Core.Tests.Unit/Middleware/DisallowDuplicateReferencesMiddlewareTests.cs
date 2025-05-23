@@ -126,7 +126,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/bellschedules",
                 Body: jsonBody,
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -200,7 +200,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/bellschedules",
                 Body: jsonBody,
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -398,7 +398,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: jsonBody,
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -486,7 +486,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/assessments",
                 Body: jsonBody,
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -559,7 +559,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/assessments",
                 Body: jsonBody,
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -627,7 +627,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: jsonBody,
-                Header: null,
+                Header: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
