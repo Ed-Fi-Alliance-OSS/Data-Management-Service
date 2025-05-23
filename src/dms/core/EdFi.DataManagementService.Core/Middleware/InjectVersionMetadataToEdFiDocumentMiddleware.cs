@@ -6,6 +6,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -31,11 +32,28 @@ namespace EdFi.DataManagementService.Core.Middleware
                 context.ParsedBody["IfMatch"] = ifMatch;
             }
 
-            string json = JsonSerializer.Serialize(context.ParsedBody);
-            using var sha = SHA256.Create();
-            byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(json));
-            context.ParsedBody["_etag"] = Convert.ToBase64String(hash);
+            if (context.ParsedBody is JsonObject jsonObject)
+            {
+                // Clone ParsedBody excluding metadata keys
+                var cloneForHash = new JsonObject();
 
+                foreach (var kvp in jsonObject)
+                {
+                    if (kvp.Key != "_etag" && kvp.Key != "_lastModifiedDate")
+                    {
+                        // Deep clone each JsonNode value to avoid parent conflict
+                        var clonedValue = JsonSerializer.Deserialize<JsonNode>(
+                            JsonSerializer.Serialize(kvp.Value));
+                        cloneForHash[kvp.Key] = clonedValue!;
+                    }
+                }
+
+                // Compute _etag from clone
+                string json = JsonSerializer.Serialize(cloneForHash);
+                using var sha = SHA256.Create();
+                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(json));
+                context.ParsedBody["_etag"] = Convert.ToBase64String(hash);
+            }
             await next();
         }
     }
