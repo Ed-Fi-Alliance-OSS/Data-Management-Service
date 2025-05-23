@@ -4,12 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
+using JsonPath = Json.Path.JsonPath;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
@@ -111,68 +111,59 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         foreach (var group in constraints)
         {
-            // Obtain the base path (without the last level)
-            string fullPath = group[0].Value; // Eg: "$.items[*].assessmentItemReference.assessmentIdentifier"
-            int lastDot = fullPath.LastIndexOf('.');
-            // Eg: "$.items[*].assessmentItemReference"
-            string propertyName = lastDot > 0 ? fullPath.Substring(0, lastDot) : fullPath;
-
-            var arrayPathMatch = Regex.Match(propertyName, @"^\$\.(.+?)\[\*\]");
-            if (!arrayPathMatch.Success)
+            var firstPath = JsonPath.Parse(group[0].Value);
+            var firstResult = firstPath.Evaluate(body);
+            if (firstResult.Matches.Count <= 1)
             {
                 continue;
             }
 
-            string arrayName = arrayPathMatch.Groups[1].Value;
-            var arrayNode = GetNodeOrValueFromPath(body, arrayName) as JsonArray;
-            if (arrayNode == null)
-            {
-                continue;
-            }
+            // Extract the array base path, e.g: "$.items[*]" → "$.items"
+            string arrayPath = group[0].Value[..group[0].Value.IndexOf("[*]", StringComparison.Ordinal)];
+            string[] arrayParts = arrayPath.Split('.');
+            string shortArrayName = arrayParts[arrayParts.Length - 1];
+            string errorKey = arrayPath;
 
-            string errorKey = $"$.{arrayName}";
+            // Group fields by each item
+            var itemPath = JsonPath.Parse($"{arrayPath}[*]");
+            var arrayResult = itemPath.Evaluate(body);
 
-            var fieldPaths = group
-                .Select(p =>
-                {
-                    var match = Regex.Match(p.Value, @"\[\*\]\.(.+)$");
-                    return match.Success ? match.Groups[1].Value : p.Value;
-                })
-                .ToList();
             var lastSeen = new Dictionary<string, int>();
-
-            for (int i = 0; i < arrayNode.Count; i++)
+            for (int i = 0; i < arrayResult.Matches.Count; i++)
             {
-                var item = arrayNode[i] as JsonObject;
+                var match = arrayResult.Matches[i];
+                var item = match.Value as JsonObject;
                 if (item == null)
                 {
                     continue;
                 }
 
                 var keyParts = new List<string>();
-                foreach (string fieldPath in fieldPaths)
+                foreach (var fieldPath in group)
                 {
-                    var value = GetNodeOrValueFromPath(item, fieldPath);
-                    keyParts.Add(value?.ToString() ?? "");
-                }
-                string compositeKey = string.Join("|", keyParts);
+                    // e.g: "$.items[*].assessmentItemReference.assessmentIdentifier"
+                    string relativePath = fieldPath.Value[(arrayPath.Length + 3)..];
 
+                    // Add "$." to JsonPath accept the value
+                    var fullFieldPath = JsonPath.Parse($"$.{relativePath}");
+                    var fieldResult = fullFieldPath.Evaluate(item);
+                    keyParts.Add(fieldResult.Matches.FirstOrDefault()?.Value?.ToString() ?? "");
+                }
+
+                string compositeKey = string.Join("|", keyParts);
                 if (lastSeen.ContainsKey(compositeKey))
                 {
-                    string shortArrayName = Regex.Match(arrayName, @"([^.]+)$").Groups[1].Value;
-
                     string errorMessage =
                         $"The {GetOrdinal(i + 1)} item of the {shortArrayName} has the same identifying values as another item earlier in the list.";
-                    if (validationErrors.TryGetValue(errorKey, out var existingMessages))
+
+                    if (!validationErrors.TryGetValue(errorKey, out var messages))
                     {
-                        if (!existingMessages.Contains(errorMessage))
-                        {
-                            existingMessages.Add(errorMessage);
-                        }
+                        validationErrors[errorKey] = messages = [];
                     }
-                    else
+
+                    if (!messages.Contains(errorMessage))
                     {
-                        validationErrors[errorKey] = [errorMessage];
+                        messages.Add(errorMessage);
                     }
                 }
                 else
@@ -181,25 +172,6 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 }
             }
         }
-    }
-
-    // Helper to get nested property value from a JsonObject using dot notation
-    private static JsonNode? GetNodeOrValueFromPath(JsonNode node, string path)
-    {
-        string[] parts = path.Split('.');
-        JsonNode? current = node;
-        foreach (string part in parts)
-        {
-            if (current is JsonObject obj && obj.TryGetPropertyValue(part, out var next))
-            {
-                current = next;
-            }
-            else
-            {
-                return null;
-            }
-        }
-        return current;
     }
 
     private static string GetOrdinal(int number)
