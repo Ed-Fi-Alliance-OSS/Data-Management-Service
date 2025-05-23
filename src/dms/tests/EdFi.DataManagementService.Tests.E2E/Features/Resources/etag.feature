@@ -28,11 +28,22 @@ Feature: ETag validations
                   }
                   """
 
-        @ignore @API-261
         Scenario: 02 Ensure that clients can pass an ETag in the request header
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the ETag is in the response header
              When a PUT if-match "{etag}" request is made to "/ed-fi/students/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "studentUniqueId": "111111",
                       "birthDate": "2014-08-14",
                       "firstName": "Russella",
@@ -41,11 +52,22 @@ Feature: ETag validations
                   """
              Then it should respond with 204
 
-        @ignore @API-262
         Scenario: 03 Ensure that clients cannot pass a different ETag in the If-Match header
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the ETag is in the response header
              When a PUT if-match "0000000000" request is made to "/ed-fi/students/{id}" with
                   """
                   {
+                      "id": "{id}",
                       "studentUniqueId": "111111",
                       "birthDate": "2014-08-14",
                       "firstName": "Russella",
@@ -60,9 +82,9 @@ Feature: ETag validations
                       "type": "urn:ed-fi:api:optimistic-lock-failed",
                       "title": "Optimistic Lock Failed",
                       "status": 412,
-                      "correlationId": null,
+                      "validationErrors": {},
                       "errors": [
-                          "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved."
+                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved."
                       ]
                   }
                   """
