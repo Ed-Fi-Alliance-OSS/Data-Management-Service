@@ -287,7 +287,7 @@ Authorization: bearer {{dmsToken}}
 {
     "id": "{{staffEducationOrganizationAssignmentAssociationId1}}",
     "beginDate": "2021-08-23",
-    "staffClassificationDescriptors": "uri://ed-fi.org/staffClassificationDescriptor#XYZ",
+    "staffClassificationDescriptor": "uri://ed-fi.org/staffClassificationDescriptor#XYZ",
     "educationOrganizationReference": {
       "educationOrganizationId": 6001010
     },
@@ -298,12 +298,12 @@ Authorization: bearer {{dmsToken}}
 
 ### Update staffEducationOrganizationAssignmentAssociations
 PUT {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations/{{staffEducationOrganizationAssignmentAssociationId2}}
-Authorization: bearer {{dmsToken}}
+Authorization: bearer {{sandboxToken}}
 
 {
     "id": "{{staffEducationOrganizationAssignmentAssociationId2}}",
     "beginDate": "2021-08-23",
-    "staffClassificationDescriptors": "uri://ed-fi.org/staffClassificationDescriptor#XYZ",
+    "staffClassificationDescriptor": "uri://ed-fi.org/staffClassificationDescriptor#XYZ",
     "educationOrganizationReference": {
       "educationOrganizationId": 6001011
     },
@@ -311,6 +311,10 @@ Authorization: bearer {{dmsToken}}
       "staffUniqueId": "124"
     }
 }
+
+###
+DELETE {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations/{{staffEducationOrganizationAssignmentAssociationId2}}
+Authorization: bearer {{sandboxToken}}
 
 ### Get staffEducationOrganizationAssignmentAssociations - should only get one
 GET {{dataApi}}/ed-fi/staffEducationOrganizationAssignmentAssociations
