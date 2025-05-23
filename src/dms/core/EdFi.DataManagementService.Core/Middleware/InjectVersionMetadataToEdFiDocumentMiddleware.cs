@@ -32,21 +32,10 @@ namespace EdFi.DataManagementService.Core.Middleware
                 context.ParsedBody["IfMatch"] = ifMatch;
             }
 
-            if (context.ParsedBody is JsonObject jsonObject)
+            if (context.ParsedBody.DeepClone() is JsonObject cloneForHash)
             {
-                // Clone ParsedBody excluding metadata keys
-                var cloneForHash = new JsonObject();
-
-                foreach (var kvp in jsonObject)
-                {
-                    if (kvp.Key != "_etag" && kvp.Key != "_lastModifiedDate")
-                    {
-                        // Deep clone each JsonNode value to avoid parent conflict
-                        var clonedValue = JsonSerializer.Deserialize<JsonNode>(
-                            JsonSerializer.Serialize(kvp.Value));
-                        cloneForHash[kvp.Key] = clonedValue!;
-                    }
-                }
+                cloneForHash.Remove("_etag");
+                cloneForHash.Remove("_lastModifiedDate");
 
                 // Compute _etag from clone
                 string json = JsonSerializer.Serialize(cloneForHash);
