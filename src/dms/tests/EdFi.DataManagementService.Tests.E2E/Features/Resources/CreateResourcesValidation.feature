@@ -827,32 +827,30 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 201
 
-        # Ignored because When posting a resource with decimal overflow DMS-703 Defect
-        @ignore
         Scenario: 31 When posting a resource with decimal overflow
              When a POST request is made to "/ed-fi/staffs" with
                   """
                       {
-                      "staffUniqueId": "staff11",
-                      "birthDate": "1976-08-19",
-                      "firstName": "Barry",
-                      "lastSurname": "Peterson",
-                      "yearsOfPriorProfessionalExperience": 1000,
-                      "sexDescriptor":"uri://ed-fi.org/SexDescriptor#Female"
+                          "staffUniqueId": "staff11",
+                          "birthDate": "1976-08-19",
+                          "firstName": "Barry",
+                          "lastSurname": "Peterson",
+                          "yearsOfPriorProfessionalExperience": 1000
                       }
                   """
              Then it should respond with 400
               And the response body is
                   """
                   {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:api:bad-request",
-                      "title": "Bad Request",
-                      "status": 400,
-                      "correlationId": null,
-                      "validationErrors": {},
-                      "yearsOfPriorProfessionalExperience": [
-                          "yearsOfPriorProfessionalExperience must be between -999.99 and 999.99."
-                      ]
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                        "$.yearsOfPriorProfessionalExperience": [
+                            "yearsOfPriorProfessionalExperience must be between -999.99 and 999.99."
+                        ]
+                    },
+                    "errors": []
                   }
                   """

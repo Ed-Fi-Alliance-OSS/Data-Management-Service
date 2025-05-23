@@ -394,19 +394,6 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public IEnumerable<JsonPath> StudentSecurityElementPaths => _studentSecurityElementPaths.Value;
 
-    private readonly Lazy<IEnumerable<string>> _authorizationPathways = new(() =>
-    {
-        return _resourceSchemaNode["authorizationPathways"]?.AsArray().GetValues<string>()
-            ?? throw new InvalidOperationException(
-                "Expected authorizationPathways to be on ResourceSchema, invalid ApiSchema"
-            );
-    });
-
-    /// <summary>
-    /// A list of the JsonPaths that are authorizationSecurable for type Contact
-    /// </summary>
-    public IEnumerable<JsonPath> ContactSecurityElementPaths => _contactSecurityElementPaths.Value;
-
     private readonly Lazy<IEnumerable<JsonPath>> _contactSecurityElementPaths = new(() =>
     {
         return _resourceSchemaNode["securableElements"]
@@ -418,7 +405,11 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             );
     });
 
-    public IEnumerable<JsonPath> StaffSecurityElementPaths => _staffSecurityElementPaths.Value;
+    /// <summary>
+    /// A list of the JsonPaths that are authorizationSecurable for type Contact
+    /// </summary>
+    public IEnumerable<JsonPath> ContactSecurityElementPaths => _contactSecurityElementPaths.Value;
+
     private readonly Lazy<IEnumerable<JsonPath>> _staffSecurityElementPaths = new(() =>
     {
         return _resourceSchemaNode["securableElements"]
@@ -430,10 +421,43 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             );
     });
 
+    public IEnumerable<JsonPath> StaffSecurityElementPaths => _staffSecurityElementPaths.Value;
+
+    private readonly Lazy<IEnumerable<string>> _authorizationPathways = new(() =>
+    {
+        return _resourceSchemaNode["authorizationPathways"]?.AsArray().GetValues<string>()
+            ?? throw new InvalidOperationException(
+                "Expected authorizationPathways to be on ResourceSchema, invalid ApiSchema"
+            );
+    });
+
     /// <summary>
     /// The AuthorizationPathways the resource is part of.
     /// </summary>
     public IEnumerable<string> AuthorizationPathways => _authorizationPathways.Value;
+
+    private readonly Lazy<IEnumerable<DecimalValidationInfo>> _decimalPropertyValidationInfos = new(() =>
+    {
+        JsonNode decimalPropertyValidationInfos =
+            _resourceSchemaNode["decimalPropertyValidationInfos"]
+            ?? throw new InvalidOperationException(
+                "Expected decimalPropertyValidationInfos to be on ResourceSchema, invalid ApiSchema"
+            );
+
+        return decimalPropertyValidationInfos
+            .AsArray()
+            .Select(x =>
+            {
+                JsonPath path = new JsonPath(x!["path"]!.GetValue<string>());
+                short? totalDigits = x!["totalDigits"]!.GetValue<short?>();
+                short? decimalPlaces = x!["decimalPlaces"]!.GetValue<short?>();
+
+                return new DecimalValidationInfo(path, totalDigits, decimalPlaces);
+            });
+    });
+
+    public IEnumerable<DecimalValidationInfo> DecimalPropDecimalValidationInfos =>
+        _decimalPropertyValidationInfos.Value;
 
     private readonly Lazy<IReadOnlyList<IReadOnlyList<JsonPath>>> _arrayUniquenessConstraints = new(() =>
     {

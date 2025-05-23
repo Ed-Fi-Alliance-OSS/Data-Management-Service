@@ -37,6 +37,7 @@ internal class ApiService(
     IQueryHandler _queryHandler,
     IMatchingDocumentUuidsValidator _matchingDocumentUuidsValidator,
     IEqualityConstraintValidator _equalityConstraintValidator,
+    IDecimalValidator _decimalValidator,
     ILogger<ApiService> _logger,
     IOptions<AppSettings> _appSettings,
     IAuthorizationServiceFactory _authorizationServiceFactory,
@@ -78,6 +79,7 @@ internal class ApiService(
         steps.AddRange(
             [
                 new ValidateDocumentMiddleware(_logger, _documentValidator),
+                new ValidateDecimalMiddleware(_logger, _decimalValidator),
                 new ExtractDocumentSecurityElementsMiddleware(_logger),
                 new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
                 new ProvideEducationOrganizationHierarchyMiddleware(_logger),
@@ -204,6 +206,7 @@ internal class ApiService(
         steps.AddRange(
             [
                 new ValidateDocumentMiddleware(_logger, _documentValidator),
+                new ValidateDecimalMiddleware(_logger, _decimalValidator),
                 new ExtractDocumentSecurityElementsMiddleware(_logger),
                 new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
                 new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),

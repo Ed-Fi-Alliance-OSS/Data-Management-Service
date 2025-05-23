@@ -873,6 +873,31 @@ public class ApiSchemaBuilder
         return this;
     }
 
+    public ApiSchemaBuilder WithDecimalPropertyValidationInfos(DecimalValidationInfo[] decimalValidationInfos)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["decimalPropertyValidationInfos"] = new JsonArray(
+            decimalValidationInfos
+                .Select(x => new JsonObject
+                {
+                    ["path"] = x.Path.Value,
+                    ["decimalPlaces"] = x.DecimalPlaces,
+                    ["totalDigits"] = x.TotalDigits,
+                })
+                .ToArray<JsonNode?>()
+        );
+
+        return this;
+    }
+
     public ApiSchemaBuilder WithStartArrayUniquenessConstraints()
     {
         if (_currentProjectNode == null)
