@@ -443,7 +443,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
                 "Expected arrayUniquenessConstraints to be on ResourceSchema, invalid ApiSchema"
             );
 
-        var result = outerArray
+        return outerArray
             .Select(innerJsonElement =>
                 innerJsonElement!
                     .AsArray()
@@ -453,8 +453,6 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             )
             .ToList()
             .AsReadOnly();
-
-        return result;
     });
 
     /// <summary>

@@ -22,13 +22,12 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             context.FrontendRequest.TraceId.Value
         );
 
-        var validationErrors = new Dictionary<string, string[]>();
+        var validationErrors = new Dictionary<string, List<string>>();
 
         // Validation for values on ArrayUniquenessConstraints
         ValidateArrayUniquenessConstraints(context, validationErrors);
 
         // Validation for Reference Ids
-        // Eg: BellSchedules has a collection of classPeriodReference that are not a part of the array uniqueness constraints
         if (context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
         {
             ValidateDuplicates(
@@ -43,12 +42,18 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         {
             logger.LogDebug("Duplicated reference Id - {TraceId}", context.FrontendRequest.TraceId.Value);
 
+            // Convert to Dictionary<string, string[]> for ForDataValidation
+            var validationErrorsArray = validationErrors.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.ToArray()
+            );
+
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: ForDataValidation(
                     "Data validation failed. See 'validationErrors' for details.",
                     traceId: context.FrontendRequest.TraceId,
-                    validationErrors,
+                    validationErrorsArray,
                     []
                 ),
                 Headers: []
@@ -63,7 +68,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         IEnumerable<T> items,
         Func<T, Guid> getReferentialId,
         Func<T, string> getResourceNameFunc,
-        Dictionary<string, string[]> validationErrors
+        Dictionary<string, List<string>> validationErrors
     )
     {
         var seenItems = new HashSet<Guid>();
@@ -82,15 +87,13 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 string errorMessage =
                     $"The {GetOrdinal(positions[propertyName])} item of the {resourceName} has the same identifying values as another item earlier in the list.";
 
-                if (validationErrors.TryGetValue(propertyName, out string[]? value))
+                if (validationErrors.TryGetValue(propertyName, out var existingMessages))
                 {
-                    var existingMessages = value.ToList();
                     existingMessages.Add(errorMessage);
-                    validationErrors[propertyName] = [.. existingMessages];
                 }
                 else
                 {
-                    validationErrors[propertyName] = [errorMessage];
+                    validationErrors[propertyName] = new List<string> { errorMessage };
                 }
             }
             positions[propertyName]++;
@@ -99,7 +102,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
     private static void ValidateArrayUniquenessConstraints(
         PipelineContext context,
-        Dictionary<string, string[]> validationErrors
+        Dictionary<string, List<string>> validationErrors
     )
     {
         var constraints = context.ResourceSchema.ArrayUniquenessConstraints;
@@ -159,16 +162,16 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
                     string errorMessage =
                         $"The {GetOrdinal(i + 1)} item of the {shortArrayName} has the same identifying values as another item earlier in the list.";
-                    if (validationErrors.TryGetValue(errorKey, out string[]? existingMessages))
+                    if (validationErrors.TryGetValue(errorKey, out var existingMessages))
                     {
                         if (!existingMessages.Contains(errorMessage))
                         {
-                            validationErrors[errorKey] = existingMessages.Append(errorMessage).ToArray();
+                            existingMessages.Add(errorMessage);
                         }
                     }
                     else
                     {
-                        validationErrors[errorKey] = new[] { errorMessage };
+                        validationErrors[errorKey] = new List<string> { errorMessage };
                     }
                 }
                 else
