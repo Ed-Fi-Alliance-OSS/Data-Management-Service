@@ -93,20 +93,12 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
             Trace.Assert(lastModifiedDate != null);
             Trace.Assert(eTag != null);
 
-            if (_context.ParsedBody is JsonObject jsonObject)
+            if (_context.ParsedBody.DeepClone() is JsonObject cloneForHash)
             {
-                var cloneForHash = new JsonObject();
+                cloneForHash.Remove("_etag");
+                cloneForHash.Remove("_lastModifiedDate");
 
-                foreach (var kvp in jsonObject)
-                {
-                    if (kvp.Key != "_etag" && kvp.Key != "_lastModifiedDate")
-                    {
-                        var clonedValue = JsonSerializer.Deserialize<JsonNode>(
-                            JsonSerializer.Serialize(kvp.Value));
-                        cloneForHash[kvp.Key] = clonedValue!;
-                    }
-                }
-
+                // Compute _etag from clone
                 string json = JsonSerializer.Serialize(cloneForHash);
                 using var sha = SHA256.Create();
                 byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(json));
