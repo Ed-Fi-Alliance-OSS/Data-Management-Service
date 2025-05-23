@@ -472,7 +472,7 @@ Feature: Resources "Update" Operation validations
                   """
                   {
                         "validationErrors": {
-                            "$.gradeLevels[*].gradeLevelDescriptor": [
+                            "$.gradeLevels": [
                                 "The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.",
                                 "The 4th item of the gradeLevels has the same identifying values as another item earlier in the list."
                             ]

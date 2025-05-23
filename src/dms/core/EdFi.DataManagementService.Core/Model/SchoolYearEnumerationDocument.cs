@@ -31,7 +31,7 @@ internal record SchoolYearEnumerationDocument(JsonNode _document)
 
         DocumentIdentityElement[] schoolYearEnumerationElement =
         [
-            new(IdentityJsonPath: _identityJsonPath, IdentityValue: schoolYearNode.ToString())
+            new(IdentityJsonPath: _identityJsonPath, IdentityValue: schoolYearNode.ToString()),
         ];
         return new DocumentIdentity(schoolYearEnumerationElement);
     }
@@ -47,7 +47,8 @@ internal record SchoolYearEnumerationDocument(JsonNode _document)
             ReferentialId: ReferentialIdFrom(resourceInfo, documentIdentity),
             DocumentReferences: [],
             DescriptorReferences: [],
-            SuperclassIdentity: null
+            SuperclassIdentity: null,
+            ArrayUniquenessConstraints: []
         );
     }
 }

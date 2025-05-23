@@ -463,8 +463,6 @@ Feature: Sample extension resources
                   """
 
     Rule: busRoutes scenarios
-        # remove the ignore tag after fixing bug described in DMS-610
-        @ignore
         Scenario: 10 Create Staff with Duplicate Extension Items
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
              When a POST request is made to "/ed-fi/staffs" with
@@ -507,7 +505,7 @@ Feature: Sample extension resources
                     "status": 400,
                     "validationErrors": {
                         "$._ext.sample.pets": [
-                            "The 4th item of the StaffPets has the same identifying values as another item earlier in the list."
+                            "The 4th item of the pets has the same identifying values as another item earlier in the list."
                         ]
                     },
                     "errors": []

@@ -286,7 +286,8 @@ public abstract class DatabaseTest : DatabaseTestBase
             ReferentialId: new ReferentialId(referentialId),
             DocumentReferences: documentReferences ?? [],
             DescriptorReferences: descriptorReferences ?? [],
-            SuperclassIdentity: superclassIdentity
+            SuperclassIdentity: superclassIdentity,
+            ArrayUniquenessConstraints: []
         );
     }
 

@@ -28,5 +28,9 @@ public record DocumentInfo(
     /// <summary>
     /// If this document is a subclass, this provides the document superclass identity information.
     /// </summary>
-    SuperclassIdentity? SuperclassIdentity
+    SuperclassIdentity? SuperclassIdentity,
+    /// <summary>
+    /// List of array uniqueness constraints, where the key is the JsonPath to the array
+    /// </summary>
+    IReadOnlyList<IReadOnlyList<JsonPath>> ArrayUniquenessConstraints
 );

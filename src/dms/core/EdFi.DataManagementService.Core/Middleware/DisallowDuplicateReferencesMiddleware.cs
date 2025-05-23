@@ -3,39 +3,18 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text;
-using System.Text.RegularExpressions;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
+using JsonPath = Json.Path.JsonPath;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
 internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipelineStep
 {
-    private static readonly Regex _numericIndexRegex = new(
-        pattern: @"\[\d+\]",
-        options: RegexOptions.Compiled
-    );
-
-    private static readonly Regex _arrayNameRegex = new(
-        pattern: @"\$\.(\w+)\[(\d+)\]",
-        options: RegexOptions.Compiled
-    );
-
-    // [DMS-597] Workaround for DMS-632 Duplicate array items validation considers all the references instead of only the ones part of identity
-    private static readonly HashSet<ResourceName> _problematicResources = new(
-        new ResourceName[]
-        {
-            new("StudentAssessment"),
-            new("StudentEducationOrganizationAssociation"),
-            new("StudentAssessmentRegistration"),
-            new("AssessmentAdministrationParticipation"),
-        }
-    );
-
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         logger.LogDebug(
@@ -43,16 +22,15 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             context.FrontendRequest.TraceId.Value
         );
 
-        var validationErrors = new Dictionary<string, string[]>();
+        var validationErrors = new Dictionary<string, List<string>>();
 
-        // Find duplicates in document references
-        // [DMS-597] Workaround for DMS-632 Duplicate array items validation considers all the references instead of only the ones part of identity
-        if (
-            context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1)
-            && !_problematicResources.Contains(context.ResourceInfo.ResourceName)
-        )
+        // Validation for values on ArrayUniquenessConstraints
+        ValidateArrayUniquenessConstraints(context, validationErrors);
+
+        // Validation for Reference Ids
+        // Eg: BellSchedules has a collection of classPeriodReference that are not a part of the array uniqueness constraints
+        if (context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
         {
-            // if duplicates are found, they should be reported
             ValidateDuplicates(
                 context.DocumentInfo.DocumentReferences,
                 item => item.ReferentialId.Value,
@@ -61,54 +39,22 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             );
         }
 
-        // Find duplicates in descriptor references
-        if (context.DocumentInfo.DescriptorReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
-        {
-            var groupedReferences = GroupByArrayNameAndIndex(
-                context.DocumentInfo.DescriptorReferences.Select(x => x).ToList()
-            );
-
-            var combinedIds = new List<string>();
-            foreach (var descriptorReferences in groupedReferences.Where(x => x.indexGroups.Count > 1))
-            {
-                foreach (var indexGroup in descriptorReferences.indexGroups)
-                {
-                    var combinedId = new StringBuilder();
-                    foreach (var reference in indexGroup.references)
-                    {
-                        combinedId.Append(reference.ReferentialId.Value);
-                    }
-                    combinedIds.Add(combinedId.ToString());
-                }
-            }
-
-            // [DMS-597] Workaround for DMS-632 Duplicate array items validation considers all the references instead of only the ones part of identity
-            if (
-                combinedIds.GroupBy(d => d).Any(g => g.Count() > 1)
-                && !_problematicResources.Contains(context.ResourceInfo.ResourceName)
-            )
-            {
-                // if duplicates are found, they should be reported
-                ValidateDuplicates(
-                    context.DocumentInfo.DescriptorReferences,
-                    item => item.ReferentialId.Value,
-                    item => item.Path.Value,
-                    validationErrors,
-                    true
-                );
-            }
-        }
-
         if (validationErrors.Any())
         {
             logger.LogDebug("Duplicated reference Id - {TraceId}", context.FrontendRequest.TraceId.Value);
+
+            // Convert to Dictionary<string, string[]> for ForDataValidation
+            var validationErrorsArray = validationErrors.ToDictionary(
+                kvp => kvp.Key,
+                kvp => kvp.Value.ToArray()
+            );
 
             context.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: ForDataValidation(
                     "Data validation failed. See 'validationErrors' for details.",
                     traceId: context.FrontendRequest.TraceId,
-                    validationErrors,
+                    validationErrorsArray,
                     []
                 ),
                 Headers: []
@@ -122,9 +68,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
     private static void ValidateDuplicates<T>(
         IEnumerable<T> items,
         Func<T, Guid> getReferentialId,
-        Func<T, string> getPath,
-        Dictionary<string, string[]> validationErrors,
-        bool IsDescriptor = false
+        Func<T, string> getResourceNameFunc,
+        Dictionary<string, List<string>> validationErrors
     )
     {
         var seenItems = new HashSet<Guid>();
@@ -133,36 +78,19 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         foreach (var item in items)
         {
             Guid referentialId = getReferentialId(item);
-            string path = getPath(item);
-
-            // The descriptor reference path includes index value, which groups error messages by index.
-            // To prevent this, converting the index to *
-            if (IsDescriptor)
-            {
-                path = _numericIndexRegex.Replace(path, "[*]");
-            }
-
-            // the propertyName varies according to the origin (DescriptorReference or DocumentReferences)
-            string propertyName = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
-                ? path
-                : $"$.{path}";
+            string resourceName = getResourceNameFunc(item);
+            string propertyName = $"$.{resourceName}";
 
             positions.TryAdd(propertyName, 1);
 
             if (!seenItems.Add(referentialId))
             {
-                path = path.StartsWith("$", StringComparison.InvariantCultureIgnoreCase)
-                    ? ExtractArrayName(path)
-                    : path;
-
                 string errorMessage =
-                    $"The {GetOrdinal(positions[propertyName])} item of the {path} has the same identifying values as another item earlier in the list.";
+                    $"The {GetOrdinal(positions[propertyName])} item of the {resourceName} has the same identifying values as another item earlier in the list.";
 
-                if (validationErrors.TryGetValue(propertyName, out string[]? value))
+                if (validationErrors.TryGetValue(propertyName, out var existingMessages))
                 {
-                    var existingMessages = value.ToList();
                     existingMessages.Add(errorMessage);
-                    validationErrors[propertyName] = [.. existingMessages];
                 }
                 else
                 {
@@ -170,6 +98,79 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 }
             }
             positions[propertyName]++;
+        }
+    }
+
+    private static void ValidateArrayUniquenessConstraints(
+        PipelineContext context,
+        Dictionary<string, List<string>> validationErrors
+    )
+    {
+        var constraints = context.ResourceSchema.ArrayUniquenessConstraints;
+        var body = context.ParsedBody;
+
+        foreach (var group in constraints)
+        {
+            var firstPath = JsonPath.Parse(group[0].Value);
+            var firstResult = firstPath.Evaluate(body);
+            if (firstResult.Matches.Count <= 1)
+            {
+                continue;
+            }
+
+            // Extract the array base path, e.g: "$.items[*]" → "$.items"
+            string arrayPath = group[0].Value[..group[0].Value.IndexOf("[*]", StringComparison.Ordinal)];
+            string[] arrayParts = arrayPath.Split('.');
+            string shortArrayName = arrayParts[arrayParts.Length - 1];
+            string errorKey = arrayPath;
+
+            // Group fields by each item
+            var itemPath = JsonPath.Parse($"{arrayPath}[*]");
+            var arrayResult = itemPath.Evaluate(body);
+
+            var lastSeen = new Dictionary<string, int>();
+            for (int i = 0; i < arrayResult.Matches.Count; i++)
+            {
+                var match = arrayResult.Matches[i];
+                var item = match.Value as JsonObject;
+                if (item == null)
+                {
+                    continue;
+                }
+
+                var keyParts = new List<string>();
+                foreach (var fieldPath in group)
+                {
+                    // e.g: "$.items[*].assessmentItemReference.assessmentIdentifier"
+                    string relativePath = fieldPath.Value[(arrayPath.Length + 3)..];
+
+                    // Add "$." to JsonPath accept the value
+                    var fullFieldPath = JsonPath.Parse($"$.{relativePath}");
+                    var fieldResult = fullFieldPath.Evaluate(item);
+                    keyParts.Add(fieldResult.Matches.FirstOrDefault()?.Value?.ToString() ?? "");
+                }
+
+                string compositeKey = string.Join("|", keyParts);
+                if (lastSeen.ContainsKey(compositeKey))
+                {
+                    string errorMessage =
+                        $"The {GetOrdinal(i + 1)} item of the {shortArrayName} has the same identifying values as another item earlier in the list.";
+
+                    if (!validationErrors.TryGetValue(errorKey, out var messages))
+                    {
+                        validationErrors[errorKey] = messages = [];
+                    }
+
+                    if (!messages.Contains(errorMessage))
+                    {
+                        messages.Add(errorMessage);
+                    }
+                }
+                else
+                {
+                    lastSeen[compositeKey] = i;
+                }
+            }
         }
     }
 
@@ -186,59 +187,6 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             3 => $"{number}rd",
             _ => $"{number}th",
         };
-    }
-
-    private static string ExtractArrayName(string path)
-    {
-        // Logic to extract the array name from the JSON path, e.g., "gradeLevels".
-        string[] parts = path.Split('.');
-        return parts.Length > 1 ? parts[1].Trim('[', ']', '*') : string.Empty;
-    }
-
-    private static List<KeyReferenceGroup> GroupByArrayNameAndIndex(IList<DescriptorReference> jsonNodes)
-    {
-        // Select reference node and match ( e.g., match = $.performanceLevels[1])
-        var descriptorReferenceMatches = jsonNodes
-            .Select(reference => new
-            {
-                Node = reference,
-                Match = _arrayNameRegex.Match(reference.Path.Value),
-            })
-            .Where(x => x.Match.Success);
-
-        // Group by reference array name (e.g., Key = "performanceLevels", Value = {Index = 0, Node = DescriptorReference})
-        // Selects DescriptorReference with index value
-        var groupedByReferenceArrayName = descriptorReferenceMatches.GroupBy(
-            reference => reference.Match.Groups[1].Value,
-            reference => new { Index = int.Parse(reference.Match.Groups[2].Value), reference.Node }
-        );
-
-        // Inner group by index
-        // e.g., Key : performanceLevels
-        //           Key: 0
-        //           Value:[
-        //                  PerformanceLevelDescriptor reference
-        //                  AssessmentReportingMethodDescriptor reference
-        //                 ]
-        //           Key: 1
-        //           Value:[
-        //                  PerformanceLevelDescriptor reference
-        //                  AssessmentReportingMethodDescriptor reference
-        //                 ]
-        var groupedByIndex = groupedByReferenceArrayName
-            .Select(group => new KeyReferenceGroup(
-                group.Key,
-                group
-                    .GroupBy(reference => reference.Index)
-                    .Select(indexGroup => new IndexedReferenceGroup(
-                        indexGroup.Key,
-                        indexGroup.Select(x => x.Node).ToList()
-                    ))
-                    .ToList()
-            ))
-            .ToList();
-
-        return groupedByIndex;
     }
 }
 
