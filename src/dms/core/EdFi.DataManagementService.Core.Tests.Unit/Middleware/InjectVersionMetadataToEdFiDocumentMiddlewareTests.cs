@@ -95,11 +95,19 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
 
             if (_context.ParsedBody is JsonObject jsonObject)
             {
-                var filteredBody = jsonObject
-                    .Where(kvp => kvp.Key != "_etag")
-                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                var cloneForHash = new JsonObject();
 
-                string json = JsonSerializer.Serialize(filteredBody);
+                foreach (var kvp in jsonObject)
+                {
+                    if (kvp.Key != "_etag" && kvp.Key != "_lastModifiedDate")
+                    {
+                        var clonedValue = JsonSerializer.Deserialize<JsonNode>(
+                            JsonSerializer.Serialize(kvp.Value));
+                        cloneForHash[kvp.Key] = clonedValue!;
+                    }
+                }
+
+                string json = JsonSerializer.Serialize(cloneForHash);
                 using var sha = SHA256.Create();
                 byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(json));
                 var reverseEtag = Convert.ToBase64String(hash);
