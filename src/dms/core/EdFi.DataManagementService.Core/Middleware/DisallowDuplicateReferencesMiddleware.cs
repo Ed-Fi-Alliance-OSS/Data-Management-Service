@@ -94,7 +94,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                 }
                 else
                 {
-                    validationErrors[propertyName] = new List<string> { errorMessage };
+                    validationErrors[propertyName] = [errorMessage];
                 }
             }
             positions[propertyName]++;
@@ -172,7 +172,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
                     }
                     else
                     {
-                        validationErrors[errorKey] = new List<string> { errorMessage };
+                        validationErrors[errorKey] = [errorMessage];
                     }
                 }
                 else
