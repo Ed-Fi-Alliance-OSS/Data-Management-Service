@@ -399,7 +399,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _logger.log.Information($"PUT url: {url}");
             _logger.log.Information($"PUT body: {body}");
 
-            ifMatch = ifMatch.Replace("{etag}", _etag);
+            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
                     new() { Data = body, Headers = GetHeadersWithIfMatch(ifMatch) }

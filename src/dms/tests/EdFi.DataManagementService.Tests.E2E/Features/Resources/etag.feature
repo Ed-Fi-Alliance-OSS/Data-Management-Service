@@ -28,7 +28,7 @@ Feature: ETag validations
                   }
                   """
 
-        Scenario: 02 Ensure that clients can pass an ETag in the request header
+        Scenario: 02 Ensure that clients can pass an IfMatch in the request header
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -40,7 +40,7 @@ Feature: ETag validations
                   """
              Then it should respond with 201 or 200
               And the ETag is in the response header
-             When a PUT if-match "{etag}" request is made to "/ed-fi/students/{id}" with
+             When a PUT if-match "{IfMatch}" request is made to "/ed-fi/students/{id}" with
                   """
                   {
                       "id": "{id}",
@@ -52,7 +52,32 @@ Feature: ETag validations
                   """
              Then it should respond with 204
 
-        Scenario: 03 Ensure that clients cannot pass a different ETag in the If-Match header
+ Scenario: 03 Ensure that clients can pass an IfMatch in the request header and ignore _etag in request body
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             Then it should respond with 201 or 200
+              And the ETag is in the response header
+             When a PUT if-match "{IfMatch}" request is made to "/ed-fi/students/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayorga",
+                      "_etag": "{etag}"
+                  }
+                  """
+             Then it should respond with 204
+
+        Scenario: 04 Ensure that clients cannot pass a different If-Match in the request header
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -90,7 +115,7 @@ Feature: ETag validations
                   """
 
         @ignore @API-263
-        Scenario: 04 Ensure that clients cannot pass a different ETag in the If-Match header to delete a resource
+        Scenario: 05 Ensure that clients cannot pass a different ETag in the If-Match header to delete a resource
              When a DELETE if-match "0000000000" request is made to "/ed-fi/students/{id}"
              Then it should respond with 412
               And the response body is
@@ -108,6 +133,6 @@ Feature: ETag validations
                   """
 
         @ignore @API-264
-        Scenario: 05 Ensure that clients can pass an ETag to delete a resource
+        Scenario: 06 Ensure that clients can pass an ETag to delete a resource
              When a DELETE if-match "{etag}" request is made to "/ed-fi/students/{id}"
              Then it should respond with 204
