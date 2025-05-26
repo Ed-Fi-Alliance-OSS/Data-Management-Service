@@ -42,4 +42,9 @@ public interface IDeleteRequest
     /// Determine whether is a deletable Education Organization hierarchy
     /// </summary>
     bool DeleteInEdOrgHierarchy { get; }
+
+    /// <summary>
+    /// Request Header provided by the frontend service as a dictionary
+    /// </summary>
+    Dictionary<string, string> Headers { get; }
 }

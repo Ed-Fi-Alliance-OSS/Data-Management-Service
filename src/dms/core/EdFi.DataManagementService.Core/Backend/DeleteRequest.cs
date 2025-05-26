@@ -23,5 +23,6 @@ internal record DeleteRequest(
     IResourceAuthorizationHandler ResourceAuthorizationHandler,
     IReadOnlyList<AuthorizationPathway> ResourceAuthorizationPathways,
     TraceId TraceId,
-    bool DeleteInEdOrgHierarchy
+    bool DeleteInEdOrgHierarchy,
+    Dictionary<string, string> Headers
 ) : IDeleteRequest;

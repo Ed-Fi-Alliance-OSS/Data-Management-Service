@@ -47,7 +47,8 @@ internal class DeleteByIdHandler(
                         context.ProjectSchema.EducationOrganizationTypes.Contains(
                             context.ResourceSchema.ResourceName
                         )
-                    )
+                    ),
+                    Headers: context.FrontendRequest.Headers
                 )
             )
         );

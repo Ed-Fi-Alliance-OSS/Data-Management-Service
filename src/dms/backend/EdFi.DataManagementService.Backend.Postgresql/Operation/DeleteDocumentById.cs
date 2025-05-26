@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -48,6 +49,15 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             if (documentSummary == null)
             {
                 return new DeleteResult.DeleteFailureNotExists();
+            }
+
+            if (
+                deleteRequest.Headers.TryGetValue("If-Match", out var ifMatchEtag)
+                && documentSummary.EdfiDoc.TryGetProperty("_etag", out JsonElement existingEtagElement)
+                && !ifMatchEtag[0]!.Equals(existingEtagElement.GetString())
+            )
+            {
+                return new DeleteResult.DeleteFailureETagMisMatch();
             }
 
             var securityElements = documentSummary.SecurityElements.ToDocumentSecurityElements()!;
