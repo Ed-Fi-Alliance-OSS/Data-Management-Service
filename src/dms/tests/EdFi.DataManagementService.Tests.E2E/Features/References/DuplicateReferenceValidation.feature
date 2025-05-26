@@ -210,9 +210,9 @@ Feature: Validate the duplicate references
                   """
                   {
                       "validationErrors": {
-                          "$.ClassPeriod": [
-                              "The 4th item of the ClassPeriod has the same identifying values as another item earlier in the list.",
-                              "The 5th item of the ClassPeriod has the same identifying values as another item earlier in the list."
+                          "$.classPeriods": [
+                              "The 4th item of the classPeriodReference has the same identifying values as another item earlier in the list.",
+                              "The 5th item of the classPeriodReference has the same identifying values as another item earlier in the list."
                           ]
                       },
                       "errors": [],
@@ -560,9 +560,9 @@ Feature: Validate the duplicate references
                       "retestIndicatorDescriptor": "uri://ed-fi.org/RetestIndicatorDescriptor#Primary Administration",
                       "scoreResults": [
                           {
-                              "result": "4",
-                              "resultDatatypeTypeDescriptor": "uri://ed-fi.org/ResultDatatypeTypeDescriptor#Integer",
-                              "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score"
+                             "result": "4",
+                             "resultDatatypeTypeDescriptor": "uri://ed-fi.org/ResultDatatypeTypeDescriptor#Integer",
+                             "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score"
                           }
                       ],
                       "whenAssessedGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
@@ -573,18 +573,6 @@ Feature: Validate the duplicate references
                           "assessmentIdentifier": "ae049cb3-33d0-431f-b0f3-a751df7217ef",
                           "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
                       },
-                      "performanceLevels": [
-                          {
-                            "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score",
-                            "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Met Standard",
-                            "performanceLevelIndicatorName": "SAT College Readiness Level Indicator"
-                          },
-                          {
-                            "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score",
-                            "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Met Standard",
-                            "performanceLevelIndicatorName": "SAT College Readiness Level Indicator"
-                          }
-                       ],
                       "items": [
                           {
                               "assessmentResponse": "G",
@@ -595,7 +583,17 @@ Feature: Validate the duplicate references
                                   "assessmentIdentifier": "ae049cb3-33d0-431f-b0f3-a751df7217ef",
                                   "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
                               }
-                          },                          
+                          },
+                          {
+                              "assessmentResponse": "G",
+                              "responseIndicatorDescriptor": "uri://ed-fi.org/ResponseIndicatorDescriptor#Nonscorable response",
+                              "assessmentItemResultDescriptor": "uri://ed-fi.org/AssessmentItemResultDescriptor#Correct",
+                              "assessmentItemReference": {
+                                  "identificationCode": "9848478",
+                                  "assessmentIdentifier": "ae049cb3-33d0-431f-b0f3-a751df7217ef",
+                                  "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                              }
+                          },
                           {
                               "assessmentResponse": "G",
                               "responseIndicatorDescriptor": "uri://ed-fi.org/ResponseIndicatorDescriptor#Nonscorable response",
@@ -641,8 +639,8 @@ Feature: Validate the duplicate references
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
-                        "$.performanceLevels": [
-                          "The 2nd item of the performanceLevels has the same identifying values as another item earlier in the list."
+                        "$.items": [
+                          "The 2nd item of the items has the same identifying values as another item earlier in the list."
                         ]
                       },
                       "errors": []

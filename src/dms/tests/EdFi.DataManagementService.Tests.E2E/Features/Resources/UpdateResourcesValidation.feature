@@ -538,9 +538,9 @@ Feature: Resources "Update" Operation validations
                   """
                   {
                         "validationErrors": {
-                            "$.ClassPeriod": [
-                                "The 4th item of the ClassPeriod has the same identifying values as another item earlier in the list.",
-                                "The 5th item of the ClassPeriod has the same identifying values as another item earlier in the list."
+                            "$.classPeriods": [
+                                "The 4th item of the classPeriodReference has the same identifying values as another item earlier in the list.",
+                                "The 5th item of the classPeriodReference has the same identifying values as another item earlier in the list."
                             ]
                         },
                         "errors": [],

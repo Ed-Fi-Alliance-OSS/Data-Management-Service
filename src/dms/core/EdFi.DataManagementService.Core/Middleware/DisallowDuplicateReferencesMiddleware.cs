@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -27,17 +26,9 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         // Validation for values on ArrayUniquenessConstraints
         ValidateArrayUniquenessConstraints(context, validationErrors);
 
-        // Validation for Reference Ids
+        // Validation for Reference not part of ArrayUniquenessConstraints
         // Eg: BellSchedules has a collection of classPeriodReference that are not a part of the array uniqueness constraints
-        if (context.DocumentInfo.DocumentReferences.GroupBy(d => d.ReferentialId).Any(g => g.Count() > 1))
-        {
-            ValidateDuplicates(
-                context.DocumentInfo.DocumentReferences,
-                item => item.ReferentialId.Value,
-                item => item.ResourceInfo.ResourceName.Value,
-                validationErrors
-            );
-        }
+        ValidateReferences(context, validationErrors);
 
         if (validationErrors.Any())
         {
@@ -65,39 +56,100 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         await next();
     }
 
-    private static void ValidateDuplicates<T>(
-        IEnumerable<T> items,
-        Func<T, Guid> getReferentialId,
-        Func<T, string> getResourceNameFunc,
+    private static void ValidateReferences(
+        PipelineContext context,
         Dictionary<string, List<string>> validationErrors
     )
     {
-        var seenItems = new HashSet<Guid>();
-        var positions = new Dictionary<string, int>();
+        var uniquenessPaths = context
+            .ResourceSchema.ArrayUniquenessConstraints.SelectMany(g => g)
+            .Select(p => p.Value)
+            .ToHashSet();
 
-        foreach (var item in items)
-        {
-            Guid referentialId = getReferentialId(item);
-            string resourceName = getResourceNameFunc(item);
-            string propertyName = $"$.{resourceName}";
-
-            positions.TryAdd(propertyName, 1);
-
-            if (!seenItems.Add(referentialId))
+        var referencePaths = context
+            .ResourceSchema.DocumentPaths.Where(p => p.IsReference)
+            .Where(p =>
             {
-                string errorMessage =
-                    $"The {GetOrdinal(positions[propertyName])} item of the {resourceName} has the same identifying values as another item earlier in the list.";
-
-                if (validationErrors.TryGetValue(propertyName, out var existingMessages))
+                try
                 {
-                    existingMessages.Add(errorMessage);
+                    _ = p.ReferenceJsonPathsElements;
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            })
+            .SelectMany(p => p.ReferenceJsonPathsElements.Select(e => e.ReferenceJsonPath.Value))
+            .Where(path => !uniquenessPaths.Contains(path))
+            .ToList();
+
+        // Group paths by the base path of the object containing the
+        // e.g: $.classPeriods[*].classPeriodReference.classPeriodName => base: $.classPeriods[*].classPeriodReference
+        var groupedPaths = referencePaths
+            .GroupBy(path =>
+            {
+                int lastIndex = path.LastIndexOf('.');
+                return lastIndex > 0 ? path.Substring(0, lastIndex) : path;
+            })
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        foreach (var (basePath, fields) in groupedPaths)
+        {
+            var baseJsonPath = JsonPath.Parse(basePath);
+            var baseResults = baseJsonPath.Evaluate(context.ParsedBody);
+
+            var keys = new Dictionary<string, int>();
+
+            for (int i = 0; i < baseResults.Matches.Count; i++)
+            {
+                var obj = baseResults.Matches[i].Value as JsonObject;
+                if (obj == null)
+                {
+                    continue;
+                }
+
+                // Build composite key by joining values of each field in ‘fields’.
+                var keyParts = new List<string>();
+                foreach (string fieldPath in fields)
+                {
+                    // Extract the field property, e.g. “classPeriodName”.
+                    string property = fieldPath[(basePath.Length + 1)..]; // +1 for hte point
+
+                    if (obj.TryGetPropertyValue(property, out var value))
+                    {
+                        keyParts.Add(value?.ToString() ?? "");
+                    }
+                    else
+                    {
+                        keyParts.Add("");
+                    }
+                }
+
+                string compositeKey = string.Join("|", keyParts);
+
+                if (keys.ContainsKey(compositeKey))
+                {
+                    string arrayName = basePath.Substring(basePath.LastIndexOf('.') + 1);
+                    string errorKey = basePath.Substring(
+                        0,
+                        basePath.IndexOf("[*]", StringComparison.Ordinal)
+                    );
+
+                    string message =
+                        $"The {GetOrdinal(i + 1)} item of the {arrayName} has the same identifying values as another item earlier in the list.";
+
+                    if (!validationErrors.TryGetValue(errorKey, out var messages))
+                    {
+                        validationErrors[errorKey] = messages = new List<string>();
+                    }
+                    messages.Add(message);
                 }
                 else
                 {
-                    validationErrors[propertyName] = [errorMessage];
+                    keys[compositeKey] = i;
                 }
             }
-            positions[propertyName]++;
         }
     }
 
@@ -189,7 +241,3 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         };
     }
 }
-
-internal record IndexedReferenceGroup(int index, List<DescriptorReference> references);
-
-internal record KeyReferenceGroup(string key, List<IndexedReferenceGroup> indexGroups);

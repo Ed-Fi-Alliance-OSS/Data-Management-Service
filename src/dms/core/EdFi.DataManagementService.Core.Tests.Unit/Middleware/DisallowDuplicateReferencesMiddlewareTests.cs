@@ -160,7 +160,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.ClassPeriod":["The 2nd item of the ClassPeriod has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.classPeriods":["The 2nd item of the classPeriodReference has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }
