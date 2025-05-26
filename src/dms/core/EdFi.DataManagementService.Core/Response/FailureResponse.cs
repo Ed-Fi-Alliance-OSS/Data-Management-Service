@@ -85,11 +85,7 @@ internal static class FailureResponse
             errors: errors
         );
 
-    public static JsonNode ForETagMisMatch(
-        string detail,
-        TraceId traceId,
-        string[] errors
-    ) =>
+    public static JsonNode ForETagMisMatch(string detail, TraceId traceId, string[] errors) =>
         CreateBaseJsonObject(
             detail,
             type: _tagMismatchRequestTypePrefix,
