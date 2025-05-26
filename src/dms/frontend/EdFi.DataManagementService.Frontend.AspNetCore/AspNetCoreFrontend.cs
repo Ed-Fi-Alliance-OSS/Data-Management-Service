@@ -38,22 +38,17 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
-    /// Takes an HttpRequest and returns a deserialized request Headers
+    /// Takes an HttpRequest and returns a deserialized, not null or empty request Headers
     /// </summary>
-    private static Task<Dictionary<string, string>> ExtractETagHeadersAsync(HttpRequest request)
-    {
-        var headers = new Dictionary<string, string>();
-
-        // Extract the If-Match header
-        var ifMatch = request.Headers["If-Match"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(ifMatch))
-        {
-            headers["If-Match"] = ifMatch;
-        }
-
-        return Task.FromResult(headers);
-    }
-
+    private static Dictionary<string, string> ExtractHeadersFrom(HttpRequest request) =>
+        request
+            .Headers.Select(h => new
+            {
+                h.Key,
+                Value = h.Value.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)),
+            })
+            .Where(h => h.Value != null)
+            .ToDictionary(x => x.Key, x => x.Value!);
 
     /// <summary>
     /// Takes an HttpRequest and returns a unique trace identifier
@@ -99,7 +94,7 @@ public static class AspNetCoreFrontend
         var apiClientDetails = HttpRequest.HttpContext?.Items["ApiClientDetails"] as ClientAuthorizations;
         return new(
             Body: await ExtractJsonBodyFrom(HttpRequest),
-            Headers: await ExtractETagHeadersAsync(HttpRequest),
+            Headers: ExtractHeadersFrom(HttpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
             TraceId: ExtractTraceIdFrom(HttpRequest, options),
