@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -67,19 +68,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             .ToHashSet();
 
         var referencePaths = context
-            .ResourceSchema.DocumentPaths.Where(p => p.IsReference)
-            .Where(p =>
-            {
-                try
-                {
-                    _ = p.ReferenceJsonPathsElements;
-                    return true;
-                }
-                catch
-                {
-                    return false;
-                }
-            })
+            .ResourceSchema.DocumentPaths.Where(p => p.IsReference && HasSafeReferenceJsonPaths(p))
             .SelectMany(p => p.ReferenceJsonPathsElements.Select(e => e.ReferenceJsonPath.Value))
             .Where(path => !uniquenessPaths.Contains(path))
             .ToList();
@@ -153,6 +142,19 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         }
     }
 
+    private static bool HasSafeReferenceJsonPaths(DocumentPath path)
+    {
+        try
+        {
+            _ = path.ReferenceJsonPathsElements;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static void ValidateArrayUniquenessConstraints(
         PipelineContext context,
         Dictionary<string, List<string>> validationErrors
@@ -163,22 +165,21 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         foreach (var group in constraints)
         {
-            var firstPath = JsonPath.Parse(group[0].Value);
-            var firstResult = firstPath.Evaluate(body);
-            if (firstResult.Matches.Count <= 1)
-            {
-                continue;
-            }
-
-            // Extract the array base path, e.g: "$.items[*]" → "$.items"
+            // Extract the base array, e.g: "$.items[*]" → "$.items"
             string arrayPath = group[0].Value[..group[0].Value.IndexOf("[*]", StringComparison.Ordinal)];
             string[] arrayParts = arrayPath.Split('.');
             string shortArrayName = arrayParts[arrayParts.Length - 1];
             string errorKey = arrayPath;
 
-            // Group fields by each item
+            // Get all the elements of the array
             var itemPath = JsonPath.Parse($"{arrayPath}[*]");
             var arrayResult = itemPath.Evaluate(body);
+
+            // If the array has 0 or 1 element, there can be no duplicates.
+            if (arrayResult.Matches.Count <= 1)
+            {
+                continue;
+            }
 
             var lastSeen = new Dictionary<string, int>();
             for (int i = 0; i < arrayResult.Matches.Count; i++)
