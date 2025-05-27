@@ -3,11 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
+using static EdFi.DataManagementService.Backend.Postgresql.OptimisticLockHelper;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -51,12 +51,12 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureNotExists();
             }
 
-            if (
-                deleteRequest.Headers.TryGetValue("If-Match", out var ifMatchEtag)
-                && documentSummary.EdfiDoc.TryGetProperty("_etag", out JsonElement existingEtagElement)
-                && !ifMatchEtag.Equals(existingEtagElement.GetString())
-            )
+            if (IsDocumentLocked(deleteRequest.Headers, documentSummary.EdfiDoc))
             {
+                _logger.LogInformation(
+                    "Failure: _etag does not match on update - {TraceId}",
+                    deleteRequest.TraceId.Value
+                );
                 return new DeleteResult.DeleteFailureETagMisMatch();
             }
 

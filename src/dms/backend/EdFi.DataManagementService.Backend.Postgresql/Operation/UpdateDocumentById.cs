@@ -12,6 +12,7 @@ using Json.More;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
+using static EdFi.DataManagementService.Backend.Postgresql.OptimisticLockHelper;
 using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
@@ -179,31 +180,14 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
             JsonElement existingEdfiDoc = documentFromDb.EdfiDoc;
 
-            string? existingEtag = null;
-            string? ifMatch = null;
-            // Try to extract _etag from existingEdfiDoc
-            if (existingEdfiDoc.TryGetProperty("_etag", out JsonElement existingEtagElement))
+            if (IsDocumentLocked(updateRequest.Headers, existingEdfiDoc))
             {
-                existingEtag = existingEtagElement.GetString();
-            }
-
-            // Try to extract IfMatch from Headers
-            if (updateRequest.Headers.TryGetValue("If-Match", out var updatedIfMatchElement))
-            {
-                ifMatch = updatedIfMatchElement;
-            }
-
-            // Compare _etag with ifMatch
-            if (existingEtag != null && ifMatch != null && !existingEtag.Equals(ifMatch, StringComparison.OrdinalIgnoreCase))
-            {
-                // _etag mismatch
                 _logger.LogInformation(
                     "Failure: _etag does not match on update - {TraceId}",
                     updateRequest.TraceId.Value
                 );
                 return new UpdateResult.UpdateFailureETagMisMatch();
             }
-
 
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
