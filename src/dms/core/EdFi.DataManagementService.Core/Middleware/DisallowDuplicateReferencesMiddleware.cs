@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -29,7 +30,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         // Validation for Reference not part of ArrayUniquenessConstraints
         // Eg: BellSchedules has a collection of classPeriodReference that are not a part of the array uniqueness constraints
-        ValidateReferences(context, validationErrors);
+        ValidateReferences(context, validationErrors, logger);
 
         if (validationErrors.Any())
         {
@@ -59,7 +60,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
     private static void ValidateReferences(
         PipelineContext context,
-        Dictionary<string, List<string>> validationErrors
+        Dictionary<string, List<string>> validationErrors,
+        ILogger logger
     )
     {
         var uniquenessPaths = context
@@ -73,6 +75,22 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             .Where(path => !uniquenessPaths.Contains(path))
             .ToList();
 
+        var dupeIndex = context.ParsedBody.FindDuplicates(referencePaths, logger);
+
+        if (dupeIndex > 0)
+        {
+            string errorKey = referencePaths[0]
+                .Substring(0, referencePaths[0].IndexOf("[*]", StringComparison.Ordinal));
+            string message =
+                $"The {GetOrdinal(dupeIndex + 1)} item of the {errorKey} has the same identifying values as another item earlier in the list.";
+
+            if (!validationErrors.TryGetValue(errorKey, out var messages))
+            {
+                validationErrors[errorKey] = messages = new List<string>();
+            }
+            messages.Add(message);
+        }
+
         // Group paths by the base path of the object containing the
         // e.g: $.classPeriods[*].classPeriodReference.classPeriodName => base: $.classPeriods[*].classPeriodReference
         var groupedPaths = referencePaths
@@ -85,6 +103,8 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         foreach (var (basePath, fields) in groupedPaths)
         {
+            var jsonPaths = fields.Select(f => JsonPath.Parse(f));
+
             var baseJsonPath = JsonPath.Parse(basePath);
             var baseResults = baseJsonPath.Evaluate(context.ParsedBody);
 

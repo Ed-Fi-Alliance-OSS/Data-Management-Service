@@ -118,6 +118,18 @@ public class DisallowDuplicateReferencesMiddlewareTests
                             }
                         }
                     ],
+                    "favriteColors": [
+                    {
+                        "colorReference": {
+                            "colorId": blue
+                        }
+                    },
+                    {
+                        "colorReference": {
+                            "colorId": blue
+                        }
+                    }
+                ],
                     "dates": [],
                     "gradeLevels": []
                 }

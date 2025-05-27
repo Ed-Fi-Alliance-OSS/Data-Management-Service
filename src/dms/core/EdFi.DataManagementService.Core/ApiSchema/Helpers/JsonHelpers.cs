@@ -360,6 +360,55 @@ internal static class JsonHelpers
 
         return nodeKeys.Where(x => x.Value != null).Select(x => x.Value ?? new JsonObject()).ToList();
     }
+
+    /// <summary>
+    /// Finds duplicates in an array by comparing values at specified JsonPaths.
+    /// Returns the index of the first duplicate found, or -1 if no duplicates exist.
+    /// </summary>
+    public static int FindDuplicates(this JsonNode jsonNode, IList<string> jsonPaths, ILogger logger)
+    {
+        if (jsonPaths == null || jsonPaths.Count == 0)
+        {
+            return -1;
+        }
+
+        // Evaluate all JsonPaths to get their values
+        var pathResults = new List<IEnumerable<string>>();
+        foreach (var jsonPath in jsonPaths)
+        {
+            var values = jsonNode.SelectNodesFromArrayPathCoerceToStrings(jsonPath, logger);
+            pathResults.Add(values);
+        }
+
+        // Ensure all paths return the same number of items
+        var itemCount = pathResults.FirstOrDefault()?.Count() ?? 0;
+        if (itemCount == 0 || pathResults.Exists(result => result.Count() != itemCount))
+        {
+            return -1;
+        }
+
+        // Convert to list of tuples for easier comparison
+        var itemValues = new List<List<string>>();
+        for (int i = 0; i < itemCount; i++)
+        {
+            var values = pathResults.Select(result => result.ElementAt(i)).ToList();
+            itemValues.Add(values);
+        }
+
+        // Check for duplicates
+        for (int i = 0; i < itemValues.Count; i++)
+        {
+            for (int j = i + 1; j < itemValues.Count; j++)
+            {
+                if (itemValues[i].SequenceEqual(itemValues[j]))
+                {
+                    return j; // Return index of duplicate
+                }
+            }
+        }
+
+        return -1; // No duplicates found
+    }
 }
 
 /// <summary>
