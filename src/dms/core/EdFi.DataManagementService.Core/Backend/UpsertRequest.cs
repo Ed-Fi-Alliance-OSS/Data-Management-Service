@@ -26,6 +26,10 @@ internal record UpsertRequest(
     /// </summary>
     JsonNode EdfiDoc,
     /// <summary>
+    /// Request Header provided by the frontend service as a dictionary
+    /// </summary>
+    Dictionary<string, string> Headers,
+    /// <summary>
     /// The request TraceId
     /// </summary>
     TraceId TraceId,
@@ -58,6 +62,7 @@ internal record UpsertRequest(
         ResourceInfo,
         DocumentInfo,
         EdfiDoc,
+        Headers,
         TraceId,
         DocumentUuid,
         DocumentSecurityElements,

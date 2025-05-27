@@ -56,6 +56,7 @@ public class ExtractDocumentInfoMiddlewareTests
             context = new(
                 new(
                     Body: body,
+                    Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/schools",
                     TraceId: new TraceId("123"),
