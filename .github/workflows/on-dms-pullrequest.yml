@@ -178,6 +178,31 @@ jobs:
           path-replace-backslashes: 'true'
           reporter: dotnet-trx
 
+      - name: Download OpenAPI specs
+        run: |
+          mkdir specs
+          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -OutFile "specs/resources-spec.json"
+          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/descriptors-spec.json" -OutFile "specs/descriptors-spec.json"
+          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/discovery-spec.json" -OutFile "specs/discovery-spec.json"
+
+      - name: Validate Resources Spec
+        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
+        with:
+          definition-file: specs/resources-spec.json
+        continue-on-error: true
+
+      - name: Validate Descriptors Spec
+        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
+        with:
+          definition-file: specs/descriptors-spec.json
+        continue-on-error: true
+
+      - name: Validate Discovery Spec
+        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
+        with:
+          definition-file: specs/discovery-spec.json
+        continue-on-error: true
+
   event_file:
     name: Upload Event File
     runs-on: ubuntu-latest
