@@ -74,9 +74,11 @@ public static class RelationshipsBasedAuthorizationHelper
     private static bool IsAuthorized(AuthorizationFilter[] authorizationFilters, long[]? educationOrgIds)
     {
         var authorizedEdOrgIds = authorizationFilters
-            .Select(f => long.TryParse(f.Value, out var id) ? (long?)id : null)
-            .Where(id => id.HasValue)
-            .Select(id => id!.Value);
+            .Select(filter =>
+                long.TryParse(filter.Value, out long filterEdOrgId) ? filterEdOrgId : (long?)null
+            )
+            .WhereNotNull()
+            .ToHashSet();
 
         return educationOrgIds != null
             && educationOrgIds.Length > 0
