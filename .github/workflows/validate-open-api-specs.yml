@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Validate OpenAPI Specs from DMS
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 8 * * 0' # Scheduled the job to run every Sunday at 8 AM UTC
+
+permissions: read-all
+
+jobs:
+  validate-specs:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Build DMS
+        id: build_step
+        run: ./build-dms.ps1 Build -Configuration Release
+
+      - name: Start DMS (WebAPI)
+        if: success()
+        run: |
+          dotnet run --project src\dms\frontend\EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj --configuration Release --urls http://localhost:8080 &
+          echo "Waiting 30 seconds for the app to start..."
+          sleep 30
+
+      - name: Wait for DMS Discovery Endpoint
+        run: |
+          echo "Waiting for DMS to be ready on http://localhost:8080/metadata/specifications"
+          for i in {1..90}; do
+            http_status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/metadata/specifications)
+            if [ "$http_status" -eq 200 ]; then
+              echo "DMS Discovery endpoint ready with 200 OK"
+              exit 0
+            fi
+            echo "Attempt $i: Status HTTP $http_status - waiting..."
+            sleep 10
+          done
+          echo "Timeout: DMS did not respond after 15 minutes."
+          exit 1
+
+      - name: Download OpenAPI specs
+        run: |
+          mkdir specs
+          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -OutFile "specs/resources-spec.json"
+          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/descriptors-spec.json" -OutFile "specs/descriptors-spec.json"
+          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/discovery-spec.json" -OutFile "specs/discovery-spec.json"
+
+      - name: Validate Resources Spec
+        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
+        with:
+          definition-file: specs/resources-spec.json
+        continue-on-error: true
+
+      - name: Validate Descriptors Spec
+        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
+        with:
+          definition-file: specs/descriptors-spec.json
+        continue-on-error: true
+
+      - name: Validate Discovery Spec
+        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
+        with:
+          definition-file: specs/discovery-spec.json
+        continue-on-error: true
