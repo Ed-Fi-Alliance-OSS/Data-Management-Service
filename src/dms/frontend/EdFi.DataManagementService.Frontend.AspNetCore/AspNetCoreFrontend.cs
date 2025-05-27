@@ -99,7 +99,7 @@ public static class AspNetCoreFrontend
         var apiClientDetails = HttpRequest.HttpContext?.Items["ApiClientDetails"] as ClientAuthorizations;
         return new(
             Body: await ExtractJsonBodyFrom(HttpRequest),
-            Header: await ExtractETagHeadersAsync(HttpRequest),
+            Headers: await ExtractETagHeadersAsync(HttpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
             TraceId: ExtractTraceIdFrom(HttpRequest, options),

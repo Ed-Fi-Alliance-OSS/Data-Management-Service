@@ -45,6 +45,7 @@ internal class UpsertHandler(
                     ResourceInfo: context.ResourceInfo,
                     DocumentInfo: context.DocumentInfo,
                     EdfiDoc: context.ParsedBody,
+                    Headers: context.FrontendRequest.Headers,
                     TraceId: context.FrontendRequest.TraceId,
                     DocumentUuid: candidateDocumentUuid,
                     DocumentSecurityElements: context.DocumentSecurityElements,

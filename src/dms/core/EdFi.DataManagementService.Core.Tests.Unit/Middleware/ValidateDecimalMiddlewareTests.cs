@@ -85,7 +85,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/staffs",
                     Body: jsonData,
-                    Header: [],
+                    Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
                     ClientAuthorizations: new ClientAuthorizations(
@@ -129,7 +129,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/staffs",
                     Body: jsonData,
-                    Header: [],
+                    Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
                     ClientAuthorizations: new ClientAuthorizations(

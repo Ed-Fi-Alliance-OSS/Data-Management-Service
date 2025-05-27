@@ -92,15 +92,15 @@ internal static class No
     public static FrontendRequest CreateFrontendRequest(string traceId) =>
         new(
             Body: "{}",
-            Header: [],
+            Headers: [],
             Path: "",
             QueryParameters: [],
             TraceId: new TraceId(traceId),
             ClientAuthorizations: new ClientAuthorizations(
                 TokenId: "",
                 ClaimSetName: "",
-                EducationOrganizationIds: new List<EducationOrganizationId>(), // Replaced null with an empty list
-                NamespacePrefixes: new List<NamespacePrefix>() // Replaced null with an empty list
+                EducationOrganizationIds: [],
+                NamespacePrefixes: []
             )
         );
 

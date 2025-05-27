@@ -44,6 +44,7 @@ internal class UpdateByIdHandler(
                     ResourceInfo: context.ResourceInfo,
                     DocumentInfo: context.DocumentInfo,
                     EdfiDoc: context.ParsedBody,
+                    Headers: context.FrontendRequest.Headers,
                     DocumentSecurityElements: context.DocumentSecurityElements,
                     TraceId: context.FrontendRequest.TraceId,
                     UpdateCascadeHandler: updateCascadeHandler,

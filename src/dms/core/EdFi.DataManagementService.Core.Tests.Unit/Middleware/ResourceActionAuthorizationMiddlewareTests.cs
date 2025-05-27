@@ -93,7 +93,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: [],
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
@@ -133,7 +133,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: [],
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations("", "NO-MATCH", [], [])
@@ -178,7 +178,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/stateDescriptor",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: [],
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
@@ -223,7 +223,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: [],
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
@@ -262,7 +262,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: [],
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
@@ -331,7 +331,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: [],
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
@@ -377,7 +377,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: [],
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
@@ -417,7 +417,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
-                Header: [],
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])

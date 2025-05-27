@@ -21,28 +21,23 @@ namespace EdFi.DataManagementService.Core.Middleware
                 context.FrontendRequest.TraceId.Value
             );
 
+            var parsedBody = context.ParsedBody.DeepClone() as JsonObject;
+
+            parsedBody!.Remove("_etag");
+            parsedBody!.Remove("_lastModifiedDate");
+
+            string json = JsonSerializer.Serialize(parsedBody);
+            using var sha = SHA256.Create();
+            byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(json));
+
+            context.ParsedBody["_etag"] = Convert.ToBase64String(hash);
+
+            context.ParsedBody["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+
             DateTimeOffset utcNow = DateTimeOffset.UtcNow;
             string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             context.ParsedBody["_lastModifiedDate"] = formattedUtcDateTime;
 
-            if (context.FrontendRequest.Header != null &&
-                 context.FrontendRequest.Header.TryGetValue("If-Match", out var ifMatch) &&
-                 !string.IsNullOrWhiteSpace(ifMatch))
-            {
-                context.ParsedBody["IfMatch"] = ifMatch;
-            }
-
-            if (context.ParsedBody.DeepClone() is JsonObject cloneForHash)
-            {
-                cloneForHash.Remove("_etag");
-                cloneForHash.Remove("_lastModifiedDate");
-
-                // Compute _etag from clone
-                string json = JsonSerializer.Serialize(cloneForHash);
-                using var sha = SHA256.Create();
-                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(json));
-                context.ParsedBody["_etag"] = Convert.ToBase64String(hash);
-            }
             await next();
         }
     }

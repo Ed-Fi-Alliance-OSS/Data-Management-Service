@@ -23,7 +23,7 @@ public record FrontendRequest(
     /// <summary>
     /// Request Header provided by the frontend service as a raw string, or null if there is no header
     /// </summary>
-    Dictionary<string, string> Header,
+    Dictionary<string, string> Headers,
     /// <summary>
     /// Query parameters provided by the frontend service as a dictionary.
     /// </summary>

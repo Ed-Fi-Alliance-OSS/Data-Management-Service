@@ -178,7 +178,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             );
 
             JsonElement existingEdfiDoc = documentFromDb.EdfiDoc;
-            JsonElement updatedRequestEdfiDoc = JsonSerializer.SerializeToElement(updateRequest.EdfiDoc.AsObject());
 
             string? existingEtag = null;
             string? ifMatch = null;
@@ -188,10 +187,10 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 existingEtag = existingEtagElement.GetString();
             }
 
-            // Try to extract IfMatch from updatedRequestEdfiDoc
-            if (updatedRequestEdfiDoc.TryGetProperty("IfMatch", out JsonElement updatedIfMatchElement))
+            // Try to extract IfMatch from Headers
+            if (updateRequest.Headers.TryGetValue("If-Match", out var updatedIfMatchElement))
             {
-                ifMatch = updatedIfMatchElement.GetString();
+                ifMatch = updatedIfMatchElement;
             }
 
             // Compare _etag with ifMatch
