@@ -4,10 +4,10 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 @{
-    DatabaseBackupName = "EdFi.Dms.Minimal.Template.PostgreSql.sql"
-    PackageProjectName = "EdFi.Dms.Minimal.Template.PostgreSql.csproj"
-    Id = "EdFi.Dms.Minimal.Template.PostgreSql"
-    Title = "EdFi.Dms.Minimal.Template.PostgreSql"
+    DatabaseBackupName = "EdFi.Dms.Minimal.Template.PostgreSql.{StandardVersion}.sql"
+    PackageProjectName = "EdFi.Dms.Minimal.Template.PostgreSql.{StandardVersion}.csproj"
+    Id = "EdFi.Dms.Minimal.Template.PostgreSql.{StandardVersion}"
+    Title = "EdFi.Dms.Minimal.Template.PostgreSql.{StandardVersion}"
     Description = "EdFi Dms Minimal Template Database for PostgreSql"
     Authors = "Ed-Fi Alliance"
     ProjectUrl = "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service"

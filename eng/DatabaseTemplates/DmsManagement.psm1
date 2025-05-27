@@ -164,7 +164,7 @@ function Add-Client {
     $response = Invoke-Api @invokeParams
 
     if ($response.validationErrors) {
-        Write-Warning "Client registration failed: $($response.validationErrors.clientId)`n"
+        Write-Warning "Client registration failed: $($response.validationErrors.clientId)"
     }
     else {
         Write-Host "Client '$ClientId' registered successfully."

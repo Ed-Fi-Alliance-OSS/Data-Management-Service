@@ -30,6 +30,12 @@ param (
     [string]$ClaimSetName = "EdfiSandbox",
 
     [ValidateNotNullOrEmpty()]
+    [string]$StandardVersion = "5.2.0",
+
+    [ValidateNotNullOrEmpty()]
+    $BulkLoadVersion = "7.3",
+
+    [ValidateNotNullOrEmpty()]
     [string]$Extension,
 
     [Parameter(Mandatory = $true)]
@@ -43,6 +49,12 @@ Import-Module ../Package-Management.psm1 -Force
 Import-Module ./DmsManagement.psm1 -Force
 
 $config = Import-PowerShellDataFile -Path "./MinimalTemplateSettings.psd1"
+
+foreach ($key in @($config.Keys)) {
+    if ($null -ne $key -and $config[$key] -is [string]) {
+        $config[$key] = $config[$key].Replace("{StandardVersion}", $StandardVersion)
+    }
+}
 
 $BackupDirectory = './MinimalTemplate'
 
@@ -64,7 +76,8 @@ $BackupDirectory = './MinimalTemplate'
 #>
 function Initialize-BulkLoad {
     param(
-        $BulkLoadVersion = "7.2"
+        [Parameter(Mandatory = $true)]
+        $BulkLoadVersion
     )
 
     $bulkLoader = (Join-Path -Path (Get-BulkLoadClient $BulkLoadVersion).Trim() -ChildPath "tools/net*/any/EdFi.BulkLoadClient.Console.dll")
@@ -463,7 +476,7 @@ if (-not (Test-Path $BackupDirectory)) {
     New-Item -ItemType Directory -Path $BackupDirectory -Force | Out-Null
 }
 
-$paths = Initialize-BulkLoad
+$paths = Initialize-BulkLoad -BulkLoadVersion $BulkLoadVersion
 
 $application = Initialize-DataManagementSystem -ConfigUrl $ConfigUrl
 
