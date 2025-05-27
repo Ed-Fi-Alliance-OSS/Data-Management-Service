@@ -44,6 +44,7 @@ internal class UpdateByIdHandler(
                     ResourceInfo: context.ResourceInfo,
                     DocumentInfo: context.DocumentInfo,
                     EdfiDoc: context.ParsedBody,
+                    Headers: context.FrontendRequest.Headers,
                     DocumentSecurityElements: context.DocumentSecurityElements,
                     TraceId: context.FrontendRequest.TraceId,
                     UpdateCascadeHandler: updateCascadeHandler,
@@ -69,12 +70,27 @@ internal class UpdateByIdHandler(
             UpdateSuccess updateSuccess => new FrontendResponse(
                 StatusCode: 204,
                 Body: null,
-                Headers: [],
+                Headers: new Dictionary<string, string>()
+                {
+                    { "etag", context.ParsedBody["_etag"]?.ToString() ?? "" },
+                },
                 LocationHeaderPath: PathComponents.ToResourcePath(
                     context.PathComponents,
                     updateSuccess.ExistingDocumentUuid
                 )
             ),
+            UpdateFailureETagMisMatch => new FrontendResponse(
+                StatusCode: 412,
+                Body: FailureResponse.ForETagMisMatch(
+                    "The item has been modified by another user.",
+                    traceId: context.FrontendRequest.TraceId,
+                    errors: new[]
+                    {
+                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved."
+                    }
+                ),
+                Headers: []
+             ),
             UpdateFailureNotExists => new FrontendResponse(
                 StatusCode: 404,
                 Body: FailureResponse.ForNotFound(

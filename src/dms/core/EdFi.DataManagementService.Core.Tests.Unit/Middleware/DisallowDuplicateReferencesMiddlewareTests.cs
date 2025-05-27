@@ -126,6 +126,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/bellschedules",
                 Body: jsonBody,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -199,6 +200,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/bellschedules",
                 Body: jsonBody,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -396,6 +398,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: jsonBody,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -483,6 +486,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/assessments",
                 Body: jsonBody,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -555,6 +559,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/assessments",
                 Body: jsonBody,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
@@ -622,6 +627,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: jsonBody,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId(""),
                 new ClientAuthorizations(
