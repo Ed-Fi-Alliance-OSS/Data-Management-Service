@@ -92,6 +92,7 @@ internal static class No
     public static FrontendRequest CreateFrontendRequest(string traceId) =>
         new(
             Body: "{}",
+            Headers: [],
             Path: "",
             QueryParameters: [],
             TraceId: new TraceId(traceId),

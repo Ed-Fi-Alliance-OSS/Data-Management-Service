@@ -120,6 +120,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/schools",
                     Body: jsonData,
+                    Headers: [],
                     QueryParameters: [],
                     new TraceId("traceId"),
                     new ClientAuthorizations(

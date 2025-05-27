@@ -138,6 +138,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -172,6 +173,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -206,6 +208,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -285,6 +288,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -319,6 +323,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -353,6 +358,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -399,6 +405,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -448,6 +455,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -495,6 +503,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -545,6 +554,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -595,6 +605,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -630,6 +641,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -680,6 +692,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -729,6 +742,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -779,6 +793,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -814,6 +829,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -833,6 +849,7 @@ public class ValidateDocumentMiddlewareTests
             var getContext = Context(new FrontendRequest(
                 "ed-fi/schools/7687",
                 Body: null,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(

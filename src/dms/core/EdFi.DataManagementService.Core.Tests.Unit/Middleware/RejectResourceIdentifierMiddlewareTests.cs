@@ -33,6 +33,7 @@ public class RejectResourceIdentifierMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: """{"id":"2a5a8b65-40c9-4524-8eb8-a1b3bb857b32","studentUniqueId":"333333","birthDate": "2017-08-26","firstName": "hello firstName","lastSurname":"lastSurname"}""",
+                Headers: [],
                 Path: "/ed-fi/students",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
@@ -81,6 +82,7 @@ public class RejectResourceIdentifierMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: """{"studentUniqueId":"333333","birthDate": "2017-08-26","firstName": "hello firstName","lastSurname":"lastSurname"}""",
+                Headers: [],
                 Path: "/ed-fi/students",
                 QueryParameters: [],
                 TraceId: new TraceId(""),
