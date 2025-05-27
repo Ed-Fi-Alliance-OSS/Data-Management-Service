@@ -54,7 +54,7 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             if (
                 deleteRequest.Headers.TryGetValue("If-Match", out var ifMatchEtag)
                 && documentSummary.EdfiDoc.TryGetProperty("_etag", out JsonElement existingEtagElement)
-                && !ifMatchEtag[0]!.Equals(existingEtagElement.GetString())
+                && !ifMatchEtag.Equals(existingEtagElement.GetString())
             )
             {
                 return new DeleteResult.DeleteFailureETagMisMatch();
