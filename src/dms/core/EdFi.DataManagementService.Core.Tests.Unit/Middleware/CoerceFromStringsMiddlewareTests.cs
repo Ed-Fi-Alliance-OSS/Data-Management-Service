@@ -62,6 +62,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 .WithStartProject("Ed-Fi", "5.0.0")
                 .WithStartResource("School")
                 .WithJsonSchemaForInsert(builder.Build()!)
+                .WithDecimalPropertyValidationInfos([])
                 .WithBooleanJsonPaths(new[] { "$.gradeLevels[*].isSecondary" })
                 .WithNumericJsonPaths(new[] { "$.schoolId" })
                 .WithEndResource()

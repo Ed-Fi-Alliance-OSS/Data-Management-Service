@@ -25,7 +25,7 @@ internal class ValidateDecimalMiddleware(ILogger _logger, IDecimalValidator _dec
 
         Dictionary<string, string[]> validationErrors = _decimalValidator.Validate(
             context.ParsedBody,
-            context.ResourceSchema.DecimalPropDecimalValidationInfos
+            context.ResourceSchema.DecimalPropertyValidationInfos
         );
 
         if (validationErrors.Count == 0)

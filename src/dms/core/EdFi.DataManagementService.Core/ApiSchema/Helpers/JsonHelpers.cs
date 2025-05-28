@@ -301,26 +301,33 @@ internal static class JsonHelpers
     /// Helper to replace a numeric data type that was submitted as a string with its actual
     /// numeric value. Does not handle parsing failures as these will be dealt with in validation.
     /// </summary>
-    public static void TryCoerceStringToNumber(this JsonNode jsonNode)
+    public static void TryCoerceStringToLong(this JsonNode jsonNode)
     {
         var jsonValue = jsonNode.AsValue();
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
             // Numeric value was passed in as string, must fix.
             string stringValue = jsonValue.GetValue<string>();
-            if (stringValue.Contains('.'))
+            if (long.TryParse(stringValue, out long longValue))
             {
-                if (decimal.TryParse(stringValue, out decimal decimalValue))
-                {
-                    jsonNode.ReplaceWith(decimalValue);
-                }
+                jsonNode.ReplaceWith(JsonValue.Create(longValue));
             }
-            else
+        }
+    }
+
+    /// <summary>
+    /// Helper to replace a numeric data type that was submitted as a string with its actual
+    /// numeric value. Does not handle parsing failures as these will be dealt with in validation.
+    /// </summary>
+    public static void TryCoerceStringToDecimal(this JsonNode jsonNode)
+    {
+        var jsonValue = jsonNode.AsValue();
+        if (jsonValue.GetValueKind() == JsonValueKind.String)
+        {
+            string stringValue = jsonValue.GetValue<string>();
+            if (decimal.TryParse(stringValue, out decimal decimalValue))
             {
-                if (long.TryParse(stringValue, out long longValue))
-                {
-                    jsonNode.ReplaceWith(longValue);
-                }
+                jsonNode.ReplaceWith(JsonValue.Create(decimalValue));
             }
         }
     }
