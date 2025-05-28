@@ -150,5 +150,5 @@ Feature: ETag validations
                       "lastSurname": "Mayers"
                   }
                   """
-             When a DELETE if-match "{etag}" request is made to "/ed-fi/students/{id}"
+             When a DELETE if-match "{IfMatch}" request is made to "/ed-fi/students/{id}"
              Then it should respond with 204

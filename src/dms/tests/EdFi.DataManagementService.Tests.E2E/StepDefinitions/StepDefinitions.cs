@@ -402,8 +402,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             ifMatch = ifMatch.Replace("{IfMatch}", _etag);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                    new() { Data = body, Headers = GetHeadersWithIfMatch(ifMatch) }
-                )!;
+                new() { Data = body, Headers = GetHeadersWithIfMatch(ifMatch) }
+            )!;
             _featureContext["_waitOnNextQuery"] = true;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -531,7 +531,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information($"DELETE url: {url}");
 
-            ifMatch = ifMatch.Replace("{etag}", _etag);
+            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
             _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
                 url,
                 new() { Headers = GetHeadersWithIfMatch(ifMatch) }
