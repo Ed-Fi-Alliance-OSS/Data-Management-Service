@@ -546,6 +546,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     NullLogger.Instance
                 ),
                 DeleteInEdOrgHierarchy = deleteInEdOrgHierarchy,
+                Headers = new Dictionary<string, string>(),
             }
         ).ActLike<IDeleteRequest>();
     }

@@ -21,7 +21,7 @@ public record FrontendRequest(
     /// </summary>
     string? Body,
     /// <summary>
-    /// Request Header provided by the frontend service as a raw string, or null if there is no header
+    /// Request Header provided by the frontend service as a dictionary
     /// </summary>
     Dictionary<string, string> Headers,
     /// <summary>

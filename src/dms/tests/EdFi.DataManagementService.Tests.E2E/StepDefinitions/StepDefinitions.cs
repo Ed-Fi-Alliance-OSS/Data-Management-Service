@@ -402,8 +402,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             ifMatch = ifMatch.Replace("{IfMatch}", _etag);
             _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
                 url,
-                    new() { Data = body, Headers = GetHeadersWithIfMatch(ifMatch) }
-                )!;
+                new() { Data = body, Headers = GetHeadersWithIfMatch(ifMatch) }
+            )!;
             _featureContext["_waitOnNextQuery"] = true;
 
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -519,6 +519,25 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
+        }
+
+        [When("a DELETE if-match {string} request is made to {string}")]
+        public async Task WhenADeleteIf_MatchRequestIsMadeToWith(string ifMatch, string url)
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            _logger.log.Information($"DELETE url: {url}");
+
+            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
+            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
+                url,
+                new() { Headers = GetHeadersWithIfMatch(ifMatch) }
+            )!;
+
+            extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
         #endregion
@@ -967,8 +986,9 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private IEnumerable<KeyValuePair<string, string>> GetHeadersWithIfMatch(string ifMatch)
         {
-            var list = new List<KeyValuePair<string, string>> {
-                new("Authorization", _dmsToken) ,
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", _dmsToken),
                 new("If-Match", ifMatch),
             };
             return list;

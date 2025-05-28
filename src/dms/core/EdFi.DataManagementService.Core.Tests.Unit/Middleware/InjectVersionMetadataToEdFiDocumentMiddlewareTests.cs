@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -100,8 +99,7 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
 
                 // Compute _etag from clone
                 string json = JsonSerializer.Serialize(cloneForHash);
-                using var sha = SHA256.Create();
-                byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(json));
+                byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
                 var reverseEtag = Convert.ToBase64String(hash);
                 reverseEtag.Should().BeEquivalentTo(eTag.GetValue<string>());
             }

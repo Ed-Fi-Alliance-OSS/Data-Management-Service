@@ -27,16 +27,11 @@ namespace EdFi.DataManagementService.Core.Middleware
             parsedBody!.Remove("_lastModifiedDate");
 
             string json = JsonSerializer.Serialize(parsedBody);
-            using var sha = SHA256.Create();
-            byte[] hash = sha.ComputeHash(Encoding.UTF8.GetBytes(json));
+            byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
 
             context.ParsedBody["_etag"] = Convert.ToBase64String(hash);
 
             context.ParsedBody["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-
-            DateTimeOffset utcNow = DateTimeOffset.UtcNow;
-            string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-            context.ParsedBody["_lastModifiedDate"] = formattedUtcDateTime;
 
             await next();
         }

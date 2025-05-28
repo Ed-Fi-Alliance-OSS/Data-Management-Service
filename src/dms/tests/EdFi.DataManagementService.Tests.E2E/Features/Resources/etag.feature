@@ -52,7 +52,7 @@ Feature: ETag validations
                   """
              Then it should respond with 204
 
- Scenario: 03 Ensure that clients can pass an IfMatch in the request header and ignore _etag in request body
+        Scenario: 03 Ensure that clients can pass an IfMatch in the request header and ignore _etag in request body
              When a POST request is made to "/ed-fi/students" with
                   """
                   {
@@ -114,8 +114,16 @@ Feature: ETag validations
                   }
                   """
 
-        @ignore @API-263
-        Scenario: 05 Ensure that clients cannot pass a different ETag in the If-Match header to delete a resource
+        Scenario: 04 Ensure that clients cannot pass a different ETag in the If-Match header to delete a resource
+            Given a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
              When a DELETE if-match "0000000000" request is made to "/ed-fi/students/{id}"
              Then it should respond with 412
               And the response body is
@@ -125,14 +133,22 @@ Feature: ETag validations
                       "type": "urn:ed-fi:api:optimistic-lock-failed",
                       "title": "Optimistic Lock Failed",
                       "status": 412,
-                      "correlationId": null,
+                      "validationErrors": {},
                       "errors": [
                           "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved."
                       ]
                   }
                   """
 
-        @ignore @API-264
-        Scenario: 06 Ensure that clients can pass an ETag to delete a resource
-             When a DELETE if-match "{etag}" request is made to "/ed-fi/students/{id}"
+        Scenario: 05 Ensure that clients can pass an ETag to delete a resource
+            Given a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "111111",
+                      "birthDate": "2014-08-14",
+                      "firstName": "Russella",
+                      "lastSurname": "Mayers"
+                  }
+                  """
+             When a DELETE if-match "{IfMatch}" request is made to "/ed-fi/students/{id}"
              Then it should respond with 204

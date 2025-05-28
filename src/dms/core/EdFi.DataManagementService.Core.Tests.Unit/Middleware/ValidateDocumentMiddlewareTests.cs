@@ -815,8 +815,7 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_An_Insert_Request_With_Empty_NonRequired_Collection
-    : ValidateDocumentMiddlewareTests
+    public class Given_An_Insert_Request_With_Empty_NonRequired_Collection : ValidateDocumentMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -846,19 +845,22 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_not_have_collection_in_get_response()
         {
-            var getContext = Context(new FrontendRequest(
-                "ed-fi/schools/7687",
-                Body: null,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
-            ), RequestMethod.GET);
+            var getContext = Context(
+                new FrontendRequest(
+                    "ed-fi/schools/7687",
+                    Body: null,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                ),
+                RequestMethod.GET
+            );
 
             Middleware().Execute(getContext, Next()).Wait();
 
