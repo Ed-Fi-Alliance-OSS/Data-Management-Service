@@ -9,5 +9,7 @@ public class ClaimSetImportCommand : IClaimSetCommand
 {
     public required string Name { get; set; }
 
-    public class Validator() : ClaimSetCommandValidator<ClaimSetImportCommand>();
+    public required List<ResourceClaim> ResourceClaims { get; set; }
+
+    public class Validator : ClaimSetImportCommandValidator;
 }
