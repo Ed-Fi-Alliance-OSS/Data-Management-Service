@@ -44,15 +44,15 @@ internal class CoerceFromStringsMiddleware(ILogger logger) : IPipelineStep
             }
         }
 
-        var integerPaths = context
+        var numericPaths = context
             .ResourceSchema.NumericJsonPaths.Select(path => path.Value)
             .Except(decimalPaths);
-        foreach (string path in integerPaths)
+        foreach (string path in numericPaths)
         {
             IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
             foreach (JsonNode? jsonNode in jsonNodes)
             {
-                jsonNode?.TryCoerceStringToLong();
+                jsonNode?.TryCoerceStringToNumber();
             }
         }
 

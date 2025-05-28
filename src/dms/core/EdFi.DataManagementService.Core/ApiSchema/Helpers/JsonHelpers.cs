@@ -301,22 +301,32 @@ internal static class JsonHelpers
     /// Helper to replace a numeric data type that was submitted as a string with its actual
     /// numeric value. Does not handle parsing failures as these will be dealt with in validation.
     /// </summary>
-    public static void TryCoerceStringToLong(this JsonNode jsonNode)
+    public static void TryCoerceStringToNumber(this JsonNode jsonNode)
     {
         var jsonValue = jsonNode.AsValue();
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
             // Numeric value was passed in as string, must fix.
             string stringValue = jsonValue.GetValue<string>();
-            if (long.TryParse(stringValue, out long longValue))
+            if (stringValue.Contains('.'))
             {
-                jsonNode.ReplaceWith(JsonValue.Create(longValue));
+                if (double.TryParse(stringValue, out double doubleValue))
+                {
+                    jsonNode.ReplaceWith(doubleValue);
+                }
+            }
+            else
+            {
+                if (long.TryParse(stringValue, out long longValue))
+                {
+                    jsonNode.ReplaceWith(JsonValue.Create(longValue));
+                }
             }
         }
     }
 
     /// <summary>
-    /// Helper to replace a numeric data type that was submitted as a string with its actual
+    /// Helper to replace a decimal data type that was submitted as a string with its actual
     /// numeric value. Does not handle parsing failures as these will be dealt with in validation.
     /// </summary>
     public static void TryCoerceStringToDecimal(this JsonNode jsonNode)
