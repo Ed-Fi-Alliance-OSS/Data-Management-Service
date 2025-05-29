@@ -4777,9 +4777,6 @@ INSERT INTO dmscs.claimshierarchy(
               "authorizationStrategies": [
                 {
                   "name": "RelationshipsWithEdOrgsAndPeople"
-                },
-                {
-                  "name": "RelationshipsWithEdOrgsAndPeopleInverted"
                 }
               ]
             }
@@ -5399,9 +5396,6 @@ INSERT INTO dmscs.claimshierarchy(
               "authorizationStrategies": [
                 {
                   "name": "RelationshipsWithEdOrgsAndPeople"
-                },
-                {
-                  "name": "RelationshipsWithEdOrgsAndPeopleInverted"
                 }
               ]
             }
@@ -7488,9 +7482,6 @@ INSERT INTO dmscs.claimshierarchy(
                   "authorizationStrategies": [
                     {
                       "name": "RelationshipsWithEdOrgsAndPeople"
-                    },
-                    {
-                      "name": "RelationshipsWithEdOrgsAndPeopleInverted"
                     }
                   ]
                 }
