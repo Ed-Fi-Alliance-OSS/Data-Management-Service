@@ -854,3 +854,44 @@ Feature: Resources "Create" Operation validations
                     "errors": []
                   }
                   """
+
+        Scenario: 32 When posting a resource with decimal as int
+             When a POST request is made to "/ed-fi/staffs" with
+                  """
+                      {
+                          "staffUniqueId": "staff32",
+                          "birthDate": "1976-08-19",
+                          "firstName": "Barry",
+                          "lastSurname": "Peterson",
+                          "yearsOfPriorProfessionalExperience": 1
+                      }
+                  """
+             Then it should respond with 201
+
+        Scenario: 33 When posting a resource with decimal overflow as string
+             When a POST request is made to "/ed-fi/staffs" with
+                  """
+                      {
+                          "staffUniqueId": "staff133",
+                          "birthDate": "1976-08-19",
+                          "firstName": "Barry",
+                          "lastSurname": "Peterson",
+                          "yearsOfPriorProfessionalExperience": "1000"
+                      }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                        "$.yearsOfPriorProfessionalExperience": [
+                            "yearsOfPriorProfessionalExperience must be between -999.99 and 999.99."
+                        ]
+                    },
+                    "errors": []
+                  }
+                  """

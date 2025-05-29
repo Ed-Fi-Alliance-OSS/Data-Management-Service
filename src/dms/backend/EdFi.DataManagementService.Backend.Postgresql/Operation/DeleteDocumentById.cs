@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
+using static EdFi.DataManagementService.Backend.Postgresql.OptimisticLockHelper;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
 
@@ -48,6 +49,15 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
             if (documentSummary == null)
             {
                 return new DeleteResult.DeleteFailureNotExists();
+            }
+
+            if (IsDocumentLocked(deleteRequest.Headers, documentSummary.EdfiDoc))
+            {
+                _logger.LogInformation(
+                    "Failure: _etag does not match on update - {TraceId}",
+                    deleteRequest.TraceId.Value
+                );
+                return new DeleteResult.DeleteFailureETagMisMatch();
             }
 
             var securityElements = documentSummary.SecurityElements.ToDocumentSecurityElements()!;

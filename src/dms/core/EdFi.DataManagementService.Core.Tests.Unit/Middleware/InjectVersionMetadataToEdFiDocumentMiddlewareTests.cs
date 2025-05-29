@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Middleware;
@@ -81,23 +83,26 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
         [Test]
         public void It_should_have_parsed_body_with_etag()
         {
-            var lastModifiedDate = _context?.ParsedBody[_lastModifiedDatePropertyName]?.AsValue();
+            var lastModifiedDate = _context.ParsedBody[_lastModifiedDatePropertyName]?.AsValue();
             lastModifiedDate.Should().NotBeNull();
 
-            var eTag = _context?.ParsedBody["_etag"]?.AsValue();
+            var eTag = _context.ParsedBody["_etag"]?.AsValue();
             eTag.Should().NotBeNull();
 
             Trace.Assert(lastModifiedDate != null);
             Trace.Assert(eTag != null);
 
-            var datetime = DateTime.ParseExact(
-                lastModifiedDate.GetValue<string>(),
-                "yyyy-MM-ddTHH:mm:ssZ",
-                DateTimeFormatInfo.InvariantInfo
-            );
-            var reverseEtag = datetime.ToBinary().ToString(CultureInfo.InvariantCulture);
+            if (_context.ParsedBody.DeepClone() is JsonObject cloneForHash)
+            {
+                cloneForHash.Remove("_etag");
+                cloneForHash.Remove("_lastModifiedDate");
 
-            reverseEtag.Should().BeEquivalentTo(eTag.GetValue<string>());
+                // Compute _etag from clone
+                string json = JsonSerializer.Serialize(cloneForHash);
+                byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
+                var reverseEtag = Convert.ToBase64String(hash);
+                reverseEtag.Should().BeEquivalentTo(eTag.GetValue<string>());
+            }
         }
     }
 }

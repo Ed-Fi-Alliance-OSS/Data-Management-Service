@@ -110,6 +110,7 @@ public class ValidateEqualityConstraintMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/bellschedules",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(
@@ -168,6 +169,7 @@ public class ValidateEqualityConstraintMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/bellschedules",
                 Body: jsonData,
+                Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
                 ClientAuthorizations: new ClientAuthorizations(

@@ -382,6 +382,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     documentIdentityElements
                 ),
                 EdfiDoc = JsonNode.Parse(edfiDocString),
+                Headers = new Dictionary<string, string>(),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
@@ -458,6 +459,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     documentIdentityElements
                 ),
                 EdfiDoc = JsonNode.Parse(edFiDocString),
+                Headers = new Dictionary<string, string>(),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 UpdateCascadeHandler = new UpdateCascadeHandler(new ApiSchemaProvider(), NullLogger.Instance),
@@ -545,6 +547,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                     NullLogger.Instance
                 ),
                 DeleteInEdOrgHierarchy = deleteInEdOrgHierarchy,
+                Headers = new Dictionary<string, string>(),
             }
         ).ActLike<IDeleteRequest>();
     }

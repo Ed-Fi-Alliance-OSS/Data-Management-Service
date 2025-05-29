@@ -12,6 +12,7 @@ using Json.More;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
+using static EdFi.DataManagementService.Backend.Postgresql.OptimisticLockHelper;
 using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
@@ -176,6 +177,17 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 transaction,
                 _sqlAction
             );
+
+            JsonElement existingEdfiDoc = documentFromDb.EdfiDoc;
+
+            if (IsDocumentLocked(updateRequest.Headers, existingEdfiDoc))
+            {
+                _logger.LogInformation(
+                    "Failure: _etag does not match on update - {TraceId}",
+                    updateRequest.TraceId.Value
+                );
+                return new UpdateResult.UpdateFailureETagMisMatch();
+            }
 
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,

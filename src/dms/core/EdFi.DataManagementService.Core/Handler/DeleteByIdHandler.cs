@@ -47,7 +47,8 @@ internal class DeleteByIdHandler(
                         context.ProjectSchema.EducationOrganizationTypes.Contains(
                             context.ResourceSchema.ResourceName
                         )
-                    )
+                    ),
+                    Headers: context.FrontendRequest.Headers
                 )
             )
         );
@@ -79,6 +80,18 @@ internal class DeleteByIdHandler(
                 Headers: []
             ),
             DeleteFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+            DeleteFailureETagMisMatch => new FrontendResponse(
+                StatusCode: 412,
+                Body: FailureResponse.ForETagMisMatch(
+                    "The item has been modified by another user.",
+                    traceId: context.FrontendRequest.TraceId,
+                    errors: new[]
+                    {
+                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
+                    }
+                ),
+                Headers: []
+            ),
             UnknownFailure failure => new(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),

@@ -41,5 +41,10 @@ public abstract record DeleteResult
     /// <param name="FailureMessage">A message providing failure information</param>
     public record UnknownFailure(string FailureMessage) : DeleteResult();
 
+    /// <summary>
+    /// A failure because the Etag mismatch
+    /// </summary>
+    public record DeleteFailureETagMisMatch() : DeleteResult();
+
     private DeleteResult() { }
 }

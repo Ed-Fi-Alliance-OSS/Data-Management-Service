@@ -456,7 +456,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             });
     });
 
-    public IEnumerable<DecimalValidationInfo> DecimalPropDecimalValidationInfos =>
+    public IEnumerable<DecimalValidationInfo> DecimalPropertyValidationInfos =>
         _decimalPropertyValidationInfos.Value;
 
     private readonly Lazy<IReadOnlyList<IReadOnlyList<JsonPath>>> _arrayUniquenessConstraints = new(() =>

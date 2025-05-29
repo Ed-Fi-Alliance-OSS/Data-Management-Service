@@ -23,6 +23,11 @@ public record UpdateResult
     public record UpdateFailureNotExists() : UpdateResult();
 
     /// <summary>
+    /// A failure because the Etag mismatch
+    /// </summary>
+    public record UpdateFailureETagMisMatch() : UpdateResult();
+
+    /// <summary>
     /// A failure because referenced documents in the updated document do not exist
     /// </summary>
     /// <param name="ReferencingDocumentInfo">Information about the referencing documents</param>

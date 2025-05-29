@@ -3,11 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
+using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Model;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
@@ -19,28 +19,30 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
             IApiService apiService,
             int startYear,
             int endYear,
-            int currentSchoolYear)
+            int currentSchoolYear
+        )
         {
-
-            var schoolYearTypes = Enumerable.Range(startYear, endYear - startYear + 1)
+            var schoolYearTypes = Enumerable
+                .Range(startYear, endYear - startYear + 1)
                 .Select(year => new SchoolYearType
                 {
                     schoolYear = year,
                     currentSchoolYear = year == currentSchoolYear,
-                    schoolYearDescription = $"{year - 1}-{year}"
+                    schoolYearDescription = $"{year - 1}-{year}",
                 })
                 .ToList();
 
             foreach (var item in schoolYearTypes)
             {
-                var payload = JsonSerializer.Serialize(item, new JsonSerializerOptions
-                {
-                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-                });
+                var payload = JsonSerializer.Serialize(
+                    item,
+                    new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }
+                );
 
                 var request = new FrontendRequest(
                     new("/ed-fi/schoolYearTypes/"),
                     payload,
+                    Headers: [],
                     [],
                     new TraceId(""),
                     new ClientAuthorizations(
@@ -57,17 +59,22 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
                     _logger.LogError(
                         "Failed to upsert school year type {SchoolYear} with status code {StatusCode}",
                         item.schoolYear,
-                        response.StatusCode);
-                    throw new InvalidOperationException($"Failed to upsert school year type {item.schoolYear}");
+                        response.StatusCode
+                    );
+                    throw new InvalidOperationException(
+                        $"Failed to upsert school year type {item.schoolYear}"
+                    );
                 }
 
                 _logger.LogInformation(
                     "Successfully upserted school year type {SchoolYear} with status code {StatusCode}",
                     item.schoolYear,
-                    response.StatusCode);
-                Console.WriteLine($"Successfully upserted school year type {item.schoolYear} with status code {response.StatusCode}");
+                    response.StatusCode
+                );
+                Console.WriteLine(
+                    $"Successfully upserted school year type {item.schoolYear} with status code {response.StatusCode}"
+                );
             }
         }
-
     }
 }

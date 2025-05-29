@@ -32,7 +32,22 @@ internal class CoerceFromStringsMiddleware(ILogger logger) : IPipelineStep
             }
         }
 
-        foreach (string path in context.ResourceSchema.NumericJsonPaths.Select(path => path.Value))
+        var decimalPaths = context
+            .ResourceSchema.DecimalPropertyValidationInfos.Select(i => i.Path.Value)
+            .ToList();
+        foreach (string path in decimalPaths)
+        {
+            IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+            foreach (JsonNode? jsonNode in jsonNodes)
+            {
+                jsonNode?.TryCoerceStringToDecimal();
+            }
+        }
+
+        var numericPaths = context
+            .ResourceSchema.NumericJsonPaths.Select(path => path.Value)
+            .Except(decimalPaths);
+        foreach (string path in numericPaths)
         {
             IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
             foreach (JsonNode? jsonNode in jsonNodes)

@@ -36,6 +36,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             builder
                 .Properties(
                     ("schoolId", new JsonSchemaBuilder().Type(SchemaValueType.Integer)),
+                    ("yearsOld", new JsonSchemaBuilder().Type(SchemaValueType.Number)),
                     (
                         "gradeLevels",
                         new JsonSchemaBuilder()
@@ -62,6 +63,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 .WithStartProject("Ed-Fi", "5.0.0")
                 .WithStartResource("School")
                 .WithJsonSchemaForInsert(builder.Build()!)
+                .WithDecimalPropertyValidationInfos(
+                    new[] { new DecimalValidationInfo(new JsonPath("$.yearsOld"), 5, 3) }
+                )
                 .WithBooleanJsonPaths(new[] { "$.gradeLevels[*].isSecondary" })
                 .WithNumericJsonPaths(new[] { "$.schoolId" })
                 .WithEndResource()
@@ -115,11 +119,12 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             public async Task Setup()
             {
                 string jsonData =
-                    """{"schoolId": "1","gradeLevels":[{"gradeLevelDescriptor": "grade1", "isSecondary": "false"}],"nameOfInstitution":"school12"}""";
+                    """{"schoolId": "1","yearsOld": "1","gradeLevels":[{"gradeLevelDescriptor": "grade1", "isSecondary": "false"}],"nameOfInstitution":"school12"}""";
 
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/schools",
                     Body: jsonData,
+                    Headers: [],
                     QueryParameters: [],
                     new TraceId("traceId"),
                     new ClientAuthorizations(
@@ -136,7 +141,27 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             [Test]
             public void It_coerces_numbers()
             {
-                foreach (string path in _context.ResourceSchema.NumericJsonPaths.Select(s => s.Value))
+                var paths = _context.ResourceSchema.NumericJsonPaths.Select(s => s.Value).ToList();
+                paths.Count.Should().BeGreaterThan(0);
+                foreach (string path in paths)
+                {
+                    _context
+                        .ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!
+                        .AsValue()
+                        .GetValueKind()
+                        .Should()
+                        .Be(JsonValueKind.Number);
+                }
+            }
+
+            [Test]
+            public void It_coerces_decimals()
+            {
+                var paths = _context
+                    .ResourceSchema.DecimalPropertyValidationInfos.Select(s => s.Path.Value)
+                    .ToList();
+                paths.Count.Should().BeGreaterThan(0);
+                foreach (string path in paths)
                 {
                     _context
                         .ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!
@@ -150,7 +175,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             [Test]
             public void It_coerces_booleans()
             {
-                foreach (string path in _context.ResourceSchema.BooleanJsonPaths.Select(s => s.Value))
+                var paths = _context.ResourceSchema.BooleanJsonPaths.Select(s => s.Value).ToList();
+                paths.Count.Should().BeGreaterThan(0);
+                foreach (string path in paths)
                 {
                     _context
                         .ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!

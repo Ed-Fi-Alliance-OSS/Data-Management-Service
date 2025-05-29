@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Json.Schema;
+using Microsoft.CodeAnalysis.Differencing;
 using Microsoft.Playwright;
 using Reqnroll;
 using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
@@ -320,6 +321,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private string extractDataFromResponseAndReturnIdIfAvailable(IAPIResponse apiResponse)
         {
+            if (apiResponse.Headers.TryGetValue("etag", out string? etagValue))
+            {
+                _etag = etagValue;
+            }
             if (apiResponse.Headers.TryGetValue("location", out string? value))
             {
                 _location = value;
@@ -377,6 +382,31 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _featureContext["_waitOnNextQuery"] = true;
 
             _dependentId = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
+        }
+
+        [When("a PUT if-match {string} request is made to {string} with")]
+        public async Task WhenAPUTIf_MatchRequestIsMadeToWith(string ifMatch, string url, string body)
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            body = body.Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            _logger.log.Information($"PUT url: {url}");
+            _logger.log.Information($"PUT body: {body}");
+
+            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
+            _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
+                url,
+                new() { Data = body, Headers = GetHeadersWithIfMatch(ifMatch) }
+            )!;
+            _featureContext["_waitOnNextQuery"] = true;
+
+            extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
         [When("a PUT request is made to {string} with")]
@@ -489,6 +519,25 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 url,
                 new() { Headers = GetHeaders() }
             )!;
+        }
+
+        [When("a DELETE if-match {string} request is made to {string}")]
+        public async Task WhenADeleteIf_MatchRequestIsMadeToWith(string ifMatch, string url)
+        {
+            url = AddDataPrefixIfNecessary(url)
+                .Replace("{id}", _id)
+                .Replace("{dependentId}", _dependentId)
+                .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+            _logger.log.Information($"DELETE url: {url}");
+
+            ifMatch = ifMatch.Replace("{IfMatch}", _etag);
+            _apiResponse = await _playwrightContext.ApiRequestContext?.DeleteAsync(
+                url,
+                new() { Headers = GetHeadersWithIfMatch(ifMatch) }
+            )!;
+
+            extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
         #endregion
@@ -932,6 +981,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private IEnumerable<KeyValuePair<string, string>> GetHeaders()
         {
             var list = new List<KeyValuePair<string, string>> { new("Authorization", _dmsToken) };
+            return list;
+        }
+
+        private IEnumerable<KeyValuePair<string, string>> GetHeadersWithIfMatch(string ifMatch)
+        {
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", _dmsToken),
+                new("If-Match", ifMatch),
+            };
             return list;
         }
     }

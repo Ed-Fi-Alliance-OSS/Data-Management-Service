@@ -25,6 +25,7 @@ internal static class FailureResponse
         $"{_badRequestTypePrefix}:data-validation-failed:key-change-not-supported";
     private static readonly string _methodNotAllowed = $"{_typePrefix}:method-not-allowed";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
+    private static readonly string _tagMismatchRequestTypePrefix = $"{_typePrefix}:optimistic-lock-failed";
 
     private static JsonObject CreateBaseJsonObject(
         string detail,
@@ -81,6 +82,16 @@ internal static class FailureResponse
             status: 400,
             correlationId: traceId.Value,
             validationErrors: validationErrors,
+            errors: errors
+        );
+
+    public static JsonNode ForETagMisMatch(string detail, TraceId traceId, string[] errors) =>
+        CreateBaseJsonObject(
+            detail,
+            type: _tagMismatchRequestTypePrefix,
+            title: "Optimistic Lock Failed",
+            status: 412,
+            correlationId: traceId.Value,
             errors: errors
         );
 

@@ -338,4 +338,196 @@ function Get-SouthridgeSampleData {
 
 }
 
-Export-ModuleMember -Function Get-SampleData, Get-NugetPackage, Get-BulkLoadClient, Get-SouthridgeSampleData, Get-SmokeTestTool, Get-ApiSdkDll
+<#
+    .SYNOPSIS
+    Creates a new .csproj file configured for generating a NuGet package using dotnet pack.
+
+    .DESCRIPTION
+    This function generates a .csproj file with standard NuGet metadata, enabling packaging via dotnet pack.
+
+    .PARAMETER CsprojPath
+    The full path (including filename) to create the .csproj file.
+
+    .PARAMETER Id
+    The package ID (used as AssemblyName and PackageId).
+
+    .PARAMETER Description
+    The package description (required).
+
+    .PARAMETER Version
+    The package version. Defaults to "0.0.0".
+
+    .PARAMETER Title
+    The package title (optional).
+
+    .PARAMETER Authors
+    Author(s) of the package (optional).
+
+    .PARAMETER ProjectUrl
+    URL of the project's homepage (optional).
+
+    .PARAMETER Copyright
+    Copyright text. Defaults to the current year and Ed-Fi notice.
+
+    .PARAMETER Summary
+    A brief summary of the package (optional).
+
+    .PARAMETER License
+    SPDX license identifier (e.g., Apache-2.0). Required to include license metadata.
+
+    .PARAMETER ForceOverwrite
+    If specified, will overwrite an existing .csproj file.
+
+    .EXAMPLE
+    New-CsprojForNuget -CsprojPath ".\MyPackage.csproj" -Id "MyTool" -Description "A helper tool" -ForceOverwrite
+#>
+function New-CsprojForNuget {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CsprojPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Id,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Description,
+
+        [string]$Version = "0.0.0",
+        [string]$Title,
+        [string]$Authors,
+        [string]$ProjectUrl,
+        [string]$Copyright = "Copyright © $((Get-Date).Year) Ed-Fi Alliance, LLC and Contributors",
+        [string]$License = "Apache-2.0",
+        [switch]$ForceOverwrite
+    )
+
+    if (Test-Path $CsprojPath) {
+        if (-not $ForceOverwrite) {
+            throw "File '$CsprojPath' already exists. Use -ForceOverwrite to overwrite."
+        }
+        Remove-Item -Path $CsprojPath -Force
+    }
+
+    $xml = New-Object System.Xml.XmlDocument
+
+    $project = $xml.CreateElement("Project")
+    $project.SetAttribute("Sdk", "Microsoft.NET.Sdk")
+    $xml.AppendChild($project) | Out-Null
+
+    $propertyGroup = $xml.CreateElement("PropertyGroup")
+    $project.AppendChild($propertyGroup) | Out-Null
+
+    $elements = @{
+        TargetFramework                 = "netstandard2.0"
+        PackageId                       = $Id
+        Version                         = $Version
+        Authors                         = $Authors
+        PackageProjectUrl               = $ProjectUrl
+        Copyright                       = $Copyright
+        Description                     = $Description
+        PackageLicenseExpression        = $License
+        GeneratePackageOnBuild          = "true"
+        OutputType                      = "None"
+        IsPackable                      = "true"
+        NoBuild                         = "true"
+        IncludeBuildOutput              = "false"
+        IncludeRepositoryUrl            = "false"
+        SuppressDependenciesWhenPacking = "true"
+    }
+
+    foreach ($key in $elements.Keys) {
+        $value = $elements[$key]
+        if ($value) {
+            $node = $xml.CreateElement($key)
+            $node.InnerText = $value
+            $propertyGroup.AppendChild($node) | Out-Null
+        }
+    }
+
+    $xml.Save($CsprojPath)
+}
+
+
+<#
+    .SYNOPSIS
+    Adds file entries to a .csproj file for packaging using dotnet pack.
+
+    .DESCRIPTION
+    This function modifies a `.csproj` file by inserting `<None>` elements into an `<ItemGroup>` section.
+    Each entry maps a source file to a target path within the package. The function validates that
+    each source exists and is not a directory, and then adds it to the XML structure of the .csproj file.
+
+    .PARAMETER SourceTargetPair
+    A required array of hashtables, each representing a source/target mapping.
+    Each hashtable must contain:
+    - `source`: A path or array of paths to files to include.
+    - `target`: The relative path inside the NuGet package.
+
+    .PARAMETER CsprojPath
+    The path to the .csproj file to update. Must exist and be a valid XML file.
+
+    .EXAMPLE
+    Add-FileToCsProjForNuget -SourceTargetPair @(
+        @{ source = "bin/MyLibrary.dll"; target = "lib/net6.0" },
+        @{ source = "readme.md"; target = "content" }
+    ) -CsprojPath "./MyPackage.csproj"
+
+    Adds MyLibrary.dll and readme.md to the specified .csproj under their respective target paths.
+#>
+function Add-FileToCsProjForNuget {
+    [CmdletBinding()]
+    param(
+        [parameter(mandatory = $true)]
+        [ValidateScript( {
+            if ($_.target -and $_.source) {
+                $true
+            } else {
+                Write-Host "SourceTargetPair entry failed validation: $($_ | Out-String)";
+                $false
+            }
+        })]
+        [hashtable[]]$SourceTargetPair,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CsprojPath
+    )
+
+    $resolvedCsprojPath = Resolve-Path -Path $CsprojPath
+    [xml]$xml = Get-Content -Path $resolvedCsprojPath
+
+    $filesItemGroup = $xml.CreateElement('ItemGroup')
+
+    foreach ($pair in $sourceTargetPair) {
+        $target = $pair.target -replace '[\\/]', [IO.Path]::DirectorySeparatorChar
+        $sources = @($pair.source)
+        foreach ($source in $sources) {
+            $resolvedSource = Resolve-Path -Path $source -ErrorAction SilentlyContinue
+            if (-not $resolvedSource) {
+                Write-Warning "Source file not found: $source"
+                continue
+            }
+
+            if ((Get-Item $resolvedSource).PSIsContainer) {
+                continue  # skip directories
+            }
+
+            $fileElement = $xml.CreateElement("None")
+            $fileElement.SetAttribute("Include", $resolvedSource.Path)
+            $fileElement.SetAttribute("Pack", "true")
+            $fileElement.SetAttribute("PackagePath", $target)
+
+
+            Write-Verbose "Adding file: src='$($resolvedSource.Path)' target='$target'"
+            $filesItemGroup.AppendChild($fileElement) | Out-Null
+        }
+    }
+
+    $projectElem = $xml.SelectSingleNode('//Project')
+    $projectElem.AppendChild($filesItemGroup) | Out-Null
+
+    $xml.Save($resolvedCsprojPath.Path)
+}
+
+Export-ModuleMember -Function `
+    Get-SampleData, Get-NugetPackage, Get-BulkLoadClient, Get-SouthridgeSampleData, Get-SmokeTestTool, Get-ApiSdkDll, New-CsprojForNuget, Add-FileToCsProjForNuget

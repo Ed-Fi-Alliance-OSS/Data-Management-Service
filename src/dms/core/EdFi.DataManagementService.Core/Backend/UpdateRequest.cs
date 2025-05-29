@@ -26,6 +26,10 @@ internal record UpdateRequest(
     /// </summary>
     JsonNode EdfiDoc,
     /// <summary>
+    /// Request Header provided by the frontend service as a dictionary
+    /// </summary>
+    Dictionary<string, string> Headers,
+    /// <summary>
     /// The request TraceId
     /// </summary>
     TraceId TraceId,
