@@ -1729,28 +1729,28 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                   [
-                    {
+                   {
                         "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
                         "entryDate": "2023-08-01",
-                        "id": "{id}",
-                        "schoolReference": {
-                            "schoolId": 1155902001
-                        },
-                        "studentReference": {
-                            "studentUniqueId": "111"
-                        }
-                  },
-                  {
-                        "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
-                        "entryDate": "2023-08-01",
-                        "id": "{id}",
+                        "id": "{StudentASchool1AssociationId}",
                         "schoolReference": {
                             "schoolId": 1155901001
                         },
                         "studentReference": {
                             "studentUniqueId": "111"
                         }
-                    }
+                    },
+                    {
+                        "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
+                        "entryDate": "2023-08-01",
+                        "id": "{StudentASchool2AssociationId}",
+                        "schoolReference": {
+                            "schoolId": 1155902001
+                        },
+                        "studentReference": {
+                            "studentUniqueId": "111"
+                        }
+                     }
                   ]
                   """
         Scenario: 47 Ensure client with access to one school can query one student school associations
