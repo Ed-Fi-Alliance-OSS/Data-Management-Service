@@ -160,7 +160,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.classPeriods":["The 2nd item of the classPeriodReference has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.classPeriods":["The 2nd item of the classPeriods has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }
@@ -452,7 +452,7 @@ public class DisallowDuplicateReferencesMiddlewareTests
                 .Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.gradeLevels":["The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.","The 4th item of the gradeLevels has the same identifying values as another item earlier in the list.","The 11th item of the gradeLevels has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.gradeLevels":["The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }

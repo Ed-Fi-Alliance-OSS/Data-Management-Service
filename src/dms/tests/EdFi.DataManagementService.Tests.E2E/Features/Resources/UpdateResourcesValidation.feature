@@ -455,9 +455,6 @@ Feature: Resources "Update" Operation validations
                           },
                           {
                           "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
-                          },
-                          {
-                          "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
                           }
                       ],
                       "educationOrganizationCategories":[
@@ -473,8 +470,7 @@ Feature: Resources "Update" Operation validations
                   {
                         "validationErrors": {
                             "$.gradeLevels": [
-                                "The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.",
-                                "The 4th item of the gradeLevels has the same identifying values as another item earlier in the list."
+                                "The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list."
                             ]
                         },
                         "errors": [],
@@ -521,12 +517,6 @@ Feature: Resources "Update" Operation validations
                                   "classPeriodName": "01 - Traditional",
                                   "schoolId": 1
                               }
-                          },
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "02 - Traditional",
-                                  "schoolId": 1
-                              }
                           }
                       ],
                       "dates": [],
@@ -539,8 +529,7 @@ Feature: Resources "Update" Operation validations
                   {
                         "validationErrors": {
                             "$.classPeriods": [
-                                "The 4th item of the classPeriodReference has the same identifying values as another item earlier in the list.",
-                                "The 5th item of the classPeriodReference has the same identifying values as another item earlier in the list."
+                                "The 4th item of the classPeriods has the same identifying values as another item earlier in the list."
                             ]
                         },
                         "errors": [],

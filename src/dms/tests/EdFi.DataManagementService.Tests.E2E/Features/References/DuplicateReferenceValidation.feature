@@ -193,12 +193,6 @@ Feature: Validate the duplicate references
                                   "classPeriodName": "01 - Traditional",
                                   "schoolId": 1
                               }
-                          },
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "02 - Traditional",
-                                  "schoolId": 1
-                              }
                           }
                       ],
                       "dates": [],
@@ -211,8 +205,7 @@ Feature: Validate the duplicate references
                   {
                       "validationErrors": {
                           "$.classPeriods": [
-                              "The 4th item of the classPeriodReference has the same identifying values as another item earlier in the list.",
-                              "The 5th item of the classPeriodReference has the same identifying values as another item earlier in the list."
+                              "The 4th item of the classPeriods has the same identifying values as another item earlier in the list."
                           ]
                       },
                       "errors": [],
@@ -240,9 +233,6 @@ Feature: Validate the duplicate references
                           },
                           {
                               "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
-                          },
-                          {
-                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
                           }
                       ],
                       "educationOrganizationCategories": [
@@ -258,8 +248,7 @@ Feature: Validate the duplicate references
                   {
                       "validationErrors": {
                           "$.gradeLevels": [
-                              "The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list.",
-                              "The 4th item of the gradeLevels has the same identifying values as another item earlier in the list."
+                              "The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list."
                           ]
                       },
                       "errors": [],

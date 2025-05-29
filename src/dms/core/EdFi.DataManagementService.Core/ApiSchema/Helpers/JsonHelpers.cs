@@ -360,6 +360,64 @@ internal static class JsonHelpers
 
         return nodeKeys.Where(x => x.Value != null).Select(x => x.Value ?? new JsonObject()).ToList();
     }
+
+    /// <summary>
+    /// Finds duplicates in an array by comparing values at specified JsonPaths.
+    /// Returns the index of the first duplicate found, or -1 if no duplicates exist.
+    /// </summary>
+    public static (string? arrayPath, int dupeIndex) FindDuplicatesWithArrayPath(
+        this JsonNode jsonNode,
+        IList<string> jsonPaths,
+        ILogger logger
+    )
+    {
+        if (jsonPaths.Count == 0)
+        {
+            return (null, -1);
+        }
+
+        // Evaluate all paths and group by number of values
+        var pathResults = jsonPaths
+            .Select(path => new
+            {
+                Path = path,
+                Values = jsonNode.SelectNodesFromArrayPathCoerceToStrings(path, logger).ToList(),
+            })
+            .ToList();
+
+        // Group by number of values to find potential duplicates
+        var groups = pathResults.GroupBy(x => x.Values.Count).Where(g => g.Key > 1);
+
+        foreach (var group in groups)
+        {
+            var groupPaths = group.ToList();
+            int itemCount = group.Key;
+
+            // Build tuples to compare
+            var itemValues = new List<List<string>>();
+            for (int i = 0; i < itemCount; i++)
+            {
+                var values = groupPaths.Select(r => r.Values[i]).ToList();
+                itemValues.Add(values);
+            }
+
+            // Find duplicates by comparing values
+            for (int i = 0; i < itemValues.Count; i++)
+            {
+                for (int j = i + 1; j < itemValues.Count; j++)
+                {
+                    if (itemValues[i].SequenceEqual(itemValues[j]))
+                    {
+                        // Uses the first path of the group to identify the array
+                        string arrayPath = groupPaths[0].Path;
+                        return (arrayPath, j);
+                    }
+                }
+            }
+        }
+
+        return (null, -1);
+    }
 }
 
 /// <summary>
