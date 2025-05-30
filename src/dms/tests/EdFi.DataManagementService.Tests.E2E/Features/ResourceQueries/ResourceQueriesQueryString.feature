@@ -298,3 +298,24 @@ Feature: Query String handling for GET requests for Resource Queries
                         }
                     }]
                   """
+
+        Scenario: 16 Ensure clients get results when querying boolean with capitalized values
+            Given a POST request is made to "/ed-fi/schoolYearTypes" with
+                  """
+                  {
+                      "schoolYear": 1976,
+                      "schoolYearDescription": "1976-1977",
+                      "currentSchoolYear": true
+                  }
+                  """
+             When a GET request is made to "/ed-fi/schoolYearTypes"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "schoolYear": 1976,
+                      "schoolYearDescription": "1976-1977",
+                      "currentSchoolYear": true
+                  }]
+                  """
