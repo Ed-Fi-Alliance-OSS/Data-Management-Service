@@ -7,39 +7,57 @@
 -- this trigger synchronizes the ContactStudentSchoolAuthorization table.
 -- Deletes are simply cascaded from the Document table.
 
+-- Sets the EducationOrganizationIds to all the contact-securable documents
+-- of a given contact
+CREATE OR REPLACE FUNCTION dms.SetEdOrgIdsToContactSecurables(
+    ed_org_ids jsonb,
+    contact_id text
+)
+RETURNS VOID
+AS $$
+BEGIN
+    UPDATE dms.Document doc
+    SET ContactStudentSchoolAuthorizationEdOrgIds = ed_org_ids
+    FROM dms.ContactSecurableDocument csd
+    WHERE
+        csd.ContactUniqueId = contact_id AND
+        doc.Id = csd.ContactSecurableDocumentId AND
+        doc.DocumentPartitionKey = csd.ContactSecurableDocumentPartitionKey;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Returns the combined EducationOrganizationIds of all the ContactStudentSchoolAuthorization
+-- of a given contact
+CREATE OR REPLACE FUNCTION dms.GetContactEdOrgIds(
+    contact_id text
+)
+RETURNS jsonb AS $$
+BEGIN
+  RETURN (
+    SELECT jsonb_agg(DISTINCT edOrgIds)
+        FROM (
+            SELECT jsonb_array_elements(ContactStudentSchoolAuthorizationEducationOrganizationIds) AS edOrgIds
+            FROM dms.ContactStudentSchoolAuthorization
+            WHERE ContactUniqueId = contact_id
+        )
+  );
+END;
+$$ LANGUAGE plpgsql;
+
 -- Function for INSERT operations
 CREATE OR REPLACE FUNCTION dms.ContactStudentSchoolAuthorizationDocumentInsertFunction()
 RETURNS TRIGGER
 AS $$
 DECLARE
-    unified_ed_org_ids jsonb := '[]';
     student_id text;
     contact_id text;
-    student_school_asso RECORD;
+    ed_org_ids jsonb;
 BEGIN
-    -- Extract student unique ID
     student_id := NEW.EdfiDoc->'studentReference'->>'studentUniqueId';
-
-    -- Extract contact unique ID
     contact_id := NEW.EdfiDoc->'contactReference'->>'contactUniqueId';
 
     -- Extract student school association document details
-    FOR student_school_asso IN
-        SELECT jsonb_agg(DISTINCT value) AS aggregated_ed_org_ids,
-            StudentSchoolAssociationId,
-            StudentSchoolAssociationPartitionKey
-        FROM (
-            SELECT DISTINCT jsonb_array_elements(StudentSchoolAuthorizationEducationOrganizationIds) AS value,
-            StudentSchoolAssociationId,
-            StudentSchoolAssociationPartitionKey
-            FROM dms.StudentSchoolAssociationAuthorization
-            WHERE StudentUniqueId = student_id
-        ) subquery
-        GROUP BY StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey
-
-    LOOP
-    -- Insert into ContactStudentSchoolAuthorization table
-        INSERT INTO dms.ContactStudentSchoolAuthorization (
+    INSERT INTO dms.ContactStudentSchoolAuthorization (
         ContactUniqueId,
         StudentUniqueId,
         ContactStudentSchoolAuthorizationEducationOrganizationIds,
@@ -48,33 +66,26 @@ BEGIN
         StudentSchoolAssociationId,
         StudentSchoolAssociationPartitionKey
     )
-    VALUES (
-        contact_id,
+    SELECT contact_id,
         student_id,
-        student_school_asso.aggregated_ed_org_ids,
+        StudentSchoolAuthorizationEducationOrganizationIds,
         NEW.Id,
         NEW.DocumentPartitionKey,
-        student_school_asso.StudentSchoolAssociationId,
-        student_school_asso.StudentSchoolAssociationPartitionKey
-    );
-    END LOOP;
+        StudentSchoolAssociationId,
+        StudentSchoolAssociationPartitionKey
+    FROM dms.StudentSchoolAssociationAuthorization
+    WHERE StudentUniqueId = student_id;
 
-    -- Aggregate and merge distinct values into unified_ed_org_ids
-    SELECT jsonb_agg(DISTINCT value)
-    INTO unified_ed_org_ids
-    FROM (
-        SELECT DISTINCT jsonb_array_elements(ContactStudentSchoolAuthorizationEducationOrganizationIds) AS value
-        FROM dms.ContactStudentSchoolAuthorization
-        WHERE ContactUniqueId = contact_id
-    ) subquery;
+    ed_org_ids := dms.GetContactEdOrgIds(contact_id);
+    PERFORM dms.SetEdOrgIdsToContactSecurables(ed_org_ids, contact_id);
 
+    -- Manually update the newly inserted ContactStudentSchoolAuthorization because it's not a
+    -- contact-securable at this point
     UPDATE dms.Document
-    SET ContactStudentSchoolAuthorizationEdOrgIds = unified_ed_org_ids
+    SET ContactStudentSchoolAuthorizationEdOrgIds = ed_org_ids
     WHERE
-    Id = NEW.Id AND
-    DocumentPartitionKey = NEW.DocumentPartitionKey;
-
-    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(contact_id);
+        Id = NEW.Id AND
+        DocumentPartitionKey = NEW.DocumentPartitionKey;
 
     RETURN NULL;
 END;
@@ -90,7 +101,7 @@ BEGIN
     old_contact_id := OLD.ContactUniqueId;
 
     -- Update edorg id list for the contact securable documents
-    PERFORM dms.UpdateContactStudentSchoolAuthorizationEdOrgIds(old_contact_id);
+    PERFORM dms.SetEdOrgIdsToContactSecurables(dms.GetContactEdOrgIds(old_contact_id), old_contact_id);
 
     RETURN NULL;
 END;
