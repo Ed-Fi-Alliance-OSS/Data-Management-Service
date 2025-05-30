@@ -10,29 +10,16 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 public class ResourceClaim
 {
     public int Id { get; set; }
-
-    [JsonIgnore]
-    public int ParentId { get; set; }
-    public string? ParentName { get; set; }
     public string? Name { get; set; }
     public List<ResourceClaimAction>? Actions { get; set; }
-
-    [JsonIgnore]
-    public bool IsParent { get; set; }
 
     [JsonPropertyName("_defaultAuthorizationStrategiesForCrud")]
     public List<ClaimSetResourceClaimActionAuthStrategies?> DefaultAuthorizationStrategiesForCRUD { get; set; } =
         [];
     public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCRUD { get; set; } =
         [];
-    public List<ResourceClaim> Children { get; set; }
 
-    public ResourceClaim()
-    {
-        Children = [];
-        DefaultAuthorizationStrategiesForCRUD = [];
-        AuthorizationStrategyOverridesForCRUD = [];
-    }
+    public List<ResourceClaim> Children { get; set; } = [];
 }
 
 public class ResourceClaimAction

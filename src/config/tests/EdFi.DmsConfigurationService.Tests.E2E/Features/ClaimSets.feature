@@ -210,3 +210,76 @@ Feature: ClaimSets endpoints
                       "errors": []
                   }
                   """
+        Scenario: 10 Ensure clients can successfully import a valid claim set
+             When a POST request is made to "/v2/claimSets/import" with
+                  """
+                  {
+                      "name": "AcademicHonorClaimSet",
+                      "resourceClaims": [
+                          {
+                              "name": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "actions": [
+                                 { "name": "Create", "enabled": true }
+                              ],
+                              "children": [
+                                  {
+                                      "name": "http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor",
+                                      "actions": [
+                                          { "name": "Create", "enabled": true },
+                                          { "name": "Read", "enabled": true },
+                                          { "name": "Update", "enabled": true },
+                                          { "name": "Delete", "enabled": true }
+                                      ],
+                                      "children": []
+                                  }
+                              ]
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 201
+              And the response headers include
+                  """
+                  {
+                      "location": "/v2/claimSets/{claimSetId}"
+                  }
+                  """
+
+        Scenario: 11 Ensure clients cannot import an invalid claim set with empty actions
+             When a POST request is made to "/v2/claimSets/import" with
+                  """
+                  {
+                      "name": "InvalidClaimSet",
+                      "resourceClaims": [
+                          {
+                              "name": "http://ed-fi.org/identity/claims/domains/systemDescriptors",
+                              "actions": [
+                                 { "name": "Create", "enabled": true}
+                              ],
+                              "children": [
+                                  {
+                                      "name": "http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor",
+                                      "actions": [],
+                                      "children": []
+                                  }
+                              ]
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "ResourceClaims": [
+                              "Actions can not be empty. Resource name: 'http://ed-fi.org/identity/claims/ed-fi/academicHonorCategoryDescriptor'"
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """

@@ -4,7 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
+
 public interface IClaimSetCommand
 {
-    string Name { get; }
+    string? Name { get; }
 }

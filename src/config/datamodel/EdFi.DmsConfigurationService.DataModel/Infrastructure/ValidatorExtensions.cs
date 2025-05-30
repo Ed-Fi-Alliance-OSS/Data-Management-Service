@@ -19,4 +19,19 @@ public static class ValidatorExtensions
             throw new ValidationException(validationResult.Errors);
         }
     }
+
+    public static async Task GuardAsync<TRequest>(
+        this IValidator<TRequest> validator,
+        ValidationContext<TRequest>? validationContext
+    )
+    {
+        validationContext ??= Activator.CreateInstance<ValidationContext<TRequest>>();
+
+        var validationResult = await validator.ValidateAsync(validationContext);
+
+        if (!validationResult.IsValid)
+        {
+            throw new ValidationException(validationResult.Errors);
+        }
+    }
 }

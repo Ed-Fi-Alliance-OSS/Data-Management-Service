@@ -9,68 +9,158 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
 public class ResourceClaimValidator
 {
-    private readonly List<string> _duplicateResources = [];
-
     public void Validate<T>(
-        List<string> dbActions,
-        List<string> dbAuthStrategies,
+        List<string> actionNames,
+        List<string> authorizationStrategyNames,
         ResourceClaim resourceClaim,
-        List<ResourceClaim> existingResourceClaims,
+        Dictionary<string, string?> parentClaimByResourceClaim,
         ValidationContext<T> context,
         string? claimSetName
     )
     {
+        const string PropertyName = "ResourceClaims";
+
         context.MessageFormatter.AppendArgument("Name", claimSetName);
         context.MessageFormatter.AppendArgument("ResourceClaimName", resourceClaim.Name);
 
-        const string PropertyName = "ResourceClaims";
-        ValidateDuplicateResourceClaim(resourceClaim, existingResourceClaims, context, PropertyName);
+        ValidateResourceClaimExists(context, resourceClaim, parentClaimByResourceClaim, PropertyName);
 
-        ValidateCRUD(resourceClaim.Actions, dbActions, context, PropertyName);
+        ValidateNoDuplicateResourceClaims(resourceClaim, context, PropertyName);
+        ValidateActions(resourceClaim.Actions, actionNames, context, PropertyName);
+        ValidateAuthStrategies(authorizationStrategyNames, resourceClaim, context, PropertyName);
+        ValidateAuthStrategiesOverride(authorizationStrategyNames, resourceClaim, context, PropertyName);
 
-        ValidateAuthStrategies(dbAuthStrategies, resourceClaim, context, PropertyName);
-        ValidateAuthStrategiesOverride(dbAuthStrategies, resourceClaim, context, PropertyName);
-        ValidateChildren(dbActions, dbAuthStrategies, resourceClaim, context, claimSetName);
+        ValidateChildren(
+            actionNames,
+            authorizationStrategyNames,
+            resourceClaim,
+            parentClaimByResourceClaim,
+            context,
+            claimSetName,
+            PropertyName
+        );
     }
 
-    private void ValidateDuplicateResourceClaim<T>(
-        ResourceClaim resourceClaim,
-        List<ResourceClaim> existingResourceClaims,
+    private void ValidateResourceClaimExists<T>(
         ValidationContext<T> context,
+        ResourceClaim resourceClaim,
+        IDictionary<string, string?> parentClaimByResourceClaim,
         string propertyName
     )
     {
-        if (existingResourceClaims.Count(x => x.Name == resourceClaim.Name) > 1)
+        if (!parentClaimByResourceClaim.ContainsKey(resourceClaim.Name!))
         {
-            if (
-                _duplicateResources == null
-                || resourceClaim.Name == null
-                || _duplicateResources.Contains(resourceClaim.Name)
-            )
-            {
-                return;
-            }
-            _duplicateResources.Add(resourceClaim.Name);
             context.AddFailure(
                 propertyName,
-                "Only unique resource claims can be added. The following is a duplicate resource: '{ResourceClaimName}'."
+                "This Claim Set contains a resource which is not in the system. ClaimSet Name: '{Name}' Resource name: '{ResourceClaimName}'"
             );
         }
     }
 
-    private void ValidateChildren<T>(
-        List<string> dbActions,
-        List<string> dbAuthStrategies,
+    private void ValidateNoDuplicateResourceClaims<T>(
         ResourceClaim resourceClaim,
         ValidationContext<T> context,
-        string? claimSetName
+        string propertyName
+    )
+    {
+        // Use RootContextData to track seen resources and duplicates
+        var rootData = context.RootContextData;
+
+        if (
+            !rootData.TryGetValue("SeenResourceClaims", out var seenObject)
+            || seenObject is not HashSet<string> seenResources
+        )
+        {
+            seenResources = [];
+            rootData["SeenResourceClaims"] = seenResources;
+        }
+
+        if (
+            !rootData.TryGetValue("DuplicateResources", out var duplicatesObject)
+            || duplicatesObject is not HashSet<string> duplicateResources
+        )
+        {
+            duplicateResources = [];
+            rootData["DuplicateResources"] = duplicateResources;
+        }
+
+        string? resourceKey = resourceClaim.Name;
+
+        if (!string.IsNullOrWhiteSpace(resourceKey))
+        {
+            // Has this resource claim already been seen (i.e. it's a duplicate)?
+            if (!seenResources.Add(resourceKey))
+            {
+                // Track it as a duplicate, and only report the validation failure first time
+                if (duplicateResources.Add(resourceKey))
+                {
+                    context.AddFailure(
+                        propertyName,
+                        "Only unique resource claims can be added. The following is a duplicate resource: '{ResourceClaimName}'."
+                    );
+                }
+            }
+        }
+    }
+
+    private void ValidateChildren<T>(
+        List<string> actionNames,
+        List<string> authorizationStrategyNames,
+        ResourceClaim resourceClaim,
+        Dictionary<string, string?> parentClaimByResourceClaim,
+        ValidationContext<T> context,
+        string? claimSetName,
+        string propertyName
     )
     {
         if (resourceClaim.Children.Count != 0)
         {
-            foreach (var child in resourceClaim.Children)
+            foreach (var childResourceClaim in resourceClaim.Children)
             {
-                Validate(dbActions, dbAuthStrategies, child, resourceClaim.Children, context, claimSetName);
+                // Locate the existing hierarchy tuple (existence check for child will be performed in Validate call below)
+                if (
+                    parentClaimByResourceClaim.TryGetValue(
+                        childResourceClaim.Name!,
+                        out string? expectedParentResourceName
+                    )
+                )
+                {
+                    context.MessageFormatter.AppendArgument("ChildResource", childResourceClaim.Name);
+
+                    if (expectedParentResourceName == null)
+                    {
+                        context.AddFailure(
+                            propertyName,
+                            "'{ChildResource}' can not be added as a child resource."
+                        );
+                    }
+                    else if (
+                        !string.Equals(
+                            resourceClaim.Name,
+                            expectedParentResourceName,
+                            StringComparison.OrdinalIgnoreCase
+                        )
+                    )
+                    {
+                        context.MessageFormatter.AppendArgument(
+                            "CorrectParentResource",
+                            expectedParentResourceName
+                        );
+                        context.AddFailure(
+                            propertyName,
+                            "Child resource: '{ChildResource}' added to the wrong parent resource. Correct parent resource is: '{CorrectParentResource}'."
+                        );
+                    }
+                }
+
+                Validate(
+                    actionNames,
+                    authorizationStrategyNames,
+                    childResourceClaim,
+                    parentClaimByResourceClaim,
+                    context,
+                    claimSetName
+                );
             }
         }
     }
@@ -151,7 +241,7 @@ public class ResourceClaimValidator
         }
     }
 
-    private static void ValidateCRUD<T>(
+    private static void ValidateActions<T>(
         List<ResourceClaimAction>? resourceClaimActions,
         List<string> dbActions,
         ValidationContext<T> context,
@@ -174,6 +264,7 @@ public class ResourceClaimValidator
                     .Where(g => g.Count() > 1)
                     .Select(y => y.Key)
                     .ToList();
+
                 foreach (string? duplicate in duplicates)
                 {
                     context.AddFailure(
@@ -181,6 +272,7 @@ public class ResourceClaimValidator
                         $"{duplicate} action is duplicated. Resource name: '{{ResourceClaimName}}'"
                     );
                 }
+
                 foreach (var action in resourceClaimActions.Select(x => x.Name))
                 {
                     if (

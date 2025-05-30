@@ -556,7 +556,7 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            ClaimSetImportCommand claimSet = new() { Name = "Test-Import-ClaimSet" };
+            ClaimSetImportCommand claimSet = new() { Name = "Test-Import-ClaimSet", ResourceClaims = [] };
 
             var result = await _repository.Import(claimSet);
             result.Should().BeOfType<ClaimSetImportResult.Success>();
@@ -589,7 +589,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_duplicate_failure()
         {
-            ClaimSetImportCommand claimSetDup = new() { Name = "Test-Import-ClaimSet" };
+            ClaimSetImportCommand claimSetDup = new() { Name = "Test-Import-ClaimSet", ResourceClaims = [] };
 
             var resultDup = await _repository.Import(claimSetDup);
             resultDup.Should().BeOfType<ClaimSetImportResult.FailureDuplicateClaimSetName>();
