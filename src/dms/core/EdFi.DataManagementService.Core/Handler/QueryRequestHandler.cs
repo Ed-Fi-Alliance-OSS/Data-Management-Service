@@ -52,7 +52,7 @@ internal class QueryRequestHandler(
                     ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                     : []
             ),
-            QueryFailureInvalidQuery => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            QueryFailureKnownError => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),

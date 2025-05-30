@@ -94,6 +94,30 @@ public static class DmsCoreServiceExtensions
                         _ => false,
                     };
                 }),
+                OnOpened = args =>
+                {
+                    var cbLogger = LoggerFactory
+                        .Create(b => b.AddSerilog(logger))
+                        .CreateLogger("CircuitBreaker");
+                    cbLogger.LogWarning("Circuit breaker opened due to failure threshold being reached");
+                    return ValueTask.CompletedTask;
+                },
+                OnClosed = args =>
+                {
+                    var cbLogger = LoggerFactory
+                        .Create(b => b.AddSerilog(logger))
+                        .CreateLogger("CircuitBreaker");
+                    cbLogger.LogInformation("Circuit breaker closed - normal operation resumed");
+                    return ValueTask.CompletedTask;
+                },
+                OnHalfOpened = args =>
+                {
+                    var cbLogger = LoggerFactory
+                        .Create(b => b.AddSerilog(logger))
+                        .CreateLogger("CircuitBreaker");
+                    cbLogger.LogInformation("Circuit breaker half-opened - testing if service has recovered");
+                    return ValueTask.CompletedTask;
+                },
             };
             builder
                 .ConfigureTelemetry(telemetryOptions)
@@ -116,6 +140,35 @@ public static class DmsCoreServiceExtensions
                                 _ => false,
                             };
                         }),
+                        OnRetry = args =>
+                        {
+                            var retryLogger = LoggerFactory
+                                .Create(b => b.AddSerilog(logger))
+                                .CreateLogger("RetryStrategy");
+
+                            if (args.Outcome.Exception != null)
+                            {
+                                retryLogger.LogWarning(
+                                    args.Outcome.Exception,
+                                    "Retry attempt {AttemptNumber} due to exception. Delay: {Delay}ms. Exception: {ExceptionType} - {ExceptionMessage}",
+                                    args.AttemptNumber,
+                                    args.RetryDelay.TotalMilliseconds,
+                                    args.Outcome.Exception.GetType().Name,
+                                    args.Outcome.Exception.Message
+                                );
+                            }
+                            else
+                            {
+                                retryLogger.LogWarning(
+                                    "Retry attempt {AttemptNumber} due to result failure. Delay: {Delay}ms. Outcome: {Outcome}",
+                                    args.AttemptNumber,
+                                    args.RetryDelay.TotalMilliseconds,
+                                    args.Outcome.Result?.ToString()
+                                );
+                            }
+
+                            return ValueTask.CompletedTask;
+                        },
                     }
                 )
                 .Build();
