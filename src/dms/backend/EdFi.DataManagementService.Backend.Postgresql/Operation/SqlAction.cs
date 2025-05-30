@@ -786,7 +786,7 @@ public class SqlAction() : ISqlAction
             $"""
                 SELECT jsonb_agg(DISTINCT to_jsonb(value::text))
                 FROM (
-                    SELECT DISTINCT jsonb_array_elements(StudentSchoolAuthorizationEducationOrganizationIds) AS value
+                    SELECT DISTINCT jsonb_array_elements_text(StudentSchoolAuthorizationEducationOrganizationIds) AS value
                     FROM dms.StudentSchoolAssociationAuthorization
                     WHERE StudentUniqueId = $1
                 ) subquery;
