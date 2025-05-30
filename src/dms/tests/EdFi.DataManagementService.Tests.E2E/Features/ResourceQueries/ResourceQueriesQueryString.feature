@@ -303,19 +303,19 @@ Feature: Query String handling for GET requests for Resource Queries
             Given a POST request is made to "/ed-fi/schoolYearTypes" with
                   """
                   {
-                      "schoolYear": 1976,
-                      "schoolYearDescription": "1976-1977",
+                      "schoolYear": 1978,
+                      "schoolYearDescription": "1978-1979",
                       "currentSchoolYear": true
                   }
                   """
-             When a GET request is made to "/ed-fi/schoolYearTypes"
+             When a GET request is made to "/ed-fi/schoolYearTypes?schoolYear=1978&currentSchoolYear=True"
              Then it should respond with 200
               And the response body is
                   """
                   [{
                       "id": "{id}",
-                      "schoolYear": 1976,
-                      "schoolYearDescription": "1976-1977",
+                      "schoolYear": 1978,
+                      "schoolYearDescription": "1978-1979",
                       "currentSchoolYear": true
                   }]
                   """
