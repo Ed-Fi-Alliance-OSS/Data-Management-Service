@@ -34,6 +34,7 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider _apiSchemaProvider,
             "documentPathsMapping",
             "jsonSchemaForInsert.properties",
             "equalityConstraints",
+            "arrayUniquenessConstraints",
         ];
 
         foreach (JsonNode extension in apiSchemaNodes.ExtensionApiSchemaRootNodes)

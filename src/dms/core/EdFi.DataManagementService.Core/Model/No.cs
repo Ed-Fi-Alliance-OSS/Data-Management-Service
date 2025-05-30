@@ -83,7 +83,8 @@ internal static class No
         ReferentialId: new(Guid.Empty),
         DocumentReferences: [],
         DescriptorReferences: [],
-        SuperclassIdentity: null
+        SuperclassIdentity: null,
+        ArrayUniquenessConstraints: []
     );
 
     /// <summary>

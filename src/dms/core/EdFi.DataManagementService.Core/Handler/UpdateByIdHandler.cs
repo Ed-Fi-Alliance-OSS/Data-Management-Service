@@ -86,11 +86,11 @@ internal class UpdateByIdHandler(
                     traceId: context.FrontendRequest.TraceId,
                     errors: new[]
                     {
-                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved."
+                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
                     }
                 ),
                 Headers: []
-             ),
+            ),
             UpdateFailureNotExists => new FrontendResponse(
                 StatusCode: 404,
                 Body: FailureResponse.ForNotFound(
