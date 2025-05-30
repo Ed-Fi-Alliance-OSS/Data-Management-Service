@@ -85,7 +85,7 @@ public class QueryRequestHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(404);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
             _context.FrontendResponse.Body.Should().BeNull();
         }
     }
