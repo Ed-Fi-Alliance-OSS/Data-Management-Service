@@ -450,11 +450,6 @@ public static partial class QueryOpenSearch
             {
                 JsonNode hits = JsonSerializer.Deserialize<JsonNode>(response.Body)!["hits"]!;
 
-                if (hits is null)
-                {
-                    return new QueryResult.QuerySuccess(new JsonArray(), 0);
-                }
-
                 int totalCount = hits!["total"]!["value"]!.GetValue<int>();
 
                 JsonNode[] documents = hits!["hits"]!
@@ -465,8 +460,17 @@ public static partial class QueryOpenSearch
 
                 return new QueryResult.QuerySuccess(new JsonArray(documents), totalCount);
             }
+            if (response.SuccessOrKnownError)
+            {
+                logger.LogWarning(
+                    "SuccessOrKnownError OpenSearch Response - {TraceId} - {DebugInformation}",
+                    queryRequest.TraceId.Value,
+                    response.DebugInformation
+                );
+                return new QueryResult.QueryFailureKnownError(response.DebugInformation);
+            }
 
-            logger.LogCritical(
+            logger.LogError(
                 "Unsuccessful OpenSearch Response - {TraceId} - {DebugInformation}",
                 queryRequest.TraceId.Value,
                 response.DebugInformation

@@ -16,13 +16,13 @@ public record QueryResult
     /// </summary>
     /// <param name="EdfiDocs">The documents returned from the query</param>
     /// <param name="TotalCount">The total number of documents returned</param>
-    public record QuerySuccess(JsonArray EdfiDocs, int? TotalCount)
-        : QueryResult();
+    public record QuerySuccess(JsonArray EdfiDocs, int? TotalCount) : QueryResult();
 
     /// <summary>
-    /// A failure because the query was invalid
+    /// A known failure from the query handler, likely invalid query terms that
+    /// evaded validation.
     /// </summary>
-    public record QueryFailureInvalidQuery(string FailureMessage) : QueryResult();
+    public record QueryFailureKnownError(string ErrorMessage) : QueryResult();
 
     /// <summary>
     /// A transient failure due to a retryable condition, for example a serialization issue
