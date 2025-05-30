@@ -94,7 +94,6 @@ public static class DmsCoreServiceExtensions
                         _ => false,
                     };
                 }),
-                // Add circuit breaker event handlers for more detailed logging
                 OnOpened = args =>
                 {
                     var cbLogger = LoggerFactory
@@ -141,7 +140,6 @@ public static class DmsCoreServiceExtensions
                                 _ => false,
                             };
                         }),
-                        // Add event handlers for retry-specific logging
                         OnRetry = args =>
                         {
                             var retryLogger = LoggerFactory
