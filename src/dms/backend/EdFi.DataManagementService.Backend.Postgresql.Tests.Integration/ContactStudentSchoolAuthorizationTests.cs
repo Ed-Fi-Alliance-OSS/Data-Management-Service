@@ -365,9 +365,8 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
 
             // Assert
             authorizations.Should().NotBeNull();
-            authorizations.Should().HaveCount(1);
+            authorizations.Should().HaveCount(2);
 
-            // Only one authorization should be present since the second student school association was deleted
             var authorization1 = authorizations[0];
             authorization1.StudentUniqueId.Should().Be(student1Id);
             authorization1.ContactUniqueId.Should().Be(contactUniqueId);
@@ -380,6 +379,20 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
             authorization1.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
             authorization1.StudentSchoolAssociationId.Should().BeGreaterThan(0);
             authorization1.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+
+            // The 2nd authorization should have empty EdOrgIds and the columns that reference the deleted StudentSchoolAssociation be null
+            var authorization2 = authorizations[1];
+            authorization2.StudentUniqueId.Should().Be(student2Id);
+            authorization2.ContactUniqueId.Should().Be(contactUniqueId);
+            ParseEducationOrganizationIds(
+                    authorization2.ContactStudentSchoolAuthorizationEducationOrganizationIds
+                )
+                .Should()
+                .BeEquivalentTo(new long[] { });
+            authorization2.StudentContactAssociationId.Should().BeGreaterThan(0);
+            authorization2.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+            authorization2.StudentSchoolAssociationId.Should().BeNull();
+            authorization2.StudentSchoolAssociationPartitionKey.Should().BeNull();
 
             // Securables should 3, one for each contact and student contact association
             securables.Count.Should().Be(3);
@@ -566,7 +579,7 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
 
             // Assert
             authorizations.Should().NotBeNull();
-            authorizations.Should().HaveCount(1);
+            authorizations.Should().HaveCount(2);
 
             var authorization1 = authorizations[0];
             authorization1.StudentUniqueId.Should().Be(student1Id);
@@ -580,6 +593,127 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
             authorization1.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
             authorization1.StudentSchoolAssociationId.Should().BeGreaterThan(0);
             authorization1.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+
+            // The 2nd authorization should have empty EdOrgIds and the columns that reference the deleted StudentSchoolAssociation be null
+            var authorization2 = authorizations[1];
+            authorization2.StudentUniqueId.Should().Be(student1Id);
+            authorization2.ContactUniqueId.Should().Be(contactUniqueId);
+            ParseEducationOrganizationIds(
+                    authorization2.ContactStudentSchoolAuthorizationEducationOrganizationIds
+                )
+                .Should()
+                .BeEquivalentTo(new long[] { });
+            authorization2.StudentContactAssociationId.Should().BeGreaterThan(0);
+            authorization2.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+            authorization2.StudentSchoolAssociationId.Should().BeNull();
+            authorization2.StudentSchoolAssociationPartitionKey.Should().BeNull();
+
+            // Securables should be 2, one for the contact and one for the student contact association
+            securables.Count.Should().Be(2);
+
+            // EdOrgIds for the contact securable should be 1 (the student school association)
+            edOrgIdsForContactSecurable.Should().NotBeNull();
+            ParseEducationOrganizationIds(edOrgIdsForContactSecurable).Should().BeEquivalentTo([school1Id]);
+
+            // EdOrgIds for the student contact association should be 1 (the student school association)
+            sca1EdOrgIdForContactAndStudentSecurable.Should().NotBeNull();
+            ParseEducationOrganizationIds(sca1EdOrgIdForContactAndStudentSecurable)
+                .Should()
+                .BeEquivalentTo([school1Id]);
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Upsert_Of_One_School_StudentSchoolAssociation_One_Student_Contact_Recreate_StudentSchoolAssociation
+        : ContactStudentSchoolAuthorizationTests
+    {
+        private readonly long school1Id = 888;
+
+        private readonly string student1Id = "0123";
+
+        private readonly string contactUniqueId = "1111";
+        private readonly Guid contactDocumentId = Guid.NewGuid();
+        private readonly Guid sca1DocumentId = Guid.NewGuid();
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            var edOrg1Result = await UpsertEducationOrganization("School", school1Id, null);
+
+            var ssa1Result = await UpsertStudentSchoolAssociation(school1Id, student1Id);
+
+            // Upsert a contact
+            var contactReferentialId = Guid.NewGuid();
+            var contactResult = await UpsertContact(contactDocumentId, contactReferentialId, contactUniqueId);
+
+            var student1ContactResult = await UpsertStudentContactAssociation(
+                sca1DocumentId,
+                Guid.NewGuid(),
+                student1Id,
+                contactUniqueId
+            );
+
+            edOrg1Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            ssa1Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            contactResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            student1ContactResult.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+            var ssa2DeleteResult = await DeleteStudentSchoolAssociation(
+                ((UpsertResult.InsertSuccess)ssa1Result).NewDocumentUuid.Value
+            );
+            ssa2DeleteResult.Should().BeOfType<DeleteResult.DeleteSuccess>();
+
+            // Recreate SSA
+            ssa1Result = await UpsertStudentSchoolAssociation(school1Id, student1Id);
+            ssa1Result.Should().BeOfType<UpsertResult.InsertSuccess>();
+        }
+
+        [Test]
+        public async Task Then_ContactSecurables_And_EdOrgIds_Should_Be_Populated()
+        {
+            // Act
+            var authorizations = await GetAllContactStudentSchoolAuthorizations();
+            var securables = await GetAllContactSecurableDocuments();
+            var edOrgIdsForContactSecurable = await GetDocumentContactStudentSchoolAuthorizationEdOrgIds(
+                contactDocumentId
+            );
+            var sca1EdOrgIdForContactAndStudentSecurable =
+                await GetDocumentContactStudentSchoolAuthorizationEdOrgIds(sca1DocumentId);
+
+            // Assert
+            authorizations.Should().NotBeNull();
+            authorizations.Should().HaveCount(2);
+
+            // A ContactStudentSchoolAuthorization row with empty EdOrgIds from the SSA that was deleted,
+            // this is garbage that will be deleted in an asynchronous cleanup process
+            var authorization1 = authorizations[0];
+            authorization1.StudentUniqueId.Should().Be(student1Id);
+            authorization1.ContactUniqueId.Should().Be(contactUniqueId);
+            ParseEducationOrganizationIds(
+                    authorization1.ContactStudentSchoolAuthorizationEducationOrganizationIds
+                )
+                .Should()
+                .BeEquivalentTo(new long[] { });
+            authorization1.StudentContactAssociationId.Should().BeGreaterThan(0);
+            authorization1.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+            authorization1.StudentSchoolAssociationId.Should().BeNull();
+            authorization1.StudentSchoolAssociationPartitionKey.Should().BeNull();
+
+            var authorization2 = authorizations[1];
+            authorization2.StudentUniqueId.Should().Be(student1Id);
+            authorization2.ContactUniqueId.Should().Be(contactUniqueId);
+            ParseEducationOrganizationIds(
+                    authorization2.ContactStudentSchoolAuthorizationEducationOrganizationIds
+                )
+                .Should()
+                .BeEquivalentTo([school1Id]);
+            authorization2.StudentContactAssociationId.Should().BeGreaterThan(0);
+            authorization2.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+            authorization2.StudentSchoolAssociationId.Should().BeGreaterThan(0);
+            authorization2.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
 
             // Securables should be 2, one for the contact and one for the student contact association
             securables.Count.Should().Be(2);

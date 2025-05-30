@@ -10,13 +10,13 @@ CREATE TABLE dms.ContactStudentSchoolAuthorization(
     ContactStudentSchoolAuthorizationEducationOrganizationIds JSONB NOT NULL,
     StudentContactAssociationId BIGINT NOT NULL,
     StudentContactAssociationPartitionKey SMALLINT NOT NULL,
-    StudentSchoolAssociationId BIGINT NOT NULL,
-    StudentSchoolAssociationPartitionKey SMALLINT NOT NULL,
+    StudentSchoolAssociationId BIGINT,
+    StudentSchoolAssociationPartitionKey SMALLINT,
     CONSTRAINT FK_ContactStudentSchoolAuthorization_SSA_Document FOREIGN KEY (StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey)
-        REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE,
+        REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE SET NULL,
 
     CONSTRAINT FK_ContactStudentSchoolAuthorization_SCA_Document FOREIGN KEY (StudentContactAssociationId, StudentContactAssociationPartitionKey)
-        REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
+        REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
 );
 
 CREATE INDEX IX_ContactStudentSchoolAuthorization_ContactUniqueId

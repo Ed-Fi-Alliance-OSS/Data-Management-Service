@@ -29,8 +29,8 @@ public class ContactStudentSchoolAuthorization
     public long StudentContactAssociationId { get; set; }
     public short StudentContactAssociationPartitionKey { get; set; }
 
-    public long StudentSchoolAssociationId { get; set; }
-    public short StudentSchoolAssociationPartitionKey { get; set; }
+    public long? StudentSchoolAssociationId { get; set; }
+    public short? StudentSchoolAssociationPartitionKey { get; set; }
 }
 
 public class StudentSecurableDocument
@@ -418,8 +418,14 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                 StudentContactAssociationId = (long)reader["StudentContactAssociationId"],
                 StudentContactAssociationPartitionKey = (short)
                     reader["StudentContactAssociationPartitionKey"],
-                StudentSchoolAssociationId = (long)reader["StudentSchoolAssociationId"],
-                StudentSchoolAssociationPartitionKey = (short)reader["StudentSchoolAssociationPartitionKey"],
+                StudentSchoolAssociationId =
+                    reader["StudentSchoolAssociationId"] == DBNull.Value
+                        ? null
+                        : (long?)reader["StudentSchoolAssociationId"],
+                StudentSchoolAssociationPartitionKey =
+                    reader["StudentSchoolAssociationPartitionKey"] == DBNull.Value
+                        ? null
+                        : (short?)reader["StudentSchoolAssociationPartitionKey"],
             };
             results.Add(authorization);
         }
