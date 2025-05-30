@@ -276,7 +276,11 @@ public class ClaimSetModule : IEndpointModule
         catch (Exception ex)
         {
             logger.LogError(ex, "Error while loading supporting authorization strategies or actions");
-            return Results.Json(FailureResponse.ForUnknown(httpContext.TraceIdentifier));
+
+            return Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            );
         }
 
         // Load the claims hierarchy
@@ -297,7 +301,10 @@ public class ClaimSetModule : IEndpointModule
                 }
             );
 
-            return Results.Json(FailureResponse.ForUnknown(httpContext.TraceIdentifier));
+            return Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            );
         }
 
         // Extract the tuples of the hierarchy for use in validating the claim set import request

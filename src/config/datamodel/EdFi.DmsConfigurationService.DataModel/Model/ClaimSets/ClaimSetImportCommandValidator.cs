@@ -16,20 +16,16 @@ public class ClaimSetImportCommandValidator : ClaimSetCommandValidator<ClaimSetI
                 (claimSet, context) =>
                 {
                     // Retrieve dynamic values from the validation context
-                    var actions = context.RootContextData["Actions"] as List<string>;
-                    var authorizationStrategies =
-                        context.RootContextData["AuthorizationStrategies"] as List<string>;
-                    var resourceClaimsHierarchyTuples =
-                        context.RootContextData["ResourceClaimsHierarchyTuples"]
-                        as Dictionary<string, string?>;
-
                     if (
-                        actions == null
-                        || authorizationStrategies == null
-                        || resourceClaimsHierarchyTuples == null
+                        context.RootContextData["Actions"] is not List<string> actions
+                        || context.RootContextData["AuthorizationStrategies"]
+                            is not List<string> authorizationStrategies
+                        || context.RootContextData["ResourceClaimsHierarchyTuples"]
+                            is not Dictionary<string, string?> resourceClaimsHierarchyTuples
                     )
                     {
                         context.AddFailure("Validation context is missing required data for validation.");
+
                         return;
                     }
 
@@ -39,7 +35,7 @@ public class ClaimSetImportCommandValidator : ClaimSetCommandValidator<ClaimSetI
                     {
                         foreach (var resourceClaim in claimSet.ResourceClaims)
                         {
-                            resourceClaimValidator.Validate<ClaimSetImportCommand>(
+                            resourceClaimValidator.Validate(
                                 actions,
                                 authorizationStrategies,
                                 resourceClaim,

@@ -18,14 +18,8 @@ public class ResourceClaim
         [];
     public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCRUD { get; set; } =
         [];
-    public List<ResourceClaim> Children { get; set; }
 
-    public ResourceClaim()
-    {
-        Children = [];
-        DefaultAuthorizationStrategiesForCRUD = [];
-        AuthorizationStrategyOverridesForCRUD = [];
-    }
+    public List<ResourceClaim> Children { get; set; } = [];
 }
 
 public class ResourceClaimAction
