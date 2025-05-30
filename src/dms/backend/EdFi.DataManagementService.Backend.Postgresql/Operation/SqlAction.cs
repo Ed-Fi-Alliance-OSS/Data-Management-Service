@@ -784,7 +784,7 @@ public class SqlAction() : ISqlAction
     {
         await using NpgsqlCommand command = new(
             $"""
-                SELECT jsonb_agg(DISTINCT value)
+                SELECT jsonb_agg(DISTINCT to_jsonb(value::text))
                 FROM (
                     SELECT DISTINCT jsonb_array_elements(StudentSchoolAuthorizationEducationOrganizationIds) AS value
                     FROM dms.StudentSchoolAssociationAuthorization
@@ -799,11 +799,37 @@ public class SqlAction() : ISqlAction
         };
 
         await command.PrepareAsync();
-        object? result = await command.ExecuteScalarAsync();
+        var result = await command.ExecuteScalarAsync();
 
-        return result == DBNull.Value || result == null
-            ? null
-            : JsonSerializer.Deserialize<JsonElement>((string)result);
+        if (result is not string jsonString || string.IsNullOrWhiteSpace(jsonString))
+        {
+            return null;
+        }
+
+        // Parse the result JSON into a list of longs
+        try
+        {
+            var json = JsonSerializer.Deserialize<JsonElement>(jsonString);
+            if (json.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var ids = new List<long>();
+            foreach (var element in json.EnumerateArray())
+            {
+                if (element.ValueKind == JsonValueKind.String && long.TryParse(element.GetString(), out var value))
+                {
+                    ids.Add(value);
+                }
+            }
+
+            return JsonSerializer.SerializeToElement(ids);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     public async Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
