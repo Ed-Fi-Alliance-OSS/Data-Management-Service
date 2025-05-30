@@ -202,8 +202,6 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
                     {
                         AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
                     }
-                    // boolean values must be lowercase
-                    queryFieldValue = queryFieldValue.ToLower();
                     break;
                 case "date":
                     if (
