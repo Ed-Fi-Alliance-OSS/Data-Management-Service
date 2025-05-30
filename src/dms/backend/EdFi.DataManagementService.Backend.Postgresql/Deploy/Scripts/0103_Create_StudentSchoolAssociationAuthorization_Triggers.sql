@@ -129,11 +129,33 @@ RETURNS TRIGGER
 AS $$
 DECLARE
     old_student_id text;
+    contact_id text;
 BEGIN
     old_student_id := OLD.EdfiDoc->'studentReference'->>'studentUniqueId';
 
     -- Update all documents for the old student
     PERFORM dms.SetEdOrgIdsToStudentSecurables(dms.GetStudentEdOrgIds(old_student_id), old_student_id);
+
+    -- Remove access to the related Contacts
+    UPDATE dms.ContactStudentSchoolAuthorization
+    SET
+        ContactStudentSchoolAuthorizationEducationOrganizationIds = '[]'
+    WHERE
+        StudentUniqueId = old_student_id AND
+        StudentSchoolAssociationId IS NULL AND
+        StudentSchoolAssociationPartitionKey IS NULL;
+
+    FOR contact_id IN
+        SELECT DISTINCT ContactUniqueId
+        FROM dms.ContactStudentSchoolAuthorization
+        WHERE         
+            StudentUniqueId = old_student_id AND
+            StudentSchoolAssociationId IS NULL AND
+            StudentSchoolAssociationPartitionKey IS NULL
+    LOOP
+
+        PERFORM dms.SetEdOrgIdsToContactSecurables(dms.GetContactEdOrgIds(contact_id), contact_id);
+    END LOOP;
 
     RETURN NULL;
 END;
