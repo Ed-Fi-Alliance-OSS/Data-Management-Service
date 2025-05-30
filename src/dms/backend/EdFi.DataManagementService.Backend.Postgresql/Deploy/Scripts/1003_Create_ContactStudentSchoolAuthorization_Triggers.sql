@@ -25,7 +25,7 @@ BEGIN
 
     -- Extract student school association document details
     FOR student_school_asso IN
-        SELECT jsonb_agg(DISTINCT value) AS aggregated_ed_org_ids,
+        SELECT jsonb_agg(DISTINCT value::TEXT) AS aggregated_ed_org_ids,
             StudentSchoolAssociationId,
             StudentSchoolAssociationPartitionKey
         FROM (

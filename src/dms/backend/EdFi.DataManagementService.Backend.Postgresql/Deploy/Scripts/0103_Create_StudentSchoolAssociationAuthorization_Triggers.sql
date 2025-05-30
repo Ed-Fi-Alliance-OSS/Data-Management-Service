@@ -70,6 +70,7 @@ BEGIN
 
     -- Calculate Ed Org IDs once and store in variable
     SELECT jsonb_agg(EducationOrganizationId)
+    SELECT jsonb_agg(to_jsonb(EducationOrganizationId::TEXT))
     FROM dms.GetEducationOrganizationAncestors((NEW.EdfiDoc->'schoolReference'->>'schoolId')::BIGINT)
     INTO ed_org_ids;
 
