@@ -450,6 +450,11 @@ public static partial class QueryOpenSearch
             {
                 JsonNode hits = JsonSerializer.Deserialize<JsonNode>(response.Body)!["hits"]!;
 
+                if (hits is null)
+                {
+                    return new QueryResult.QuerySuccess(new JsonArray(), 0);
+                }
+
                 int totalCount = hits!["total"]!["value"]!.GetValue<int>();
 
                 JsonNode[] documents = hits!["hits"]!
