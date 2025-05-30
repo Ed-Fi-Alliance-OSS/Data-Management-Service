@@ -1149,8 +1149,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     ]
                   """
 
-        # Re-enable when DMS-709 is done
-        @ignore
         Scenario: 52 Ensure client can retrieve a Contact after the SSA has been recreated
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1455901001"
