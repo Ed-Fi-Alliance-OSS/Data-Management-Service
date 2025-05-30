@@ -1755,8 +1755,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                       }
                     ]
                   """
-
-
         Scenario: 48 Ensure client with access to both schools can query multiple student school associations
              When a GET request is made to "/ed-fi/StudentSchoolAssociations?studentUniqueId=111&offset=0&limit=10"
              Then it should respond with 200
