@@ -293,6 +293,79 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         await ResponseBodyIs(expectedBody);
     }
 
+    [Then(@"the response body is an array with more than one object where each object")]
+    public async Task ThenTheResponseBodyIsAnArrayWithMoreThanOneObjectWhere(Table table)
+    {
+        string content = await _apiResponse.TextAsync();
+        var jsonArray = JsonNode.Parse(content)?.AsArray();
+
+        jsonArray.Should().NotBeNull();
+        jsonArray.Should().HaveCountGreaterThan(1);
+
+        foreach (var obj in jsonArray!)
+        {
+            ValidateResponseBodyObject(table, obj);
+        }
+    }
+
+    [Then(@"the response body is an array with one object where")]
+    public async Task ThenTheResponseBodyIsAnArrayWithOneObjectWhere(Table table)
+    {
+        string content = await _apiResponse.TextAsync();
+        var jsonArray = JsonNode.Parse(content)?.AsArray();
+
+        jsonArray.Should().NotBeNull();
+        jsonArray.Should().HaveCount(1);
+
+        foreach (var obj in jsonArray!)
+        {
+            ValidateResponseBodyObject(table, obj);
+        }
+    }
+
+    private static void ValidateResponseBodyObject(Table table, JsonNode? obj)
+    {
+        foreach (var row in table.Rows)
+        {
+            var property = row["property"];
+            var expectedValue = row["value / condition"];
+
+            // Make sure property exists
+            obj!
+                .AsObject()
+                .ContainsKey(property)
+                .Should()
+                .BeTrue("the '{0}' property did not exist on the object", property);
+
+            // Handle literal string checks
+            if (expectedValue.StartsWith("\"") && expectedValue.EndsWith("\""))
+            {
+                var expectedLiteral = expectedValue.Trim('\"');
+                obj[property]?.ToString().Should().Be(expectedLiteral);
+            }
+            // Handle non-empty arrays
+            else if (expectedValue.Equals("non-empty array"))
+            {
+                obj[property]
+                    ?.AsArray()
+                    .Should()
+                    .NotBeNullOrEmpty("property '{0}' was empty or null: {1}", property, obj.ToJsonString());
+            }
+            // Handle non-empty strings
+            else if (expectedValue.Equals("non-empty string"))
+            {
+                obj[property]?.ToString().Should().NotBeEmpty();
+            }
+            else
+            {
+                // We can extend logic here for other condition types in the future
+                throw new NotImplementedException(
+                    $"Condition '{expectedValue}' not implemented in step definition."
+                );
+            }
+        }
+    }
+
     [Then("the response body has key and secret")]
     public async Task ThenTheResponseBodyHasKeyAndSecret()
     {
