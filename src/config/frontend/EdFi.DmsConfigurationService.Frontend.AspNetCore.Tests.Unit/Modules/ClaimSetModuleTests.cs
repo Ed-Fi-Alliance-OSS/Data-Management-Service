@@ -75,30 +75,21 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
                 .Returns(new ClaimSetInsertResult.Success(1));
 
-            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
                 .Returns(
                     new ClaimSetQueryResult.Success(
-                        [new ClaimSetResponseReduced() { Name = "Test ClaimSet", IsSystemReserved = false }]
+                        [new ClaimSetResponse() { Name = "Test ClaimSet", IsSystemReserved = false }]
                     )
                 );
 
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
                 .Returns(
                     new ClaimSetGetResult.Success(
-                        new ClaimSetResponse()
+                        new ClaimSetResponse
                         {
                             Id = 1,
                             Name = "ClaimSet with ResourceClaims",
                             IsSystemReserved = true,
-                            ResourceClaims = JsonDocument
-                                .Parse(
-                                    """
-                                        {
-                                            "Resource": "Value"
-                                        }
-                                    """
-                                )
-                                .RootElement,
                         }
                     )
                 );
@@ -452,7 +443,7 @@ public class ClaimSetModuleTests
         [SetUp]
         public void Setup()
         {
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
                 .Returns(new ClaimSetGetResult.FailureNotFound());
 
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
@@ -536,10 +527,10 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
                 .Returns(new ClaimSetInsertResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
                 .Returns(new ClaimSetQueryResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
                 .Returns(new ClaimSetGetResult.FailureUnknown(""));
 
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))

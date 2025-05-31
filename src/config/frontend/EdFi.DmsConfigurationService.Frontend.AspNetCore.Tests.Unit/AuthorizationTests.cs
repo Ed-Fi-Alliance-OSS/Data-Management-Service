@@ -22,6 +22,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using Action = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Action;
+using Authorization = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Authorization;
 using Claim = EdFi.DmsConfigurationService.Backend.Repositories.Claim;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
@@ -311,10 +313,10 @@ public class AuthorizationTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored, A<bool>.Ignored))
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
                 .Returns(
                     new ClaimSetQueryResult.Success(
-                        [new ClaimSetResponseReduced() { Name = "Test ClaimSet", IsSystemReserved = false }]
+                        [new ClaimSetResponse() { Name = "Test ClaimSet", IsSystemReserved = false }]
                     )
                 );
 
@@ -335,15 +337,20 @@ public class AuthorizationTests
             A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
                 .Returns(new ClaimsHierarchyGetResult.Success(claims, DateTime.Now));
             var suppliedAuthorizationMetadataResponse = new AuthorizationMetadataResponse(
-                Claims: [new("ClaimOne", 1)],
-                Authorizations:
                 [
-                    new AuthorizationMetadataResponse.Authorization(
-                        1,
+                    new ClaimSetMetadata(
+                        ClaimSetName: "ClaimSet1",
+                        Claims: [new("ClaimOne", 1)],
+                        Authorizations:
                         [
-                            new AuthorizationMetadataResponse.Action(
-                                "Create",
-                                [new AuthorizationMetadataResponse.AuthorizationStrategy("Strategy1")]
+                            new Authorization(
+                                1,
+                                [
+                                    new Action(
+                                        "Create",
+                                        [new ClaimSetMetadata.AuthorizationStrategy("Strategy1")]
+                                    ),
+                                ]
                             ),
                         ]
                     ),

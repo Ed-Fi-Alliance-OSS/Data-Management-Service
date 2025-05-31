@@ -21,7 +21,7 @@ public class AuthorizationMetadataModule : IEndpointModule
     }
 
     private async Task<IResult> GetAuthorizationMetadata(
-        [FromQuery] string claimSetName,
+        [FromQuery] string? claimSetName,
         IClaimsHierarchyRepository repository,
         IAuthorizationMetadataResponseFactory responseFactory,
         HttpContext httpContext
@@ -36,7 +36,7 @@ public class AuthorizationMetadataModule : IEndpointModule
 
         if (claimsHierarchyResult is ClaimsHierarchyGetResult.Success success)
         {
-            var authorizationMetadataResponse = responseFactory.Create(claimSetName, success.Claims);
+            var authorizationMetadataResponse = await responseFactory.Create(claimSetName, success.Claims);
 
             return Results.Ok(authorizationMetadataResponse);
         }

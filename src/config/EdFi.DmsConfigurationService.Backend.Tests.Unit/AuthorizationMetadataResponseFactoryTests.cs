@@ -5,7 +5,11 @@
 
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
+using FakeItEasy;
 using FluentAssertions;
+using AuthorizationStrategy = EdFi.DmsConfigurationService.Backend.Repositories.AuthorizationStrategy;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
@@ -13,33 +17,83 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 public class AuthorizationMetadataResponseFactoryTests
 {
     private IAuthorizationMetadataResponseFactory _factory;
+    private IClaimSetRepository _claimSetRepository;
 
     [SetUp]
     public void SetUp()
     {
-        _factory = new AuthorizationMetadataResponseFactory();
+        _claimSetRepository = A.Fake<IClaimSetRepository>();
+        _factory = new AuthorizationMetadataResponseFactory(_claimSetRepository);
     }
 
     [Test]
-    public void Create_ShouldReturnEmptyResponse_WhenHierarchyIsEmpty()
+    public async Task Create_ShouldReturnEmptyResponse_WhenClaimSetDoesNotExist()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(new ClaimSetQueryResult.Success([]));
+
         List<Claim> hierarchy = [];
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().BeEmpty();
-        result.Authorizations.Should().BeEmpty();
+        result.ClaimSets.Should().BeEmpty();
     }
 
     [Test]
-    public void Create_ShouldIncludeLeafNodeClaim_WhenClaimSetIsFoundOnLeafNodeClaimOfHierarchy()
+    public async Task Create_ShouldReturnSingleClaimSetWithNoClaims_WhenHierarchyIsEmpty()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
+        List<Claim> hierarchy = [];
+
+        // Act
+        var result = await _factory.Create(claimSetName, hierarchy);
+
+        // Assert
+        result.ClaimSets.Should().HaveCount(1);
+        result.ClaimSets.Single().Claims.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task Create_ShouldIncludeLeafNodeClaim_WhenClaimSetIsFoundOnLeafNodeClaimOfHierarchy()
+    {
+        // Arrange
+        var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
         var hierarchy = new List<Claim>
         {
             new Claim
@@ -85,11 +139,14 @@ public class AuthorizationMetadataResponseFactoryTests
         };
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
+
         result
+            .ClaimSets.Single()
             .Authorizations.Should()
             .ContainSingle(a =>
                 a.Actions.Any(ac =>
@@ -100,10 +157,25 @@ public class AuthorizationMetadataResponseFactoryTests
     }
 
     [Test]
-    public void Create_ShouldIncludeLeafNodeClaim_WhenClaimSetIsFoundInClaimsLineageOfHierarchy()
+    public async Task Create_ShouldIncludeLeafNodeClaim_WhenClaimSetIsFoundInClaimsLineageOfHierarchy()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
         var hierarchy = new List<Claim>
         {
             new Claim
@@ -139,11 +211,12 @@ public class AuthorizationMetadataResponseFactoryTests
         };
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
         result
+            .ClaimSets.Single()
             .Authorizations.Should()
             .ContainSingle(a =>
                 a.Actions.Any(ac =>
@@ -154,10 +227,25 @@ public class AuthorizationMetadataResponseFactoryTests
     }
 
     [Test]
-    public void Create_ShouldNotIncludeLeafNodeClaim_WhenClaimSetIsNotFoundInHierarchy()
+    public async Task Create_ShouldNotIncludeLeafNodeClaim_WhenClaimSetIsNotFoundInHierarchy()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
         var hierarchy = new List<Claim>
         {
             new Claim
@@ -221,18 +309,33 @@ public class AuthorizationMetadataResponseFactoryTests
         };
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().BeEmpty();
-        result.Authorizations.Should().BeEmpty();
+        result.ClaimSets.Single().Claims.Should().BeEmpty();
+        result.ClaimSets.Single().Authorizations.Should().BeEmpty();
     }
 
     [Test]
-    public void Create_ShouldApplyDefaultAuthorizationStrategies_WhenNoOverridesAreDefined()
+    public async Task Create_ShouldApplyDefaultAuthorizationStrategies_WhenNoOverridesAreDefined()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
         var hierarchy = new List<Claim>
         {
             new Claim
@@ -281,11 +384,12 @@ public class AuthorizationMetadataResponseFactoryTests
         };
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
         result
+            .ClaimSets.Single()
             .Authorizations.Should()
             .ContainSingle(a =>
                 a.Actions.Any(ac =>
@@ -296,10 +400,25 @@ public class AuthorizationMetadataResponseFactoryTests
     }
 
     [Test]
-    public void Create_ShouldApplyLowestLevelDefaultAuthorizationStrategies_WhenNoOverridesAreDefined()
+    public async Task Create_ShouldApplyLowestLevelDefaultAuthorizationStrategies_WhenNoOverridesAreDefined()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
         var hierarchy = new List<Claim>
         {
             new Claim
@@ -362,11 +481,12 @@ public class AuthorizationMetadataResponseFactoryTests
         };
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
         result
+            .ClaimSets.Single()
             .Authorizations.Should()
             .ContainSingle(a =>
                 a.Actions.Any(ac =>
@@ -377,10 +497,25 @@ public class AuthorizationMetadataResponseFactoryTests
     }
 
     [Test]
-    public void Create_ShouldApplyDefaultAuthorizationStrategiesDefinedBelowClaimSet_WhenNoOverridesAreDefined()
+    public async Task Create_ShouldApplyDefaultAuthorizationStrategiesDefinedBelowClaimSet_WhenNoOverridesAreDefined()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
         var hierarchy = new List<Claim>
         {
             new Claim
@@ -434,11 +569,12 @@ public class AuthorizationMetadataResponseFactoryTests
         };
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
         result
+            .ClaimSets.Single()
             .Authorizations.Should()
             .ContainSingle(a =>
                 a.Actions.Any(ac =>
@@ -449,10 +585,25 @@ public class AuthorizationMetadataResponseFactoryTests
     }
 
     [Test]
-    public void Create_ShouldPrioritizeLowerLevelDefaultsOverHigherLevelDefaultsForIndividualActions_WhenNoOverridesAreDefined()
+    public async Task Create_ShouldPrioritizeLowerLevelDefaultsOverHigherLevelDefaultsForIndividualActions_WhenNoOverridesAreDefined()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
         var hierarchy = new List<Claim>
         {
             new Claim
@@ -518,12 +669,12 @@ public class AuthorizationMetadataResponseFactoryTests
         };
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
 
-        var authorization = result.Authorizations.SingleOrDefault();
+        var authorization = result.ClaimSets.Single().Authorizations.SingleOrDefault();
         authorization.Should().NotBeNull();
 
         var createAction = authorization!.Actions.SingleOrDefault(ac => ac.Name == "Create");
@@ -538,10 +689,25 @@ public class AuthorizationMetadataResponseFactoryTests
     }
 
     [Test]
-    public void Create_ShouldPrioritizeHigherLevelOverridesOverLowerLevelDefaults_WhenOverridesAreDefined()
+    public async Task Create_ShouldPrioritizeHigherLevelOverridesOverLowerLevelDefaults_WhenOverridesAreDefined()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
         var hierarchy = new List<Claim>
         {
             new Claim
@@ -614,12 +780,12 @@ public class AuthorizationMetadataResponseFactoryTests
         };
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim");
 
-        var authorization = result.Authorizations.SingleOrDefault();
+        var authorization = result.ClaimSets.Single().Authorizations.SingleOrDefault();
         authorization.Should().NotBeNull();
 
         var createAction = authorization!.Actions.SingleOrDefault(ac => ac.Name == "Create");
@@ -634,10 +800,25 @@ public class AuthorizationMetadataResponseFactoryTests
     }
 
     [Test]
-    public void Create_ShouldReturnSingleAuthorization_WhenMultipleClaimsUseSameActionsAndStrategies()
+    public async Task Create_ShouldReturnSingleAuthorization_WhenMultipleClaimsUseSameActionsAndStrategies()
     {
         // Arrange
         var claimSetName = "TestClaimSet";
+
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse()
+                        {
+                            Id = 1,
+                            Name = claimSetName,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
         var hierarchy = new List<Claim>
         {
             new Claim
@@ -709,15 +890,15 @@ public class AuthorizationMetadataResponseFactoryTests
         };
 
         // Act
-        var result = _factory.Create(claimSetName, hierarchy);
+        var result = await _factory.Create(claimSetName, hierarchy);
 
         // Assert
-        result.Claims.Should().HaveCount(2);
-        result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim1");
-        result.Claims.Should().ContainSingle(c => c.Name == "LeafClaim2");
+        result.ClaimSets.Single().Claims.Should().HaveCount(2);
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim1");
+        result.ClaimSets.Single().Claims.Should().ContainSingle(c => c.Name == "LeafClaim2");
 
-        result.Authorizations.Should().HaveCount(1);
-        var authorization = result.Authorizations.Single();
+        result.ClaimSets.Single().Authorizations.Should().HaveCount(1);
+        var authorization = result.ClaimSets.Single().Authorizations.Single();
 
         authorization.Actions.Should().ContainSingle(a => a.Name == "Read");
 
@@ -725,5 +906,72 @@ public class AuthorizationMetadataResponseFactoryTests
             a.AuthorizationStrategies.Select(strat => strat.Name)
         );
         authorizationStrategies.Should().BeEquivalentTo("DefaultStrategy1", "DefaultStrategy2");
+    }
+
+    [Test]
+    public async Task Create_ShouldHandleNullClaimSetName_WithClaimSetsInHierarchy()
+    {
+        // Arrange
+        var claimSet1 = new ClaimSet { Name = "ClaimSet1" };
+        var claimSet2 = new ClaimSet { Name = "ClaimSet2" };
+
+        // Mock the repository to return two claim sets
+        A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
+            .Returns(
+                new ClaimSetQueryResult.Success(
+                    [
+                        new ClaimSetResponse
+                        {
+                            Id = 1,
+                            Name = claimSet1.Name,
+                            IsSystemReserved = false,
+                        },
+                        new ClaimSetResponse
+                        {
+                            Id = 2,
+                            Name = claimSet2.Name,
+                            IsSystemReserved = false,
+                        },
+                    ]
+                )
+            );
+
+        var hierarchy = new List<Claim>
+        {
+            new Claim
+            {
+                Name = "Root",
+                Claims = new List<Claim>
+                {
+                    new Claim
+                    {
+                        Name = "Middle",
+                        Claims = new List<Claim>
+                        {
+                            new Claim
+                            {
+                                Name = "Leaf",
+                                ClaimSets = new List<ClaimSet> { claimSet1, claimSet2 },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        // Act
+        var result = await _factory.Create(null, hierarchy);
+
+        // Assert
+        // Change assertions as needed based on expected behavior when name is null
+        result.ClaimSets.Should().HaveCount(2);
+
+        result.ClaimSets.Select(cs => cs.ClaimSetName).Should().Contain(new[] { "ClaimSet1", "ClaimSet2" });
+
+        // Validate claims on each claim set
+        foreach (var cs in result.ClaimSets)
+        {
+            cs.Claims.Should().ContainSingle(c => c.Name == "Leaf");
+        }
     }
 }

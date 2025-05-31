@@ -5,8 +5,9 @@
 
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using FluentAssertions;
-using Action = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.AuthorizationMetadataResponse.Action;
-using AuthorizationStrategy = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.AuthorizationMetadataResponse.AuthorizationStrategy;
+using Action = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Action;
+using Authorization = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Authorization;
+using AuthorizationStrategy = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.AuthorizationStrategy;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
@@ -17,19 +18,21 @@ public class AuthorizationMetadataResponseTests
     public void GetHashCode_SameValues_ReturnsSameHash()
     {
         // Arrange
-        var auth1 = new AuthorizationMetadataResponse.Authorization(
+        var auth1 = new Authorization(
             Id: 0,
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
-            ]);
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
+            ]
+        );
 
-        var auth2 = new AuthorizationMetadataResponse.Authorization(
+        var auth2 = new Authorization(
             Id: 1, // Ignored for equality
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
-            ]);
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
+            ]
+        );
 
         // Act
         var hash1 = auth1.GetHashCode();
@@ -44,19 +47,21 @@ public class AuthorizationMetadataResponseTests
     public void GetHashCode_DifferentActionNames_ReturnsDifferentHash()
     {
         // Arrange
-        var auth1 = new AuthorizationMetadataResponse.Authorization(
+        var auth1 = new Authorization(
             Id: 0,
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
-            ]);
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
+            ]
+        );
 
-        var auth2 = new AuthorizationMetadataResponse.Authorization(
+        var auth2 = new Authorization(
             Id: 1, // Ignored for equality
             Actions:
             [
-                new Action(Name: "Create", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
-            ]);
+                new Action(Name: "Create", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
+            ]
+        );
 
         // Act
         var hash1 = auth1.GetHashCode();
@@ -71,20 +76,21 @@ public class AuthorizationMetadataResponseTests
     public void GetHashCode_DifferentStrategyNames_ReturnsDifferentHash()
     {
         // Arrange
-        var auth1 = new AuthorizationMetadataResponse.Authorization(
+        var auth1 = new Authorization(
             Id: 0,
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")])
-            ]);
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy1")]),
+            ]
+        );
 
-        var auth2 = new AuthorizationMetadataResponse.Authorization(
+        var auth2 = new Authorization(
             Id: 1, // Ignored for equality
             Actions:
             [
-                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy2")])
-            ]);
-
+                new Action(Name: "Read", AuthorizationStrategies: [new AuthorizationStrategy("Strategy2")]),
+            ]
+        );
 
         // Act
         var hash1 = auth1.GetHashCode();
@@ -99,35 +105,51 @@ public class AuthorizationMetadataResponseTests
     public void GetHashCode_DifferentOrderOfActions_ReturnsSameHash()
     {
         // Arrange
-        var auth1 = new AuthorizationMetadataResponse.Authorization(
+        var auth1 = new Authorization(
             Id: 0,
             Actions:
             [
                 new Action(
                     Name: "Read",
                     AuthorizationStrategies:
-                    [new AuthorizationStrategy("Strategy1"), new AuthorizationStrategy("Strategy2")]),
-
+                    [
+                        new AuthorizationStrategy("Strategy1"),
+                        new AuthorizationStrategy("Strategy2"),
+                    ]
+                ),
                 new Action(
                     Name: "Create",
                     AuthorizationStrategies:
-                    [new AuthorizationStrategy("Strategy3"), new AuthorizationStrategy("Strategy4")])
-            ]);
+                    [
+                        new AuthorizationStrategy("Strategy3"),
+                        new AuthorizationStrategy("Strategy4"),
+                    ]
+                ),
+            ]
+        );
 
-        var auth2 = new AuthorizationMetadataResponse.Authorization(
+        var auth2 = new Authorization(
             Id: 1, // Ignored for equality
             Actions:
             [
                 new Action(
                     Name: "Create",
                     AuthorizationStrategies:
-                    [new AuthorizationStrategy("Strategy3"), new AuthorizationStrategy("Strategy4")]),
-
+                    [
+                        new AuthorizationStrategy("Strategy3"),
+                        new AuthorizationStrategy("Strategy4"),
+                    ]
+                ),
                 new Action(
                     Name: "Read",
                     AuthorizationStrategies:
-                    [new AuthorizationStrategy("Strategy2"), new AuthorizationStrategy("Strategy1")])
-            ]);
+                    [
+                        new AuthorizationStrategy("Strategy2"),
+                        new AuthorizationStrategy("Strategy1"),
+                    ]
+                ),
+            ]
+        );
 
         // Act
         var hash1 = auth1.GetHashCode();
@@ -142,25 +164,35 @@ public class AuthorizationMetadataResponseTests
     public void GetHashCode_DifferentOrderOfStrategyNames_ReturnsSameHash()
     {
         // Arrange
-        var auth1 = new AuthorizationMetadataResponse.Authorization(
+        var auth1 = new Authorization(
             Id: 0,
             Actions:
             [
                 new Action(
                     Name: "Read",
                     AuthorizationStrategies:
-                    [new AuthorizationStrategy("Strategy1"), new AuthorizationStrategy("Strategy2")])
-            ]);
+                    [
+                        new AuthorizationStrategy("Strategy1"),
+                        new AuthorizationStrategy("Strategy2"),
+                    ]
+                ),
+            ]
+        );
 
-        var auth2 = new AuthorizationMetadataResponse.Authorization(
+        var auth2 = new Authorization(
             Id: 1, // Ignored for equality
             Actions:
             [
                 new Action(
                     Name: "Read",
                     AuthorizationStrategies:
-                    [new AuthorizationStrategy("Strategy2"), new AuthorizationStrategy("Strategy1")])
-            ]);
+                    [
+                        new AuthorizationStrategy("Strategy2"),
+                        new AuthorizationStrategy("Strategy1"),
+                    ]
+                ),
+            ]
+        );
 
         // Act
         var hash1 = auth1.GetHashCode();
