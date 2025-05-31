@@ -116,13 +116,13 @@ public class ClaimsHierarchyModuleTests
         responseMessage.EnsureSuccessStatusCode();
         string responseContent = await responseMessage.Content.ReadAsStringAsync();
 
-        var responseModel = JsonSerializer.Deserialize<AuthorizationMetadataResponse>(
+        var responseModel = JsonSerializer.Deserialize<IList<ClaimSetMetadata>>(
             responseContent,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
         );
 
         // Assert
         responseMessage.StatusCode.Should().Be(HttpStatusCode.OK);
-        responseModel.Should().BeEquivalentTo(suppliedAuthorizationMetadataResponse);
+        responseModel.Should().BeEquivalentTo(suppliedAuthorizationMetadataResponse.ClaimSets);
     }
 }
