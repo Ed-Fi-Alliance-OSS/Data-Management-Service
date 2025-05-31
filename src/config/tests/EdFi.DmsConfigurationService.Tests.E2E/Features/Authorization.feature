@@ -1,5 +1,9 @@
 Feature: Authorization
 
+    Background:
+        Given valid credentials
+        And token received
+
     Rule: Authorized with full_access scope. Should have access to all the endpoints
         Background:
             Given client "DmsConfigurationService" credentials with "edfi_admin_api/full_access" scope

@@ -129,7 +129,7 @@ public class ClaimSetRepository(
         }
     }
 
-    public async Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query, bool verbose)
+    public async Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -145,22 +145,8 @@ public class ClaimSetRepository(
 
             var claimSets = await connection.QueryAsync(sql, param: query);
 
-            if (verbose)
-            {
-                var verboseResponses = claimSets
-                    .Select(row => new ClaimSetResponse
-                    {
-                        Id = row.id,
-                        Name = row.claimsetname,
-                        IsSystemReserved = row.issystemreserved,
-                        Applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
-                    })
-                    .ToList();
-                return new ClaimSetQueryResult.Success(verboseResponses);
-            }
-
-            var reducedResponses = claimSets
-                .Select(row => new ClaimSetResponseReduced
+            var items = claimSets
+                .Select(row => new ClaimSetResponse
                 {
                     Id = row.id,
                     Name = row.claimsetname,
@@ -168,7 +154,8 @@ public class ClaimSetRepository(
                     Applications = JsonDocument.Parse(row.applications?.ToString() ?? "{}").RootElement,
                 })
                 .ToList();
-            return new ClaimSetQueryResult.Success(reducedResponses);
+
+            return new ClaimSetQueryResult.Success(items);
         }
         catch (Exception ex)
         {
@@ -177,9 +164,10 @@ public class ClaimSetRepository(
         }
     }
 
-    public async Task<ClaimSetGetResult> GetClaimSet(long id, bool verbose)
+    public async Task<ClaimSetGetResult> GetClaimSet(long id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+
         try
         {
             string sql = """
@@ -190,34 +178,24 @@ public class ClaimSetRepository(
                 WHERE c.Id = @Id
                 """;
 
-            var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id });
+            var claimSets = (await connection.QueryAsync<dynamic>(sql, param: new { Id = id })).ToList();
 
-            if (!claimSets.Any())
+            if (claimSets.Count == 0)
             {
                 return new ClaimSetGetResult.FailureNotFound();
             }
 
-            if (verbose)
-            {
-                var returnClaimSet = claimSets.Select(result => new ClaimSetResponse
+            var returnClaimSet = (
+                claimSets.Select(result => new ClaimSetResponse
                 {
                     Id = result.id,
                     Name = result.claimsetname,
                     IsSystemReserved = result.issystemreserved,
                     Applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
-                });
+                })
+            ).Single();
 
-                return new ClaimSetGetResult.Success(returnClaimSet.Single());
-            }
-            var returnClaimSetReduced = claimSets.Select(result => new ClaimSetResponseReduced
-            {
-                Id = result.id,
-                Name = result.claimsetname,
-                IsSystemReserved = result.issystemreserved,
-                Applications = JsonDocument.Parse(result.applications?.ToString() ?? "{}").RootElement,
-            });
-
-            return new ClaimSetGetResult.Success(returnClaimSetReduced.Single());
+            return new ClaimSetGetResult.Success(returnClaimSet);
         }
         catch (Exception ex)
         {

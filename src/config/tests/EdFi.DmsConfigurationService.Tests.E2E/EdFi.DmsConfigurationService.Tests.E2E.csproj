@@ -38,6 +38,9 @@
     <Compile Update="Features\ClaimSets.feature.cs">
       <DependentUpon>ClaimSets.feature</DependentUpon>
     </Compile>
+    <Compile Update="Features\AuthorizationMetadata.feature.cs">
+      <DependentUpon>AuthorizationMetadata.feature</DependentUpon>
+    </Compile>
   </ItemGroup>
 
 </Project>
