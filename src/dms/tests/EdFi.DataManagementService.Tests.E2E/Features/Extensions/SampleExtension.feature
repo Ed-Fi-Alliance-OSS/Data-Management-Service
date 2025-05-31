@@ -513,10 +513,9 @@ Feature: Sample extension resources
                     "errors": []
                   }
                   """
-# Ignored because Data Validation with Staff when petName has leading or trailing spaces DMS-696-Defect
-        @ignore
-        Scenario: 11 Data Validation with Staff when petName has leading or trailing spaces
 
+        Scenario: 11 Data Validation with Staff when petName has leading or trailing spaces
+            Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
              When a POST request is made to "/ed-fi/staffs" with
                   """
                       {
@@ -526,7 +525,7 @@ Feature: Sample extension resources
                         "hispanicLatinoEthnicity": false,
                         "lastSurname": "Peterson",
                         "_ext": {
-                          "Sample": {
+                          "sample": {
                             "pets": [
                               {
                                 "petName": "         ",
@@ -555,10 +554,8 @@ Feature: Sample extension resources
                     }
                   """
 
-        # Ignored because Data Validation with Staff when Pet name has too short value @DMS-697Defect
-        @ignore
         Scenario: 12 Data Validation with Staff when Pet name has too short value
-
+            Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
              When a POST request is made to "/ed-fi/staffs" with
                   """
                       {
@@ -568,7 +565,7 @@ Feature: Sample extension resources
                         "hispanicLatinoEthnicity": false,
                         "lastSurname": "Peterson",
                         "_ext": {
-                          "Sample": {
+                          "sample": {
                             "pets": [
                               {
                                 "petName": "it",
@@ -590,18 +587,15 @@ Feature: Sample extension resources
                       "correlationId": "0HNCIHNFRNK0C:00000002",
                       "validationErrors": {
                         "$.petName": [
-                          "petName must be between 3 and 20 characters in length."
+                          "petName Value should be at least 3 characters"
                         ]
                       },
                       "errors": []
                     }
                   """
 
-        # Ignored because Data Validation with Staff when Pet name has too long value @DMS-697Defect
-        @ignore
-
         Scenario: 13 Data Validation with Staff when Pet name has too long value
-
+            Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
              When a POST request is made to "/ed-fi/staffs" with
                   """
                       {
@@ -611,7 +605,7 @@ Feature: Sample extension resources
                         "hispanicLatinoEthnicity": false,
                         "lastSurname": "Peterson",
                         "_ext": {
-                          "Sample": {
+                          "sample": {
                             "pets": [
                               {
                                 "petName": "John Jacob Jingleheimer Schmidt",
@@ -633,7 +627,7 @@ Feature: Sample extension resources
                       "correlationId": "0HNCIHNFRNK0C:00000002",
                       "validationErrors": {
                         "$.petName": [
-                          "PetName must be between 3 and 20 characters in length."
+                          "petName Value should be at most 20 characters"
                         ]
                       },
                       "errors": []
