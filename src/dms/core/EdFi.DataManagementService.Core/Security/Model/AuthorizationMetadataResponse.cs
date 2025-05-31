@@ -8,29 +8,35 @@ namespace EdFi.DataManagementService.Core.Security.Model;
 /// <summary>
 /// Represents the authorization metadata response, including claims and authorizations.
 /// Example AuthorizationMetadataResponse:
-/// {
-///  "claims": [
-///  {
-///    "name": "http://ed-fi.org/ods/identity/claims/ed-fi/absenceEventCategoryDescriptor",
-///    "authorizationId": 1
-///  }],
-///  "authorizations": [
+/// [
 ///   {
-///    "id": 1,
-///    "actions": [
-///      {
-///        "name": "Read",
-///        "authorizationStrategies": [
-///         {
-///           "name": "NoFurtherAuthorizationRequired"
-///         }]
-///      }]
-///   }]
-/// }
+///    "claimSetName": "ClaimSet1",
+///    "claims": [
+///    {
+///      "name": "http://ed-fi.org/ods/identity/claims/ed-fi/absenceEventCategoryDescriptor",
+///      "authorizationId": 1
+///    }],
+///    "authorizations": [
+///     {
+///      "id": 1,
+///      "actions": [
+///        {
+///          "name": "Read",
+///          "authorizationStrategies": [
+///           {
+///             "name": "NoFurtherAuthorizationRequired"
+///           }]
+///        }]
+///     }]
+///   }
+/// ]
 /// </summary>
-public record AuthorizationMetadataResponse(
-    List<AuthorizationMetadataResponse.Claim> Claims,
-    List<AuthorizationMetadataResponse.Authorization> Authorizations
+public record AuthorizationMetadataResponse(IList<ClaimSetMetadata> ClaimSets);
+
+public record ClaimSetMetadata(
+    string ClaimSetName,
+    List<ClaimSetMetadata.Claim> Claims,
+    List<ClaimSetMetadata.Authorization> Authorizations
 )
 {
     /// <summary>

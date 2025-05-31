@@ -37,70 +37,49 @@ public class SecurityMetadataProvider(
     {
         await SetAuthorizationHeader();
 
-        string claimsEndpoint = "v2/claimSets";
-        HttpResponseMessage claimSetsResponse = await configurationServiceApiClient.Client.GetAsync(
-            claimsEndpoint
-        );
-        string responseJsonString = await claimSetsResponse.Content.ReadAsStringAsync();
-        List<ClaimSet> claimSets =
-            JsonSerializer.Deserialize<List<ClaimSet>>(responseJsonString, _jsonOptions) ?? [];
-
-        List<ClaimSet> claimSetAuthorizationMetadata = [];
-
-        foreach (ClaimSet claimSet in claimSets)
-        {
-            AuthorizationMetadataResponse? authorizationMetadata = await GetAuthorizationMetadataForClaimSet(
-                claimSet.Name
-            );
-            if (authorizationMetadata != null)
-            {
-                ClaimSet enrichedClaimSet = EnrichClaimSetWithAuthorizationMetadata(
-                    claimSet,
-                    authorizationMetadata
-                );
-                claimSetAuthorizationMetadata.Add(enrichedClaimSet);
-            }
-        }
-
-        return claimSetAuthorizationMetadata;
-    }
-
-    private async Task<AuthorizationMetadataResponse?> GetAuthorizationMetadataForClaimSet(
-        string claimSetName
-    )
-    {
-        string authorizationMetadataEndpoint = $"/authorizationMetadata?claimSetName={claimSetName}";
+        // Retrieve all claim sets with their authorization metadata in one call by omitting claimSetName
+        string authorizationMetadataEndpoint = "/authorizationMetadata";
         HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(
             authorizationMetadataEndpoint
         );
         string jsonString = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<AuthorizationMetadataResponse>(jsonString, _jsonOptions);
-    }
 
-    private static ClaimSet EnrichClaimSetWithAuthorizationMetadata(
-        ClaimSet claimSet,
-        AuthorizationMetadataResponse authorizationMetadata
-    )
-    {
-        ClaimSet enrichedClaimSet = new(claimSet.Name, []);
+        // Deserialize as a collection of authorization metadata responses (one per claim set)
+        var allMetadata =
+            JsonSerializer.Deserialize<AuthorizationMetadataResponse>(jsonString, _jsonOptions)
+            ?? new AuthorizationMetadataResponse([]);
 
-        foreach (AuthorizationMetadataResponse.Claim claim in authorizationMetadata.Claims)
+        List<ClaimSet> claimSets = [];
+
+        foreach (var claimSetMetadata in allMetadata.ClaimSets)
         {
-            AuthorizationMetadataResponse.Authorization? authorization =
-                authorizationMetadata.Authorizations.Find(a => a.Id == claim.AuthorizationId);
-            if (authorization != null)
+            var claimSetName = claimSetMetadata.ClaimSetName;
+
+            var claimSet = new ClaimSet(claimSetName, []);
+
+            foreach (ClaimSetMetadata.Claim claim in claimSetMetadata.Claims)
             {
-                List<ResourceClaim> resourceClaims = authorization
-                    .Actions.Select(action => new ResourceClaim(
-                        claim.Name,
-                        action.Name,
-                        action.AuthorizationStrategies
-                    ))
-                    .ToList();
-                enrichedClaimSet.ResourceClaims.AddRange(resourceClaims);
+                ClaimSetMetadata.Authorization? authorization = claimSetMetadata.Authorizations.Find(a =>
+                    a.Id == claim.AuthorizationId
+                );
+
+                if (authorization != null)
+                {
+                    List<ResourceClaim> resourceClaims = authorization
+                        .Actions.Select(action => new ResourceClaim(
+                            claim.Name,
+                            action.Name,
+                            action.AuthorizationStrategies
+                        ))
+                        .ToList();
+
+                    claimSet.ResourceClaims.AddRange(resourceClaims);
+                }
             }
+
+            claimSets.Add(claimSet);
         }
 
-        return enrichedClaimSet;
+        return claimSets;
     }
 }

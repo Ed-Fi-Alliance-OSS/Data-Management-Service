@@ -27,18 +27,13 @@ public class AuthorizationMetadataModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        if (string.IsNullOrEmpty(claimSetName))
-        {
-            return Results.BadRequest("The 'claimSetName' parameter is required.");
-        }
-
         var claimsHierarchyResult = await repository.GetClaimsHierarchy();
 
         if (claimsHierarchyResult is ClaimsHierarchyGetResult.Success success)
         {
             var authorizationMetadataResponse = await responseFactory.Create(claimSetName, success.Claims);
 
-            return Results.Ok(authorizationMetadataResponse);
+            return Results.Ok(authorizationMetadataResponse.ClaimSets);
         }
 
         return claimsHierarchyResult switch
