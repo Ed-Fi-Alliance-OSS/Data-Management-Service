@@ -17,7 +17,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         logger.LogDebug(
-            "Entering DuplicateReferencesMiddleware - {TraceId}",
+            "Entering DisallowDuplicateReferencesMiddleware - {TraceId}",
             context.FrontendRequest.TraceId.Value
         );
 
