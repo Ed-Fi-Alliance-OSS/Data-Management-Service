@@ -69,7 +69,7 @@ public class QueryRequestHandlerTests
         {
             public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {
-                return Task.FromResult<QueryResult>(new QueryResult.QueryFailureInvalidQuery("Error"));
+                return Task.FromResult<QueryResult>(new QueryResult.QueryFailureKnownError("Error"));
             }
         }
 
@@ -85,7 +85,7 @@ public class QueryRequestHandlerTests
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(404);
+            _context.FrontendResponse.StatusCode.Should().Be(400);
             _context.FrontendResponse.Body.Should().BeNull();
         }
     }

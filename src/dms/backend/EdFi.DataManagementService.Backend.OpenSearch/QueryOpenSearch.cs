@@ -465,8 +465,17 @@ public static partial class QueryOpenSearch
 
                 return new QueryResult.QuerySuccess(new JsonArray(documents), totalCount);
             }
+            if (response.SuccessOrKnownError)
+            {
+                logger.LogWarning(
+                    "SuccessOrKnownError OpenSearch Response - {TraceId} - {DebugInformation}",
+                    queryRequest.TraceId.Value,
+                    response.DebugInformation
+                );
+                return new QueryResult.QueryFailureKnownError(response.DebugInformation);
+            }
 
-            logger.LogCritical(
+            logger.LogError(
                 "Unsuccessful OpenSearch Response - {TraceId} - {DebugInformation}",
                 queryRequest.TraceId.Value,
                 response.DebugInformation
