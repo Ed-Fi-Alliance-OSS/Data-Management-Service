@@ -784,8 +784,8 @@ public class SqlAction() : ISqlAction
     {
         await using NpgsqlCommand command = new(
             $"""
-        SELECT jsonb_agg(DISTINCT (value::bigint))
-        FROM (
+            SELECT jsonb_agg(DISTINCT to_jsonb(value::text))
+            FROM (
             SELECT jsonb_array_elements_text(StudentSchoolAuthorizationEducationOrganizationIds) AS value
             FROM dms.StudentSchoolAssociationAuthorization
             WHERE StudentUniqueId = $1
