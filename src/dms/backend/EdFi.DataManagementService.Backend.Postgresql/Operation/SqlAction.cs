@@ -782,53 +782,28 @@ public class SqlAction() : ISqlAction
         NpgsqlTransaction transaction
     )
     {
-        await using var command = new NpgsqlCommand(
+        await using NpgsqlCommand command = new(
             $"""
-        SELECT jsonb_agg(DISTINCT to_jsonb(value::text))
-        FROM (
-            SELECT jsonb_array_elements_text(StudentSchoolAuthorizationEducationOrganizationIds) AS value
-            FROM dms.StudentSchoolAssociationAuthorization
-            WHERE StudentUniqueId = $1
-        ) subquery;
-        """,
+                SELECT jsonb_agg(DISTINCT value)
+                FROM (
+                    SELECT DISTINCT jsonb_array_elements(StudentSchoolAuthorizationEducationOrganizationIds) AS value
+                    FROM dms.StudentSchoolAssociationAuthorization
+                    WHERE StudentUniqueId = $1
+                ) subquery;
+            """,
             connection,
             transaction
-        );
-
-        command.Parameters.AddWithValue(studentUniqueId);
+        )
+        {
+            Parameters = { new() { Value = studentUniqueId } },
+        };
 
         await command.PrepareAsync();
-        var result = await command.ExecuteScalarAsync();
+        object? result = await command.ExecuteScalarAsync();
 
-        if (result is string jsonString && !string.IsNullOrWhiteSpace(jsonString))
-        {
-            try
-            {
-                var json = JsonSerializer.Deserialize<JsonElement>(jsonString);
-
-                if (json.ValueKind == JsonValueKind.Array)
-                {
-                    var ids = new List<long>();
-
-                    foreach (var element in json.EnumerateArray())
-                    {
-                        if (element.ValueKind == JsonValueKind.String &&
-                            long.TryParse(element.GetString(), out var id))
-                        {
-                            ids.Add(id);
-                        }
-                    }
-
-                    return JsonSerializer.SerializeToElement(ids);
-                }
-            }
-            catch (JsonException)
-            {
-                // Log or handle bad JSON
-            }
-        }
-
-        return null;
+        return result == DBNull.Value || result == null
+            ? null
+            : JsonSerializer.Deserialize<JsonElement>((string)result);
     }
 
     public async Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
