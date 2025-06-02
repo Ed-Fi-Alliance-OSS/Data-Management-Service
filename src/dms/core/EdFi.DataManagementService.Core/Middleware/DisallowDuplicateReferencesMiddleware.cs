@@ -24,19 +24,35 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         var validationErrors = new Dictionary<string, List<string>>();
 
         // Get al the Paths from ArrayUniquenessConstraints
-        var uniquenessPaths = context
-            .ResourceSchema.ArrayUniquenessConstraints.SelectMany(g => g)
-            .Select(p => p.Value)
-            .ToHashSet();
+        var uniquenessPaths = new HashSet<string>();
+        foreach (var group in context.ResourceSchema.ArrayUniquenessConstraints)
+        {
+            foreach (var jsonPath in group)
+            {
+                uniquenessPaths.Add(jsonPath.Value);
+            }
+        }
 
         // Get all the reference paths that are not part of ArrayUniquenessConstraints
-        var referencePaths = context
-            .ResourceSchema.DocumentPaths.Where(p => p.IsReference && HasSafeReferenceJsonPaths(p))
-            .SelectMany(p => p.ReferenceJsonPathsElements.Select(e => e.ReferenceJsonPath.Value))
-            .Where(path => !uniquenessPaths.Contains(path))
-            .ToList();
+        var referencePaths = new List<string>();
+        foreach (var docPath in context.ResourceSchema.DocumentPaths)
+        {
+            if (docPath.IsReference && HasSafeReferenceJsonPaths(docPath))
+            {
+                foreach (var refElem in docPath.ReferenceJsonPathsElements)
+                {
+                    string path = refElem.ReferenceJsonPath.Value;
+                    if (!uniquenessPaths.Contains(path))
+                    {
+                        referencePaths.Add(path);
+                    }
+                }
+            }
+        }
 
-        var allPaths = uniquenessPaths.Concat(referencePaths).ToList();
+        var allPaths = new List<string>(uniquenessPaths.Count + referencePaths.Count);
+        allPaths.AddRange(uniquenessPaths);
+        allPaths.AddRange(referencePaths);
 
         (string? arrayPath, int dupeIndex) = context.ParsedBody.FindDuplicatesWithArrayPath(allPaths, logger);
 

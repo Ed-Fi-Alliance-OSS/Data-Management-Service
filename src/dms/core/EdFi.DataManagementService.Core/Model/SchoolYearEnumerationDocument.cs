@@ -46,6 +46,7 @@ internal record SchoolYearEnumerationDocument(JsonNode _document)
             DocumentIdentity: documentIdentity,
             ReferentialId: ReferentialIdFrom(resourceInfo, documentIdentity),
             DocumentReferences: [],
+            DocumentReferenceArrays: [],
             DescriptorReferences: [],
             SuperclassIdentity: null,
             ArrayUniquenessConstraints: []
