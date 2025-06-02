@@ -298,7 +298,7 @@ Feature: Query String handling for GET requests for Resource Queries
                         }
                     }]
                   """
-        @ignore
+
         Scenario: 16 Ensure clients get results when querying boolean with capitalized values
             Given a POST request is made to "/ed-fi/schoolYearTypes" with
                   """
