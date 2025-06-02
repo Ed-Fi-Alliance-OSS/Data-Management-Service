@@ -18,7 +18,10 @@ public static class AuthorizationDataProvider
         BaseAddress = new Uri($"http://localhost:{AppSettings.ConfigServicePort}/"),
     };
 
-    private static readonly HttpClient _dmsClient = new() { BaseAddress = new Uri($"http://localhost:{AppSettings.DmsPort}/") };
+    private static readonly HttpClient _dmsClient = new()
+    {
+        BaseAddress = new Uri($"http://localhost:{AppSettings.DmsPort}/"),
+    };
 
     public static async Task Create(
         string company,
@@ -110,7 +113,8 @@ public static class AuthorizationDataProvider
 
         _dmsClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue($"Basic", basicB64);
         var tokenResponse = await _dmsClient.PostAsync("oauth/token", formData);
-        var tokenJson = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
+        var jsonString = await tokenResponse.Content.ReadAsStringAsync();
+        var tokenJson = JsonDocument.Parse(jsonString);
 
         return tokenJson.RootElement.GetProperty("access_token").GetString() ?? "";
     }
