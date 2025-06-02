@@ -22,6 +22,10 @@ public record DocumentInfo(
     /// </summary>
     DocumentReference[] DocumentReferences,
     /// <summary>
+    /// Groupings of extracted document reference arrays
+    /// </summary>
+    DocumentReferenceArray[] DocumentReferenceArrays,
+    /// <summary>
     /// A list of the non-reference (meaning top-level only) descriptor values of the entity extracted from the API document
     /// </summary>
     DescriptorReference[] DescriptorReferences,
