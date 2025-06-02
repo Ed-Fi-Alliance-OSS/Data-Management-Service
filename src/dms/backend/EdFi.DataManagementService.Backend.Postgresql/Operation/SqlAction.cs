@@ -782,10 +782,10 @@ public class SqlAction() : ISqlAction
         NpgsqlTransaction transaction
     )
     {
-        await using NpgsqlCommand command = new(
+        await using var command = new NpgsqlCommand(
             $"""
-            SELECT jsonb_agg(DISTINCT to_jsonb(value::text))
-            FROM (
+        SELECT jsonb_agg(DISTINCT to_jsonb(value::text))
+        FROM (
             SELECT jsonb_array_elements_text(StudentSchoolAuthorizationEducationOrganizationIds) AS value
             FROM dms.StudentSchoolAssociationAuthorization
             WHERE StudentUniqueId = $1
@@ -793,29 +793,39 @@ public class SqlAction() : ISqlAction
         """,
             connection,
             transaction
-        )
-        {
-            Parameters = { new() { Value = studentUniqueId } },
-        };
+        );
+
+        command.Parameters.AddWithValue(studentUniqueId);
 
         await command.PrepareAsync();
         var result = await command.ExecuteScalarAsync();
 
-        // result will be a JsonElement or something that can be converted
-        if (result is JsonElement json && json.ValueKind == JsonValueKind.Array)
+        if (result is string jsonString && !string.IsNullOrWhiteSpace(jsonString))
         {
-            var ids = new List<long>();
-
-            foreach (var element in json.EnumerateArray())
+            try
             {
-                if (element.ValueKind == JsonValueKind.String &&
-                    long.TryParse(element.GetString(), out var id))
+                var json = JsonSerializer.Deserialize<JsonElement>(jsonString);
+
+                if (json.ValueKind == JsonValueKind.Array)
                 {
-                    ids.Add(id);
+                    var ids = new List<long>();
+
+                    foreach (var element in json.EnumerateArray())
+                    {
+                        if (element.ValueKind == JsonValueKind.String &&
+                            long.TryParse(element.GetString(), out var id))
+                        {
+                            ids.Add(id);
+                        }
+                    }
+
+                    return JsonSerializer.SerializeToElement(ids);
                 }
             }
-
-            return JsonSerializer.SerializeToElement(ids);
+            catch (JsonException)
+            {
+                // Log or handle bad JSON
+            }
         }
 
         return null;
