@@ -1,17 +1,17 @@
 Feature: RelationshipsWithEdOrgsAndStaff Authorization
 
         Background:
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901,255901001"
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901,25590100100000"
               And the system has these descriptors
-                  | descriptorValue                                                                |
-                  | uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education                  |
+                  | descriptorValue                                               |
+                  | uri://ed-fi.org/ProgramAssignmentDescriptor#Regular Education |
 
               And the system has these "localEducationAgencies"
                   | localEducationAgencyId | categories                                                                                                                         | localEducationAgencyCategoryDescriptor                         | nameOfInstitution |
                   | 255901                 | [ { "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"} ] | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Charter | LEA-100001        |
               And the system has these "schools"
-                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference       |
-                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 255901} |
+                  | schoolId       | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   | localEducationAgencyReference       |
+                  | 25590100100000 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] | { "localEducationAgencyId": 255901} |
               And the system has these "people"
                   | personId | sourceSystemDescriptor                      |
                   | p001     | uri://ed-fi.org/SourceSystemDescriptor#Pass |
@@ -23,11 +23,11 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   | s0004         | Adam      | Buck        |
                   | s0005         | Francis   | Buck        |
               And the system has these "staffEducationOrganizationAssignmentAssociations"
-                  | beginDate  | staffClassificationDescriptor                         | educationOrganizationReference           | staffReference                 |
-                  | 10/10/2020 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 255901001 } | {  "staffUniqueId": "s0001"  } |
+                  | beginDate  | staffClassificationDescriptor                         | educationOrganizationReference                | staffReference                 |
+                  | 10/10/2020 | uri://ed-fi.org/StaffClassificationDescriptor#Teacher | { "educationOrganizationId": 25590100100000 } | {  "staffUniqueId": "s0001"  } |
               And the system has these "staffEducationOrganizationEmploymentAssociations"
-                  | hireDate   | employmentStatusDescriptor                         | educationOrganizationReference           | staffReference                 |
-                  | 10/10/2020 | uri://ed-fi.org/employmentStatusDescriptor#Teacher | { "educationOrganizationId": 255901001 } | {  "staffUniqueId": "s0004"  } |
+                  | hireDate   | employmentStatusDescriptor                         | educationOrganizationReference                | staffReference                 |
+                  | 10/10/2020 | uri://ed-fi.org/employmentStatusDescriptor#Teacher | { "educationOrganizationId": 25590100100000 } | {  "staffUniqueId": "s0004"  } |
 
     Rule: staffEducationOrganizationAssignmentAssociations CRUD is properly authorized
 
@@ -37,7 +37,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                      {
                         "schoolReference": {
-                            "schoolId": 255901001
+                            "schoolId": 25590100100000
                         },
                         "staffReference": {
                             "staffUniqueId": "s0001"
@@ -53,7 +53,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                      {
                         "schoolReference": {
-                            "schoolId": 255901001
+                            "schoolId": 25590100100000
                         },
                         "staffReference": {
                             "staffUniqueId": "s0002"
@@ -72,7 +72,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       "correlationId": "0HNCJPIJKHR7A:00000019",
                       "validationErrors": {},
                       "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901', '255901001') and the resource item's StaffUniqueId value."
+                        "No relationships have been established between the caller's education organization id claims ('255901', '25590100100000') and the resource item's StaffUniqueId value."
                       ]
                     }
                   """
@@ -84,7 +84,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                       {
                       "schoolReference": {
-                          "schoolId": 255901001
+                          "schoolId": 25590100100000
                       },
                       "staffReference": {
                           "staffUniqueId": "s0001"
@@ -99,7 +99,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       {
                       "id":"{id}",
                       "schoolReference": {
-                          "schoolId": 255901001
+                          "schoolId": 25590100100000
                       },
                       "staffReference": {
                           "staffUniqueId": "s0002"
@@ -118,31 +118,31 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                           "correlationId": "0HNCJPIJKHR7K:0000001A",
                           "validationErrors": {},
                           "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901', '255901001') and the resource item's StaffUniqueId value."
+                          "No relationships have been established between the caller's education organization id claims ('255901', '25590100100000') and the resource item's StaffUniqueId value."
                           ]
                       }
                   """
 
         Scenario: 04 Ensure client can Search staffEducationOrganizationAssignmentAssociations
 
-                     When a GET request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations"
-                     Then it should respond with 200
-                      And the response body is
-                          """
-                            [
-                              {
-                                "beginDate": "2020-10-10",
-                                "educationOrganizationReference": {
-                                  "educationOrganizationId": 255901001
-                                },
-                                "staffReference": {
-                                  "staffUniqueId": "s0001"
-                                },
-                                "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                                "id": "{id}"
-                              }
-                            ]
-                          """
+             When a GET request is made to "/ed-fi/staffEducationOrganizationAssignmentAssociations"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    [
+                      {
+                        "beginDate": "2020-10-10",
+                        "educationOrganizationReference": {
+                          "educationOrganizationId": 25590100100000
+                        },
+                        "staffReference": {
+                          "staffUniqueId": "s0001"
+                        },
+                        "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
+                        "id": "{id}"
+                      }
+                    ]
+                  """
 
         Scenario: 05 Ensure client can POST staffEducationOrganizationAssignmentAssociations
 
@@ -150,7 +150,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0002"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -166,7 +166,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0001"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -186,7 +186,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                         },
                         "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
                         "educationOrganizationReference": {
-                          "educationOrganizationId": 255901001
+                          "educationOrganizationId": 25590100100000
                         }
                       }
                   """
@@ -199,7 +199,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0001"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -211,7 +211,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     {
                        "id":"{id}",
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0001"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Science Teacher"
@@ -225,7 +225,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0001"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -241,7 +241,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0002"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -268,7 +268,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0002"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -297,7 +297,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0002"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -317,7 +317,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0002"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -330,7 +330,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     {
                        "id":"{id}",
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0002"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Science Teacher"
@@ -356,7 +356,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "staffClassificationDescriptor": "uri://ed-fi.org/StaffClassificationDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0002"  },
                       "beginDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -388,7 +388,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                      {
                         "schoolReference": {
-                            "schoolId": 255901001
+                            "schoolId": 25590100100000
                         },
                         "staffReference": {
                             "staffUniqueId": "s0004"
@@ -404,7 +404,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                       {
                       "schoolReference": {
-                          "schoolId": 255901001
+                          "schoolId": 25590100100000
                       },
                       "staffReference": {
                           "staffUniqueId": "s0004"
@@ -419,7 +419,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       {
                       "id":"{id}",
                       "schoolReference": {
-                          "schoolId": 255901001
+                          "schoolId": 25590100100000
                       },
                       "staffReference": {
                           "staffUniqueId": "s0005"
@@ -438,7 +438,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                           "correlationId": "0HNCJPIJKHR7K:0000001A",
                           "validationErrors": {},
                           "errors": [
-                          "No relationships have been established between the caller's education organization id claims ('255901', '255901001') and the resource item's StaffUniqueId value."
+                          "No relationships have been established between the caller's education organization id claims ('255901', '25590100100000') and the resource item's StaffUniqueId value."
                           ]
                       }
                   """
@@ -454,7 +454,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                         "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
                         "hireDate": "2020-10-10",
                         "educationOrganizationReference": {
-                          "educationOrganizationId": 255901001
+                          "educationOrganizationId": 25590100100000
                         },
                         "staffReference": {
                           "staffUniqueId": "s0004"
@@ -470,7 +470,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -484,7 +484,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -503,7 +503,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                       },
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
                       "educationOrganizationReference": {
-                        "educationOrganizationId": 255901001
+                        "educationOrganizationId": 25590100100000
                       }
                     }
                   """
@@ -514,7 +514,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -526,7 +526,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     {
                        "id":"{id}",
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Science Teacher"
@@ -540,7 +540,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -556,7 +556,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -583,7 +583,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -612,7 +612,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -632,7 +632,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Math Teacher"
@@ -645,7 +645,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                     {
                        "id":"{id}",
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Science Teacher"
@@ -671,7 +671,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
                   """
                     {
                       "employmentStatusDescriptor": "uri://ed-fi.org/employmentStatusDescriptor#Teacher",
-                      "educationOrganizationReference": { "educationOrganizationId": 255901001 },
+                      "educationOrganizationReference": { "educationOrganizationId": 25590100100000 },
                       "staffReference": {  "staffUniqueId": "s0005"  },
                       "hireDate": "2018-08-20",
                       "positionTitle": "Math Teacher"

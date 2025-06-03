@@ -7,7 +7,7 @@ using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
+namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 public class EducationOrganizationHierarchyTests : DatabaseTest
 {

@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
+namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 public abstract class DatabaseTest : DatabaseTestBase
 {

@@ -1,16 +1,16 @@
 Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
         Background:
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901, 255901902"
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901901, 25590190200000"
               And the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade               |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school |
                   | uri://ed-fi.org/SexDescriptor#Female                           |
               And the system has these "schools"
-                  | schoolId  | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
-                  | 255901901 | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
-                  | 255901902 | Authorized school 2 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+                  | schoolId       | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
+                  | 255901901      | Authorized school   | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+                  | 25590190200000 | Authorized school 2 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
               And the system has these "students"
                   | studentUniqueId | firstName            | lastSurname | birthDate  |
                   | "S91111"        | Authorized student   | student-ln  | 2008-01-01 |
@@ -20,9 +20,9 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   | "C91111"        | Authorized contact | contact-ln  |
                   | "C91112"        | Authorized contact | contact-ln  |
               And the system has these "studentSchoolAssociations"
-                  | schoolReference           | studentReference                | entryGradeLevelDescriptor                          | entryDate  |
-                  | { "schoolId": 255901901 } | { "studentUniqueId": "S91111" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
-                  | { "schoolId": 255901902 } | { "studentUniqueId": "S91112" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
+                  | schoolReference                | studentReference                | entryGradeLevelDescriptor                          | entryDate  |
+                  | { "schoolId": 255901901 }      | { "studentUniqueId": "S91111" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
+                  | { "schoolId": 25590190200000 } | { "studentUniqueId": "S91112" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
 
     Rule: StudentContactAssociation CRUD is properly authorized
 
@@ -291,7 +291,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   """
 
         Scenario: 10 Ensure client get the required validation error when studentContactAssociations is created with empty contactReference
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901902"
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "25590190200000"
              When a POST request is made to "/ed-fi/studentContactAssociations" with
                   """
                   {
@@ -369,7 +369,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                            "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and the resource item's ContactUniqueId value."
+                            "No relationships have been established between the caller's education organization id claims ('255901901', '25590190200000') and the resource item's ContactUniqueId value."
                           ]
                      }
                   """
@@ -419,7 +419,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                            "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and the resource item's ContactUniqueId value."
+                            "No relationships have been established between the caller's education organization id claims ('255901901', '25590190200000') and the resource item's ContactUniqueId value."
                           ]
                     }
                   """
@@ -556,7 +556,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                            "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and the resource item's ContactUniqueId value."
+                            "No relationships have been established between the caller's education organization id claims ('255901901', '25590190200000') and the resource item's ContactUniqueId value."
                           ]
                     }
                   """
@@ -711,7 +711,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                       "status": 403,
                       "validationErrors": {},
                       "errors": [
-                            "No relationships have been established between the caller's education organization id claims ('255901901', '255901902') and the resource item's StudentUniqueId value."
+                            "No relationships have been established between the caller's education organization id claims ('255901901', '25590190200000') and the resource item's StudentUniqueId value."
                           ]
                     }
                   """
@@ -756,7 +756,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   }
                   """
              Then it should respond with 201 or 200
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901902"
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "25590190200000"
              When a GET request is made to "/ed-fi/contacts?contactUniqueId=C81127"
              Then it should respond with 200
               And the response body is
@@ -796,7 +796,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
               And the system has these "studentSchoolAssociations"
                   | schoolReference           | studentReference                | entryGradeLevelDescriptor                          | entryDate  |
                   | { "schoolId": 255901904 } | { "studentUniqueId": "S91114" } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
-              
+
         Scenario: 22 Ensure client can retrieve only the associated contacts using student's edorg id
              When a POST request is made to "/ed-fi/contacts" with
                   """
@@ -1097,7 +1097,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
             Given the token gets switched to the one in the "EdFiSandbox_full_access" variable
              When a DELETE request is made to "/ed-fi/studentSchoolAssociations/{StudentSchoolAssociationId}"
              Then it should respond with 204
-        
+
             # Assert that token with '1355901001' access continues to be able to retrieve a Contact
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1355901001"
              When a GET request is made to "/ed-fi/contacts/{ContactId}"
@@ -1562,7 +1562,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                       }
                     ]
                   """
-                  
+
             # Assert that token with '1755901002' access can retrieve a Contact
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1755901002"
              When a GET request is made to "/ed-fi/contacts/{ContactId}"
@@ -1618,7 +1618,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   [
                   ]
                   """
-                  
+
             # Assert that token with '1755901002' access can no longer retrieve a Contact
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1755901002"
              When a GET request is made to "/ed-fi/contacts/{ContactId}"
@@ -1650,7 +1650,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                       }
                   ]
                   """
-    
+
             # Recreate SCA for School '1755901001', and '1755901002'
             Given the token gets switched to the one in the "EdFiSandbox_full_access" variable
 
@@ -1685,7 +1685,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                       }
                     ]
                   """
-                  
+
             # Assert that token with '1755901002' access can retrieve a Contact
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1755901002"
              When a GET request is made to "/ed-fi/contacts/{ContactId}"
