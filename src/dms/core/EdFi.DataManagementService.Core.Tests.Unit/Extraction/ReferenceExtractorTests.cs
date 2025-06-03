@@ -156,6 +156,33 @@ public class ExtractDocumentReferencesTests
             documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
             documentIdentityElements[1].IdentityValue.Should().Be("222");
         }
+
+        [Test]
+        public void It_has_extracted_the_expected_document_reference_arrays()
+        {
+            documentReferenceArrays.Should().HaveCount(2);
+
+            var courseOfferingArray = Array.Find(
+                documentReferenceArrays,
+                a => a.arrayPath.Value.Contains("courseOfferingReference")
+            );
+            courseOfferingArray.Should().NotBeNull();
+            courseOfferingArray!.DocumentReferences.Should().ContainSingle();
+            courseOfferingArray
+                .DocumentReferences[0]
+                .ResourceInfo.ResourceName.Value.Should()
+                .Be("CourseOffering");
+            var classPeriodArray = Array.Find(
+                documentReferenceArrays,
+                a => a.arrayPath.Value.Contains("classPeriods")
+            );
+            classPeriodArray.Should().NotBeNull();
+            classPeriodArray!.DocumentReferences.Should().HaveCount(2);
+            foreach (var docRef in classPeriodArray.DocumentReferences)
+            {
+                docRef.ResourceInfo.ResourceName.Value.Should().Be("ClassPeriod");
+            }
+        }
     }
 
     [TestFixture]
@@ -231,6 +258,23 @@ public class ExtractDocumentReferencesTests
             documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
             documentIdentityElements[1].IdentityValue.Should().Be("222");
         }
+
+        [Test]
+        public void It_has_extracted_the_expected_document_reference_arrays()
+        {
+            documentReferenceArrays.Should().HaveCount(1);
+
+            var classPeriodArray = Array.Find(
+                documentReferenceArrays,
+                a => a.arrayPath.Value.Contains("classPeriods")
+            );
+            classPeriodArray.Should().NotBeNull();
+            classPeriodArray!.DocumentReferences.Should().HaveCount(2);
+            foreach (var docRef in classPeriodArray.DocumentReferences)
+            {
+                docRef.ResourceInfo.ResourceName.Value.Should().Be("ClassPeriod");
+            }
+        }
     }
 
     [TestFixture]
@@ -285,6 +329,20 @@ public class ExtractDocumentReferencesTests
 
             documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
             documentIdentityElements[1].IdentityValue.Should().Be("111");
+        }
+
+        [Test]
+        public void It_has_extracted_the_expected_document_reference_arrays()
+        {
+            documentReferenceArrays.Should().HaveCount(1);
+
+            var classPeriodArray = Array.Find(
+                documentReferenceArrays,
+                a => a.arrayPath.Value.Contains("classPeriods")
+            );
+            classPeriodArray.Should().NotBeNull();
+            classPeriodArray!.DocumentReferences.Should().HaveCount(1);
+            classPeriodArray.DocumentReferences[0].ResourceInfo.ResourceName.Value.Should().Be("ClassPeriod");
         }
     }
 
@@ -379,6 +437,23 @@ public class ExtractDocumentReferencesTests
             documentIdentityElements[3].IdentityJsonPath.Value.Should().Be("$.sessionReference.sessionName");
             documentIdentityElements[3].IdentityValue.Should().Be("aSessionName");
         }
+
+        [Test]
+        public void It_has_extracted_the_expected_document_reference_arrays()
+        {
+            documentReferenceArrays.Should().HaveCount(1);
+
+            var courseOfferingArray = Array.Find(
+                documentReferenceArrays,
+                a => a.arrayPath.Value.Contains("courseOfferingReference")
+            );
+            courseOfferingArray.Should().NotBeNull();
+            courseOfferingArray!.DocumentReferences.Should().ContainSingle();
+            courseOfferingArray
+                .DocumentReferences[0]
+                .ResourceInfo.ResourceName.Value.Should()
+                .Be("CourseOffering");
+        }
     }
 
     [TestFixture]
@@ -410,6 +485,12 @@ public class ExtractDocumentReferencesTests
         public void It_has_extracted_no_references()
         {
             documentReferences.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_has_extracted_no_document_reference_arrays()
+        {
+            documentReferenceArrays.Should().BeEmpty();
         }
     }
 }
