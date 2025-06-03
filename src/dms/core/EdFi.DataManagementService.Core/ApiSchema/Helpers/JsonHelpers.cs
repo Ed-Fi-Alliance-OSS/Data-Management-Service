@@ -380,7 +380,7 @@ internal static class JsonHelpers
 
     /// <summary>
     /// Finds duplicates in an array by comparing values at specified JsonPaths.
-    /// Returns the index of the first duplicate found, or -1 if no duplicates exist.
+    /// Returns the index and the array path of the first duplicate found, or null and -1 if no duplicates exist.
     /// </summary>
     public static (string? arrayPath, int dupeIndex) FindDuplicatesWithArrayPath(
         this JsonNode jsonNode,
@@ -402,7 +402,7 @@ internal static class JsonHelpers
             })
             .ToList();
 
-        // Group by number of values to find potential duplicates
+        // Group to discard all arrays that have no values in the document or that only have one value
         var groups = pathResults.GroupBy(x => x.Values.Count).Where(g => g.Key > 1);
 
         foreach (var group in groups)
@@ -410,25 +410,37 @@ internal static class JsonHelpers
             var groupPaths = group.ToList();
             int itemCount = group.Key;
 
-            // Build tuples to compare
-            var itemValues = new List<List<string>>();
-            for (int i = 0; i < itemCount; i++)
+            // Defensive validation: all paths in the group must have the same number of values
+            bool allSameCount = groupPaths.TrueForAll(gp => gp.Values.Count == itemCount);
+            if (!allSameCount)
             {
-                var values = groupPaths.Select(r => r.Values[i]).ToList();
-                itemValues.Add(values);
+                continue;
             }
 
-            // Find duplicates by comparing values
-            for (int i = 0; i < itemValues.Count; i++)
+            // Using HashSet to detect duplicates efficiently
+            var seen = new Dictionary<string, int>();
+            for (int i = 0; i < itemCount; i++)
             {
-                for (int j = i + 1; j < itemValues.Count; j++)
+                // Build the uniqueness key for the current item
+                var sb = new StringBuilder();
+                for (int p = 0; p < groupPaths.Count; p++)
                 {
-                    if (itemValues[i].SequenceEqual(itemValues[j]))
+                    if (p > 0)
                     {
-                        // Uses the first path of the group to identify the array
-                        string arrayPath = groupPaths[0].Path;
-                        return (arrayPath, j);
+                        sb.Append('|');
                     }
+                    sb.Append(groupPaths[p].Values[i] ?? "null");
+                }
+                string key = sb.ToString();
+
+                if (seen.TryGetValue(key, out _))
+                {
+                    string arrayPath = groupPaths[0].Path;
+                    return (arrayPath, i);
+                }
+                else
+                {
+                    seen[key] = i;
                 }
             }
         }

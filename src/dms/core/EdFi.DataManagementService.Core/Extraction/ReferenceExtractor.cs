@@ -102,21 +102,18 @@ internal static class ReferenceExtractor
                 documentReferencesForThisArray.Add(
                     new(resourceInfo, documentIdentity, ReferentialIdFrom(resourceInfo, documentIdentity))
                 );
-
-                documentReferences.AddRange(documentReferencesForThisArray);
-
-                // Get the parent path from the first ReferenceJsonPathsElement
-                var firstReferenceJsonPath = documentPath
-                    .ReferenceJsonPathsElements.First()
-                    .ReferenceJsonPath.Value;
-                var lastDotIndex = firstReferenceJsonPath.LastIndexOf('.');
-                var parentPath =
-                    lastDotIndex > 0
-                        ? firstReferenceJsonPath.Substring(0, lastDotIndex)
-                        : firstReferenceJsonPath;
-
-                documentReferenceArrays.Add(new(new(parentPath), documentReferencesForThisArray.ToArray()));
             }
+
+            // Get the parent path from the first ReferenceJsonPathsElement
+            string firstReferenceJsonPath = documentPath
+                .ReferenceJsonPathsElements.First()
+                .ReferenceJsonPath.Value;
+            int lastDotIndex = firstReferenceJsonPath.LastIndexOf('.');
+            string parentPath =
+                lastDotIndex > 0 ? firstReferenceJsonPath.Substring(0, lastDotIndex) : firstReferenceJsonPath;
+
+            documentReferences.AddRange(documentReferencesForThisArray);
+            documentReferenceArrays.Add(new(new(parentPath), documentReferencesForThisArray.ToArray()));
         }
 
         return (documentReferences.ToArray(), documentReferenceArrays.ToArray());

@@ -60,6 +60,7 @@ public class ExtractDocumentReferencesTests
         : ExtractDocumentReferencesTests
     {
         internal DocumentReference[] documentReferences = [];
+        internal DocumentReferenceArray[] documentReferenceArrays = [];
 
         [SetUp]
         public void Setup()
@@ -67,7 +68,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractReferences(
+            (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -162,13 +163,14 @@ public class ExtractDocumentReferencesTests
         : ExtractDocumentReferencesTests
     {
         internal DocumentReference[] documentReferences = [];
+        internal DocumentReferenceArray[] documentReferenceArrays = [];
 
         [SetUp]
         public void Setup()
         {
             ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
-            documentReferences = resourceSchema.ExtractReferences(
+            (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -236,6 +238,7 @@ public class ExtractDocumentReferencesTests
         : ExtractDocumentReferencesTests
     {
         internal DocumentReference[] documentReferences = [];
+        internal DocumentReferenceArray[] documentReferenceArrays = [];
 
         [SetUp]
         public void Setup()
@@ -243,7 +246,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractReferences(
+            (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -290,6 +293,7 @@ public class ExtractDocumentReferencesTests
         : ExtractDocumentReferencesTests
     {
         internal DocumentReference[] documentReferences = [];
+        internal DocumentReferenceArray[] documentReferenceArrays = [];
 
         [SetUp]
         public void Setup()
@@ -297,7 +301,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractReferences(
+            (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -323,6 +327,7 @@ public class ExtractDocumentReferencesTests
         : ExtractDocumentReferencesTests
     {
         internal DocumentReference[] documentReferences = [];
+        internal DocumentReferenceArray[] documentReferenceArrays = [];
 
         [SetUp]
         public void Setup()
@@ -330,7 +335,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractReferences(
+            (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {
@@ -381,6 +386,7 @@ public class ExtractDocumentReferencesTests
         : ExtractDocumentReferencesTests
     {
         internal DocumentReference[] documentReferences = [];
+        internal DocumentReferenceArray[] documentReferenceArrays = [];
 
         [SetUp]
         public void Setup()
@@ -388,7 +394,7 @@ public class ExtractDocumentReferencesTests
             ApiSchemaDocuments apiSchemaDocument = BuildApiSchemaDocuments();
             ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "sections");
 
-            documentReferences = resourceSchema.ExtractReferences(
+            (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
                 JsonNode.Parse(
                     """
                     {

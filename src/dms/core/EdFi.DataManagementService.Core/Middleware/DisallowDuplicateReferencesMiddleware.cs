@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -24,47 +23,64 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         var validationErrors = new Dictionary<string, List<string>>();
 
         // Get al the Paths from ArrayUniquenessConstraints
-        var uniquenessPaths = new HashSet<string>();
-        foreach (var group in context.ResourceSchema.ArrayUniquenessConstraints)
-        {
-            foreach (var jsonPath in group)
+        var uniquenessParentPaths = context
+            .ResourceSchema.ArrayUniquenessConstraints.SelectMany(group => group)
+            .Select(jsonPath =>
             {
-                uniquenessPaths.Add(jsonPath.Value);
+                int lastDot = jsonPath.Value.LastIndexOf('.');
+                return lastDot > 0 ? jsonPath.Value.Substring(0, lastDot) : jsonPath.Value;
+            })
+            .ToHashSet();
+
+        if (context.ResourceSchema.ArrayUniquenessConstraints.Count > 0)
+        {
+            (string? arrayPath, int dupeIndex) = context.ParsedBody.FindDuplicatesWithArrayPath(
+                context
+                    .ResourceSchema.ArrayUniquenessConstraints.SelectMany(g => g)
+                    .Select(jp => jp.Value)
+                    .ToList(),
+                logger
+            );
+            if (dupeIndex >= 0 && arrayPath != null)
+            {
+                (string errorKey, string message) = BuildValidationError(arrayPath, dupeIndex);
+                validationErrors[errorKey] = [message];
             }
         }
 
-        // Get all the reference paths that are not part of ArrayUniquenessConstraints
-        var referencePaths = new List<string>();
-        foreach (var docPath in context.ResourceSchema.DocumentPaths)
+        // Reference arrays
+        if (!validationErrors.Any())
         {
-            if (docPath.IsReference && HasSafeReferenceJsonPaths(docPath))
+            foreach (var referenceArray in context.DocumentInfo.DocumentReferenceArrays)
             {
-                foreach (var refElem in docPath.ReferenceJsonPathsElements)
+                if (uniquenessParentPaths.Contains(referenceArray.arrayPath.Value))
                 {
-                    string path = refElem.ReferenceJsonPath.Value;
-                    if (!uniquenessPaths.Contains(path))
+                    continue;
+                }
+
+                if (referenceArray.DocumentReferences.Length > 1)
+                {
+                    var seen = new HashSet<string>();
+                    for (int i = 0; i < referenceArray.DocumentReferences.Length; i++)
                     {
-                        referencePaths.Add(path);
+                        string id = referenceArray.DocumentReferences[i].ReferentialId.ToString();
+                        if (!seen.Add(id))
+                        {
+                            (string errorKey, string message) = BuildValidationError(
+                                referenceArray.arrayPath.Value,
+                                i
+                            );
+                            validationErrors[errorKey] = [message];
+                            break;
+                        }
+                    }
+
+                    if (validationErrors.Any())
+                    {
+                        break;
                     }
                 }
             }
-        }
-
-        var allPaths = new List<string>(uniquenessPaths.Count + referencePaths.Count);
-        allPaths.AddRange(uniquenessPaths);
-        allPaths.AddRange(referencePaths);
-
-        (string? arrayPath, int dupeIndex) = context.ParsedBody.FindDuplicatesWithArrayPath(allPaths, logger);
-
-        if (dupeIndex > 0 && arrayPath != null)
-        {
-            string errorKey = arrayPath.Substring(0, arrayPath.IndexOf("[*]", StringComparison.Ordinal));
-            string[] parts = errorKey.Split('.');
-            string shortArrayName = parts[parts.Length - 1];
-            string message =
-                $"The {GetOrdinal(dupeIndex + 1)} item of the {shortArrayName} has the same identifying values as another item earlier in the list.";
-
-            validationErrors[errorKey] = [message];
         }
 
         if (validationErrors.Any())
@@ -93,17 +109,14 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         await next();
     }
 
-    private static bool HasSafeReferenceJsonPaths(DocumentPath path)
+    private static (string errorKey, string message) BuildValidationError(string arrayPath, int index)
     {
-        try
-        {
-            _ = path.ReferenceJsonPathsElements;
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        string errorKey = arrayPath.Substring(0, arrayPath.IndexOf("[*]", StringComparison.Ordinal));
+        string[] parts = errorKey.Split('.');
+        string shortArrayName = parts[^1];
+        string message =
+            $"The {GetOrdinal(index + 1)} item of the {shortArrayName} has the same identifying values as another item earlier in the list.";
+        return (errorKey, message);
     }
 
     private static string GetOrdinal(int number)
