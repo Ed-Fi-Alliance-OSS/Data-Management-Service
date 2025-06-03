@@ -21,7 +21,7 @@ internal static class ReferenceExtractor
     /// <summary>
     /// Takes an API JSON body for the resource and extracts the document reference information from the JSON body.
     /// </summary>
-    public static DocumentReference[] ExtractReferences(
+    public static (DocumentReference[], DocumentReferenceArray[]) ExtractReferences(
         this ResourceSchema resourceSchema,
         JsonNode documentBody,
         ILogger logger
@@ -29,7 +29,8 @@ internal static class ReferenceExtractor
     {
         logger.LogDebug("ReferenceExtractor.Extract");
 
-        List<DocumentReference> result = [];
+        List<DocumentReference> documentReferences = [];
+        List<DocumentReferenceArray> documentReferenceArrays = [];
 
         foreach (DocumentPath documentPath in resourceSchema.DocumentPaths)
         {
@@ -78,6 +79,8 @@ internal static class ReferenceExtractor
                 documentPath.IsDescriptor
             );
 
+            List<DocumentReference> documentReferencesForThisArray = [];
+
             // Reorient intermediateReferenceElements into actual DocumentReferences
             for (int index = 0; index < valueSliceLength; index += 1)
             {
@@ -96,12 +99,23 @@ internal static class ReferenceExtractor
                 }
 
                 DocumentIdentity documentIdentity = new(documentIdentityElements.ToArray());
-                result.Add(
+                documentReferencesForThisArray.Add(
                     new(resourceInfo, documentIdentity, ReferentialIdFrom(resourceInfo, documentIdentity))
                 );
             }
+
+            // Get the parent path from the first ReferenceJsonPathsElement
+            string firstReferenceJsonPath = documentPath
+                .ReferenceJsonPathsElements.First()
+                .ReferenceJsonPath.Value;
+            int lastDotIndex = firstReferenceJsonPath.LastIndexOf('.');
+            string parentPath =
+                lastDotIndex > 0 ? firstReferenceJsonPath.Substring(0, lastDotIndex) : firstReferenceJsonPath;
+
+            documentReferences.AddRange(documentReferencesForThisArray);
+            documentReferenceArrays.Add(new(new(parentPath), documentReferencesForThisArray.ToArray()));
         }
 
-        return result.ToArray();
+        return (documentReferences.ToArray(), documentReferenceArrays.ToArray());
     }
 }

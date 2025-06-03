@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -33,12 +34,17 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
             _logger
         );
 
+        (DocumentReference[] documentReferences, DocumentReferenceArray[] documentReferenceArrays) =
+            context.ResourceSchema.ExtractReferences(context.ParsedBody, _logger);
+
         context.DocumentInfo = new(
-            DocumentReferences: context.ResourceSchema.ExtractReferences(context.ParsedBody, _logger),
+            DocumentReferences: documentReferences,
+            DocumentReferenceArrays: documentReferenceArrays,
             DescriptorReferences: context.ResourceSchema.ExtractDescriptors(context.ParsedBody, _logger),
             DocumentIdentity: documentIdentity,
             ReferentialId: ReferentialIdFrom(context.ResourceInfo, documentIdentity),
-            SuperclassIdentity: superclassIdentity
+            SuperclassIdentity: superclassIdentity,
+            ArrayUniquenessConstraints: context.ResourceSchema.ArrayUniquenessConstraints
         );
 
         await next();

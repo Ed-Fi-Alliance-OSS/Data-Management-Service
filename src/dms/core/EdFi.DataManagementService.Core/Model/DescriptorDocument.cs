@@ -37,7 +37,10 @@ internal class DescriptorDocument(JsonNode _document)
 
         DocumentIdentityElement[] descriptorElement =
         [
-            new(IdentityJsonPath: DescriptorIdentityPath, IdentityValue: $"{namespaceName}#{codeValue.ToLowerInvariant()}")
+            new(
+                IdentityJsonPath: DescriptorIdentityPath,
+                IdentityValue: $"{namespaceName}#{codeValue.ToLowerInvariant()}"
+            ),
         ];
         return new DocumentIdentity(descriptorElement);
     }
@@ -53,8 +56,10 @@ internal class DescriptorDocument(JsonNode _document)
             DocumentIdentity: documentIdentity,
             ReferentialId: ReferentialIdFrom(resourceInfo, documentIdentity),
             DocumentReferences: [],
+            DocumentReferenceArrays: [],
             DescriptorReferences: [],
-            SuperclassIdentity: null
+            SuperclassIdentity: null,
+            ArrayUniquenessConstraints: []
         );
     }
 }

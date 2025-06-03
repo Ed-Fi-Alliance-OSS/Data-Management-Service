@@ -21,6 +21,9 @@ public record DocumentInfo(
     /// A list of the document references extracted from the API document
     /// </summary>
     DocumentReference[] DocumentReferences,
+    /// Groupings of extracted document reference arrays
+    /// </summary>
+    DocumentReferenceArray[] DocumentReferenceArrays,
     /// <summary>
     /// A list of the non-reference (meaning top-level only) descriptor values of the entity extracted from the API document
     /// </summary>
@@ -28,5 +31,9 @@ public record DocumentInfo(
     /// <summary>
     /// If this document is a subclass, this provides the document superclass identity information.
     /// </summary>
-    SuperclassIdentity? SuperclassIdentity
+    SuperclassIdentity? SuperclassIdentity,
+    /// <summary>
+    /// List of array uniqueness constraints, where the key is the JsonPath to the array
+    /// </summary>
+    IReadOnlyList<IReadOnlyList<JsonPath>> ArrayUniquenessConstraints
 );

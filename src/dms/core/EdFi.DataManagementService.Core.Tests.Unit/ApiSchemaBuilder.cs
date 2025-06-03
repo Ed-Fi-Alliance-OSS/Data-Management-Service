@@ -30,6 +30,8 @@ public class ApiSchemaBuilder
 
     private JsonNode? _currentQueryFieldMappingNode = null;
 
+    private JsonNode? _currentArrayUniquenessConstraints = null;
+
     /// <summary>
     /// A naive decapitalizer and pluralizer, which should be adequate for tests
     /// </summary>
@@ -168,6 +170,7 @@ public class ApiSchemaBuilder
             ["queryFieldMapping"] = new JsonObject(),
             ["securableElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
             ["authorizationPathways"] = new JsonArray(),
+            ["arrayUniquenessConstraints"] = new JsonArray(),
         };
 
         string endpointName = ToEndpointName(resourceName);
@@ -891,6 +894,83 @@ public class ApiSchemaBuilder
                 })
                 .ToArray<JsonNode?>()
         );
+
+        return this;
+    }
+
+    public ApiSchemaBuilder WithStartArrayUniquenessConstraints()
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentArrayUniquenessConstraints = _currentResourceNode["arrayUniquenessConstraints"];
+        return this;
+    }
+
+    public ApiSchemaBuilder WithEndArrayUniquenessConstraints()
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentArrayUniquenessConstraints == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentArrayUniquenessConstraints = null;
+        return this;
+    }
+
+    /// <summary>
+    /// Add array uniqueness constraints to a resource.
+    /// </summary>
+    /// Example for parameters:
+    /// [
+    ///   [
+    ///     "$.identificationCodes[*].assessmentIdentificationSystemDescriptor"
+    ///   ],
+    ///   [
+    ///     "$.performanceLevels[*].assessmentReportingMethodDescriptor",
+    ///     "$.performanceLevels[*].performanceLevelDescriptor"
+    ///   ],
+    ///   [
+    ///     "$.periods[*].assessmentPeriodDescriptor"
+    ///   ],
+    ///   [
+    ///     "$.scores[*].assessmentReportingMethodDescriptor"
+    ///   ]
+    /// ]
+    public ApiSchemaBuilder WithArrayUniquenessConstraints(List<string> constraints)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        var jsonArray = new JsonArray(constraints.Select(s => JsonValue.Create(s)!).ToArray());
+
+        if (_currentResourceNode["arrayUniquenessConstraints"] is not JsonArray constraintsArray)
+        {
+            constraintsArray = new JsonArray();
+            _currentResourceNode["arrayUniquenessConstraints"] = constraintsArray;
+        }
+
+        constraintsArray.Add(jsonArray);
 
         return this;
     }

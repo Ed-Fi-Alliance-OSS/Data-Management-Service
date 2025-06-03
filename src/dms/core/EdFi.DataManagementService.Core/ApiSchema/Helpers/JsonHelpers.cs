@@ -377,6 +377,76 @@ internal static class JsonHelpers
 
         return nodeKeys.Where(x => x.Value != null).Select(x => x.Value ?? new JsonObject()).ToList();
     }
+
+    /// <summary>
+    /// Finds duplicates in an array by comparing values at specified JsonPaths.
+    /// Returns the index and the array path of the first duplicate found, or null and -1 if no duplicates exist.
+    /// </summary>
+    public static (string? arrayPath, int dupeIndex) FindDuplicatesWithArrayPath(
+        this JsonNode jsonNode,
+        IList<string> jsonPaths,
+        ILogger logger
+    )
+    {
+        if (jsonPaths.Count == 0)
+        {
+            return (null, -1);
+        }
+
+        // Evaluate all paths and group by number of values
+        var pathResults = jsonPaths
+            .Select(path => new
+            {
+                Path = path,
+                Values = jsonNode.SelectNodesFromArrayPathCoerceToStrings(path, logger).ToList(),
+            })
+            .ToList();
+
+        // Group to discard all arrays that have no values in the document or that only have one value
+        var groups = pathResults.GroupBy(x => x.Values.Count).Where(g => g.Key > 1);
+
+        foreach (var group in groups)
+        {
+            var groupPaths = group.ToList();
+            int itemCount = group.Key;
+
+            // Defensive validation: all paths in the group must have the same number of values
+            bool allSameCount = groupPaths.TrueForAll(gp => gp.Values.Count == itemCount);
+            if (!allSameCount)
+            {
+                continue;
+            }
+
+            // Using HashSet to detect duplicates efficiently
+            var seen = new Dictionary<string, int>();
+            for (int i = 0; i < itemCount; i++)
+            {
+                // Build the uniqueness key for the current item
+                var sb = new StringBuilder();
+                for (int p = 0; p < groupPaths.Count; p++)
+                {
+                    if (p > 0)
+                    {
+                        sb.Append('|');
+                    }
+                    sb.Append(groupPaths[p].Values[i] ?? "null");
+                }
+                string key = sb.ToString();
+
+                if (seen.TryGetValue(key, out _))
+                {
+                    string arrayPath = groupPaths[0].Path;
+                    return (arrayPath, i);
+                }
+                else
+                {
+                    seen[key] = i;
+                }
+            }
+        }
+
+        return (null, -1);
+    }
 }
 
 /// <summary>

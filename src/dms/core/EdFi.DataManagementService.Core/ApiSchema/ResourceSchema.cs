@@ -458,4 +458,30 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
 
     public IEnumerable<DecimalValidationInfo> DecimalPropertyValidationInfos =>
         _decimalPropertyValidationInfos.Value;
+
+    private readonly Lazy<IReadOnlyList<IReadOnlyList<JsonPath>>> _arrayUniquenessConstraints = new(() =>
+    {
+        var outerArray =
+            _resourceSchemaNode["arrayUniquenessConstraints"]!.AsArray()
+            ?? throw new InvalidOperationException(
+                "Expected arrayUniquenessConstraints to be on ResourceSchema, invalid ApiSchema"
+            );
+
+        return outerArray
+            .Select(innerJsonElement =>
+                innerJsonElement!
+                    .AsArray()
+                    .Select(pathElement => new JsonPath(pathElement!.GetValue<string>()!))
+                    .ToList()
+                    .AsReadOnly()
+            )
+            .ToList()
+            .AsReadOnly();
+    });
+
+    /// <summary>
+    /// The ArrayUniquenessConstraints the resource is part of.
+    /// </summary>
+    public IReadOnlyList<IReadOnlyList<JsonPath>> ArrayUniquenessConstraints =>
+        _arrayUniquenessConstraints.Value;
 }
