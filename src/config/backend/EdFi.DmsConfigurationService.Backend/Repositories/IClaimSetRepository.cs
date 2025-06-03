@@ -14,8 +14,8 @@ public interface IClaimSetRepository
     IEnumerable<Action> GetActions();
     Task<AuthorizationStrategyGetResult> GetAuthorizationStrategies();
     Task<ClaimSetInsertResult> InsertClaimSet(ClaimSetInsertCommand command);
-    Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query, bool verbose);
-    Task<ClaimSetGetResult> GetClaimSet(long id, bool verbose);
+    Task<ClaimSetQueryResult> QueryClaimSet(PagingQuery query);
+    Task<ClaimSetGetResult> GetClaimSet(long id);
     Task<ClaimSetUpdateResult> UpdateClaimSet(ClaimSetUpdateCommand command);
     Task<ClaimSetDeleteResult> DeleteClaimSet(long id);
     Task<ClaimSetExportResult> Export(long id);
@@ -47,7 +47,7 @@ public record ClaimSetQueryResult
     /// <summary>
     /// Successfully queried and returning list of claimSets responses
     /// </summary>
-    public record Success(IEnumerable<object> ClaimSetResponses) : ClaimSetQueryResult();
+    public record Success(IEnumerable<ClaimSetResponse> ClaimSetResponses) : ClaimSetQueryResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -60,7 +60,7 @@ public record ClaimSetGetResult
     /// <summary>
     /// Successfully retrieved ClaimSet
     /// </summary>
-    public record Success(object ClaimSetResponse) : ClaimSetGetResult();
+    public record Success(ClaimSetResponse ClaimSetResponse) : ClaimSetGetResult();
 
     /// <summary>
     /// ClaimSet does not exist in the datastore
