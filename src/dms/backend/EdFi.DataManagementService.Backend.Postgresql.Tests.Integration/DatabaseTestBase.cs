@@ -8,7 +8,7 @@ using Npgsql;
 using NUnit.Framework;
 using Respawn;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration;
+namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 // A database test base class that creates a datasource and manages table truncation
 public abstract class DatabaseTestBase

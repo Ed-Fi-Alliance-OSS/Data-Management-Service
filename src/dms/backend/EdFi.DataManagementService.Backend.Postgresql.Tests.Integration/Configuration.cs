@@ -7,7 +7,7 @@
 using System.Data;
 using Microsoft.Extensions.Configuration;
 
-namespace EdFi.DataManagementService.Backend.Postgresql.Test.Integration
+namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration
 {
     public static class Configuration
     {
