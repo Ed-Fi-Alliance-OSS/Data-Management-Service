@@ -15,14 +15,40 @@ public static class KeycloakServiceExtensions
 {
     public static IServiceCollection AddKeycloakServices(
         this IServiceCollection services,
-        string Url,
-        string Realm,
+        string Authority,
         string ClientId,
         string ClientSecret,
         string RoleClaimType
     )
     {
-        services.AddScoped(x => new KeycloakContext(Url, Realm, ClientId, ClientSecret, RoleClaimType));
+        var errorMessage =
+            "An exception occurred while validating the Keycloak discovery endpoint. Please verify that the authority URL is correct, especially the realm segment, and ensure it is accessible.";
+
+        var discoveryUrl = $"{Authority}/.well-known/openid-configuration";
+        var baseUrl = string.Empty;
+        var realm = string.Empty;
+
+        using var httpClient = new HttpClient();
+        try
+        {
+            var response = Task.Run(() => httpClient.GetAsync(discoveryUrl)).Result;
+            if (response.IsSuccessStatusCode)
+            {
+                var uri = new Uri(Authority);
+                baseUrl = uri.GetLeftPart(UriPartial.Authority);
+                realm = Authority.TrimEnd('/').Split('/').Last();
+            }
+            else
+            {
+                throw new InvalidOperationException(errorMessage);
+            }
+        }
+        catch
+        {
+            throw new InvalidOperationException(errorMessage);
+        }
+
+        services.AddScoped(x => new KeycloakContext(baseUrl, realm, ClientId, ClientSecret, RoleClaimType));
 
         services.AddTransient<IClientRepository, KeycloakClientRepository>();
         services.AddTransient<ITokenManager, KeycloakTokenManager>();
