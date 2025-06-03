@@ -780,9 +780,12 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
 
     public static long[] ParseEducationOrganizationIds(string ids)
     {
-        return ids.Trim('[', ']')
-            .Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(long.Parse)
-            .ToArray();
+        if (string.IsNullOrWhiteSpace(ids) || ids == "[]")
+        {
+            return Array.Empty<long>();
+        }
+
+        return System.Text.Json.JsonSerializer.Deserialize<string[]>(ids)?.Select(long.Parse).ToArray()
+            ?? Array.Empty<long>();
     }
 }

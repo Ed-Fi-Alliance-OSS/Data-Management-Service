@@ -58,7 +58,7 @@ BEGIN
     staff_id := NEW.EdfiDoc->'staffReference'->>'staffUniqueId';
 
     -- Calculate Ed Org IDs once and store in variable
-    SELECT jsonb_agg(EducationOrganizationId)
+    SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
     FROM dms.GetEducationOrganizationAncestors((NEW.EdfiDoc->'educationOrganizationReference'->>'educationOrganizationId')::BIGINT)
     INTO ed_org_ids;
 
@@ -131,14 +131,14 @@ BEGIN
     END IF;
 
     -- DELETE logic
-    SELECT jsonb_agg(EducationOrganizationId)
+    SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
     FROM dms.GetEducationOrganizationAncestors(old_ed_org_id)
     INTO ed_org_ids;
 
     PERFORM dms.RemoveStaffEducationOrganizationAuthorizationEdOrgIds(old_staff_id, ed_org_ids);
 
     -- INSERT logic
-    SELECT jsonb_agg(EducationOrganizationId)
+    SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
     FROM dms.GetEducationOrganizationAncestors(new_ed_org_id)
     INTO ed_org_ids;
 

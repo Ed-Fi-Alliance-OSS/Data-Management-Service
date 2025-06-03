@@ -39,7 +39,7 @@ BEGIN
         -- Update each affected record with the new hierarchy information
         UPDATE dms.StaffEducationOrganizationAuthorization
         SET StaffEducationOrganizationAuthorizationEdOrgIds = (
-            SELECT jsonb_agg(EducationOrganizationId)
+            SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
             FROM dms.GetEducationOrganizationAncestors(affected_record.HierarchyEdOrgId)
         )
         WHERE
@@ -74,7 +74,7 @@ BEGIN
     )
     UPDATE dms.StaffEducationOrganizationAuthorization ssoa
     SET StaffEducationOrganizationAuthorizationEdOrgIds = (
-        SELECT jsonb_agg(EducationOrganizationId)
+        SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
         FROM dms.GetEducationOrganizationAncestors(ssoa.HierarchyEdOrgId)
     )
     FROM EdOrgsInChangedHierarchy edorg

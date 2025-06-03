@@ -43,7 +43,8 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISq
         {
             return [];
         }
-        long[] edOrgIds = JsonSerializer.Deserialize<long[]>(response.Value) ?? [];
+        string[] stringIds = JsonSerializer.Deserialize<string[]>(response.Value) ?? [];
+        long[] edOrgIds = stringIds.Select(long.Parse).ToArray();
         return edOrgIds;
     }
 
@@ -60,7 +61,8 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISq
         {
             return [];
         }
-        long[] edOrgIds = JsonSerializer.Deserialize<long[]>(response.Value) ?? [];
+        string[] stringIds = JsonSerializer.Deserialize<string[]>(response.Value) ?? [];
+        long[] edOrgIds = stringIds.Select(long.Parse).ToArray();
         return edOrgIds;
     }
 
@@ -77,7 +79,8 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISq
         {
             return [];
         }
-        long[] edOrgIds = JsonSerializer.Deserialize<long[]>(response.Value) ?? [];
+        string[] stringIds = JsonSerializer.Deserialize<string[]>(response.Value) ?? [];
+        long[] edOrgIds = stringIds.Select(long.Parse).ToArray();
         return edOrgIds;
     }
 }

@@ -59,7 +59,7 @@ BEGIN
     school_id := NEW.EdfiDoc->'schoolReference'->>'schoolId';
 
     -- Calculate Ed Org IDs once and store in variable
-    SELECT jsonb_agg(EducationOrganizationId)
+    SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
     FROM dms.GetEducationOrganizationAncestors(school_id)
     INTO ancestor_ed_org_ids;
 
@@ -79,7 +79,7 @@ BEGIN
     );
 
     -- Update all student-securable documents for this student
-    ed_org_ids := dms.GetStudentEdOrgIds(student_id);   
+    ed_org_ids := dms.GetStudentEdOrgIds(student_id);
     PERFORM dms.SetEdOrgIdsToStudentSecurables(ed_org_ids, student_id);
 
     -- Manually update the newly inserted StudentSchoolAssociation because it's not a
@@ -148,7 +148,7 @@ BEGIN
     FOR contact_id IN
         SELECT DISTINCT ContactUniqueId
         FROM dms.ContactStudentSchoolAuthorization
-        WHERE         
+        WHERE
             StudentUniqueId = old_student_id AND
             StudentSchoolAssociationId IS NULL AND
             StudentSchoolAssociationPartitionKey IS NULL
@@ -184,9 +184,9 @@ BEGIN
 
     -- DELETE logic
     PERFORM dms.SetEdOrgIdsToStudentSecurables(NULL, old_student_id);
-    
+
     -- INSERT logic
-    SELECT jsonb_agg(EducationOrganizationId)
+    SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
     FROM dms.GetEducationOrganizationAncestors(new_school_id)
     INTO ancestor_ed_org_ids;
 

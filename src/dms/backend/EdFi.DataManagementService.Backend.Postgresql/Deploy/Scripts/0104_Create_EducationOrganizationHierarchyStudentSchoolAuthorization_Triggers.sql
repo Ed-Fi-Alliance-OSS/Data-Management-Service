@@ -39,7 +39,7 @@ BEGIN
         -- Update each affected record with the new hierarchy information
         UPDATE dms.StudentSchoolAssociationAuthorization
         SET StudentSchoolAuthorizationEducationOrganizationIds = (
-            SELECT jsonb_agg(EducationOrganizationId)
+            SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
             FROM dms.GetEducationOrganizationAncestors(affected_record.HierarchySchoolId)
         )
         WHERE
@@ -61,7 +61,7 @@ BEGIN
             EducationOrganizationId = affected_school_id
 
         UNION ALL
-        
+
         -- Find all descendants of the affected school
         SELECT
             child.Id,
@@ -74,7 +74,7 @@ BEGIN
     )
     UPDATE dms.StudentSchoolAssociationAuthorization ssa
     SET StudentSchoolAuthorizationEducationOrganizationIds = (
-        SELECT jsonb_agg(EducationOrganizationId)
+        SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
         FROM dms.GetEducationOrganizationAncestors(ssa.HierarchySchoolId)
     )
     FROM SchoolsInChangedHierarchy sch
