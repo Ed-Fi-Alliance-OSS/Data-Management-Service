@@ -5,9 +5,12 @@
 
 namespace EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 
-public record AuthorizationMetadataResponse(
-    List<AuthorizationMetadataResponse.Claim> Claims,
-    List<AuthorizationMetadataResponse.Authorization> Authorizations
+public record AuthorizationMetadataResponse(IList<ClaimSetMetadata> ClaimSets);
+
+public record ClaimSetMetadata(
+    string ClaimSetName,
+    List<ClaimSetMetadata.Claim> Claims,
+    List<ClaimSetMetadata.Authorization> Authorizations
 )
 {
     public record Claim(string Name, int AuthorizationId);

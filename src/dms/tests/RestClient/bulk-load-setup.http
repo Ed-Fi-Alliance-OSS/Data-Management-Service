@@ -1,0 +1,140 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed to the Ed-Fi Alliance under one or more agreements.
+ * The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+ * See the LICENSE and NOTICES files in the project root for more information.
+ */
+
+#5126 or 8081
+@configPort=8081
+
+#5198 or 8080
+@dmsPort=8080
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+#
+# Create a new system administrator and create a token
+#
+
+### Create the system administrator credentials
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+### Create a token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+### Create a vendor. The namespace prefixes are required for Grand Bend dataset.
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Bulk Load",
+    "contactName": "test",
+    "contactEmailAddress": "test@example.com",
+    "namespacePrefixes": "uri://ed-fi.org,uri://gbisd.edu,uri://tpdm.ed-fi.org"
+}
+
+###
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
+
+### Create an application for loading School Year.
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Bootstrapper",
+    "claimSetName": "BootstrapDescriptorsandEdOrgs",
+    "educationOrganizationIds": []
+}
+
+###
+@clientKey={{createApplication.response.body.key}}
+@clientSecret={{createApplication.response.body.secret}}
+
+### Read the Token URL from the Discovery API
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+@tokenUrl={{discovery.response.body.urls.oauth}}
+
+### Create a DMS token
+# @name dmsTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{clientKey}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken={{dmsTokenRequest.response.body.access_token}}
+
+###
+POST {{dataApi}}/ed-fi/schoolYearTypes
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolYear": "2022",
+    "currentSchoolYear": false,
+    "schoolYearDescription": "2022-2023"
+}
+
+###
+# @name createSandboxApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Grand Bend Loader",
+    "claimSetName": "EdFiSandbox",
+    "educationOrganizationIds": [255901]
+}
+
+###
+@sandboxKey={{createSandboxApplication.response.body.key}}
+@sandboxSecret={{createSandboxApplication.response.body.secret}}
+
+### Create a EdFiSandbox token
+# @name sandboxTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{sandboxKey}}:{{sandboxSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@sandboxToken={{sandboxTokenRequest.response.body.access_token}}

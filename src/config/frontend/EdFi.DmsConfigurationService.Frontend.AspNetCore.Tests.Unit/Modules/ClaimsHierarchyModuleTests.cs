@@ -17,6 +17,9 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using Action = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Action;
+using Authorization = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Authorization;
+using AuthorizationStrategy = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.AuthorizationStrategy;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -25,6 +28,7 @@ public class ClaimsHierarchyModuleTests
 {
     private readonly IClaimsHierarchyRepository _claimsHierarchyRepository =
         A.Fake<IClaimsHierarchyRepository>();
+
     private readonly IAuthorizationMetadataResponseFactory _responseFactory =
         A.Fake<IAuthorizationMetadataResponseFactory>();
 
@@ -90,15 +94,15 @@ public class ClaimsHierarchyModuleTests
             .Returns(new ClaimsHierarchyGetResult.Success(claims, DateTime.Now));
 
         var suppliedAuthorizationMetadataResponse = new AuthorizationMetadataResponse(
-            Claims: [new("ClaimOne", 1)],
-            Authorizations:
             [
-                new AuthorizationMetadataResponse.Authorization(
-                    1,
+                new ClaimSetMetadata(
+                    ClaimSetName: "ClaimSet1",
+                    Claims: [new("ClaimOne", 1)],
+                    Authorizations:
                     [
-                        new AuthorizationMetadataResponse.Action(
-                            "Create",
-                            [new AuthorizationMetadataResponse.AuthorizationStrategy("Strategy1")]
+                        new Authorization(
+                            1,
+                            [new Action("Create", [new AuthorizationStrategy("Strategy1")])]
                         ),
                     ]
                 ),
@@ -112,13 +116,13 @@ public class ClaimsHierarchyModuleTests
         responseMessage.EnsureSuccessStatusCode();
         string responseContent = await responseMessage.Content.ReadAsStringAsync();
 
-        var responseModel = JsonSerializer.Deserialize<AuthorizationMetadataResponse>(
+        var responseModel = JsonSerializer.Deserialize<IList<ClaimSetMetadata>>(
             responseContent,
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
         );
 
         // Assert
         responseMessage.StatusCode.Should().Be(HttpStatusCode.OK);
-        responseModel.Should().BeEquivalentTo(suppliedAuthorizationMetadataResponse);
+        responseModel.Should().BeEquivalentTo(suppliedAuthorizationMetadataResponse.ClaimSets);
     }
 }

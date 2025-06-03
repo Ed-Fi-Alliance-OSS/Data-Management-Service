@@ -12,7 +12,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentValidation;
 using FluentValidation.Results;
-using Microsoft.AspNetCore.Mvc;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -68,11 +67,10 @@ public class ClaimSetModule : IEndpointModule
     private static async Task<IResult> GetAll(
         IClaimSetRepository repository,
         [AsParameters] PagingQuery query,
-        HttpContext httpContext,
-        [FromQuery] bool verbose = false
+        HttpContext httpContext
     )
     {
-        ClaimSetQueryResult result = await repository.QueryClaimSet(query, verbose);
+        ClaimSetQueryResult result = await repository.QueryClaimSet(query);
 
         return result switch
         {
@@ -85,11 +83,10 @@ public class ClaimSetModule : IEndpointModule
         long id,
         HttpContext httpContext,
         IClaimSetRepository repository,
-        ILogger<ClaimSetModule> logger,
-        [FromQuery] bool verbose = false
+        ILogger<ClaimSetModule> logger
     )
     {
-        ClaimSetGetResult result = await repository.GetClaimSet(id, verbose);
+        ClaimSetGetResult result = await repository.GetClaimSet(id);
 
         return result switch
         {
@@ -256,23 +253,86 @@ public class ClaimSetModule : IEndpointModule
     }
 
     private static async Task<IResult> Import(
-        ClaimSetImportCommand entity,
+        ClaimSetImportCommand importCommand,
         HttpContext httpContext,
-        IClaimSetRepository repository,
-        IClaimSetDataProvider provider
+        IClaimSetDataProvider claimSetDataProvider,
+        IClaimSetRepository claimSetRepository,
+        IClaimsHierarchyRepository claimsHierarchyRepository,
+        ILogger<ClaimSetModule> logger
     )
     {
-        var validator = new ClaimSetImportCommand.Validator();
-        await validator.GuardAsync(entity);
+        List<string> actions;
+        List<string> authorizationStrategies;
 
-        var insertResult = await repository.Import(entity);
+        // Load the supporting authorization metadata (authorization strategies and actions)
+        try
+        {
+            actions = claimSetDataProvider.GetActions();
+            authorizationStrategies = await claimSetDataProvider.GetAuthorizationStrategies();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error while loading supporting authorization strategies or actions");
+
+            return Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            );
+        }
+
+        // Load the claims hierarchy
+        var hierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
+
+        if (hierarchyResult is not ClaimsHierarchyGetResult.Success hierarchySuccess)
+        {
+            logger.LogError(
+                "Attempt to load claims hierarchy returned {HierarchyResult}. {Message}",
+                hierarchyResult.GetType().Name,
+                hierarchyResult switch
+                {
+                    ClaimsHierarchyGetResult.FailureHierarchyNotFound => "No claims hierarchy found",
+                    ClaimsHierarchyGetResult.FailureMultipleHierarchiesFound =>
+                        "Multiple claims hierarchies found and this is not yet supported",
+                    ClaimsHierarchyGetResult.FailureUnknown failureUnknown => failureUnknown.FailureMessage,
+                    _ => string.Empty,
+                }
+            );
+
+            return Results.Json(
+                FailureResponse.ForUnknown(httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.InternalServerError
+            );
+        }
+
+        // Extract the tuples of the hierarchy for use in validating the claim set import request
+        var resourceClaimsHierarchyTuples = new Dictionary<string, string?>(
+            ExtractClaimHierarchyTuples(hierarchySuccess.Claims)
+        );
+
+        // Validate the request
+        var validator = new ClaimSetImportCommand.Validator();
+
+        var validationContext = new ValidationContext<ClaimSetImportCommand>(importCommand)
+        {
+            RootContextData =
+            {
+                ["Actions"] = actions,
+                ["AuthorizationStrategies"] = authorizationStrategies,
+                ["ResourceClaimsHierarchyTuples"] = resourceClaimsHierarchyTuples,
+            },
+        };
+
+        await validator.GuardAsync(validationContext);
+
+        // Import the claim set
+        var insertResult = await claimSetRepository.Import(importCommand);
 
         var request = httpContext.Request;
 
         return insertResult switch
         {
             ClaimSetImportResult.Success success => Results.Created(
-                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                $"{request.Scheme}://{request.Host}{request.PathBase}{GetClaimSetsPath()}/{success.Id}",
                 null
             ),
             ClaimSetImportResult.FailureDuplicateClaimSetName => Results.Json(
@@ -290,5 +350,42 @@ public class ClaimSetModule : IEndpointModule
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
+
+        static IEnumerable<KeyValuePair<string, string?>> ExtractClaimHierarchyTuples(List<Claim> rootClaims)
+        {
+            foreach (var claim in rootClaims)
+            {
+                // Yield the current claim with its parent's name (or null if top-level)
+                yield return new KeyValuePair<string, string?>(claim.Name, claim.Parent?.Name);
+
+                // Recursively yield children
+                foreach (var child in ExtractClaimHierarchyTuples(claim.Claims))
+                {
+                    yield return child;
+                }
+            }
+        }
+
+        string? GetClaimSetsPath()
+        {
+            const string ClaimSetsSegment = "/claimSets/";
+
+            if (!request.Path.HasValue)
+            {
+                return null;
+            }
+
+            int claimSetsPos = request.Path.Value.IndexOf(
+                ClaimSetsSegment,
+                StringComparison.OrdinalIgnoreCase
+            );
+
+            if (claimSetsPos < 0)
+            {
+                return request.Path.Value.TrimEnd('/');
+            }
+
+            return request.Path.Value.Substring(0, claimSetsPos + ClaimSetsSegment.Length - 1);
+        }
     }
 }

@@ -30,52 +30,52 @@ public class SecurityMetadataProviderTests
             var scope = "fullaccess";
             string? expectedToken = "valid-token";
 
-            var fakeClaimSets = new List<ClaimSet> { new("ClaimSet1", []), new("ClaimSet2", []) };
-            var fakeClaimsForClaimSet1 = new List<AuthorizationMetadataResponse.Claim>
+            var fakeClaimsForClaimSet1 = new List<ClaimSetMetadata.Claim>
             {
                 new("resource1", 1),
                 new("resource2", 1),
                 new("resource3", 2),
             };
-            var fakeClaimsForClaimSet2 = new List<AuthorizationMetadataResponse.Claim>
+            var fakeClaimsForClaimSet2 = new List<ClaimSetMetadata.Claim>
             {
                 new("resource4", 1),
                 new("resource5", 1),
             };
-            var fakeActionsForAuth1 = new AuthorizationMetadataResponse.Action[]
+            var fakeActionsForAuth1 = new ClaimSetMetadata.Action[]
             {
                 new("Read", [new AuthorizationStrategy("authStrategy1")]),
                 new("Delete", [new AuthorizationStrategy("authStrategy2")]),
             };
 
-            var fakeActionsForAuth2 = new AuthorizationMetadataResponse.Action[]
+            var fakeActionsForAuth2 = new ClaimSetMetadata.Action[]
             {
                 new("Read", [new AuthorizationStrategy("authStrategy1")]),
                 new("Update", [new AuthorizationStrategy("authStrategy3")]),
             };
-            var fakeAuthorizations = new List<AuthorizationMetadataResponse.Authorization>
+            var fakeAuthorizations = new List<ClaimSetMetadata.Authorization>
             {
                 new(1, fakeActionsForAuth1),
                 new(2, fakeActionsForAuth2),
             };
-            var fakeAuthorizationMetadataForClaimSet1 = new AuthorizationMetadataResponse(
+            var fakeAuthorizationMetadataForClaimSet1 = new ClaimSetMetadata(
+                "ClaimSet1",
                 fakeClaimsForClaimSet1,
                 fakeAuthorizations
             );
-            var fakeAuthorizationMetadataForClaimSet2 = new AuthorizationMetadataResponse(
+            var fakeAuthorizationMetadataForClaimSet2 = new ClaimSetMetadata(
+                "ClaimSet2",
                 fakeClaimsForClaimSet2,
                 fakeAuthorizations
             );
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
-            _handler.SetResponse("https://api.example.com/v2/claimSets", fakeClaimSets);
 
             _handler.SetResponse(
-                $"https://api.example.com/authorizationMetadata?claimSetName=ClaimSet1",
-                fakeAuthorizationMetadataForClaimSet1
-            );
-            _handler.SetResponse(
-                $"https://api.example.com/authorizationMetadata?claimSetName=ClaimSet2",
-                fakeAuthorizationMetadataForClaimSet2
+                $"https://api.example.com/authorizationMetadata",
+                new List<ClaimSetMetadata>
+                {
+                    fakeAuthorizationMetadataForClaimSet1,
+                    fakeAuthorizationMetadataForClaimSet2,
+                }
             );
 
             var configServiceHandler = new ConfigurationServiceResponseHandler(
@@ -93,8 +93,8 @@ public class SecurityMetadataProviderTests
 
             A.CallTo(() => httpClientFactory.CreateClient(A<string>.Ignored)).Returns(httpClient);
 
-            ConfigurationServiceApiClient _configServiceApiClient = new(httpClient);
-            _configServiceApiClient.Client.DefaultRequestHeaders.Authorization =
+            ConfigurationServiceApiClient configServiceApiClient = new(httpClient);
+            configServiceApiClient.Client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", expectedToken);
 
             var configContext = new ConfigurationServiceContext(clientId, clientSecret, scope);
@@ -103,7 +103,7 @@ public class SecurityMetadataProviderTests
             A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope)).Returns(expectedToken);
 
             _metadataProvider = new SecurityMetadataProvider(
-                _configServiceApiClient,
+                configServiceApiClient,
                 tokenHandler,
                 configContext
             );

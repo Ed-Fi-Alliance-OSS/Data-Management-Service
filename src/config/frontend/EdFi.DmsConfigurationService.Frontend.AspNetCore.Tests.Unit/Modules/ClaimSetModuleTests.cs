@@ -22,12 +22,15 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using Claim = EdFi.DmsConfigurationService.Backend.Repositories.Claim;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 public class ClaimSetModuleTests
 {
     private readonly IClaimSetRepository _claimSetRepository = A.Fake<IClaimSetRepository>();
+    private readonly IClaimsHierarchyRepository _claimsHierarchyRepository =
+        A.Fake<IClaimsHierarchyRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
     private readonly IClaimSetDataProvider _dataProvider = A.Fake<IClaimSetDataProvider>();
 
@@ -57,7 +60,8 @@ public class ClaimSetModuleTests
                     collection
                         .AddTransient((_) => _httpContext)
                         .AddTransient((_) => _claimSetRepository)
-                        .AddTransient((_) => _dataProvider);
+                        .AddTransient((_) => _dataProvider)
+                        .AddTransient((_) => _claimsHierarchyRepository);
                 }
             );
         });
@@ -75,30 +79,21 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
                 .Returns(new ClaimSetInsertResult.Success(1));
 
-            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
                 .Returns(
                     new ClaimSetQueryResult.Success(
-                        [new ClaimSetResponseReduced() { Name = "Test ClaimSet", IsSystemReserved = false }]
+                        [new ClaimSetResponse() { Name = "Test ClaimSet", IsSystemReserved = false }]
                     )
                 );
 
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
                 .Returns(
                     new ClaimSetGetResult.Success(
-                        new ClaimSetResponse()
+                        new ClaimSetResponse
                         {
                             Id = 1,
                             Name = "ClaimSet with ResourceClaims",
                             IsSystemReserved = true,
-                            ResourceClaims = JsonDocument
-                                .Parse(
-                                    """
-                                        {
-                                            "Resource": "Value"
-                                        }
-                                    """
-                                )
-                                .RootElement,
                         }
                     )
                 );
@@ -128,6 +123,14 @@ public class ClaimSetModuleTests
                 .Returns(new ClaimSetImportResult.Success(2));
 
             A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
+                .Returns(
+                    new ClaimsHierarchyGetResult.Success(
+                        [new() { Name = "Testing-POST-for-ClaimSet" }],
+                        DateTime.Now
+                    )
+                );
         }
 
         [Test]
@@ -210,6 +213,18 @@ public class ClaimSetModuleTests
     [TestFixture]
     public class FailureValidationTests : ClaimSetModuleTests
     {
+        [SetUp]
+        public void Setup()
+        {
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
+                .Returns(
+                    new ClaimsHierarchyGetResult.Success(
+                        [new() { Name = "Test ResourceClaim" }],
+                        DateTime.Now
+                    )
+                );
+        }
+
         [Test]
         public async Task Should_return_bad_request()
         {
@@ -452,7 +467,7 @@ public class ClaimSetModuleTests
         [SetUp]
         public void Setup()
         {
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
                 .Returns(new ClaimSetGetResult.FailureNotFound());
 
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
@@ -536,10 +551,10 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
                 .Returns(new ClaimSetInsertResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
                 .Returns(new ClaimSetQueryResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored, false))
+            A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))
                 .Returns(new ClaimSetGetResult.FailureUnknown(""));
 
             A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
@@ -556,6 +571,18 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
                 .Returns(new ClaimSetImportResult.FailureUnknown(""));
+
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
+                .Returns(
+                    new ClaimsHierarchyGetResult.Success(
+                        [
+                            new() { Name = "Test ResourceClaim" },
+                            new() { Name = "Testing-POST-for-ClaimSet" },
+                            new() { Name = "Testing-Import-for-ClaimSet" },
+                        ],
+                        DateTime.Now
+                    )
+                );
 
             A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
         }
@@ -628,16 +655,16 @@ public class ClaimSetModuleTests
                     {
                         "name" : "Testing-Import-for-ClaimSet",
                         "resourceClaims" : [
-                        {
-                            "name": "Test ResourceClaim",
-                            "actions": [
-                              {
-                                "name": "Create",
-                                "enabled": true
-                              }
-                            ]
-                        }
-                    ]
+                            {
+                                "name": "Test ResourceClaim",
+                                "actions": [
+                                  {
+                                    "name": "Create",
+                                    "enabled": true
+                                  }
+                                ]
+                            }
+                        ]
                     }
                     """,
                     Encoding.UTF8,
@@ -666,6 +693,11 @@ public class ClaimSetModuleTests
         public void SetUp()
         {
             A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
+                .Returns(
+                    new ClaimsHierarchyGetResult.Success([new() { Name = "Test-Duplicate" }], DateTime.Now)
+                );
 
             _client = SetUpClient();
         }
@@ -786,7 +818,8 @@ public class ClaimSetModuleTests
                 new StringContent(importBody, Encoding.UTF8, "application/json")
             );
 
-            var actualImportResponse = JsonNode.Parse(await importResponse.Content.ReadAsStringAsync());
+            string readAsStringAsync = await importResponse.Content.ReadAsStringAsync();
+            var actualImportResponse = JsonNode.Parse(readAsStringAsync);
             var expectedImportResponse = JsonNode.Parse(
                 """
                 {

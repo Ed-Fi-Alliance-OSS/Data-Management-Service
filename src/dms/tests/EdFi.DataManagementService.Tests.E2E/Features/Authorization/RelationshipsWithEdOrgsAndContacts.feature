@@ -1012,8 +1012,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   ]
                   """
 
-        # Re-enable when DMS-708 is done
-        @ignore
         Scenario: 51 Ensure client can no longer retrieve a Contact after the SSA has been deleted
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1355901001, 1355901002, 1355901003"
@@ -1151,8 +1149,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     ]
                   """
 
-        # Re-enable when DMS-709 is done
-        @ignore
         Scenario: 52 Ensure client can retrieve a Contact after the SSA has been recreated
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1455901001"

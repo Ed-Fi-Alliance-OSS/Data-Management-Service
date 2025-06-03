@@ -45,30 +45,27 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_test_claimSet_from_get_all()
         {
-            var getResult = await _repository.QueryClaimSet(
-                new PagingQuery() { Limit = 25, Offset = 0 },
-                false
-            );
+            var getResult = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
             getResult.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             object claimSetFromDb = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses.First();
             claimSetFromDb.Should().NotBeNull();
-            claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
+            claimSetFromDb.Should().BeOfType<ClaimSetResponse>();
 
-            var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
+            var reducedResponse = (ClaimSetResponse)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test-ClaimSet");
         }
 
         [Test]
         public async Task Should_get_test_claimSet_from_get_by_id()
         {
-            var getByIdResult = await _repository.GetClaimSet(_id, false);
+            var getByIdResult = await _repository.GetClaimSet(_id);
             getByIdResult.Should().BeOfType<ClaimSetGetResult.Success>();
 
             object claimSetFromDb = ((ClaimSetGetResult.Success)getByIdResult).ClaimSetResponse;
-            claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
+            claimSetFromDb.Should().BeOfType<ClaimSetResponse>();
 
-            var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
+            var reducedResponse = (ClaimSetResponse)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test-ClaimSet");
         }
 
@@ -186,24 +183,21 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_updated_and_system_reserved_claimSets_from_get_all()
         {
-            var getResult = await _repository.QueryClaimSet(
-                new PagingQuery() { Limit = 25, Offset = 0 },
-                false
-            );
+            var getResult = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
             getResult.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             object claimSetFromDb = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses.First();
             claimSetFromDb.Should().NotBeNull();
-            claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
+            claimSetFromDb.Should().BeOfType<ClaimSetResponse>();
 
-            var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
+            var reducedResponse = (ClaimSetResponse)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test-Update-ClaimSet");
             reducedResponse.IsSystemReserved.Should().Be(false);
 
             object reservedClaimSetFromDb = ((ClaimSetQueryResult.Success)getResult)
                 .ClaimSetResponses.Skip(1)
                 .First();
-            var reducedSystemReservedResponse = (ClaimSetResponseReduced)reservedClaimSetFromDb;
+            var reducedSystemReservedResponse = (ClaimSetResponse)reservedClaimSetFromDb;
             reducedSystemReservedResponse.Name.Should().Be("Test-Insert-System-Reserved-ClaimSet");
             reducedSystemReservedResponse.IsSystemReserved.Should().Be(true);
         }
@@ -211,13 +205,13 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_test_claimSet_from_get_by_id()
         {
-            var getByIdResult = await _repository.GetClaimSet(_updateClaimSet.Id, false);
+            var getByIdResult = await _repository.GetClaimSet(_updateClaimSet.Id);
             getByIdResult.Should().BeOfType<ClaimSetGetResult.Success>();
 
             object claimSetFromDb = ((ClaimSetGetResult.Success)getByIdResult).ClaimSetResponse;
-            claimSetFromDb.Should().BeOfType<ClaimSetResponseReduced>();
+            claimSetFromDb.Should().BeOfType<ClaimSetResponse>();
 
-            var reducedResponse = (ClaimSetResponseReduced)claimSetFromDb;
+            var reducedResponse = (ClaimSetResponse)claimSetFromDb;
             reducedResponse.Name.Should().Be("Test-Update-ClaimSet");
             reducedResponse.IsSystemReserved.Should().Be(false);
         }
@@ -486,7 +480,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_one_test_claimSet_from_get_all()
         {
-            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 }, false);
+            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
             result.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Count().Should().Be(1);
@@ -495,14 +489,14 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_return_not_found_for_deleted_claim_set()
         {
-            var result1 = await _repository.GetClaimSet(_id1, false);
+            var result1 = await _repository.GetClaimSet(_id1);
             result1.Should().BeOfType<ClaimSetGetResult.FailureNotFound>();
         }
 
         [Test]
         public async Task Should_get_remaining_test_claimSet_successfully()
         {
-            var result2 = await _repository.GetClaimSet(_id2, false);
+            var result2 = await _repository.GetClaimSet(_id2);
             result2.Should().BeOfType<ClaimSetGetResult.Success>();
         }
 
@@ -556,7 +550,7 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            ClaimSetImportCommand claimSet = new() { Name = "Test-Import-ClaimSet" };
+            ClaimSetImportCommand claimSet = new() { Name = "Test-Import-ClaimSet", ResourceClaims = [] };
 
             var result = await _repository.Import(claimSet);
             result.Should().BeOfType<ClaimSetImportResult.Success>();
@@ -567,7 +561,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_one_test_claimSet_from_get_all()
         {
-            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 }, false);
+            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
             result.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Count().Should().Be(1);
@@ -576,7 +570,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_test_claimSet_from_get_by_id()
         {
-            var getByIdResult = await _repository.GetClaimSet(_id, true);
+            var getByIdResult = await _repository.GetClaimSet(_id);
             getByIdResult.Should().BeOfType<ClaimSetGetResult.Success>();
 
             object claimSetFromDb = ((ClaimSetGetResult.Success)getByIdResult).ClaimSetResponse;
@@ -589,7 +583,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_duplicate_failure()
         {
-            ClaimSetImportCommand claimSetDup = new() { Name = "Test-Import-ClaimSet" };
+            ClaimSetImportCommand claimSetDup = new() { Name = "Test-Import-ClaimSet", ResourceClaims = [] };
 
             var resultDup = await _repository.Import(claimSetDup);
             resultDup.Should().BeOfType<ClaimSetImportResult.FailureDuplicateClaimSetName>();
@@ -623,7 +617,7 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_two_claimSet_from_get_all()
         {
-            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 }, false);
+            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
             result.Should().BeOfType<ClaimSetQueryResult.Success>();
 
             ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Count().Should().Be(2);
@@ -632,22 +626,22 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_claimSet_from_get_by_id()
         {
-            var getByIdResult1 = await _repository.GetClaimSet(_id, false);
+            var getByIdResult1 = await _repository.GetClaimSet(_id);
             getByIdResult1.Should().BeOfType<ClaimSetGetResult.Success>();
 
             object claimSetFromDb1 = ((ClaimSetGetResult.Success)getByIdResult1).ClaimSetResponse;
-            claimSetFromDb1.Should().BeOfType<ClaimSetResponseReduced>();
+            claimSetFromDb1.Should().BeOfType<ClaimSetResponse>();
 
-            var reducedResponse1 = (ClaimSetResponseReduced)claimSetFromDb1;
+            var reducedResponse1 = (ClaimSetResponse)claimSetFromDb1;
             reducedResponse1.Name.Should().Be("Original-ClaimSet");
 
-            var getByIdResult2 = await _repository.GetClaimSet(_idCopy, false);
+            var getByIdResult2 = await _repository.GetClaimSet(_idCopy);
             getByIdResult2.Should().BeOfType<ClaimSetGetResult.Success>();
 
             object claimSetFromDb2 = ((ClaimSetGetResult.Success)getByIdResult2).ClaimSetResponse;
-            claimSetFromDb2.Should().BeOfType<ClaimSetResponseReduced>();
+            claimSetFromDb2.Should().BeOfType<ClaimSetResponse>();
 
-            var reducedResponse2 = (ClaimSetResponseReduced)claimSetFromDb2;
+            var reducedResponse2 = (ClaimSetResponse)claimSetFromDb2;
             reducedResponse2.Name.Should().Be("Copy-Test-ClaimSet");
         }
     }
