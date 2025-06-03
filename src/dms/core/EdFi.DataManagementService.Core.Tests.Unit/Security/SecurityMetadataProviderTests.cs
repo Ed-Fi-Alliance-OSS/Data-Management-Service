@@ -71,9 +71,11 @@ public class SecurityMetadataProviderTests
 
             _handler.SetResponse(
                 $"https://api.example.com/authorizationMetadata",
-                new AuthorizationMetadataResponse(
-                    [fakeAuthorizationMetadataForClaimSet1, fakeAuthorizationMetadataForClaimSet2]
-                )
+                new List<ClaimSetMetadata>
+                {
+                    fakeAuthorizationMetadataForClaimSet1,
+                    fakeAuthorizationMetadataForClaimSet2,
+                }
             );
 
             var configServiceHandler = new ConfigurationServiceResponseHandler(
@@ -91,8 +93,8 @@ public class SecurityMetadataProviderTests
 
             A.CallTo(() => httpClientFactory.CreateClient(A<string>.Ignored)).Returns(httpClient);
 
-            ConfigurationServiceApiClient _configServiceApiClient = new(httpClient);
-            _configServiceApiClient.Client.DefaultRequestHeaders.Authorization =
+            ConfigurationServiceApiClient configServiceApiClient = new(httpClient);
+            configServiceApiClient.Client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", expectedToken);
 
             var configContext = new ConfigurationServiceContext(clientId, clientSecret, scope);
@@ -101,7 +103,7 @@ public class SecurityMetadataProviderTests
             A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope)).Returns(expectedToken);
 
             _metadataProvider = new SecurityMetadataProvider(
-                _configServiceApiClient,
+                configServiceApiClient,
                 tokenHandler,
                 configContext
             );

@@ -45,13 +45,13 @@ public class SecurityMetadataProvider(
         string jsonString = await response.Content.ReadAsStringAsync();
 
         // Deserialize as a collection of authorization metadata responses (one per claim set)
-        var allMetadata =
-            JsonSerializer.Deserialize<AuthorizationMetadataResponse>(jsonString, _jsonOptions)
-            ?? new AuthorizationMetadataResponse([]);
+        IList<ClaimSetMetadata> allClaimSets =
+            JsonSerializer.Deserialize<IList<ClaimSetMetadata>>(jsonString, _jsonOptions)
+            ?? new List<ClaimSetMetadata>();
 
         List<ClaimSet> claimSets = [];
 
-        foreach (var claimSetMetadata in allMetadata.ClaimSets)
+        foreach (var claimSetMetadata in allClaimSets)
         {
             var claimSetName = claimSetMetadata.ClaimSetName;
 
