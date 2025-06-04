@@ -26,7 +26,6 @@
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
         * Run: starts the application
-        * StartServices: starts the Docker containers for the DMS and its dependencies (PostgreSQL, OpenSearch, etc.).
     .EXAMPLE
         .\build-dms.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
 
@@ -45,7 +44,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run", "StartServices")]
+    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -91,12 +90,7 @@ param(
 
     # Only required with E2E testing.
     [switch]
-    $UsePublishedImage,
-
-    # Only required with E2E testing.
-    # If true, the script will start the Docker containers for the DMS
-    [bool]
-    $StartServicesFirst = $true
+    $UsePublishedImage
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -267,25 +261,6 @@ function RunE2E {
 }
 
 function E2ETests {
-    param(
-        [switch] $EnableOpenSearch,
-        [switch] $EnableElasticSearch,
-        [switch] $UsePublishedImage,
-        [bool] $StartServicesFirst = $true
-    )
-    if ($StartServicesFirst) {
-        Invoke-Step { StartServices -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage }
-    }
-    Invoke-Step { RunE2E }
-}
-
-function StartServices {
-    param(
-        [switch] $EnableOpenSearch,
-        [switch] $EnableElasticSearch,
-        [switch] $UsePublishedImage
-    )
-    # Just start the services
     if (-not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
     }
@@ -329,6 +304,7 @@ function StartServices {
     else {
         Invoke-Step { DockerRun }
     }
+    Invoke-Step { RunE2E }
 }
 
 function RunNuGetPack {
@@ -407,7 +383,7 @@ function Invoke-TestExecution {
         $UsePublishedImage
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -StartServicesFirst:$StartServicesFirst } }
+        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -488,7 +464,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution c -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -StartServicesFirst:$StartServicesFirst }
+        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
@@ -496,7 +472,6 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartServices { Invoke-Step { StartServices -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage } }
         default { throw "Command '$Command' is not recognized" }
     }
 }
