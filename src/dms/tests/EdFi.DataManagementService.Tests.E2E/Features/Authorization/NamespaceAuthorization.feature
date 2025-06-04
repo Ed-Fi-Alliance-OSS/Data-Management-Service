@@ -236,6 +236,23 @@ Feature: Namespace Authorization
                   }]
                   """
 
+        Scenario: 20 Ensure clients can query a resource when the token is assigned to multiple namespaces
+            Given the claimSet "E2E-NameSpaceBasedClaimSet" is authorized with namespacePrefixes "uri://ed-fi.org, uri://ns2.org"
+             When a GET request is made to "/ed-fi/surveys?surveyIdentifier=CE_1&namespace=uri%3A%2F%2Fns2.org"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": "{id}",
+                      "namespace": "uri://ns2.org",
+                      "surveyIdentifier": "CE_1",
+                      "schoolYearTypeReference": {
+                        "schoolYear": 2024
+                      },
+                      "surveyTitle": "Course Evaluation"
+                  }]
+                  """
+
         Scenario: 10 Ensure client can get a resource in the ns2 namespace
              When a GET request is made to "/ed-fi/surveys/{id}"
              Then it should respond with 200

@@ -147,10 +147,18 @@ public class QueryOpenSearchTests
         A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns([strategyEvaluator]);
         string expectedJson = """
             {
-                "terms": {
-                    "securityelements.Namespace": [
-                        "uri://ed-fi.org",
-                        "uri://other.org"
+                "bool": {
+                    "should": [
+                        {
+                            "match_phrase": {
+                                "securityelements.Namespace": "uri://ed-fi.org"
+                            }
+                        },
+                        {
+                            "match_phrase": {
+                                "securityelements.Namespace": "uri://other.org"
+                            }
+                        }
                     ]
                 }
             }
