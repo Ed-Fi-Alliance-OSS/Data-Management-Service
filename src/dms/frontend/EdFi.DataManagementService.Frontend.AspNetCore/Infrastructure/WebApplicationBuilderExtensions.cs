@@ -34,7 +34,8 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder
             .Services.AddDmsDefaultConfiguration(
                 logger,
-                webAppBuilder.Configuration.GetSection("CircuitBreaker")
+                webAppBuilder.Configuration.GetSection("CircuitBreaker"),
+                webAppBuilder.Configuration.GetSection("AppSettings").GetValue<bool>("MaskRequestBodyInLogs")
             )
             .AddTransient<IAssemblyLoader, ApiSchemaAssemblyLoader>()
             .AddTransient<IContentProvider, ContentProvider>()
