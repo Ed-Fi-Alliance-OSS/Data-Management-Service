@@ -198,11 +198,6 @@ jobs:
     name: Validate OpenAPI Specs
     needs: start-services
     runs-on: ubuntu-latest
-    permissions:
-      checks: write
-    defaults:
-      run:
-        shell: pwsh
     steps:
       - name: Download OpenAPI specs
         run: |
