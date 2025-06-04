@@ -378,18 +378,24 @@ internal class ApiService(
     });
 
     /// <summary>
-    /// DMS entry point to get the OpenAPI specification for resources, derived from core and extension ApiSchemas
+    /// DMS entry point to get the OpenAPI specification for resources, derived from core and extension ApiSchemas.
+    /// Servers array should be provided by the front end.
     /// </summary>
-    public JsonNode GetResourceOpenApiSpecification()
+    public JsonNode GetResourceOpenApiSpecification(JsonArray servers)
     {
-        return _resourceOpenApiSpecification.Value;
+        JsonNode specification = _resourceOpenApiSpecification.Value;
+        specification["servers"] = servers;
+        return specification;
     }
 
     /// <summary>
     /// DMS entry point to get the OpenAPI specification for descriptors, derived from core and extension ApiSchemas
+    /// Servers array should be provided by the front end.
     /// </summary>
-    public JsonNode GetDescriptorOpenApiSpecification()
+    public JsonNode GetDescriptorOpenApiSpecification(JsonArray servers)
     {
-        return _descriptorOpenApiSpecification.Value;
+        JsonNode specification = _descriptorOpenApiSpecification.Value;
+        specification["servers"] = servers;
+        return specification;
     }
 }

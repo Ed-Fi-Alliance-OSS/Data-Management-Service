@@ -98,7 +98,7 @@ public class MetadataModuleTests
             A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
-                builder.UseEnvironment("TestNoRateLimit");
+                builder.UseEnvironment("Test");
 
                 builder.ConfigureServices(
                     (collection) =>

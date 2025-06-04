@@ -17,6 +17,11 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public partial class MetadataEndpointModule : IEndpointModule
 {
+    private static JsonArray GetServers(HttpContext httpContext)
+    {
+        return new JsonArray { new JsonObject { ["url"] = $"{httpContext.Request.RootUrl()}/data" } };
+    }
+
     private sealed record SpecificationSection(string name, string prefix);
 
     [GeneratedRegex(@"specifications\/(?<section>[^-]+)-spec.json?")]
@@ -62,21 +67,15 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     internal static async Task GetResourceOpenApiSpec(HttpContext httpContext, IApiService apiService)
     {
-        JsonNode content = apiService.GetResourceOpenApiSpecification();
-        content["servers"] = new JsonArray
-        {
-            new JsonObject { ["url"] = $"{httpContext.Request.RootUrl()}/data" },
-        };
+        JsonArray servers = GetServers(httpContext);
+        JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
     internal static async Task GetDescriptorOpenApiSpec(HttpContext httpContext, IApiService apiService)
     {
-        JsonNode content = apiService.GetDescriptorOpenApiSpecification();
-        content["servers"] = new JsonArray
-        {
-            new JsonObject { ["url"] = $"{httpContext.Request.RootUrl()}/data" },
-        };
+        JsonArray servers = GetServers(httpContext);
+        JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
@@ -124,10 +123,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         )
         {
             var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
-            content["servers"] = new JsonArray
-            {
-                new JsonObject { ["url"] = $"{httpContext.Request.RootUrl()}/data" },
-            };
+            content["servers"] = GetServers(httpContext);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else
