@@ -120,7 +120,6 @@ internal class ResourceActionAuthorizationMiddleware(
 
             IReadOnlyList<string> resourceActionAuthStrategies = authorizedAction
                 .AuthorizationStrategies.Select(auth => auth.Name)
-                .Select(authStrategyName => authStrategyName)
                 .ToList();
 
             if (resourceActionAuthStrategies.Count == 0)
