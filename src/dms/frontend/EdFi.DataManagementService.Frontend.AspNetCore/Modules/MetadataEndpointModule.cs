@@ -63,11 +63,20 @@ public partial class MetadataEndpointModule : IEndpointModule
     internal static async Task GetResourceOpenApiSpec(HttpContext httpContext, IApiService apiService)
     {
         JsonNode content = apiService.GetResourceOpenApiSpecification();
+        content["servers"] = new JsonArray
+        {
+            new JsonObject { ["url"] = $"{httpContext.Request.RootUrl()}/data" },
+        };
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
+
     internal static async Task GetDescriptorOpenApiSpec(HttpContext httpContext, IApiService apiService)
     {
         JsonNode content = apiService.GetDescriptorOpenApiSpecification();
+        content["servers"] = new JsonArray
+        {
+            new JsonObject { ["url"] = $"{httpContext.Request.RootUrl()}/data" },
+        };
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
@@ -115,6 +124,10 @@ public partial class MetadataEndpointModule : IEndpointModule
         )
         {
             var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
+            content["servers"] = new JsonArray
+            {
+                new JsonObject { ["url"] = $"{httpContext.Request.RootUrl()}/data" },
+            };
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else

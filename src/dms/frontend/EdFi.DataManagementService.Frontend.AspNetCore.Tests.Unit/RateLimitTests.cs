@@ -26,7 +26,7 @@ public class RateLimitTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             // This environment has an extreme rate limit
-            builder.UseEnvironment("Test");
+            builder.UseEnvironment("TestRateLimit");
             builder.ConfigureServices(
                 (collection) =>
                 {
