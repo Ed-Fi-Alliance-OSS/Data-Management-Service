@@ -184,15 +184,18 @@ public static partial class QueryOpenSearch
         {
             if (namespaces.Count > 1)
             {
-                return new JsonObject
-                {
-                    ["terms"] = new JsonObject
-                    {
-                        [$"securityelements.{SecurityElementNameConstants.Namespace}"] = new JsonArray(
-                            namespaces.Select(ns => JsonValue.Create(ns)).ToArray()
-                        ),
-                    },
-                };
+                var shouldArray = new JsonArray(
+                    namespaces
+                        .Select(ns => new JsonObject
+                        {
+                            ["match_phrase"] = new JsonObject
+                            {
+                                [$"securityelements.{SecurityElementNameConstants.Namespace}"] = ns,
+                            },
+                        })
+                        .ToArray()
+                );
+                return new JsonObject { ["bool"] = new JsonObject { ["should"] = shouldArray } };
             }
             else if (namespaces.Count == 1)
             {
