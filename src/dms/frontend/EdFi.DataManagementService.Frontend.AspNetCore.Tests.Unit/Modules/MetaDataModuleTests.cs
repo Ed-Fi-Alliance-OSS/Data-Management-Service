@@ -84,39 +84,79 @@ public class MetadataModuleTests
         }
     }
 
-    [Test]
-    public async Task Metadata_Endpoint_Returns_Specifications_List()
+    [TestFixture]
+    public class MetadataSpecificationsListTests
     {
-        // Arrange
-        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        private WebApplicationFactory<Program> _factory;
+        private HttpClient _client;
+        private JsonArray? _specificationsJsonArray;
+
+        [SetUp]
+        public void SetUp()
         {
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((x) => claimSetCacheService);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
+            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
+            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
 
-        // Act
-        var response = await client.GetAsync("/metadata/specifications");
-        var content = await response.Content.ReadAsStringAsync();
+                builder.ConfigureServices(
+                    (collection) =>
+                    {
+                        collection.AddTransient((x) => claimSetCacheService);
+                    }
+                );
+            });
+            _client = _factory.CreateClient();
 
-        var jsonContent = JsonNode.Parse(content);
-        var section1 = jsonContent?[0]?["name"]?.GetValue<string>();
-        var section2 = jsonContent?[1]?["name"]?.GetValue<string>();
-        var section3 = jsonContent?[2]?["name"]?.GetValue<string>();
+            // Act
+            var response = _client.GetAsync("/metadata/specifications").GetAwaiter().GetResult();
+            var content = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            var jsonContent = JsonNode.Parse(content);
+            _specificationsJsonArray = jsonContent as JsonArray;
+        }
 
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        jsonContent.Should().NotBeNull();
-        section1.Should().Contain("Resources");
-        section2.Should().Contain("Descriptors");
-        section3.Should().Contain("Discovery");
+        [TearDown]
+        public void TearDown()
+        {
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void Metadata_Endpoint_Returns_Specifications_List()
+        {
+            // Assert
+            _specificationsJsonArray.Should().NotBeNull();
+            _specificationsJsonArray!.Count.Should().BeGreaterOrEqualTo(3);
+            _specificationsJsonArray[0]!["name"]?.GetValue<string>().Should().Be("Resources");
+            _specificationsJsonArray[1]!["name"]?.GetValue<string>().Should().Be("Descriptors");
+            _specificationsJsonArray[2]!["name"]?.GetValue<string>().Should().Be("Discovery");
+        }
+
+        [Test]
+        public async Task Api_Spec_Contains_Servers_Array()
+        {
+            // Assert
+            _specificationsJsonArray.Should().NotBeNull();
+            foreach (var item in _specificationsJsonArray!)
+            {
+                var endpointUri = item?["endpointUri"]?.GetValue<string>();
+                endpointUri.Should().NotBeNullOrEmpty();
+                var response = await _client.GetAsync(endpointUri);
+                var content = await response.Content.ReadAsStringAsync();
+                var jsonContent = JsonNode.Parse(content);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                jsonContent.Should().NotBeNull();
+                var servers = jsonContent?["servers"];
+                servers.Should().NotBeNull();
+                servers.Should().BeOfType<JsonArray>();
+                servers!.AsArray().Count.Should().Be(1);
+                var server = servers[0];
+                server.Should().NotBeNull();
+                server?["url"]?.GetValue<string>().Should().Be("http://localhost/data");
+            }
+        }
     }
 
     [Test]

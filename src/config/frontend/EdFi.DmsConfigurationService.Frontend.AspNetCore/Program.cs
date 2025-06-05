@@ -47,16 +47,6 @@ bool ReportInvalidConfiguration(WebApplication app)
         // Accessing IOptions<T> forces validation
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value;
-        if (
-            string.Equals(
-                app.Configuration.GetSection("AppSettings:IdentityProvider").Value,
-                "keycloak",
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
-        {
-            _ = app.Services.GetRequiredService<IOptions<KeycloakSettings>>().Value;
-        }
     }
     catch (OptionsValidationException ex)
     {
