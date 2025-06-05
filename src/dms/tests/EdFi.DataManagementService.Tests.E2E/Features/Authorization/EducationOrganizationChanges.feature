@@ -111,7 +111,7 @@ Feature: EducationOrganizationChanges Authorization
                   """
              Then it should respond with 201
 
-              When a POST request is made to "/ed-fi/studentSchoolAssociations/" with
+             When a POST request is made to "/ed-fi/studentSchoolAssociations/" with
                   """
                   {
                       "studentReference": {
@@ -127,6 +127,22 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 201
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
+             When a GET request is made to "/ed-fi/students/{StudentId1}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "correlationId": "0HND34OBOV9J1:0000001E",
+                     "validationErrors": {},
+                     "errors": [
+                     "No relationships have been established between the caller's education organization id claims ('255901') and the resource item's StudentUniqueId value."
+                     ]
+                  }
+                  """
              When a GET request is made to "/ed-fi/students/?studentUniqueId=62"
              Then it should respond with 200
               And the response body is
@@ -174,6 +190,22 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
+             When a GET request is made to "/ed-fi/contacts/{ContactId1}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "correlationId": "0HND34OBOV9J1:0000001E",
+                     "validationErrors": {},
+                     "errors": [
+                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ContactUniqueId value."
+                     ]
+                  }
+                  """
              When a GET request is made to "/ed-fi/contacts/?contactUniqueId=91111"
              Then it should respond with 200
               And the response body is
@@ -199,6 +231,22 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
+             When a GET request is made to "/ed-fi/staffs/{StaffId1}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "correlationId": "0HND34OBOV9J1:0000001E",
+                     "validationErrors": {},
+                     "errors": [
+                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's StaffUniqueId value."
+                     ]
+                  }
+                  """
              When a GET request is made to "/ed-fi/staffs/?staffUniqueId=s0001"
              Then it should respond with 200
               And the response body is
@@ -263,6 +311,22 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
+             When a GET request is made to "/ed-fi/students/{StudentId1}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "correlationId": "0HND34OBOV9J1:0000001E",
+                     "validationErrors": {},
+                     "errors": [
+                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's StudentUniqueId value."
+                     ]
+                  }
+                  """
              When a GET request is made to "/ed-fi/students/?studentUniqueId=61"
              Then it should respond with 200
               And the response body is
@@ -294,6 +358,22 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
+             When a GET request is made to "/ed-fi/contacts/{ContactId1}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "correlationId": "0HND34OBOV9J1:0000001E",
+                     "validationErrors": {},
+                     "errors": [
+                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ContactUniqueId value."
+                     ]
+                  }
+                  """
              When a GET request is made to "/ed-fi/contacts/?contactUniqueId=91111"
              Then it should respond with 200
               And the response body is
@@ -324,6 +404,22 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
+             When a GET request is made to "/ed-fi/staffs/{StaffId1}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "correlationId": "0HND34OBOV9J1:0000001E",
+                     "validationErrors": {},
+                     "errors": [
+                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's StaffUniqueId value."
+                     ]
+                  }
+                  """
              When a GET request is made to "/ed-fi/staffs/?staffUniqueId=s0001"
              Then it should respond with 200
               And the response body is
@@ -532,5 +628,3 @@ Feature: EducationOrganizationChanges Authorization
                     "staffUniqueId": "s0001"
                   }
                   """
-                  
-
