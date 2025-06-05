@@ -15,14 +15,17 @@ public static class KeycloakServiceExtensions
 {
     public static IServiceCollection AddKeycloakServices(
         this IServiceCollection services,
-        string Url,
-        string Realm,
+        string Authority,
         string ClientId,
         string ClientSecret,
         string RoleClaimType
     )
     {
-        services.AddScoped(x => new KeycloakContext(Url, Realm, ClientId, ClientSecret, RoleClaimType));
+        var uri = new Uri(Authority);
+        var baseUrl = uri.GetLeftPart(UriPartial.Authority);
+        var realm = Authority.TrimEnd('/').Split('/').Last();
+
+        services.AddScoped(x => new KeycloakContext(baseUrl, realm, ClientId, ClientSecret, RoleClaimType));
 
         services.AddTransient<IClientRepository, KeycloakClientRepository>();
         services.AddTransient<ITokenManager, KeycloakTokenManager>();
