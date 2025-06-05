@@ -44,6 +44,48 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION dms.InsertContactStudentSchoolAuthorization(
+    student_id text,
+    ed_org_ids jsonb,
+    ssa_id bigint,
+    ssa_partition_key smallint,
+    contact_id text DEFAULT NULL
+)
+RETURNS VOID
+AS $$
+DECLARE
+    existing_contact RECORD;
+BEGIN
+
+    FOR existing_contact IN
+        SELECT ContactUniqueId, StudentContactAssociationId, StudentContactAssociationPartitionKey
+        FROM dms.ContactStudentSchoolAuthorization WHERE StudentUniqueId = student_id
+    LOOP
+        -- Insert into ContactStudentSchoolAuthorization table
+        INSERT INTO dms.ContactStudentSchoolAuthorization (
+            ContactUniqueId,
+            StudentUniqueId,
+            ContactStudentSchoolAuthorizationEducationOrganizationIds,
+            StudentContactAssociationId,
+            StudentContactAssociationPartitionKey,
+            StudentSchoolAssociationId,
+            StudentSchoolAssociationPartitionKey
+        )
+        VALUES (
+            COALESCE(contact_id, existing_contact.ContactUniqueId),
+            student_id,
+            ed_org_ids,
+            existing_contact.StudentContactAssociationId,
+            existing_contact.StudentContactAssociationPartitionKey,
+            ssa_id,
+            ssa_partition_key
+        );
+
+        PERFORM dms.SetEdOrgIdsToContactSecurables(dms.GetContactEdOrgIds(COALESCE(contact_id, existing_contact.ContactUniqueId)), COALESCE(contact_id, existing_contact.ContactUniqueId));
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Function for INSERT operations
 CREATE OR REPLACE FUNCTION dms.StudentSchoolAssociationAuthorizationInsertFunction()
 RETURNS TRIGGER
@@ -53,7 +95,6 @@ DECLARE
     ed_org_ids jsonb;
     student_id text;
     school_id bigint;
-    existing_contact RECORD;
 BEGIN
     student_id := NEW.EdfiDoc->'studentReference'->>'studentUniqueId';
     school_id := NEW.EdfiDoc->'schoolReference'->>'schoolId';
@@ -91,33 +132,7 @@ BEGIN
         DocumentPartitionKey = NEW.DocumentPartitionKey;
 
     -- Insert student contact association records for this student school association
-    FOR existing_contact IN
-        SELECT ContactUniqueId, StudentContactAssociationId, StudentContactAssociationPartitionKey
-        FROM dms.ContactStudentSchoolAuthorization WHERE StudentUniqueId = student_id
-    LOOP
-        -- Insert into ContactStudentSchoolAuthorization table
-        INSERT INTO dms.ContactStudentSchoolAuthorization (
-            ContactUniqueId,
-            StudentUniqueId,
-            ContactStudentSchoolAuthorizationEducationOrganizationIds,
-            StudentContactAssociationId,
-            StudentContactAssociationPartitionKey,
-            StudentSchoolAssociationId,
-            StudentSchoolAssociationPartitionKey
-        )
-        VALUES (
-            existing_contact.ContactUniqueId,
-            student_id,
-            ancestor_ed_org_ids,
-            existing_contact.StudentContactAssociationId,
-            existing_contact.StudentContactAssociationPartitionKey,
-            NEW.Id,
-            NEW.DocumentPartitionKey
-        );
-
-        PERFORM dms.SetEdOrgIdsToContactSecurables(dms.GetContactEdOrgIds(existing_contact.ContactUniqueId), existing_contact.ContactUniqueId);
-
-    END LOOP;
+    PERFORM dms.InsertContactStudentSchoolAuthorization(student_id, ancestor_ed_org_ids, NEW.Id, NEW.DocumentPartitionKey);
 
     RETURN NULL;
 END;
@@ -171,21 +186,22 @@ DECLARE
     old_student_id text;
     new_school_id bigint;
     old_school_id bigint;
+    contact_id text;
 BEGIN
     new_student_id := NEW.EdfiDoc->'studentReference'->>'studentUniqueId';
     old_student_id := OLD.EdfiDoc->'studentReference'->>'studentUniqueId';
     new_school_id := (NEW.EdfiDoc->'schoolReference'->>'schoolId')::BIGINT;
     old_school_id := (OLD.EdfiDoc->'schoolReference'->>'schoolId')::BIGINT;
 
-    -- Skip if neither StudentUniqueId nor SchoolId has changed
+    -- Exit early if nothing has changed
     IF new_student_id = old_student_id AND new_school_id = old_school_id THEN
         RETURN NULL;
     END IF;
 
-    -- DELETE logic
+    -- Remove existing securables for old student
     PERFORM dms.SetEdOrgIdsToStudentSecurables(NULL, old_student_id);
 
-    -- INSERT logic
+    -- Get new ancestor education organization IDs for the school
     SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
     FROM dms.GetEducationOrganizationAncestors(new_school_id)
     INTO ancestor_ed_org_ids;
@@ -201,6 +217,59 @@ BEGIN
 
     -- Update all documents for the new student
     PERFORM dms.SetEdOrgIdsToStudentSecurables(dms.GetStudentEdOrgIds(new_student_id), new_student_id);
+
+    IF new_student_id = old_student_id THEN
+        -- School changed but student stayed the same
+
+        -- Update student contact association records for this student school association
+        UPDATE dms.ContactStudentSchoolAuthorization
+        SET
+            ContactStudentSchoolAuthorizationEducationOrganizationIds = ancestor_ed_org_ids
+        WHERE
+            StudentUniqueId = new_student_id AND
+            StudentSchoolAssociationId = NEW.Id AND
+            StudentSchoolAssociationPartitionKey = NEW.DocumentPartitionKey;
+
+        FOR contact_id IN
+            SELECT DISTINCT ContactUniqueId
+            FROM dms.ContactStudentSchoolAuthorization
+            WHERE
+                StudentUniqueId = new_student_id AND
+                StudentSchoolAssociationId = NEW.Id AND
+                StudentSchoolAssociationPartitionKey = NEW.DocumentPartitionKey
+        LOOP
+            PERFORM dms.SetEdOrgIdsToContactSecurables(dms.GetContactEdOrgIds(contact_id), contact_id);
+        END LOOP;
+
+    ELSE
+        -- Student changed
+
+        -- Remove authorization data from old student's contact associations
+        UPDATE dms.ContactStudentSchoolAuthorization
+        SET
+            ContactStudentSchoolAuthorizationEducationOrganizationIds = '[]'
+        WHERE
+            StudentUniqueId = old_student_id  AND
+            StudentSchoolAssociationId = NEW.Id AND
+            StudentSchoolAssociationPartitionKey = NEW.DocumentPartitionKey;
+
+        -- Remove access to old student Contacts
+        FOR contact_id IN
+            SELECT DISTINCT ContactUniqueId
+            FROM dms.ContactStudentSchoolAuthorization WHERE StudentUniqueId = old_student_id
+        LOOP
+            PERFORM dms.SetEdOrgIdsToContactSecurables(dms.GetContactEdOrgIds(contact_id), contact_id);
+        END LOOP;
+
+        -- Insert new authorizations and update securables for contacts of the new student
+        FOR contact_id IN
+            SELECT DISTINCT ContactUniqueId
+            FROM dms.ContactStudentSchoolAuthorization WHERE StudentUniqueId = new_student_id
+        LOOP
+            PERFORM dms.InsertContactStudentSchoolAuthorization(new_student_id, ancestor_ed_org_ids, NEW.Id, NEW.DocumentPartitionKey, contact_id);
+        END LOOP;
+
+    END IF;
 
     RETURN NULL;
 END;
