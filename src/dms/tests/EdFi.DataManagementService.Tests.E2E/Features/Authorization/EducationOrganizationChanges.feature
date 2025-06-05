@@ -103,21 +103,11 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
-             When a GET request is made to "/ed-fi/students/{StudentId1}"
-             Then it should respond with 403
+             When a GET request is made to "/ed-fi/students/?studentUniqueId=61"
+             Then it should respond with 200
               And the response body is
                   """
-                  {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255901') and the resource item's StudentUniqueId value."
-                     ]
-                  }
+                    []
                   """
 
         Scenario: 03 Ensure client can't access the  Contact anymore when a student  gets updated to a different school
@@ -160,21 +150,11 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
-             When a GET request is made to "/ed-fi/contacts/{ContactId1}"
-             Then it should respond with 403
+             When a GET request is made to "/ed-fi/contacts/?contactUniqueId=91111"
+             Then it should respond with 200
               And the response body is
                   """
-                  {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ContactUniqueId value."
-                     ]
-                  }
+                   []
                   """
 
         Scenario: 04 Ensure client can't access the  Staffs anymore when a staff gets updated to a different school
@@ -195,21 +175,11 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
-             When a GET request is made to "/ed-fi/staffs/{StaffId1}"
-             Then it should respond with 403
+             When a GET request is made to "/ed-fi/staffs/?staffUniqueId=s0001"
+             Then it should respond with 200
               And the response body is
                   """
-                  {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's StaffUniqueId value."
-                     ]
-                  }
+                   []
                   """
 
     Rule: When a school is removed from an LEA, make sure the LEA can no longer access the student, contact, or staff linked to that school.
@@ -269,21 +239,11 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
-             When a GET request is made to "/ed-fi/students/{StudentId1}"
-             Then it should respond with 403
+             When a GET request is made to "/ed-fi/students/?studentUniqueId=61"
+             Then it should respond with 200
               And the response body is
                   """
-                  {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's StudentUniqueId value."
-                     ]
-                  }
+                    []
                   """
 
         Scenario: 06 Ensure client can't access the Contact anymore when a School updated to remove LEA
@@ -310,21 +270,11 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
-             When a GET request is made to "/ed-fi/contacts/{ContactId1}"
-             Then it should respond with 403
+             When a GET request is made to "/ed-fi/contacts/?contactUniqueId=91111"
+             Then it should respond with 200
               And the response body is
                   """
-                  {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ContactUniqueId value."
-                     ]
-                  }
+                    []
                   """
 
         Scenario: 07 Ensure client can't access the staff anymore when a School updated to remove LEA
@@ -350,21 +300,11 @@ Feature: EducationOrganizationChanges Authorization
              Then it should respond with 204
 
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
-             When a GET request is made to "/ed-fi/staffs/{StaffId1}"
-             Then it should respond with 403
+             When a GET request is made to "/ed-fi/staffs/?staffUniqueId=s0001"
+             Then it should respond with 200
               And the response body is
                   """
-                  {
-                     "detail": "Access to the resource could not be authorized.",
-                     "type": "urn:ed-fi:api:security:authorization:",
-                     "title": "Authorization Denied",
-                     "status": 403,
-                     "correlationId": "0HND34OBOV9J1:0000001E",
-                     "validationErrors": {},
-                     "errors": [
-                     "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's StaffUniqueId value."
-                     ]
-                  }
+                   []
                   """
 
     Rule: When a school is added with new LEA, make sure the LEA can access the student, contact, or staff linked to that school.
@@ -568,5 +508,3 @@ Feature: EducationOrganizationChanges Authorization
                     "staffUniqueId": "s0001"
                   }
                   """
-                  
-
