@@ -12,6 +12,18 @@
     "publication.name": "to_debezium",
     "slot.name": "debezium",
 
+    "snapshot.mode": "initial",
+    "snapshot.locking.mode": "none",
+    "snapshot.include.collection.list": "dms.document,dms.educationorganizationhierarchytermslookup",
+    "schema.include.list": "dms",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
+    "schema.history.internal.kafka.topic": "schema-changes.dms",
+    "schema.history.internal.kafka.producer.key.serializer": "org.apache.kafka.common.serialization.StringSerializer",
+    "schema.history.internal.kafka.producer.value.serializer": "org.apache.kafka.common.serialization.StringSerializer",
+    "schema.history.internal.kafka.producer.acks": "all",
+    "schema.history.internal.kafka.producer.compression.type": "lz4",
+    "schema.history.internal.kafka.producer.enable.idempotence": "true",
+
     "topic.prefix": "edfi",
     "table.include.list": "dms.document,dms.educationorganizationhierarchytermslookup",
 
