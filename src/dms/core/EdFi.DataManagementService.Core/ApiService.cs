@@ -91,11 +91,7 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceActionAuthorizationMiddleware(
-                    _claimSetCacheService,
-                    _logger,
-                    _appSettings.Value.DisablePersonAuthorizationStrategies
-                ),
+                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationPathwayMiddleware(_logger),
                 new UpsertHandler(
@@ -127,11 +123,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceActionAuthorizationMiddleware(
-                        _claimSetCacheService,
-                        _logger,
-                        _appSettings.Value.DisablePersonAuthorizationStrategies
-                    ),
+                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                     new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                     new GetByIdHandler(
@@ -162,11 +154,7 @@ internal class ApiService(
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
                     new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
-                    new ResourceActionAuthorizationMiddleware(
-                        _claimSetCacheService,
-                        _logger,
-                        _appSettings.Value.DisablePersonAuthorizationStrategies
-                    ),
+                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                     new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
                 ]
@@ -219,11 +207,7 @@ internal class ApiService(
                 new ExtractDocumentInfoMiddleware(_logger),
                 new DisallowDuplicateReferencesMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceActionAuthorizationMiddleware(
-                    _claimSetCacheService,
-                    _logger,
-                    _appSettings.Value.DisablePersonAuthorizationStrategies
-                ),
+                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationPathwayMiddleware(_logger),
                 new UpdateByIdHandler(
@@ -254,11 +238,7 @@ internal class ApiService(
                         _logger,
                         _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                     ),
-                    new ResourceActionAuthorizationMiddleware(
-                        _claimSetCacheService,
-                        _logger,
-                        _appSettings.Value.DisablePersonAuthorizationStrategies
-                    ),
+                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                     new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                     new ProvideAuthorizationPathwayMiddleware(_logger),
                     new ProvideAuthorizationSecurableInfoMiddleware(_logger),

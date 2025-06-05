@@ -36,11 +36,5 @@ namespace EdFi.DataManagementService.Core.Configuration
         /// including both core and extension files.
         /// </summary>
         public string? ApiSchemaPath { get; set; }
-
-        /// <summary>
-        /// Use NoFurtherAuthorizationRequired if the configured strategy is RelationshipsWith*
-        /// (except for RelationshipsWithEdOrgsOnly)
-        /// </summary>
-        public bool DisablePersonAuthorizationStrategies { get; set; }
     }
 }
