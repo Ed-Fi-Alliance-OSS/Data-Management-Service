@@ -50,11 +50,13 @@ public interface IApiService
 
     /// <summary>
     /// DMS entry point to get the OpenAPI specification for resources, derived from core and extension ApiSchemas
+    /// Servers array should be provided by the front end.
     /// </summary>
-    public JsonNode GetResourceOpenApiSpecification();
+    public JsonNode GetResourceOpenApiSpecification(JsonArray servers);
 
     /// <summary>
     /// DMS entry point to get the OpenAPI specification for descriptors, derived from core and extension ApiSchemas
+    /// Servers array should be provided by the front end.
     /// </summary>
-    public JsonNode GetDescriptorOpenApiSpecification();
+    public JsonNode GetDescriptorOpenApiSpecification(JsonArray servers);
 }
