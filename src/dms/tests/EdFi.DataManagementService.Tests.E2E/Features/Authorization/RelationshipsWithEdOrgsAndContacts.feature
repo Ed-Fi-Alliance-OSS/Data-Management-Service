@@ -1228,8 +1228,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                     ]
                   """
 
-        # Re-enable when DMS-707 is done
-        @ignore
         Scenario: 53 Ensure client can retrieve a Contact after the SSA has been updated to a new School
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1555901001, 1555901002, 1555901003"
@@ -1375,8 +1373,6 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
                   ]
                   """
 
-        # Re-enable when DMS-707 is done
-        @ignore
         Scenario: 54 Ensure client can retrieve a Contact after the SSA has been updated to a new Student
             # Change to use long EdOrgIds when DMS-706 is done
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1655901001"
