@@ -181,19 +181,8 @@ public static class WebApplicationBuilderExtensions
             )
         )
         {
-            var keycloakSettings = config.GetSection("KeycloakSettings").Get<KeycloakSettings>();
-            if (keycloakSettings == null)
-            {
-                logger.Error("Error reading KeycloakSettings");
-                throw new InvalidOperationException("Unable to read KeycloakSettings from appsettings");
-            }
-            webApplicationBuilder
-                .Services.Configure<KeycloakSettings>(config.GetSection("KeycloakSettings"))
-                .AddSingleton<IValidateOptions<KeycloakSettings>, KeycloakSettingsValidator>();
-
             webApplicationBuilder.Services.AddKeycloakServices(
-                keycloakSettings.Url,
-                keycloakSettings.Realm,
+                identitySettings.Authority,
                 identitySettings.ClientId,
                 identitySettings.ClientSecret,
                 identitySettings.RoleClaimType
