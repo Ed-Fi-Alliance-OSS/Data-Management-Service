@@ -13,11 +13,9 @@ Feature: EducationOrganizationChanges Authorization
               And the system has these "students"
                   | _storeResultingIdInVariable | studentUniqueId | firstName  | lastSurname | birthDate  |
                   | StudentId1                  | "61"            | student-fn | student-ln  | 2008-01-01 |
-                  | StudentId2                  | "62"            | student-fn | student-ln  | 2008-01-01 |
               And the system has these "studentSchoolAssociations"
                   | _storeResultingIdInVariable |  | studentReference            | schoolReference           | entryGradeLevelDescriptor                          | entryDate  |
                   | StudentSchoolAssociationId1 |  | { "studentUniqueId": "61" } | { "schoolId": 255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
-                  | StudentSchoolAssociationId2 |  | { "studentUniqueId": "62" } | { "schoolId": 255901001 } | "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade" | 2023-08-01 |
               And the system has these "contacts"
                   | _storeResultingIdInVariable | contactUniqueId | firstName          | lastSurname |
                   | ContactId1                  | "91111"         | Authorized contact | contact-ln  |
@@ -102,8 +100,34 @@ Feature: EducationOrganizationChanges Authorization
                   """
              Then it should respond with 204
 
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "62",
+                      "birthDate": "2017-08-23",
+                      "firstName": "first name",
+                      "lastSurname": "      last name            "
+                  }
+                  """
+             Then it should respond with 201
+
+              When a POST request is made to "/ed-fi/studentSchoolAssociations/" with
+                  """
+                  {
+                      "studentReference": {
+                        "studentUniqueId": "62"
+                      },
+                      "schoolReference": {
+                        "schoolId": 255901001
+                      },
+                      "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
+                      "entryDate": "2023-08-01"
+                  }
+                  """
+             Then it should respond with 201
+
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
-             When a GET request is made to "/ed-fi/students/?studentUniqueId=61"
+             When a GET request is made to "/ed-fi/students/?studentUniqueId=62"
              Then it should respond with 200
               And the response body is
                   """
@@ -508,3 +532,5 @@ Feature: EducationOrganizationChanges Authorization
                     "staffUniqueId": "s0001"
                   }
                   """
+                  
+
