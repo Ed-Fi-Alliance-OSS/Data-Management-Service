@@ -63,7 +63,6 @@ function Get-NugetPackage {
         [string]
         $PackageName,
 
-        [Parameter(Mandatory=$true)]
         [string]
         $PackageVersion,
 
@@ -93,21 +92,24 @@ function Get-NugetPackage {
                         | Where-Object { $_."@type" -like "PackageBaseAddress*" } `
                         | Select-Object -Property "@id" -ExpandProperty "@id"
 
-
-    $versionSearch = $PackageVersion
-
-    # pad this out to three part semver if only partial
-    switch ($PackageVersion.split(".").length) {
-        1 { $versionSearch = "$PackageVersion.*.*"}
-        2 { $versionSearch = "$PackageVersion.*" }
-    }
     $lowerId = $PackageName.ToLower()
-
     # Lookup available packages
     $package = Invoke-RestMethod "$($packageService)$($lowerId)/index.json"
-
     # Sort by SemVer
     $versions = Invoke-SemanticSort $package.versions
+
+    if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
+    Write-Host -ForegroundColor Yellow "No version specified. Using latest available version."
+    $versionSearch = $versions[-1]
+    }
+    else {
+        # pad this out to three part semver if only partial
+        switch ($PackageVersion.Split('.').Length) {
+            1 { $versionSearch = "$PackageVersion.*.*" }
+            2 { $versionSearch = "$PackageVersion.*" }
+            default { $versionSearch = $PackageVersion }
+        }
+    }
 
     # Find the first available version that matches the requested version
     $version = $versions | Where-Object { $_ -like $versionSearch } | Select-Object -First 1

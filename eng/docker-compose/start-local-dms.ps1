@@ -35,7 +35,11 @@ param (
     $EnableConfig,
 
     # Enable Swagger UI for the DMS API
-    [switch]$EnableSwaggerUI
+    [switch]$EnableSwaggerUI,
+
+    # Setup minimal template
+    [Switch]
+    $SetUpMinimalTemplate
 )
 
 $files = @(
@@ -87,14 +91,34 @@ else {
     )
     if ($r) { $upArgs += @("--build") }
 
-    Write-Output "Starting Keycloak first..."
+    Write-Output "Starting locally-built DMS"
+
+    docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
+    }
+
+    Start-Sleep 10
+
+    if($SetUpMinimalTemplate)
+    {
+        Import-Module ./setup-minimal-template.psm1
+        Write-Output "Setting up minimal template..."
+        SetupMinimalTemplate -EnvironmentFile $EnvironmentFile
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to set up minimal template, with exit code $LASTEXITCODE."
+        }
+    }
+
+    Write-Output "Starting Keycloak..."
     docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
     }
 
     Write-Output "Waiting for Keycloak to initialize..."
-    Start-Sleep 20
+    Start-Sleep 5
 
     Write-Output "Running setup-keycloak.ps1 scripts..."
     Start-Sleep 5
@@ -107,15 +131,7 @@ else {
     # Create client with edfi_admin_api/authMetadata_readonly_access scope
     ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
 
-    Write-Output "Starting locally-built DMS"
-
-    docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
-    }
-
-    Start-Sleep 20
+    Start-Sleep 10
 
     Write-Output "Running connector setup..."
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
