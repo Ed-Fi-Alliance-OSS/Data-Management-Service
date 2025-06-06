@@ -33,7 +33,8 @@ public static class DmsCoreServiceExtensions
     public static IServiceCollection AddDmsDefaultConfiguration(
         this IServiceCollection services,
         Serilog.ILogger logger,
-        IConfigurationSection circuitBreakerConfiguration
+        IConfigurationSection circuitBreakerConfiguration,
+        bool maskRequestBodyInLogs
     )
     {
         services
@@ -68,13 +69,34 @@ public static class DmsCoreServiceExtensions
 
         void backendResiliencePipeline(ResiliencePipelineBuilder builder)
         {
+            CircuitBreakerSettings breakerSettings = new();
+            circuitBreakerConfiguration.Bind(breakerSettings);
+
             TelemetryOptions telemetryOptions = new()
             {
                 LoggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger)),
             };
 
-            CircuitBreakerSettings breakerSettings = new();
-            circuitBreakerConfiguration.Bind(breakerSettings);
+            if (maskRequestBodyInLogs)
+            {
+                telemetryOptions.ResultFormatter = (context, result) =>
+                {
+                    return result switch
+                    {
+                        GetResult.GetSuccess getSuccess => new GetResult.GetSuccess(
+                            getSuccess.DocumentUuid,
+                            "REDACTED",
+                            getSuccess.LastModifiedDate,
+                            getSuccess.LastModifiedTraceId
+                        ),
+                        QueryResult.QuerySuccess querySuccess => new QueryResult.QuerySuccess(
+                            ["REDACTED"],
+                            querySuccess.TotalCount
+                        ),
+                        _ => result,
+                    };
+                };
+            }
 
             CircuitBreakerStrategyOptions optionsUnknownFailure = new()
             {

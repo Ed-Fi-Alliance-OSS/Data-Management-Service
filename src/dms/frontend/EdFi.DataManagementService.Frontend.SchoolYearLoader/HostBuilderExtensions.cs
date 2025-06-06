@@ -27,31 +27,34 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
         {
             var logger = ConfigureLogging(configuration);
 
-            services.AddDmsDefaultConfiguration(
-                logger,
-                configuration.GetSection("CircuitBreaker")
-            )
-            .AddTransient<IOAuthManager, OAuthManager>()
-            .Configure<DatabaseOptions>(configuration.GetSection("DatabaseOptions"))
-            .Configure<AppSettings>(configuration.GetSection("AppSettings"))
-            .Configure<CoreAppSettings>(configuration.GetSection("AppSettings"))
-            .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
-            .Configure<ConnectionStrings>(configuration.GetSection("ConnectionStrings"))
-            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>()
-            .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
-
+            services
+                .AddDmsDefaultConfiguration(logger, configuration.GetSection("CircuitBreaker"), false)
+                .AddTransient<IOAuthManager, OAuthManager>()
+                .Configure<DatabaseOptions>(configuration.GetSection("DatabaseOptions"))
+                .Configure<AppSettings>(configuration.GetSection("AppSettings"))
+                .Configure<CoreAppSettings>(configuration.GetSection("AppSettings"))
+                .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
+                .Configure<ConnectionStrings>(configuration.GetSection("ConnectionStrings"))
+                .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>()
+                .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
 
             ConfigureDatastore(configuration, services, logger);
             ConfigureQueryHandler(configuration, services, logger);
             services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
             services.AddTransient<IClaimSetCacheService, ClaimSetCacheService>();
 
-            services.Configure<ConfigurationServiceSettings>(configuration.GetSection("ConfigurationServiceSettings"));
-            services.AddSingleton(sp => sp.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value);
+            services.Configure<ConfigurationServiceSettings>(
+                configuration.GetSection("ConfigurationServiceSettings")
+            );
+            services.AddSingleton(sp =>
+                sp.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value
+            );
             // For Token handling
             services.AddSingleton<IApiClientDetailsProvider, ApiClientDetailsProvider>();
             // Access Configuration service
-            var configServiceSettings = configuration.GetSection("ConfigurationServiceSettings").Get<ConfigurationServiceSettings>();
+            var configServiceSettings = configuration
+                .GetSection("ConfigurationServiceSettings")
+                .Get<ConfigurationServiceSettings>();
 
             if (configServiceSettings == null)
             {
@@ -61,22 +64,26 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                 );
             }
             services.AddTransient<ConfigurationServiceResponseHandler>();
-            services.AddHttpClient<ConfigurationServiceApiClient>((serviceProvider, client) =>
-            {
-                var configServiceSettings = serviceProvider.GetRequiredService<ConfigurationServiceSettings>();
-                client.BaseAddress = new Uri(configServiceSettings.BaseUrl);
-                client.DefaultRequestHeaders.Add("Accept", "application/json");
-                client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
-            })
-            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler())
-            .AddHttpMessageHandler<ConfigurationServiceResponseHandler>();
+            services
+                .AddHttpClient<ConfigurationServiceApiClient>(
+                    (serviceProvider, client) =>
+                    {
+                        var configServiceSettings =
+                            serviceProvider.GetRequiredService<ConfigurationServiceSettings>();
+                        client.BaseAddress = new Uri(configServiceSettings.BaseUrl);
+                        client.DefaultRequestHeaders.Add("Accept", "application/json");
+                        client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
+                    }
+                )
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler())
+                .AddHttpMessageHandler<ConfigurationServiceResponseHandler>();
 
             services.AddSingleton(
                 new ConfigurationServiceContext(
                     configServiceSettings.ClientId,
                     configServiceSettings.ClientSecret,
                     configServiceSettings.Scope
-            )
+                )
             );
 
             services.AddMemoryCache();
@@ -109,14 +116,20 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                 return configureLogging;
             }
         }
-        private static void ConfigureDatastore(IConfiguration configuration, IServiceCollection services, Serilog.ILogger logger)
+
+        private static void ConfigureDatastore(
+            IConfiguration configuration,
+            IServiceCollection services,
+            Serilog.ILogger logger
+        )
         {
             var datastore = configuration["AppSettings:Datastore"];
 
             if (string.Equals(datastore, "postgresql", StringComparison.OrdinalIgnoreCase))
             {
                 logger.Information("Injecting PostgreSQL as the primary backend datastore");
-                var connectionString = configuration.GetConnectionString("DatabaseConnection") ?? string.Empty;
+                var connectionString =
+                    configuration.GetConnectionString("DatabaseConnection") ?? string.Empty;
                 services.AddPostgresqlDatastore(connectionString);
                 services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
             }
@@ -127,7 +140,11 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
             }
         }
 
-        private static void ConfigureQueryHandler(IConfiguration configuration, IServiceCollection services, Serilog.ILogger logger)
+        private static void ConfigureQueryHandler(
+            IConfiguration configuration,
+            IServiceCollection services,
+            Serilog.ILogger logger
+        )
         {
             if (
                 string.Equals(
@@ -144,8 +161,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
             {
                 logger.Information("Injecting OpenSearch as the backend query handler");
                 services.AddOpenSearchQueryHandler(
-                    configuration.GetSection("ConnectionStrings:OpenSearchUrl").Value
-                        ?? string.Empty
+                    configuration.GetSection("ConnectionStrings:OpenSearchUrl").Value ?? string.Empty
                 );
             }
         }
