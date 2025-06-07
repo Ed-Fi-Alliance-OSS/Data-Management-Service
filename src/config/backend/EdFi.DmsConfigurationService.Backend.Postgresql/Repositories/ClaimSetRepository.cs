@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
@@ -20,7 +21,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 public class ClaimSetRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<ClaimSetRepository> logger,
-    IClaimsHierarchyRepository claimsHierarchyRepository
+    IClaimsHierarchyRepository claimsHierarchyRepository,
+    IClaimsHierarchyManager claimsHierarchyManager
 ) : IClaimSetRepository
 {
     public IEnumerable<Action> GetActions()
@@ -492,24 +494,120 @@ public class ClaimSetRepository(
 
     public async Task<ClaimSetImportResult> Import(ClaimSetImportCommand command)
     {
+        if (string.IsNullOrEmpty(command.Name))
+        {
+            return new ClaimSetImportResult.FailureUnknown("Import claim set name is required.");
+        }
+
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
 
         try
         {
-            string sql = """
-                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
-                   VALUES(@ClaimSetName, @IsSystemReserved)
-                   RETURNING Id;
+            // Check if the claim set already exists
+            string checkSql = """
+                    SELECT Id FROM dmscs.ClaimSet WHERE ClaimSetName = @ClaimSetName;
                 """;
+            var existingClaimSetId = await connection.QuerySingleOrDefaultAsync<long?>(
+                checkSql,
+                new { ClaimSetName = command.Name },
+                transaction
+            );
 
-            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = false };
+            if (existingClaimSetId == null)
+            {
+                // Insert new claim set if it does not exist
+                string insertSql = """
+                        INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
+                        VALUES(@ClaimSetName, @IsSystemReserved)
+                        RETURNING Id;
+                    """;
+                var parameters = new { ClaimSetName = command.Name, IsSystemReserved = false };
+                existingClaimSetId = await connection.ExecuteScalarAsync<long>(
+                    insertSql,
+                    parameters,
+                    transaction
+                );
+            }
 
-            long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
+            // Load the JSON hierarchy
+            string loadHierarchySql = """
+                    SELECT HierarchyJson::jsonb, LastModifiedDate
+                    FROM dmscs.ClaimSetHierarchy;
+                """;
+            var hierarchyData = await connection.QueryAsync<(
+                string HierarchyJson,
+                DateTime LastModifiedDate
+            )>(loadHierarchySql, transaction: transaction);
+
+            if (hierarchyData.Count() != 1)
+            {
+                return new ClaimSetImportResult.FailureUnknown(
+                    $"Exactly one JSON hierarchy record was expected but {hierarchyData.Count()} were found."
+                );
+            }
+
+            var (hierarchyJson, lastModifiedDate) = hierarchyData.Single();
+            var claimsHierarchy = JsonSerializer.Deserialize<List<Claim>>(hierarchyJson);
+
+            if (claimsHierarchy == null)
+            {
+                return new ClaimSetImportResult.FailureUnknown("Unable to load JSON hierarchy.");
+            }
+
+            // Remove existing metadata for the claim set
+            claimsHierarchyManager.RemoveClaimSetFromHierarchy(command.Name, claimsHierarchy);
+
+            // Apply imported claim set metadata
+            claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(command, claimsHierarchy);
+
+            // Save the JSON hierarchy with optimistic locking
+            var retryPolicy = Policy
+                .Handle<Exception>()
+                .RetryAsync(
+                    3,
+                    async (exception, retryCount) =>
+                    {
+                        logger.LogWarning("Retrying save due to conflict. Attempt {RetryCount}.", retryCount);
+                        // Reload hierarchy and reapply changes
+                        hierarchyData = await connection.QueryAsync<(
+                            string HierarchyJson,
+                            DateTime LastModifiedDate
+                        )>(loadHierarchySql, transaction: transaction);
+                        (hierarchyJson, lastModifiedDate) = hierarchyData.Single();
+                        claimsHierarchy = JsonSerializer.Deserialize<List<Claim>>(hierarchyJson);
+                        claimsHierarchyManager.RemoveClaimSetFromHierarchy(command.Name, claimsHierarchy!);
+                        claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(command, claimsHierarchy!);
+                    }
+                );
+
+            await retryPolicy.ExecuteAsync(async () =>
+            {
+                string saveHierarchySql = """
+                    UPDATE dmscs.ClaimSetHierarchy
+                    SET HierarchyJson = @HierarchyJson::jsonb, LastModifiedDate = NOW()
+                    WHERE LastModifiedDate = @LastModifiedDate;
+                """;
+                var saveParameters = new
+                {
+                    HierarchyJson = JsonSerializer.Serialize(claimsHierarchy),
+                    LastModifiedDate = lastModifiedDate,
+                };
+                int affectedRows = await connection.ExecuteAsync(
+                    saveHierarchySql,
+                    saveParameters,
+                    transaction
+                );
+
+                if (affectedRows == 0)
+                {
+                    throw new Exception("Optimistic concurrency failure.");
+                }
+            });
+
             await transaction.CommitAsync();
-
-            return new ClaimSetImportResult.Success(id);
+            return new ClaimSetImportResult.Success(existingClaimSetId.Value);
         }
         catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("idx_claimsetname"))
         {
@@ -519,7 +617,7 @@ public class ClaimSetRepository(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Insert claim set failure");
+            logger.LogError(ex, "Import claim set failure");
             await transaction.RollbackAsync();
             return new ClaimSetImportResult.FailureUnknown(ex.Message);
         }

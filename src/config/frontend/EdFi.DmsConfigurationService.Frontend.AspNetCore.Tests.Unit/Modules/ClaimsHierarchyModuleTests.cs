@@ -6,6 +6,7 @@
 using System.Net;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
