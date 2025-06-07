@@ -4,12 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FakeItEasy;
 using FluentAssertions;
-using AuthorizationStrategy = EdFi.DmsConfigurationService.Backend.Repositories.AuthorizationStrategy;
+using AuthorizationStrategy = EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.AuthorizationStrategy;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 

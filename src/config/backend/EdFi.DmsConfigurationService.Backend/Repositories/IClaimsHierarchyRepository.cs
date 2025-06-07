@@ -7,7 +7,7 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Text.Json.Serialization;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
@@ -72,76 +72,4 @@ public abstract record ClaimsHierarchySaveResult
     /// There was more than one claims hierarchy, which is all that is currently expected.
     /// </summary>
     public record FailureMultipleHierarchiesFound() : ClaimsHierarchySaveResult;
-}
-
-public class Claim
-{
-    [JsonPropertyName("name")]
-    public required string Name { get; set; }
-
-    [JsonPropertyName("defaultAuthorization")]
-    public DefaultAuthorization? DefaultAuthorization { get; set; }
-
-    [JsonPropertyName("claimSets")]
-    public List<ClaimSet> ClaimSets { get; set; } = [];
-
-    private List<Claim> _claims = new();
-
-    [JsonPropertyName("claims")]
-    public List<Claim> Claims
-    {
-        get => _claims;
-        set
-        {
-            _claims = value;
-
-            // Provide navigability up the claims hierarchy
-            foreach (Claim claim in _claims)
-            {
-                claim.Parent = this;
-            }
-        }
-    }
-
-    [JsonIgnore]
-    public Claim? Parent { get; set; }
-}
-
-public class DefaultAuthorization
-{
-    [JsonPropertyName("actions")]
-    public List<DefaultAction> Actions { get; set; } = [];
-}
-
-public class DefaultAction
-{
-    [JsonPropertyName("name")]
-    public required string Name { get; set; }
-
-    [JsonPropertyName("authorizationStrategies")]
-    public List<AuthorizationStrategy> AuthorizationStrategies { get; set; } = [];
-}
-
-public class ClaimSetAction
-{
-    [JsonPropertyName("name")]
-    public required string Name { get; set; }
-
-    [JsonPropertyName("authorizationStrategyOverrides")]
-    public List<AuthorizationStrategy> AuthorizationStrategyOverrides { get; set; } = [];
-}
-
-public class AuthorizationStrategy
-{
-    [JsonPropertyName("name")]
-    public required string Name { get; set; }
-}
-
-public class ClaimSet
-{
-    [JsonPropertyName("name")]
-    public required string Name { get; set; }
-
-    [JsonPropertyName("actions")]
-    public List<ClaimSetAction> Actions { get; set; } = [];
 }
