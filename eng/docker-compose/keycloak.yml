@@ -14,6 +14,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8045}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: true
+      KC_LOG_CONSOLE_LEVEL: error
     ports:
       - '127.0.0.1:${KEYCLOAK_PORT:-8045}:8080'
     networks:
