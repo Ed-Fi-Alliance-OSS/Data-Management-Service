@@ -3,35 +3,12 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-function ReadValuesFromEnvFile {
+function SetupDatabaseTemplate {
     param (
         [string]$EnvironmentFile
     )
 
-    if (-Not (Test-Path $EnvironmentFile)) {
-        throw "Environment file not found: $EnvironmentFile"
-    }
-    $envFile = @{}
-    Get-Content $EnvironmentFile | ForEach-Object {
-        if ($_ -match "^\s*#") { return }
-        $split = $_.Split('=')
-        if ($split.Length -eq 2) {
-            $key = $split[0].Trim()
-            $value = $split[1].Trim()
-            $envFile[$key] = $value
-        }
-    }
-    return $envFile
-}
-
-function SetupMinimalTemplate {
-    param (
-        [string]$EnvironmentFile,
-        [string]$PackageId = "EdFi.Dms.Minimal.Template.PostgreSql.5.2.0",
-        [string]$SqlRelativePath = "EdFi.Dms.Minimal.Template.PostgreSql.5.2.0.sql",
-        [string]$NuGetPath = $(Join-Path $PSScriptRoot "tools\nuget.exe"),
-        [string]$Version = ""
-    )
+    Import-Module ./env-utility.psm1
 
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
     $Port = $envValues["POSTGRES_PORT"]
@@ -39,13 +16,22 @@ function SetupMinimalTemplate {
     $Password = $envValues["POSTGRES_PASSWORD"]
     $Database = $envValues["POSTGRES_DB_NAME"]
     $DbHost = "localhost"
+    $PackageId = $envValues["DATABASE_TEMPLATE_PACKAGE"]
+
+    if ([string]::IsNullOrWhiteSpace($PackageId)) {
+        $PackageId = "EdFi.Dms.Minimal.Template.PostgreSql.5.2.0"
+        Write-Host -ForegroundColor Yellow "Environment variable DATABASE_TEMPLATE_PACKAGE is not set. Using default package: $PackageId"
+    } else {
+        Write-Host -ForegroundColor Green "Using package from environment variable: $PackageId"
+    }
+
+    Write-Output "Setting up database template with package: $PackageId"
 
     Import-Module ../Package-Management.psm1
 
     $pkgPath = Get-NugetPackage -PackageName $PackageId -PackageVersion $Version -PreRelease
-    write-host "Package path: $pkgPath"
 
-    $sqlPath = Join-Path $pkgPath $SqlRelativePath
+    $sqlPath = Join-Path $pkgPath "$PackageId.sql"
 
     if (-Not (Test-Path $sqlPath)) {
         throw "Database script file not found at: $sqlPath"
@@ -61,7 +47,7 @@ function SetupMinimalTemplate {
         psql -h $dbHost -p $Port -U $User -d $Database -f $sqlPath
 
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "Minimal template data loaded successfully."
+            Write-Host "Template data loaded successfully."
         } else {
             Write-Error "Failed to execute the database script file."
         }

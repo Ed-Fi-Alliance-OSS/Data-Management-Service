@@ -30,20 +30,8 @@ function IsReady([string] $Url) {
 }
 
 # Read .env file
-$envFile = @{}
-
-try {
-
-    Get-Content $EnvironmentFile -ErrorAction Stop | ForEach-Object {
-        $split = $_.split('=')
-        $key = $split[0]
-        $value = $split[1]
-        $envFile[$key] = $value
-    }
-}
-catch {
-    Write-Error "Please provide valid .env file."
-}
+Import-Module ./env-utility.psm1
+$envFile = ReadValuesFromEnvFile $EnvironmentFile
 
 $sourcePort = $envFile["CONNECT_SOURCE_PORT"]
 $sinkPort = $envFile["CONNECT_SINK_PORT"]
