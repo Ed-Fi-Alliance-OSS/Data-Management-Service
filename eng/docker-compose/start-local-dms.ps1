@@ -37,9 +37,9 @@ param (
     # Enable Swagger UI for the DMS API
     [switch]$EnableSwaggerUI,
 
-    # Setup minimal template
+    # Setup database template
     [Switch]
-    $SetUpMinimalTemplate
+    $SetUpDatabaseTemplate
 )
 
 $files = @(
@@ -101,13 +101,13 @@ else {
 
     Start-Sleep 10
 
-    if($SetUpMinimalTemplate)
+    if($SetUpDatabaseTemplate)
     {
-        Import-Module ./setup-minimal-template.psm1
-        Write-Output "Setting up minimal template..."
-        SetupMinimalTemplate -EnvironmentFile $EnvironmentFile
+        Import-Module ./setup-database-template.psm1
+        Write-Output "Setting up database template..."
+        SetupDatabaseTemplate -EnvironmentFile $EnvironmentFile
         if ($LASTEXITCODE -ne 0) {
-            throw "Failed to set up minimal template, with exit code $LASTEXITCODE."
+            throw "Failed to set up database template, with exit code $LASTEXITCODE."
         }
     }
 
