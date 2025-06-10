@@ -34,12 +34,9 @@ param (
     [Switch]
     $EnableConfig,
 
-    # Enable Swagger UI for the DMS API
-    [switch]$EnableSwaggerUI,
-
-    # Setup database template
+    # Load seed data using database template package
     [Switch]
-    $SetUpDatabaseTemplate
+    $LoadSeedData
 )
 
 $files = @(
@@ -101,13 +98,13 @@ else {
 
     Start-Sleep 10
 
-    if($SetUpDatabaseTemplate)
+    if($LoadSeedData)
     {
         Import-Module ./setup-database-template.psm1
-        Write-Output "Setting up database template..."
-        SetupDatabaseTemplate -EnvironmentFile $EnvironmentFile
+        Write-Output "Loading initial data from the database template..."
+        LoadSeedData -EnvironmentFile $EnvironmentFile
         if ($LASTEXITCODE -ne 0) {
-            throw "Failed to set up database template, with exit code $LASTEXITCODE."
+            throw "Failed to load initial data, with exit code $LASTEXITCODE."
         }
     }
 
