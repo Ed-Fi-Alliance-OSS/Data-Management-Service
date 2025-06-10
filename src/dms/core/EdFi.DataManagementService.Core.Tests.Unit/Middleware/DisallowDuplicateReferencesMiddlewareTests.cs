@@ -322,6 +322,12 @@ public class DisallowDuplicateReferencesMiddlewareTests
                     "$.items[*].assessmentItemReference.namespace",
                 ]
             )
+            .WithArrayUniquenessConstraints(
+                [
+                    "$.requiredImmunizations[*].dates[*].immunizationDate",
+                    "$.requiredImmunizations[*].immunizationTypeDescriptor",
+                ]
+            )
             .WithEndArrayUniquenessConstraints()
             .WithEndResource()
             .WithEndProject()
@@ -772,6 +778,65 @@ public class DisallowDuplicateReferencesMiddlewareTests
                     "validationErrors":{"$.items":["The 2nd item of the items has the same identifying values as another item earlier in the list."]}
                     """
                 );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Pipeline_Context_Has_Not_Flattern_Unique_References
+        : DisallowDuplicateReferencesMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonBody = """
+                {
+                 "requiredImmunizations": [
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2007-07-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#MMR"
+                    },
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2010-04-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                    }
+                  ]
+                }
+                """;
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/requiredImmunizations",
+                Body: jsonBody,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
+            _context = DuplicateDescRefContext(frontEndRequest, RequestMethod.POST);
+
+            await BuildResourceInfo().Execute(_context, NullNext);
+            await ExtractDocument().Execute(_context, NullNext);
+
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_should_not_have_response()
+        {
+            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }
