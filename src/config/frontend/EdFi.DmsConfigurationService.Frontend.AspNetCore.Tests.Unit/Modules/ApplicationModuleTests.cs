@@ -16,7 +16,6 @@ using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
-using Keycloak.Net.Models.Clients;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;

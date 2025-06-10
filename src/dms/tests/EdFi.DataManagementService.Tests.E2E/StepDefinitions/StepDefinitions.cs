@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Json.Schema;
-using Microsoft.CodeAnalysis.Differencing;
 using Microsoft.Playwright;
 using Reqnroll;
 using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;

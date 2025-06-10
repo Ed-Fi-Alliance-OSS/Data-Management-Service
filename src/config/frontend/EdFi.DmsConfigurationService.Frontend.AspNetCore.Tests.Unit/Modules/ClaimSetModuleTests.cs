@@ -6,7 +6,6 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -22,7 +21,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
-using Claim = EdFi.DmsConfigurationService.Backend.Repositories.Claim;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
