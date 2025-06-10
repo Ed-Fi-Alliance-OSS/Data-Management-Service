@@ -60,7 +60,7 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
         }
         catch (JsonException ex)
         {
-            logger.LogError(ex, "Error while masking request body.");
+            logger.LogError(ex, "An error occurred while masking the request body.");
             return string.Empty;
         }
     }
