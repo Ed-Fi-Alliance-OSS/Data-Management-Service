@@ -47,5 +47,5 @@ if [ "$USE_API_SCHEMA_PATH" = true ]; then
     dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${HOMOGRAPH_PACKAGE} -d ${API_SCHEMA_PATH} -v ${HOMOGRAPH_PACKAGE_VERSION}
 fi
 
-echo "Running EdFi.DataManagementService.Frontend.AspNetCore..."
+echo "Running EdFi.DataManagementService.Frontend.AspNetCore...."
 dotnet EdFi.DataManagementService.Frontend.AspNetCore.dll
