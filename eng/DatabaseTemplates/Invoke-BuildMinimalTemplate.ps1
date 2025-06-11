@@ -3,60 +3,10 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-<#
-.SYNOPSIS
-    Automates MinimalTemplate build by bulk loading and packaging of Ed-Fi sample data.
-
-.DESCRIPTION
-    This script performs the following tasks:
-    - Initializes a bulk load client
-    - Loads sample data into the Ed-Fi Data Management Service
-    - Dumps the resulting database
-    - Packages the database backup into a NuGet package
-#>
-
-[CmdletBinding()]
-param (
-    [ValidateNotNullOrEmpty()]
-    [string]$ConfigUrl = "http://localhost:8081",
-
-    [ValidateNotNullOrEmpty()]
-    [string]$DmsUrl = "http://localhost:8080",
-
-    [ValidateNotNullOrEmpty()]
-    [string]$NamespacePrefixes = "uri://ed-fi.org",
-
-    [ValidateNotNullOrEmpty()]
-    [string]$ClaimSetName = "EdfiSandbox",
-
-    [ValidateNotNullOrEmpty()]
-    [string]$StandardVersion = "5.2.0",
-
-    [ValidateNotNullOrEmpty()]
-    $BulkLoadVersion = "7.3",
-
-    [ValidateNotNullOrEmpty()]
-    [string]$Extension,
-
-    [Parameter(Mandatory = $true)]
-    [string]$SampleDataDirectory,
-
-    [Parameter(Mandatory = $true)]
-    [string]$PackageVersion
-)
+#Requires -Version 7
 
 Import-Module ../Package-Management.psm1 -Force
-Import-Module ./DmsManagement.psm1 -Force
-
-$config = Import-PowerShellDataFile -Path "./MinimalTemplateSettings.psd1"
-
-foreach ($key in @($config.Keys)) {
-    if ($null -ne $key -and $config[$key] -is [string]) {
-        $config[$key] = $config[$key].Replace("{StandardVersion}", $StandardVersion)
-    }
-}
-
-$BackupDirectory = './MinimalTemplate'
+Import-Module ./Dms-Management.psm1 -Force
 
 <#
 .SYNOPSIS
@@ -80,8 +30,8 @@ function Initialize-BulkLoad {
         $BulkLoadVersion
     )
 
-    $bulkLoader = (Join-Path -Path (Get-BulkLoadClient $BulkLoadVersion).Trim() -ChildPath "tools/net*/any/EdFi.BulkLoadClient.Console.dll")
-    $bulkLoader = Resolve-Path $bulkLoader
+    $bulkLoadClientExe = (Join-Path -Path (Get-BulkLoadClient $BulkLoadVersion).Trim() -ChildPath "tools/net*/any/EdFi.BulkLoadClient.Console.dll")
+    $bulkLoadClientExe = Resolve-Path $bulkLoadClientExe
 
     $xsdDirectory = "$($PSScriptRoot)/tmp/XSD"
     New-Item -Path $xsdDirectory -Type Directory -Force | Out-Null
@@ -94,9 +44,9 @@ function Initialize-BulkLoad {
     Write-Host
 
     return @{
-        WorkingDirectory = (Resolve-Path $workingDirectory)
-        XsdDirectory     = (Resolve-Path $xsdDirectory)
-        BulkLoaderExe    = $bulkLoader
+        WorkingDirectory  = (Resolve-Path $workingDirectory)
+        XsdDirectory      = (Resolve-Path $xsdDirectory)
+        bulkLoadClientExe = $bulkLoadClientExe
     }
 }
 
@@ -112,47 +62,40 @@ function Initialize-BulkLoad {
     - Initializes a new application for the vendor using a predefined claim set.
     It returns the key and secret required for authenticated communication with the DMS API.
 
-.PARAMETER ConfigUrl
+.PARAMETER CmsUrl
     The base URL of the DMS configuration service.
 
 .OUTPUTS
     A hashtable containing the Key and Secret for the initialized DMS application.
 
 .EXAMPLE
-    $secrets = Initialize-DataManagementSystem -ConfigUrl "http://localhost:8081"
-
-.NOTES
-    This function depends on the helper functions: Add-Client, Get-AccessToken, Add-Vendor, and Initialize-Application.
-    These should be defined in the DmsManagement.psm1 module.
+    $secrets = Get-KeySecret -CmsUrl "http://localhost:8081"
 #>
-function Initialize-DataManagementSystem() {
+function Get-KeySecret() {
     param (
         [Parameter(Mandatory = $true)]
-        [string]$ConfigUrl
+        [string]$CmsUrl,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CmsToken,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ClaimSetName
     )
 
-    $configParams = @{
-        ConfigUrl = $ConfigUrl
+    $params = @{
+        CmsUrl = $CmsUrl
+        AccessToken = $CmsToken
     }
 
-    # Add Client and get access token
-    Add-Client @configParams
-    $accessToken = Get-AccessToken @configParams
-
     # Add Vendor
-    $configParams.AccessToken = $accessToken
-    $vendorId = Add-Vendor @configParams
+    $params.VendorId = Add-Vendor @params
 
     # Add an Application and get Key and Secret
-    $configParams.VendorId = $vendorId
-    $configParams.ClaimSetName = 'BootstrapDescriptorsandEdOrgs'
-    $secrets = Initialize-Application @configParams
+    $params.ClaimSetName = $ClaimSetName
+    $keySecret = Add-Application @params
 
-    Write-Host
-    Write-Host "Initialized Data Management System Application" -ForegroundColor Green -NoNewline
-    Write-Host
-
-    return $secrets
+    return $keySecret
 }
 
 <#
@@ -177,7 +120,7 @@ function Initialize-DataManagementSystem() {
         Directory path containing sample data files.
 
     .PARAMETER Paths
-        Hashtable of important paths (WorkingDirectory, XsdDirectory, BulkLoaderExe).
+        Hashtable of important paths (WorkingDirectory, XsdDirectory, BulkLoadClientExe).
 
     .PARAMETER Extension
         File extension filter (default "ed-fi").
@@ -208,7 +151,7 @@ function Initialize-DataManagementSystem() {
 #>
 function Invoke-BulkLoad {
     [CmdletBinding()]
-    param (
+param (
         [Parameter(Mandatory = $true)]
         [string]$BaseUrl,
 
@@ -222,7 +165,7 @@ function Invoke-BulkLoad {
         [string]$SampleDataDirectory,
 
         [Parameter(Mandatory = $true)]
-        [hashtable]$Paths,
+        [hashtable]$BulkLoadClientPaths,
 
         [string]$Extension = $null,
 
@@ -242,20 +185,20 @@ function Invoke-BulkLoad {
     )
 
     if ($ForceReloadData) {
-        Get-ChildItem -Path $Paths.WorkingDirectory -Filter *.hash -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+        Get-ChildItem -Path $BulkLoadClientPaths.WorkingDirectory -Filter *.hash -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
     }
 
     $options = @(
         "-b", $BaseUrl,
         "-d", $SampleDataDirectory,
-        "-w", $Paths.WorkingDirectory,
+        "-w", $BulkLoadClientPaths.WorkingDirectory,
         "-k", $Key,
         "-s", $Secret,
         "-c", $MaxConcurrentConnections.ToString(),
         "-r", $RetryCount.ToString(),
         "-l", $MaxSimultaneousRequests.ToString(),
         "-t", $MaxBufferedTasks.ToString(),
-        "-x", $Paths.XsdDirectory,
+        "-x", $BulkLoadClientPaths.XsdDirectory,
         "-o", "$BaseUrl/oauth/token"
     )
 
@@ -268,10 +211,10 @@ function Invoke-BulkLoad {
 
     $previousColor = $host.UI.RawUI.ForegroundColor
     $host.UI.RawUI.ForegroundColor = "Cyan"
-    Write-Output "Executing: dotnet $($Paths.BulkLoaderExe) $($options -join ' ')"
+    Write-Output "Executing: dotnet $($BulkLoadClientPaths.bulkLoadClientExe) $($options -join ' ')"
     $host.UI.RawUI.ForegroundColor = $previousColor
 
-    & dotnet $Paths.BulkLoaderExe @options
+    & dotnet $BulkLoadClientPaths.bulkLoadClientExe @options
     if ($LASTEXITCODE -ne 0) {
         Write-Error "BulkLoad failed with exit code $LASTEXITCODE"
         exit $LASTEXITCODE
@@ -312,7 +255,7 @@ function Invoke-DatabaseDump {
         [string]$BackupFileName
     )
 
-    $BackupPath = Join-Path $BackupDirectory $BackupFileName
+    $backupPath = Join-Path $BackupDirectory $BackupFileName
 
     $options = @("exec", $ContainerName, "pg_dump", "-U", "postgres", $DatabaseName)
 
@@ -321,11 +264,11 @@ function Invoke-DatabaseDump {
         $options += $schema
     }
 
-    & docker @options | Out-File -FilePath $BackupPath -Encoding utf8
+    & docker @options | Out-File -FilePath $backupPath -Encoding utf8
 
     Write-Host
     Write-Host "Backup Created: " -ForegroundColor Green -NoNewline
-    Write-Host (Resolve-Path $BackupPath)
+    Write-Host (Resolve-Path $backupPath)
     Write-Host
 }
 
@@ -347,14 +290,14 @@ function Invoke-DatabaseDump {
 .PARAMETER CurrentSchoolYear
     The school year to mark as the current one. Defaults to 2025.
 
-.PARAMETER DMSUrl
+.PARAMETER DmsUrl
     The base URL of the Data Management Service API.
 
-.PARAMETER BearerToken
+.PARAMETER DmsToken
     The authentication token used to authorize requests to the DMS API.
 
 .EXAMPLE
-    Invoke-SchoolYearLoader -DMSUrl "http://localhost:8080" -BearerToken $token
+    Invoke-SchoolYearLoader -DmsUrl "http://localhost:8080" -DmsToken $token
 
 .NOTES
     This function requires the helper function `Invoke-Api` to send HTTP requests.
@@ -364,8 +307,8 @@ function Invoke-SchoolYearLoader {
         [int]$StartYear = 1991,
         [int]$EndYear = 2037,
         [int]$CurrentSchoolYear = 2025,
-        [string]$DMSUrl,
-        [string]$BearerToken
+        [string]$DmsUrl,
+        [string]$DmsToken
     )
 
     for ($year = $StartYear; $year -le $EndYear; $year++) {
@@ -377,11 +320,11 @@ function Invoke-SchoolYearLoader {
 
         $invokeParams = @{
             Method      = 'Post'
-            BaseUrl     = $DMSUrl
+            BaseUrl     = $DmsUrl
             RelativeUrl = 'data/ed-fi/schoolYearTypes'
             ContentType = 'application/json'
             Body        = ($schoolYearType | ConvertTo-Json -Depth 5)
-            Headers     = @{ Authorization = "bearer $BearerToken" }
+            Headers     = @{ Authorization = "bearer $DmsToken" }
         }
 
         Invoke-Api @invokeParams | Out-Null
@@ -472,28 +415,43 @@ function Build-NuGetPackage {
     Write-Host
 }
 
-if (-not (Test-Path $BackupDirectory)) {
-    New-Item -ItemType Directory -Path $BackupDirectory -Force | Out-Null
+<#
+.SYNOPSIS
+    Builds a NuGet package containing a PostgreSQL database backup.
+
+.PARAMETER ConfigFile
+    The path to the PowerShell data file (.psd1) containing configuration settings for the package.
+    Defaults to "./MinimalTemplateSettings.psd1".
+
+.PARAMETER StandardVersion
+    The standard version string to substitute for "{StandardVersion}" placeholders in the configuration.
+
+.PARAMETER PackageVersion
+    The version to assign to the generated NuGet package.
+
+.EXAMPLE
+    Build-TemplateNuGetPackage -ConfigFile "./MinimalTemplateSettings.psd1" -StandardVersion "5.3.0" -PackageVersion "1.0.0"
+#>
+function Build-TemplateNuGetPackage {
+    param (
+        [string]$ConfigFile = "./MinimalTemplateSettings.psd1",
+        [string]$StandardVersion,
+        [string]$PackageVersion
+    )
+
+    $config = Import-PowerShellDataFile -Path $ConfigFile
+
+    foreach ($key in @($config.Keys)) {
+        if ($null -ne $key -and $config[$key] -is [string]) {
+            $config[$key] = $config[$key].Replace("{StandardVersion}", $StandardVersion)
+        }
+    }
+
+    Invoke-DatabaseDump -DatabaseSchemas "dms" -BackupDirectory './' -BackupFileName $config.DatabaseBackupName
+
+    New-DatabaseTemplateCsproj -Config $config -BackupDirectory './'
+
+    Build-NuGetPackage -PackageVersion $PackageVersion -Config $config -BackupDirectory './'
 }
 
-$paths = Initialize-BulkLoad -BulkLoadVersion $BulkLoadVersion
-
-$application = Initialize-DataManagementSystem -ConfigUrl $ConfigUrl
-
-$bearerToken = Get-BearerToken -DmsUrl $DmsUrl -Key $application.Key -Secret $application.Secret
-
-Invoke-SchoolYearLoader -DMSUrl $DmsUrl -BearerToken $bearerToken
-
-Invoke-BulkLoad -BaseUrl $DmsUrl `
-    -Key $application.Key `
-    -Secret $application.Secret `
-    -SampleDataDirectory $SampleDataDirectory `
-    -Extension $Extension `
-    -Paths $paths `
-    -ForceReloadMetadata $true
-
-Invoke-DatabaseDump -DatabaseSchemas "dms" -BackupDirectory $BackupDirectory -BackupFileName $config.DatabaseBackupName
-
-New-DatabaseTemplateCsproj -Config $config -BackupDirectory $BackupDirectory
-
-Build-NuGetPackage -PackageVersion $PackageVersion -Config $config -BackupDirectory $BackupDirectory
+Export-ModuleMember -Function Invoke-BulkLoad, Build-TemplateNuGetPackage, Get-KeySecret, Invoke-SchoolYearLoader, Initialize-BulkLoad
