@@ -54,7 +54,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         // Reference arrays
         if (!validationErrors.Any())
         {
-            // Get al the Paths from ArrayUniquenessConstraints
+            // Get all the Paths from ArrayUniquenessConstraints
             var uniquenessParentPaths = context
                 .ResourceSchema.ArrayUniquenessConstraints.SelectMany(group => group)
                 .Select(jsonPath =>
@@ -135,10 +135,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
     private static string GetArrayRootPath(IEnumerable<JsonPath> paths)
     {
         // Find the common path until the first [*]
-        List<string[]> splitPaths = paths
-            .Select(p => p.Value.Split(["[*]"], StringSplitOptions.None))
-            .ToList();
-        return splitPaths[0][0] + "[*]";
+        return paths.First().Value.Split(["[*]"], StringSplitOptions.None)[0] + "[*]";
     }
 
     private static string GetRelativePath(string root, string fullPath)
