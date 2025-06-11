@@ -413,6 +413,12 @@ public static partial class QueryOpenSearch
             ["sort"] = SortDirective(),
         };
 
+        // Add track_total_hits if the user sets the TotalCount flag equals true
+        if (queryRequest.PaginationParameters.TotalCount)
+        {
+            query.Add("track_total_hits", true);
+        }
+
         // Add in PaginationParameters if any
         if (queryRequest.PaginationParameters.Limit != null)
         {

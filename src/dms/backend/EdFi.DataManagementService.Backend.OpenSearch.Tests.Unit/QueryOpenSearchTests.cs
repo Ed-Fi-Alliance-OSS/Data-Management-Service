@@ -394,7 +394,7 @@ public class QueryOpenSearchTests
             new QueryElement("field1", new[] { new JsonPath("$.field1") }, "value1"),
             new QueryElement("field2", new[] { new JsonPath("$.field2") }, "value2"),
         };
-        var pagination = new PaginationParameters(Limit: 10, Offset: 5, TotalCount: false);
+        var pagination = new PaginationParameters(Limit: 10, Offset: 5, TotalCount: true);
         var resourceInfo = A.Fake<ResourceInfo>();
         var queryRequest = A.Fake<IQueryRequest>();
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);
@@ -432,6 +432,7 @@ public class QueryOpenSearchTests
                         }
                     }
                 ],
+                "track_total_hits":true,
                 "size": 10,
                 "from": 5
             }
