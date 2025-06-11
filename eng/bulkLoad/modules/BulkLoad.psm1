@@ -91,7 +91,6 @@ function Write-XmlFiles {
         "-f",                               # Force reload of metadata from metadata url
         "-n",                               # Do not validate the XML document against the XSD before processing
         "-x", $Paths.XsdDirectory
-        "-o", "$BaseUrl/oauth/token"
     )
 
     $previousForegroundColor = $host.UI.RawUI.ForegroundColor
