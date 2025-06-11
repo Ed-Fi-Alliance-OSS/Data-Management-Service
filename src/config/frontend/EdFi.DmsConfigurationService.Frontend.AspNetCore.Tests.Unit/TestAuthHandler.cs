@@ -5,7 +5,6 @@
 
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 

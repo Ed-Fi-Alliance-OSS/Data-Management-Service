@@ -6,7 +6,6 @@
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
