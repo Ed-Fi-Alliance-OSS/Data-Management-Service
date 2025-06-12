@@ -439,6 +439,9 @@ public class QueryOpenSearchTests
             """;
         JsonNode? expected = JsonNode.Parse(expectedJson);
         result.ToJsonString().Should().Be(expected!.ToJsonString());
+
+        // Assert
+        result["track_total_hits"]!.GetValue<bool>().Should().BeTrue();
     }
 
     [Test]
