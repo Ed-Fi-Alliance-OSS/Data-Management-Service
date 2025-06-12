@@ -319,3 +319,20 @@ Feature: Query String handling for GET requests for Resource Queries
                       "currentSchoolYear": true
                   }]
                   """
+
+        Scenario: 17 Ensure clients can GET information when querying by value in a document reference
+             When a GET request is made to "/ed-fi/academicWeeks?schoolId=2"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                    "id": "{id}",
+                    "schoolReference": {
+                        "schoolId": 2
+                    },
+                    "weekIdentifier": "Week One",
+                    "beginDate": "2024-05-15",
+                    "endDate": "2024-05-22",
+                    "totalInstructionalDays": 2
+                  }]
+                  """
