@@ -278,6 +278,11 @@ Feature: Validate the duplicate references
                   | uri://ed-fi.org/AssessmentItemCategoryDescriptor#List Question           |
                   | uri://ed-fi.org/LearningStandardScopeDescriptor#State                    |
                   | uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test              |
+                  | uri://ed-fi.org/ImmunizationTypeDescriptor#MMR                           |
+                  | uri://ed-fi.org/ImmunizationTypeDescriptor#IPV                           |
+                  | uri://ed-fi.org/ImmunizationTypeDescriptor#DTaP                          |
+                  | uri://ed-fi.org/ImmunizationTypeDescriptor#VAR                           |
+                  | uri://ed-fi.org/ImmunizationTypeDescriptor#HepB                          |
               And the system has these "schools"
                   | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
@@ -635,3 +640,55 @@ Feature: Validate the duplicate references
                       "errors": []
                   }
                   """
+
+        Scenario: 08 Verify clients can create a a resource with items not duplicated
+             When a POST request is made to "/ed-fi/studentHealths" with
+             """
+             {
+                "asOfDate": "2021-08-23",
+                "educationOrganizationReference": {
+                    "educationOrganizationId": "255901001"
+                },
+                "requiredImmunizations": [
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2007-07-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#MMR"
+                    },
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2010-04-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                    },
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2010-04-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#DTaP"
+                    },
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2010-12-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#VAR"
+                    },
+                    {
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#HepB"
+                    }
+                ],
+                "studentReference": {
+                    "studentUniqueId": "605475"
+                }
+             }
+             """
+             Then it should respond with 201

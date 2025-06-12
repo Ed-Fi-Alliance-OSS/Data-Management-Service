@@ -1807,7 +1807,54 @@ INSERT INTO dmscs.claimshierarchy(
         "name": "http://ed-fi.org/identity/claims/ed-fi/identificationDocumentUseDescriptor"
       },
       {
-        "name": "http://ed-fi.org/identity/claims/ed-fi/immunizationTypeDescriptor"
+        "name": "http://ed-fi.org/identity/claims/ed-fi/immunizationTypeDescriptor",
+        "claimSets": [
+        {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+            {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                {
+                    "name": "NoFurtherAuthorizationRequired"
+                }
+                ]
+            },
+            {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                {
+                    "name": "NoFurtherAuthorizationRequired"
+                }
+                ]
+            },
+            {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                {
+                    "name": "NoFurtherAuthorizationRequired"
+                }
+                ]
+            },
+            {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                {
+                    "name": "NoFurtherAuthorizationRequired"
+                }
+                ]
+            },
+            {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                {
+                    "name": "NoFurtherAuthorizationRequired"
+                }
+                ]
+            }
+            ]
+        }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/incidentLocationDescriptor"
