@@ -31,6 +31,7 @@ public class DiscoveryEndpointModule : IEndpointModule
         var result = new DiscoveryApiDetails(
             version: versionProvider.Version,
             applicationName: versionProvider.ApplicationName,
+            informationalVersion: versionProvider.InformationalVersion,
             dataModelInfos
                 .OrderBy(x => x.ProjectName)
                 .Select(x => new DataModel(x.ProjectName, x.ProjectVersion, x.Description))
@@ -59,6 +60,7 @@ public record DataModel(string name, string version, string informationalVersion
 public record DiscoveryApiDetails(
     string version,
     string applicationName,
+    string informationalVersion,
     DataModel[] dataModels,
     Dictionary<string, string> urls
 );

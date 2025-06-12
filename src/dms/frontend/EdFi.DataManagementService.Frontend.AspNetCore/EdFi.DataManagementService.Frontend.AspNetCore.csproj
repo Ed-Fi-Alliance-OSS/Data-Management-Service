@@ -6,7 +6,7 @@
     <IsPackable>true</IsPackable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyVersion>0.5.0</AssemblyVersion>
+    <AssemblyVersion>0.6.0</AssemblyVersion>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="EdFi.DataManagementService.Frontend.AspNetCore.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
