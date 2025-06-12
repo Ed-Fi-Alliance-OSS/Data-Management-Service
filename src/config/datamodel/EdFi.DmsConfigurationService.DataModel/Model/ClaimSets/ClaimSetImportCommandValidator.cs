@@ -17,10 +17,18 @@ public class ClaimSetImportCommandValidator : ClaimSetCommandValidator<ClaimSetI
                 {
                     // Retrieve dynamic values from the validation context
                     if (
-                        context.RootContextData["Actions"] is not List<string> actions
-                        || context.RootContextData["AuthorizationStrategies"]
-                            is not List<string> authorizationStrategies
-                        || context.RootContextData["ResourceClaimsHierarchyTuples"]
+                        !context.RootContextData.TryGetValue("Actions", out var actionsAsObject)
+                        || actionsAsObject is not List<string> actions
+                        || !context.RootContextData.TryGetValue(
+                            "AuthorizationStrategies",
+                            out var authorizationStrategiesAsObject
+                        )
+                        || authorizationStrategiesAsObject is not List<string> authorizationStrategies
+                        || !context.RootContextData.TryGetValue(
+                            "ResourceClaimsHierarchyTuples",
+                            out var resourceClaimsHierarchyTuplesAsObject
+                        )
+                        || resourceClaimsHierarchyTuplesAsObject
                             is not Dictionary<string, string?> resourceClaimsHierarchyTuples
                     )
                     {
