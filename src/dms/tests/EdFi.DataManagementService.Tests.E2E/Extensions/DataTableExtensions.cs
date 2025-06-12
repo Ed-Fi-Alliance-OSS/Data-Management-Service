@@ -15,7 +15,7 @@ internal static class DataTableExtensions
         var descriptors = new List<string>();
 
         // Use regex to extract descriptor namespaces in this format: "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
-        var regex = @"\buri://[^""]+\b";
+        var regex = @"\buri://[^""#]+#[^""]+\b";
         foreach (var row in dataTable.Rows)
         {
             foreach (var cell in row)
