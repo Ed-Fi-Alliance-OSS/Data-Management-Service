@@ -11,11 +11,8 @@ function LoadSeedData {
     Import-Module ./env-utility.psm1
 
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
-    $Port = $envValues["POSTGRES_PORT"]
     $User = "postgres"
-    $Password = $envValues["POSTGRES_PASSWORD"]
     $Database = $envValues["POSTGRES_DB_NAME"]
-    $DbHost = "localhost"
     $PackageId = $envValues["DATABASE_TEMPLATE_PACKAGE"]
 
     if ([string]::IsNullOrWhiteSpace($PackageId)) {
@@ -37,14 +34,14 @@ function LoadSeedData {
         throw "Database script file not found at: $sqlPath"
     }
 
-    $env:PGPASSWORD = $Password
+    docker exec dms-postgresql psql -U $User -d $Database -c "SELECT 1;" 2>$null
 
-    psql -h $dbHost -p $Port -U $User -d $Database -c "SELECT 1;" 2>$null
 
     if ($LASTEXITCODE -eq 0) {
         Write-Host "PostgreSQL is running. Proceeding with bootstrap..."
 
-        psql -h $dbHost -p $Port -U $User -d $Database -f $sqlPath
+        docker cp $sqlPath "dms-postgresql:/tmp/restore.sql"
+        docker exec dms-postgresql psql -U postgres -d $database -f /tmp/restore.sql
 
         if ($LASTEXITCODE -eq 0) {
             Write-Host "Template data loaded successfully."
@@ -54,6 +51,4 @@ function LoadSeedData {
     } else {
         Write-Error "PostgreSQL server is not running or unreachable."
     }
-
-    Remove-Item Env:PGPASSWORD
 }
