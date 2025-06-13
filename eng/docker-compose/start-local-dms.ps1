@@ -90,6 +90,7 @@ else {
 
     Write-Output "Starting locally-built DMS"
 
+    $env:NEED_DATABASE_SETUP = $LoadSeedData
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
 
     if ($LASTEXITCODE -ne 0) {
@@ -100,7 +101,7 @@ else {
 
     if($LoadSeedData)
     {
-        Import-Module ./setup-database-template.psm1
+        Import-Module ./setup-database-template.psm1 -Force
         Write-Output "Loading initial data from the database template..."
         LoadSeedData -EnvironmentFile $EnvironmentFile
         if ($LASTEXITCODE -ne 0) {
