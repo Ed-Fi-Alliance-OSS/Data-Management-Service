@@ -4,43 +4,23 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 window.onload = () => {
-    // <editor-fold desc="Changeable Configuration Block">
-    const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
-
-    window.ui = SwaggerUIBundle({
-        urls: [
-            { url: `http://localhost:${dmsPort}/metadata/specifications/resources-spec.json`, name: "Resources" },
-            { url: `http://localhost:${dmsPort}/metadata/specifications/descriptors-spec.json`, name: "Descriptors" }
+    
+      //<editor-fold desc="Changeable Configuration Block">
+      window.ui = SwaggerUIBundle({
+        url: "https://petstore.swagger.io/v2/swagger.json",
+        "dom_id": "#swagger-ui",
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis,
+          SwaggerUIStandalonePreset
         ],
-        dom_id: '#swagger-ui',
-        presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        plugins: [
+          SwaggerUIBundle.plugins.DownloadUrl
+        ],
         layout: "StandaloneLayout",
-        docExpansion: "none"
-    });
+        queryConfigEnabled: false,
+      })
+      
+      //</editor-fold>
 
-    // Update the title of the page
-    document.title = "Ed-Fi DMS API Documentation";
-
-    // Update the label for the download URL
-    const updateLabel = () => {
-        const labels = document.querySelectorAll('.download-url-wrapper .select-label');
-        labels.forEach(label => {
-            const span = label.querySelector('span');
-            if (span && span.textContent.includes("Select a definition")) {
-                span.textContent = "API Section";
-            }
-        });
-    };
-
-    const observer = new MutationObserver(updateLabel);
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    let attempts = 0;
-    const intervalId = setInterval(() => {
-        updateLabel();
-        if (++attempts > 10) {
-            clearInterval(intervalId);
-        }
-    }, 300);
-    // </editor-fold>
 };
