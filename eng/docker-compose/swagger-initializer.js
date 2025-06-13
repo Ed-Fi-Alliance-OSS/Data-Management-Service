@@ -3,10 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-// swagger-initializer.js
-const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
-
 window.onload = () => {
+    // <editor-fold desc="Changeable Configuration Block">
+    const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
+
     window.ui = SwaggerUIBundle({
         urls: [
             { url: `http://localhost:${dmsPort}/metadata/specifications/resources-spec.json`, name: "Resources" },
@@ -17,60 +17,29 @@ window.onload = () => {
         layout: "StandaloneLayout"
     });
 
-    // Update the label text in the topbar
+    // Update the title of the page
+    document.title = "Ed-Fi DMS API Documentation";
+
+    // Update the label for the download URL
     const updateLabel = () => {
-        const labels = document.querySelectorAll('.select-label');
+        const labels = document.querySelectorAll('.download-url-wrapper .select-label');
         labels.forEach(label => {
-            if (label.textContent.includes("Select a definition")) {
-                label.textContent = "API Section";
+            const span = label.querySelector('span');
+            if (span && span.textContent.includes("Select a definition")) {
+                span.textContent = "API Section";
             }
         });
     };
 
-    //  MutationObserver to detect when Swagger UI update the DOM from topbar
-    const topbar = document.querySelector('.topbar');
-    if (topbar) {
-        const observer = new MutationObserver(() => {
-            updateLabel();
-        });
-        observer.observe(topbar, { childList: true, subtree: true });
-    } else {
-        // If the topbar is not present, retry after a short delay
-        const retry = () => {
-            const topbarRetry = document.querySelector('.topbar');
-            if (topbarRetry) {
-                const observer = new MutationObserver(() => {
-                    updateLabel();
-                });
-                observer.observe(topbarRetry, { childList: true, subtree: true });
-                updateLabel();
-            } else {
-                setTimeout(retry, 100);
-            }
-        };
-        retry();
-    }
+    const observer = new MutationObserver(updateLabel);
+    observer.observe(document.body, { childList: true, subtree: true });
 
-    // Inyect estyle CSS for label y select
-    const injectStyle = () => {
-        const style = document.createElement('style');
-        style.type = 'text/css';
-        style.innerHTML = `
-      /* Ajusta selector para el label o texto que quieres colorear */
-      .topbar select + span,
-      .topbar label span {
-        color: #4A90E2 !important;
-        font-weight: bold !important;
-      }
-
-      .topbar select {
-        border: 1px solid #4A90E2 !important;
-        background-color: #ffffff !important;
-        color: #4A90E2 !important;
-      }
-    `;
-        document.head.appendChild(style);
-    };
-    injectStyle();
-
+    let attempts = 0;
+    const intervalId = setInterval(() => {
+        updateLabel();
+        if (++attempts > 10) {
+            clearInterval(intervalId);
+        }
+    }, 300);
+    // </editor-fold>
 };
