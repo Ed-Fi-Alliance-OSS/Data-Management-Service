@@ -6,6 +6,7 @@
 using System.Data.Common;
 using System.Text.Json;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

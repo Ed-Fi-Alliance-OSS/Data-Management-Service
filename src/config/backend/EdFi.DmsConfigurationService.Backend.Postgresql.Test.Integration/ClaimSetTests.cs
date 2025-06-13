@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -23,7 +24,8 @@ public class ClaimSetTests : DatabaseTest
         new ClaimsHierarchyRepository(
             Configuration.DatabaseOptions,
             NullLogger<ClaimsHierarchyRepository>.Instance
-        )
+        ),
+        new ClaimsHierarchyManager()
     );
 
     [TestFixture]
@@ -341,7 +343,8 @@ public class ClaimSetTests : DatabaseTest
             var claimSetRepository = new ClaimSetRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<ClaimSetRepository>.Instance,
-                claimsHierarchyRepository
+                claimsHierarchyRepository,
+                new ClaimsHierarchyManager()
             );
 
             // Act

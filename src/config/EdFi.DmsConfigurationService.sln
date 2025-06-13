@@ -30,7 +30,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{C3055527
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationService.Tests.E2E", "tests\EdFi.DmsConfigurationService.Tests.E2E\EdFi.DmsConfigurationService.Tests.E2E.csproj", "{334D8F2D-4D9D-4B8B-8F56-3F8EA7FDC218}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.Tests.Unit", "EdFi.DmsConfigurationService.Backend.Tests.Unit\EdFi.DmsConfigurationService.Backend.Tests.Unit.csproj", "{503022E4-0DD6-4B83-AC81-17F3F646C3A6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.Tests.Unit", "backend\EdFi.DmsConfigurationService.Backend.Tests.Unit\EdFi.DmsConfigurationService.Backend.Tests.Unit.csproj", "{503022E4-0DD6-4B83-AC81-17F3F646C3A6}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

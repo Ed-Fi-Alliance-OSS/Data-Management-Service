@@ -24,7 +24,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Action = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Action;
 using Authorization = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Authorization;
-using Claim = EdFi.DmsConfigurationService.Backend.Repositories.Claim;
+using Claim = EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.Claim;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 

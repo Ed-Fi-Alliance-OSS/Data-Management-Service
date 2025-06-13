@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 public static class ValidatorExtensions
 {
-    public static async Task GuardAsync<TRequest>(this IValidator<TRequest> validator, TRequest request)
+    public static async Task GuardAsync<TRequest>(this IValidator<TRequest> validator, TRequest? request)
     {
         request ??= Activator.CreateInstance<TRequest>();
         var validationResult = await validator.ValidateAsync(request);
@@ -25,7 +25,11 @@ public static class ValidatorExtensions
         ValidationContext<TRequest>? validationContext
     )
     {
-        validationContext ??= Activator.CreateInstance<ValidationContext<TRequest>>();
+        validationContext ??= (ValidationContext<TRequest>?)
+            Activator.CreateInstance(
+                typeof(ValidationContext<TRequest>),
+                Activator.CreateInstance<TRequest>()
+            );
 
         var validationResult = await validator.ValidateAsync(validationContext);
 
