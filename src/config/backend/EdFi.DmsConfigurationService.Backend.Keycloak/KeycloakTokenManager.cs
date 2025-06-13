@@ -8,34 +8,36 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
-public class KeycloakTokenManager(KeycloakContext keycloakContext, ILogger<KeycloakTokenManager> logger) : ITokenManager
+public class KeycloakTokenManager(
+    KeycloakContext keycloakContext,
+    ILogger<KeycloakTokenManager> logger,
+    IHttpClientFactory httpClientFactory) : ITokenManager
 {
+    private static readonly TimeSpan _defaultTimeout = TimeSpan.FromSeconds(30);
+
     public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
     {
         try
         {
-            using var client = new HttpClient();
+            var client = httpClientFactory.CreateClient();
+            client.Timeout = _defaultTimeout;
 
-            var contentList = credentials.ToList();
+            var content = new FormUrlEncodedContent(credentials.ToList());
 
-            var content = new FormUrlEncodedContent(contentList);
-            string path =
-                $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
-            var response = await client.PostAsync(path, content);
+            string url = $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
+
+            using var response = await client.PostAsync(url, content);
             string responseString = await response.Content.ReadAsStringAsync();
 
             return response.StatusCode switch
             {
                 HttpStatusCode.OK => new TokenResult.Success(responseString),
                 HttpStatusCode.Unauthorized => new TokenResult.FailureIdentityProvider(
-                    new IdentityProviderError.Unauthorized(responseString)
-                ),
+                    new IdentityProviderError.Unauthorized(responseString)),
                 HttpStatusCode.Forbidden => new TokenResult.FailureIdentityProvider(
-                    new IdentityProviderError.Forbidden(responseString)
-                ),
+                    new IdentityProviderError.Forbidden(responseString)),
                 HttpStatusCode.NotFound => new TokenResult.FailureIdentityProvider(
-                    new IdentityProviderError.NotFound(responseString)
-                ),
+                    new IdentityProviderError.NotFound(responseString)),
                 _ => new TokenResult.FailureIdentityProvider(new IdentityProviderError(responseString)),
             };
         }
