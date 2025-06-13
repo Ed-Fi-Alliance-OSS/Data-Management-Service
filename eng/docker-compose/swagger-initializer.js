@@ -14,7 +14,8 @@ window.onload = () => {
         ],
         dom_id: '#swagger-ui',
         presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-        layout: "StandaloneLayout"
+        layout: "StandaloneLayout",
+        docExpansion: "none"
     });
 
     // Update the title of the page
