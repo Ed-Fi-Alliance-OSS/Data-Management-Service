@@ -173,6 +173,14 @@ public static class WebApplicationBuilderExtensions
 
         webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
+        var settings = config.GetSection("AppSettings");
+        var appSettings = config.GetSection("AppSettings").Get<AppSettings>();
+        if (appSettings == null)
+        {
+            logger.Error("Error reading appSettings");
+            throw new InvalidOperationException("Unable to read appSettings");
+        }
+
         if (
             string.Equals(
                 webApplicationBuilder.Configuration.GetSection("AppSettings:IdentityProvider").Value,
@@ -185,7 +193,8 @@ public static class WebApplicationBuilderExtensions
                 identitySettings.Authority,
                 identitySettings.ClientId,
                 identitySettings.ClientSecret,
-                identitySettings.RoleClaimType
+                identitySettings.RoleClaimType,
+                appSettings.TokenRequestTimeoutSeconds
             );
         }
     }
