@@ -92,6 +92,7 @@ else {
 
     $env:NEED_DATABASE_SETUP = $LoadSeedData
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
+    Remove-Item Env:NEED_DATABASE_SETUP
 
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
