@@ -394,7 +394,7 @@ public class QueryOpenSearchTests
             new QueryElement("field1", new[] { new JsonPath("$.field1") }, "value1"),
             new QueryElement("field2", new[] { new JsonPath("$.field2") }, "value2"),
         };
-        var pagination = new PaginationParameters(Limit: 10, Offset: 5, TotalCount: false);
+        var pagination = new PaginationParameters(Limit: 10, Offset: 5, TotalCount: true);
         var resourceInfo = A.Fake<ResourceInfo>();
         var queryRequest = A.Fake<IQueryRequest>();
         A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);
@@ -432,12 +432,16 @@ public class QueryOpenSearchTests
                         }
                     }
                 ],
+                "track_total_hits":true,
                 "size": 10,
                 "from": 5
             }
             """;
         JsonNode? expected = JsonNode.Parse(expectedJson);
         result.ToJsonString().Should().Be(expected!.ToJsonString());
+
+        // Assert
+        result["track_total_hits"]!.GetValue<bool>().Should().BeTrue();
     }
 
     [Test]
@@ -502,5 +506,35 @@ public class QueryOpenSearchTests
             """;
         JsonNode? expected = JsonNode.Parse(expectedJson);
         result.ToJsonString().Should().Be(expected!.ToJsonString());
+    }
+
+    [Test]
+    public void BuildQueryObject_WithTotalCountTrueAndManyElements_IncludesTrackTotalHitsTrue()
+    {
+        // Arrange
+        const int ElementCount = 15000; // Simulates over than 10,000 elements
+        var queryElements = Enumerable
+            .Range(1, ElementCount)
+            .Select(i => new QueryElement($"field{i}", new[] { new JsonPath($"$.field{i}") }, $"value{i}"))
+            .ToArray();
+
+        var pagination = new PaginationParameters(Limit: 10, Offset: 0, TotalCount: true);
+        var resourceInfo = A.Fake<ResourceInfo>();
+        var queryRequest = A.Fake<IQueryRequest>();
+        A.CallTo(() => queryRequest.QueryElements).Returns(queryElements);
+        A.CallTo(() => queryRequest.PaginationParameters).Returns(pagination);
+        A.CallTo(() => queryRequest.AuthorizationSecurableInfo).Returns([]);
+        A.CallTo(() => queryRequest.AuthorizationStrategyEvaluators).Returns([]);
+        A.CallTo(() => queryRequest.ResourceInfo).Returns(resourceInfo);
+
+        // Act
+        JsonObject result = QueryOpenSearch.BuildQueryObject(queryRequest, NullLogger.Instance);
+
+        // Assert: Query must include track_total_hits set to true
+        result["track_total_hits"]!.GetValue<bool>().Should().BeTrue();
+
+        var mustArray = result["query"]?["bool"]?["must"] as JsonArray;
+        mustArray.Should().NotBeNull();
+        mustArray!.Count.Should().Be(ElementCount);
     }
 }
