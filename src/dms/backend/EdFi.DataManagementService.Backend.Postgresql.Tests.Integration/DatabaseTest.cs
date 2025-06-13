@@ -287,8 +287,7 @@ public abstract class DatabaseTest : DatabaseTestBase
             DocumentReferences: documentReferences ?? [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences ?? [],
-            SuperclassIdentity: superclassIdentity,
-            ArrayUniquenessConstraints: []
+            SuperclassIdentity: superclassIdentity
         );
     }
 

@@ -84,8 +84,7 @@ internal static class No
         DocumentReferences: [],
         DocumentReferenceArrays: [],
         DescriptorReferences: [],
-        SuperclassIdentity: null,
-        ArrayUniquenessConstraints: []
+        SuperclassIdentity: null
     );
 
     /// <summary>

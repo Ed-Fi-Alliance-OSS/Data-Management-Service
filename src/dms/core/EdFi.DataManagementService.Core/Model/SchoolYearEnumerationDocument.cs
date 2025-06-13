@@ -48,8 +48,7 @@ internal record SchoolYearEnumerationDocument(JsonNode _document)
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
-            SuperclassIdentity: null,
-            ArrayUniquenessConstraints: []
+            SuperclassIdentity: null
         );
     }
 }
