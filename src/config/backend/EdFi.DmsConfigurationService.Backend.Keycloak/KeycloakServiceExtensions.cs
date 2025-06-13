@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
@@ -28,7 +29,14 @@ public static class KeycloakServiceExtensions
         services.AddScoped(x => new KeycloakContext(baseUrl, realm, ClientId, ClientSecret, RoleClaimType));
 
         services.AddTransient<IClientRepository, KeycloakClientRepository>();
-        services.AddTransient<ITokenManager, KeycloakTokenManager>();
+
+        services.AddTransient<ITokenManager>(sp =>
+        {
+            var context = sp.GetRequiredService<KeycloakContext>();
+            var logger = sp.GetRequiredService<ILogger<KeycloakTokenManager>>();
+            var factory = sp.GetRequiredService<IHttpClientFactory>();
+            return new KeycloakTokenManager(context, logger, factory);
+        });
 
         return services;
     }
