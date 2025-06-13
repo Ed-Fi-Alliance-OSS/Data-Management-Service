@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 window.onload = () => {
-    //<editor-fold desc="Changeable Configuration Block">
     const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
 
     window.ui = SwaggerUIBundle({
@@ -42,5 +41,4 @@ window.onload = () => {
             clearInterval(intervalId);
         }
     }, 300);
-    //</editor-fold>
 };
