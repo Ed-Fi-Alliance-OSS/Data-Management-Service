@@ -99,8 +99,8 @@ function Get-NugetPackage {
     $versions = Invoke-SemanticSort $package.versions
 
     if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
-    Write-Host -ForegroundColor Yellow "No version specified. Using latest available version."
-    $versionSearch = $versions[-1]
+        Write-Host -ForegroundColor Yellow "No version specified. Using latest available version."
+        $versionSearch = $versions[-1]
     }
     else {
         # pad this out to three part semver if only partial
