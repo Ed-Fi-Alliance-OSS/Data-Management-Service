@@ -5,6 +5,7 @@
 
 using System.Net;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
@@ -13,7 +14,7 @@ public class KeycloakTokenManager(
     ILogger<KeycloakTokenManager> logger,
     IHttpClientFactory httpClientFactory) : ITokenManager
 {
-    private static readonly TimeSpan _defaultTimeout = TimeSpan.FromSeconds(30);
+    private readonly TimeSpan _defaultTimeout = TimeSpan.FromSeconds(keycloakContext.TokenRequestTimeoutSeconds);
 
     public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
     {
