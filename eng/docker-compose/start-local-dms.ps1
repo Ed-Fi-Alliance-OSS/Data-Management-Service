@@ -32,7 +32,10 @@ param (
 
     # Enable the DMS Configuration Service
     [Switch]
-    $EnableConfig
+    $EnableConfig,
+
+    # Enable Swagger UI for the DMS API
+    [switch]$EnableSwaggerUI
 )
 
 $files = @(
@@ -57,6 +60,10 @@ else {
 
 if ($EnableConfig) {
     $files += @("-f", "local-config.yml")
+}
+
+if ($EnableSwaggerUI) {
+    $files += @("-f", "swagger-ui.yml")
 }
 
 if ($d) {
@@ -112,5 +119,4 @@ else {
 
     Write-Output "Running connector setup..."
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
-
 }
