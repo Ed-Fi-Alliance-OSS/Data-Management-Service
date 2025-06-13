@@ -385,6 +385,10 @@ internal class ApiService(
     {
         JsonNode specification = _resourceOpenApiSpecification.Value;
         specification["servers"] = servers;
+
+        // Add OAuth2 Security Section
+        AddOAuth2SecuritySection(specification);
+
         return specification;
     }
 
@@ -396,6 +400,49 @@ internal class ApiService(
     {
         JsonNode specification = _descriptorOpenApiSpecification.Value;
         specification["servers"] = servers;
+
+        // Add OAuth2 Security Section
+        AddOAuth2SecuritySection(specification);
+
         return specification;
+    }
+
+    /// <summary>
+    /// Adds the OAuth2 security section to the OpenAPI specification.
+    /// </summary>
+    private void AddOAuth2SecuritySection(JsonNode specification)
+    {
+        string schemeName = "auth2_client_credentials";
+
+        string tokenUrl = _appSettings.Value.AuthenticationService!;
+        if (specification["components"] is not JsonObject components)
+        {
+            components = new JsonObject();
+            specification["components"] = components;
+        }
+
+        if (components["securitySchemes"] is not JsonObject securitySchemes)
+        {
+            securitySchemes = new JsonObject();
+            components["securitySchemes"] = securitySchemes;
+        }
+
+        var oauth2Scheme = new JsonObject
+        {
+            ["type"] = "oauth2",
+            ["description"] = "Ed-Fi DMS OAuth 2.0 Client Credentials Grant Type authorization",
+            ["flows"] = new JsonObject
+            {
+                ["clientCredentials"] = new JsonObject
+                {
+                    ["tokenUrl"] = tokenUrl,
+                    ["scopes"] = new JsonObject(),
+                },
+            },
+        };
+
+        securitySchemes[schemeName] = oauth2Scheme;
+
+        specification["security"] = new JsonArray { new JsonObject { [schemeName] = new JsonArray() } };
     }
 }

@@ -18,6 +18,20 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 builder.AddServices();
 
+// Add CORS policy to allow Swagger UI to access the API
+string swaggerUiOrigin =
+    builder.Configuration.GetValue<string>("Cors:SwaggerUIOrigin") ?? "http://localhost:8082";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        "AllowSwaggerUI",
+        policy =>
+        {
+            policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
+        }
+    );
+});
+
 var app = builder.Build();
 
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
@@ -41,6 +55,8 @@ if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
 {
     app.UseRateLimiter();
 }
+
+app.UseCors("AllowSwaggerUI");
 
 app.UseAuthentication();
 app.UseAuthorization();
