@@ -533,8 +533,8 @@ public class ClaimSetRepository(
 
             // Load the JSON hierarchy
             string loadHierarchySql = """
-                    SELECT HierarchyJson::jsonb, LastModifiedDate
-                    FROM dmscs.ClaimSetHierarchy;
+                    SELECT Hierarchy::jsonb, LastModifiedDate
+                    FROM dmscs.ClaimsHierarchy;
                 """;
             var hierarchyData = await connection.QueryAsync<(
                 string HierarchyJson,
@@ -585,8 +585,8 @@ public class ClaimSetRepository(
             await retryPolicy.ExecuteAsync(async () =>
             {
                 string saveHierarchySql = """
-                    UPDATE dmscs.ClaimSetHierarchy
-                    SET HierarchyJson = @HierarchyJson::jsonb, LastModifiedDate = NOW()
+                    UPDATE dmscs.ClaimsHierarchy
+                    SET Hierarchy = @HierarchyJson::jsonb, LastModifiedDate = NOW()
                     WHERE LastModifiedDate = @LastModifiedDate;
                 """;
                 var saveParameters = new
