@@ -3,13 +3,18 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: EdFi.Dms.Minimal.Template.PostgreSQL
+name: EdFi.Dms.Populated.Template.PostgreSQL
 on:
   workflow_dispatch:
 
+  # TODO REMOVE, only for testing
+  pull_request:
+    branches:
+      - main
+
 env:
   STANDARD_REFERENCE: "v5.2.0"
-  PACKAGE_NAME: "EdFi.Dms.Minimal.Template.PostgreSQL"
+  PACKAGE_NAME: "EdFi.Dms.Populated.Template.PostgreSQL"
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
@@ -48,23 +53,24 @@ jobs:
           ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -enableConfig
         working-directory: eng/docker-compose/
 
-      - name: Generate Minimal Template package
+      - name: Generate Populated Template package
         run: |
           Import-Module ./Template-Management.psm1 -Force
           
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
           Build-Template `
-                  -TemplateType Minimal `
+                  -TemplateType Populated `
                   -DmsUrl 'http://localhost:8080' `
                   -CmsUrl 'http://localhost:8081' `
                   -MinimalSampleDataDirectory '${{ github.workspace }}/Ed-Fi-Data-Standard/Descriptors' `
+                  -PopulatedSampleDataDirectory '${{ github.workspace }}/Ed-Fi-Data-Standard/Samples/Sample XML' `
                   -Extension 'ed-fi'`
-                  -ConfigFilePath './MinimalTemplateSettings.psd1' `
+                  -ConfigFilePath './PopulatedTemplateSettings.psd1' `
                   -StandardVersion '5.2.0'`
                   -PackageVersion $packageVersion
         working-directory: eng/DatabaseTemplates/
 
-      - name: Upload Minimal Template Package as Artifact
+      - name: Upload Populated Template Package as Artifact
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
@@ -74,7 +80,7 @@ jobs:
           retention-days: 30
 
   publish-template-package:
-    name: Publish Minimal Template Package
+    name: Publish Populated Template Package
     needs: build-template
     runs-on: ubuntu-latest
     defaults:
@@ -84,7 +90,7 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Get Minimal Template Package Artifact
+      - name: Get Populated Template Package Artifact
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: ${{ env.PACKAGE_NAME }}-NuGet
@@ -92,7 +98,7 @@ jobs:
       - name: Install-credential-handler DMS
         run: iex "& { $(irm https://aka.ms/install-artifacts-credprovider.ps1) } -AddNetfx"
 
-      - name: Push Minimal Template Package to Azure Artifacts
+      - name: Push Populated Template Package to Azure Artifacts
         run: |
          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
          $arguments = @{

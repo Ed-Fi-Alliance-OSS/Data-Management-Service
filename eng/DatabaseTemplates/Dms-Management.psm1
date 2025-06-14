@@ -72,7 +72,6 @@ function Invoke-Api {
         Method      = $Method
         ContentType = $ContentType
         Headers     = $Headers
-        SkipHttpErrorCheck = $true
     }
 
     if ($Method -eq 'Post' -and $Body) {
@@ -113,7 +112,7 @@ function ConvertTo-FormBody {
         Sends client credentials to a local or remote Config server's registration endpoint.
         Uses x-www-form-urlencoded format and handles validation feedback.
 
-    .PARAMETER ConfigUrl
+    .PARAMETER CmsUrl
         The base URL of the Config server configuration API. Defaults to http://localhost:8081.
 
     .PARAMETER ClientId
@@ -126,16 +125,16 @@ function ConvertTo-FormBody {
         A human-readable display name for the client.
 
     .EXAMPLE
-        Add-Client -ClientId "sys-admin" -ClientSecret "SuperSecret123!" -DisplayName "System Administrator"
+        Add-CmsClient -ClientId "sys-admin" -ClientSecret "SuperSecret123!" -DisplayName "System Administrator"
 
     .NOTES
         Requires the helper function Invoke-Api to be defined in scope.
 #>
-function Add-Client {
+function Add-CmsClient {
     [CmdletBinding()]
     param (
         [ValidateNotNullOrEmpty()]
-        [string]$ConfigUrl = "http://localhost:8081",
+        [string]$CmsUrl = "http://localhost:8081",
 
         [ValidateNotNullOrEmpty()]
         [string]$ClientId = "sys-admin",
@@ -154,7 +153,7 @@ function Add-Client {
     }
 
     $invokeParams = @{
-        BaseUrl      = $ConfigUrl
+        BaseUrl      = $CmsUrl
         RelativeUrl  = "connect/register"
         Method       = "Post"
         ContentType  = "application/x-www-form-urlencoded"
@@ -179,7 +178,7 @@ function Add-Client {
         Sends a POST request to the Config server's token endpoint using the client credentials grant type.
         Returns the access token if the authentication is successful.
 
-    .PARAMETER ConfigUrl
+    .PARAMETER CmsUrl
         The base URL of the Config server (e.g., http://localhost:8081).
 
     .PARAMETER ClientId
@@ -200,11 +199,11 @@ function Add-Client {
     .EXAMPLE
         $token = Initialize-Client -ClientId "my-client" -ClientSecret "SuperSecret123!"
 #>
-function Get-AccessToken {
+function Get-CmsToken {
     [CmdletBinding()]
     param (
         [ValidateNotNullOrEmpty()]
-        [string]$ConfigUrl = "http://localhost:8081",
+        [string]$CmsUrl = "http://localhost:8081",
 
         [ValidateNotNullOrEmpty()]
         [string]$ClientId = "sys-admin",
@@ -227,7 +226,7 @@ function Get-AccessToken {
     }
 
     $invokeParams = @{
-        BaseUrl      = $ConfigUrl
+        BaseUrl      = $CmsUrl
         RelativeUrl  = "connect/token"
         Method       = "Post"
         ContentType  = "application/x-www-form-urlencoded"
@@ -248,7 +247,7 @@ function Get-AccessToken {
         The NamespacePrefixes parameter accepts one or multiple comma-separated values as a string.
         This string is sent as-is in the JSON payload (no splitting or conversion to array).
 
-    .PARAMETER ConfigUrl
+    .PARAMETER CmsUrl
         The base URL of the Config server (e.g., http://localhost:8081).
 
     .PARAMETER Company
@@ -279,7 +278,7 @@ function Add-Vendor {
     [CmdletBinding()]
     param (
         [ValidateNotNullOrEmpty()]
-        [string]$ConfigUrl = "http://localhost:8081",
+        [string]$CmsUrl = "http://localhost:8081",
 
         [ValidateNotNullOrEmpty()]
         [string]$Company = "Demo Vendor",
@@ -291,7 +290,7 @@ function Add-Vendor {
         [string]$ContactEmailAddress = "george@example.com",
 
         [ValidateNotNullOrEmpty()]
-        [string]$NamespacePrefixes = "uri://ed-fi.org",
+        [string]$NamespacePrefixes = "uri://ed-fi.org, uri://gbisd.edu",
 
         [Parameter(Mandatory = $true)]
         [string]$AccessToken
@@ -305,7 +304,7 @@ function Add-Vendor {
     }
 
     $invokeParams = @{
-        BaseUrl      = $ConfigUrl
+        BaseUrl      = $CmsUrl
         RelativeUrl  = "v2/vendors"
         Method       = "Post"
         ContentType  = "application/json"
@@ -327,7 +326,7 @@ function Add-Vendor {
         Requires a valid Keycloak access token for authorization.
         Returns the application key and secret from the API response.
 
-    .PARAMETER ConfigUrl
+    .PARAMETER CmsUrl
         The base URL of the Config server (e.g., http://localhost:8081).
 
     .PARAMETER ApplicationName
@@ -348,15 +347,15 @@ function Add-Vendor {
             - Secret: The application's secret.
 
     .EXAMPLE
-        $creds = Initialize-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp"
+        $creds = Add-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp"
         Write-Host "App Key: $($creds.Key)"
         Write-Host "App Secret: $($creds.Secret)"
 #>
-function Initialize-Application {
+function Add-Application {
     [CmdletBinding()]
     param (
         [ValidateNotNullOrEmpty()]
-        [string]$ConfigUrl = "http://localhost:8081",
+        [string]$CmsUrl = "http://localhost:8081",
 
         [ValidateNotNullOrEmpty()]
         [string]$ApplicationName = "Demo application",
@@ -375,10 +374,11 @@ function Initialize-Application {
         vendorId        = $VendorId
         applicationName = $ApplicationName
         claimSetName    = $ClaimSetName
+        educationOrganizationIds = @(255901, 19255901)
     }
 
     $invokeParams = @{
-        BaseUrl      = $ConfigUrl
+        BaseUrl      = $CmsUrl
         RelativeUrl  = "v2/applications"
         Method       = "Post"
         ContentType  = "application/json"
@@ -413,9 +413,9 @@ function Initialize-Application {
     The client secret used for authentication.
 
 .EXAMPLE
-    Get-BearerToken -DmsUrl "http://localhost:8080" -Key "myKey" -Secret "mySecret"
+    Get-DmsToken -DmsUrl "http://localhost:8080" -Key "myKey" -Secret "mySecret"
 #>
-function Get-BearerToken {
+function Get-DmsToken {
     [CmdletBinding()]
     param (
         [ValidateNotNullOrEmpty()]
@@ -446,4 +446,4 @@ function Get-BearerToken {
     return $response.access_token
 }
 
-Export-ModuleMember -Function Add-Client, Get-AccessToken, Add-Vendor, Initialize-Application, Get-BearerToken, Invoke-Api
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Invoke-Api
