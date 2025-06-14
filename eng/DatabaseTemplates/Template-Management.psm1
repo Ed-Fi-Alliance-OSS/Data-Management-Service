@@ -26,8 +26,7 @@ Import-Module ./Dms-Management.psm1 -Force
 #>
 function Initialize-BulkLoad {
     param(
-        [Parameter(Mandatory = $true)]
-        $BulkLoadVersion
+        $BulkLoadVersion = '7.3'
     )
 
     $bulkLoadClientExe = (Join-Path -Path (Get-BulkLoadClient $BulkLoadVersion).Trim() -ChildPath "tools/net*/any/EdFi.BulkLoadClient.Console.dll")
@@ -84,7 +83,7 @@ function Get-KeySecret() {
     )
 
     $params = @{
-        CmsUrl = $CmsUrl
+        CmsUrl      = $CmsUrl
         AccessToken = $CmsToken
     }
 
@@ -151,7 +150,7 @@ function Get-KeySecret() {
 #>
 function Invoke-BulkLoad {
     [CmdletBinding()]
-param (
+    param (
         [Parameter(Mandatory = $true)]
         [string]$BaseUrl,
 
@@ -203,7 +202,7 @@ param (
     )
 
     if ($ForceReloadMetadata) { $options += "-f" }
-    if ($SkipXmlValidation)   { $options += "-n" }
+    if ($SkipXmlValidation) { $options += "-n" }
     if (-not [string]::IsNullOrEmpty($Extension)) {
         $options += "-e"
         $options += $Extension
@@ -359,14 +358,14 @@ function New-DatabaseTemplateCsproj {
     $backupPath = Join-Path $BackupDirectory $Config.DatabaseBackupName
 
     $params = @{
-        CsprojPath               = $csprojPath
-        Id                       = $Config.Id
-        Title                    = $Config.Title
-        Description              = $Config.Description
-        Authors                  = $Config.Authors
-        ProjectUrl               = $Config.ProjectUrl
-        License                  = $Config.License
-        ForceOverwrite           = $true
+        CsprojPath     = $csprojPath
+        Id             = $Config.Id
+        Title          = $Config.Title
+        Description    = $Config.Description
+        Authors        = $Config.Authors
+        ProjectUrl     = $Config.ProjectUrl
+        License        = $Config.License
+        ForceOverwrite = $true
     }
 
     New-CsprojForNuget @params
@@ -419,7 +418,7 @@ function Build-NuGetPackage {
 .SYNOPSIS
     Builds a NuGet package containing a PostgreSQL database backup.
 
-.PARAMETER ConfigFile
+.PARAMETER ConfigFilePath
     The path to the PowerShell data file (.psd1) containing configuration settings for the package.
     Defaults to "./MinimalTemplateSettings.psd1".
 
@@ -430,16 +429,21 @@ function Build-NuGetPackage {
     The version to assign to the generated NuGet package.
 
 .EXAMPLE
-    Build-TemplateNuGetPackage -ConfigFile "./MinimalTemplateSettings.psd1" -StandardVersion "5.3.0" -PackageVersion "1.0.0"
+    Build-TemplateNuGetPackage -ConfigFilePath "./MinimalTemplateSettings.psd1" -StandardVersion "5.3.0" -PackageVersion "1.0.0"
 #>
 function Build-TemplateNuGetPackage {
     param (
-        [string]$ConfigFile = "./MinimalTemplateSettings.psd1",
+        [Parameter(Mandatory = $true)]
+        [string]$ConfigFilePath,
+
+        [Parameter(Mandatory = $true)]
         [string]$StandardVersion,
+
+        [Parameter(Mandatory = $true)]
         [string]$PackageVersion
     )
 
-    $config = Import-PowerShellDataFile -Path $ConfigFile
+    $config = Import-PowerShellDataFile -Path $ConfigFilePath
 
     foreach ($key in @($config.Keys)) {
         if ($null -ne $key -and $config[$key] -is [string]) {
@@ -454,4 +458,122 @@ function Build-TemplateNuGetPackage {
     Build-NuGetPackage -PackageVersion $PackageVersion -Config $config -BackupDirectory './'
 }
 
-Export-ModuleMember -Function Invoke-BulkLoad, Build-TemplateNuGetPackage, Get-KeySecret, Invoke-SchoolYearLoader, Initialize-BulkLoad
+enum TemplateType {
+    Minimal
+    Populated
+}
+
+<#
+.SYNOPSIS
+    Builds a database template and NuGet package.
+
+.PARAMETER TemplateType
+    Specifies the type of template to build. Valid values are:
+    - Minimal
+    - Populated
+
+.PARAMETER DmsUrl
+    The base URL of the DMS.
+
+.PARAMETER CmsUrl
+    The base URL of the CMS.
+
+.PARAMETER MinimalSampleDataDirectory
+    Directory containing the minimal sample data files to be loaded.
+
+.PARAMETER PopulatedSampleDataDirectory
+    Directory containing the populated sample data files to be loaded.
+
+.PARAMETER Extension
+    File extension filter for the sample data files (e.g., "ed-fi", "tpdm" ...).
+
+.PARAMETER ConfigFilePath
+    Path to the PowerShell data file (.psd1) containing the NuGet package settings.
+
+.PARAMETER StandardVersion
+    The Ed-Fi standard version to use in the NuGet package name.
+
+.PARAMETER PackageVersion
+    The version to assign to the generated NuGet package.
+
+.EXAMPLE
+    Build-Template -TemplateType Minimal `
+        -DmsUrl "http://localhost:8080" `
+        -CmsUrl "http://localhost:8081" `
+        -MinimalSampleDataDirectory "./MinimalData" `
+        -PopulatedSampleDataDirectory "./PopulatedData" `
+        -Extension "ed-fi" `
+        -ConfigFilePath "./MinimalTemplateSettings.psd1" `
+        -StandardVersion "5.3.0" `
+        -PackageVersion "1.0.0"
+#>
+function Build-Template {
+    param (
+        
+        [Parameter(Mandatory = $true)]
+        [TemplateType]$TemplateType,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DmsUrl,
+        
+        [Parameter(Mandatory = $true)]
+        [string]$CmsUrl,
+
+        [Parameter(Mandatory = $true)]
+        [string]$MinimalSampleDataDirectory,
+
+        [string]$PopulatedSampleDataDirectory,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Extension,
+        
+        [Parameter(Mandatory = $true)]
+        [string]$ConfigFilePath,
+        
+        [Parameter(Mandatory = $true)]
+        [string]$StandardVersion,
+        
+        [Parameter(Mandatory = $true)]
+        [string]$PackageVersion
+    )
+
+    Add-CmsClient -CmsUrl $CmsUrl
+    $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
+
+    $keySecret = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs'
+    $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $keySecret.Key -Secret $keySecret.Secret
+
+    Invoke-SchoolYearLoader -DmsUrl $DmsUrl -DmsToken $dmsToken
+
+    $bulkLoadClientPaths = Initialize-BulkLoad
+
+    Invoke-BulkLoad -BaseUrl $DmsUrl `
+        -Key $keySecret.Key `
+        -Secret $keySecret.Secret `
+        -SampleDataDirectory $MinimalSampleDataDirectory `
+        -Extension $Extension `
+        -BulkLoadClientPaths $bulkLoadClientPaths `
+        -ForceReloadData $true
+
+    if ($TemplateType -eq [TemplateType]::Populated) {
+
+        if ([string]::IsNullOrWhiteSpace($PopulatedSampleDataDirectory)) {
+            throw "PopulatedSampleDataDirectory must be specified when TemplateType is 'Populated'."
+        }
+
+        $keySecret = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox'
+        $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $keySecret.Key -Secret $keySecret.Secret
+
+        Invoke-BulkLoad -BaseUrl $DmsUrl `
+            -Key $keySecret.Key `
+            -Secret $keySecret.Secret `
+            -SampleDataDirectory $PopulatedSampleDataDirectory `
+            -Extension $Extension `
+            -BulkLoadClientPaths $bulkLoadClientPaths `
+            -ForceReloadData $true
+    }
+
+    Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion
+}
+
+Export-ModuleMember -Function Build-Template
