@@ -70,6 +70,14 @@ jobs:
                   -PackageVersion $packageVersion
         working-directory: eng/DatabaseTemplates/
 
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: Bulkload-logs
+          path: ${{ github.workspace }}/eng/DatabaseTemplates/**/logfile.txt
+          retention-days: 10
+
       - name: Upload Populated Template Package as Artifact
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
