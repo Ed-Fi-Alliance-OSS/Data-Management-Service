@@ -1,0 +1,177 @@
+Feature: EvaluationRubricDimension Authorization
+
+        Background:
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
+              And the system has these descriptors
+                  | descriptorValue                                                |
+                  | uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year  |
+                  | uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey |
+              And the system has these "localEducationAgencies"
+                  | localEducationAgencyId | nameOfInstitution | categories                                                                                                          | localEducationAgencyCategoryDescriptor                     |
+                  | 255901                 | Test LEA          | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC |
+              And the system has these "programs"
+                  | programName | programTypeDescriptor                         | educationOrganizationReference     |
+                  | 21st CCLC   | uri://ed-fi.org/ProgramTypeDescriptor#Support | {"educationOrganizationId":255901} |
+              And the system has these "programEvaluations"
+                  | _storeResultingIdInVariable | programEvaluationTitle | programEvaluationPeriodDescriptor                             | programEvaluationTypeDescriptor                                | programReference                                                                                                                          |
+                  | programEvaluationId         | Test Evaluation        | uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year | uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey | {"educationOrganizationId": 255901, "programName": "21st CCLC", "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"} |
+              And the system has these "programEvaluationObjectives"
+                  | _storeResultingIdInVariable  | programEvaluationObjectiveTitle | programEvaluationReference                                                                                                                                                                                                                                                                                                                                                                               |
+                  | programEvaluationObjectiveId | Test Evaluation Objective       | {"programEducationOrganizationId": 255901, "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year", "programEvaluationTitle": "Test Evaluation", "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey", "programName": "21st CCLC", "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"} |
+              And the system has these "programEvaluationElements"
+                  | _storeResultingIdInVariable | programEvaluationElementTitle | programEvaluationReference                                                                                                                                                                                                                                                                                                                                                                               | programEvaluationObjectiveReference                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+                  | programEvaluationElementId  | Test Evaluation Element       | {"programEducationOrganizationId": 255901, "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year", "programEvaluationTitle": "Test Evaluation", "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey", "programName": "21st CCLC", "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"} | {"programEducationOrganizationId": 255901, "programEvaluationObjectiveTitle": "Test Evaluation Objective", "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year", "programEvaluationTitle": "Test Evaluation", "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey", "programName": "21st CCLC", "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"} |
+              And the system has these "evaluationRubricDimensions"
+                  | _storeResultingIdInVariable | evaluationRubricRating | evaluationCriterionDescription | programEvaluationElementReference                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+                  | evaluationRubricDimensionId | 10                     | Test Evaluation Criterion      | {"programEducationOrganizationId": 255901, "programEvaluationElementTitle": "Test Evaluation Element", "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year", "programEvaluationTitle": "Test Evaluation", "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey", "programName": "21st CCLC", "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"} |
+
+    Rule: When the client is authorized
+        Scenario: 01 Ensure authorized client can create a EvaluationRubricDimension
+             When a POST request is made to "/ed-fi/evaluationRubricDimensions" with
+                  """
+                  {
+                    "evaluationRubricRating": 101,
+                    "programEvaluationElementReference": {
+                        "programEducationOrganizationId": 255901,
+                        "programEvaluationElementTitle": "Test Evaluation Element",
+                        "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year",
+                        "programEvaluationTitle": "Test Evaluation",
+                        "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey",
+                        "programName": "21st CCLC",
+                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"
+                    },
+                    "evaluationCriterionDescription": "Test Evaluation Criterion"
+                  }
+                  """
+             Then it should respond with 201
+
+        Scenario: 02 Ensure authorized client can get a EvaluationRubricDimension
+             When a GET request is made to "/ed-fi/evaluationRubricDimensions/{evaluationRubricDimensionId}"
+             Then it should respond with 200
+
+        Scenario: 03 Ensure authorized client can update a EvaluationRubricDimension
+             When a PUT request is made to "/ed-fi/evaluationRubricDimensions/{evaluationRubricDimensionId}" with
+                  """
+                  {
+                    "id": "{evaluationRubricDimensionId}",
+                    "evaluationRubricRating": 10,
+                    "programEvaluationElementReference": {
+                        "programEducationOrganizationId": 255901,
+                        "programEvaluationElementTitle": "Test Evaluation Element",
+                        "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year",
+                        "programEvaluationTitle": "Test Evaluation",
+                        "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey",
+                        "programName": "21st CCLC",
+                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"
+                    },
+                    "evaluationCriterionDescription": "Test Evaluation Criterion"
+                  }
+                  """
+             Then it should respond with 204
+
+        Scenario: 04 Ensure authorized client can delete a EvaluationRubricDimension
+             When a DELETE request is made to "/ed-fi/evaluationRubricDimensions/{evaluationRubricDimensionId}"
+             Then it should respond with 204
+
+    Rule: When the client is unauthorized
+        Background:
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255902"
+
+        Scenario: 05 Ensure unauthorized client can not create a EvaluationRubricDimension
+             When a POST request is made to "/ed-fi/evaluationRubricDimensions" with
+                  """
+                  {
+                    "evaluationRubricRating": 101,
+                    "programEvaluationElementReference": {
+                        "programEducationOrganizationId": 255901,
+                        "programEvaluationElementTitle": "Test Evaluation Element",
+                        "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year",
+                        "programEvaluationTitle": "Test Evaluation",
+                        "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey",
+                        "programName": "21st CCLC",
+                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"
+                    },
+                    "evaluationCriterionDescription": "Test Evaluation Criterion"
+                  }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "validationErrors": {},
+                     "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                     ]
+                  }
+                  """
+
+        Scenario: 06 Ensure unauthorized client can not get a EvaluationRubricDimension
+             When a GET request is made to "/ed-fi/evaluationRubricDimensions/{evaluationRubricDimensionId}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "validationErrors": {},
+                     "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                     ]
+                  }
+                  """
+
+        Scenario: 07 Ensure unauthorized client can not update a EvaluationRubricDimension
+             When a PUT request is made to "/ed-fi/evaluationRubricDimensions/{evaluationRubricDimensionId}" with
+                  """
+                  {
+                    "id": "{evaluationRubricDimensionId}",
+                    "evaluationRubricRating": 10,
+                    "programEvaluationElementReference": {
+                        "programEducationOrganizationId": 255901,
+                        "programEvaluationElementTitle": "Test Evaluation Element",
+                        "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year",
+                        "programEvaluationTitle": "Test Evaluation",
+                        "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey",
+                        "programName": "21st CCLC",
+                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"
+                    },
+                    "evaluationCriterionDescription": "Test Evaluation Criterion"
+                  }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "validationErrors": {},
+                     "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                     ]
+                  }
+                  """
+
+        Scenario: 08 Ensure unauthorized client can not delete a EvaluationRubricDimension
+             When a DELETE request is made to "/ed-fi/evaluationRubricDimensions/{evaluationRubricDimensionId}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                     "detail": "Access to the resource could not be authorized.",
+                     "type": "urn:ed-fi:api:security:authorization:",
+                     "title": "Authorization Denied",
+                     "status": 403,
+                     "validationErrors": {},
+                     "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                     ]
+                  }
+                  """
