@@ -31,6 +31,7 @@ public class DiscoveryModuleTests
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
         A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
 
         IDataModelInfo expectedDataModelInfo = (
             new
@@ -69,6 +70,7 @@ public class DiscoveryModuleTests
         apiDetails.Should().NotBeNull();
         apiDetails?.urls.Count.Should().Be(5);
         apiDetails?.applicationName.Should().Be("DMS");
+        apiDetails?.informationalVersion.Should().Be("Release Candidate 1");
         apiDetails?.dataModels.Should().NotBeNull();
         apiDetails?.dataModels.Count().Should().Be(1);
         apiDetails?.dataModels[0].name.Should().Be("Ed-Fi");
@@ -81,7 +83,7 @@ public class DiscoveryModuleTests
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
         A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
-
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
         IDataModelInfo expectedDataModelInfo = (
             new
             {
@@ -132,6 +134,7 @@ public class DiscoveryModuleTests
         dependenciesUrl?.Value.Should().NotBeNull();
         dependenciesUrl!.Value!.ToString().Should().Contain(pathBase);
         apiDetails?.applicationName.Should().Be("DMS");
+        apiDetails?.informationalVersion.Should().Be("Release Candidate 1");
         apiDetails?.dataModels.Should().NotBeNull();
         apiDetails?.dataModels.Count().Should().Be(1);
         apiDetails?.dataModels[0].name.Should().Be("Ed-Fi");

@@ -9,7 +9,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using CommandLine;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Caching.Memory;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Configuration;
 

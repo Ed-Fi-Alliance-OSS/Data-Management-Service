@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -22,35 +23,47 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
 
         var validationErrors = new Dictionary<string, List<string>>();
 
-        // Get al the Paths from ArrayUniquenessConstraints
-        var uniquenessParentPaths = context
-            .ResourceSchema.ArrayUniquenessConstraints.SelectMany(group => group)
-            .Select(jsonPath =>
-            {
-                int lastDot = jsonPath.Value.LastIndexOf('.');
-                return lastDot > 0 ? jsonPath.Value.Substring(0, lastDot) : jsonPath.Value;
-            })
-            .ToHashSet();
-
         if (context.ResourceSchema.ArrayUniquenessConstraints.Count > 0)
         {
-            (string? arrayPath, int dupeIndex) = context.ParsedBody.FindDuplicatesWithArrayPath(
-                context
-                    .ResourceSchema.ArrayUniquenessConstraints.SelectMany(g => g)
-                    .Select(jp => jp.Value)
-                    .ToList(),
-                logger
-            );
-            if (dupeIndex >= 0 && arrayPath != null)
+            foreach (var constraintGroup in context.ResourceSchema.ArrayUniquenessConstraints)
             {
-                (string errorKey, string message) = BuildValidationError(arrayPath, dupeIndex);
-                validationErrors[errorKey] = [message];
+                // 1. Detect array root path (eg: "$.requiredImmunizations[*]")
+                string arrayRootPath = GetArrayRootPath(constraintGroup);
+
+                // 2. Get relative paths (eg: "dates[*].immunizationDate", "immunizationTypeDescriptor")
+                List<string> relativePaths = constraintGroup
+                    .Select(p => GetRelativePath(arrayRootPath, p.Value))
+                    .ToList();
+
+                // 3. Call FindDuplicatesWithArrayPath
+                (string? arrayPath, int dupeIndex) = context.ParsedBody.FindDuplicatesWithArrayPath(
+                    arrayRootPath,
+                    relativePaths,
+                    logger
+                );
+
+                if (dupeIndex >= 0 && arrayPath != null)
+                {
+                    (string errorKey, string message) = BuildValidationError(arrayPath, dupeIndex);
+                    validationErrors[errorKey] = [message];
+                    break;
+                }
             }
         }
 
         // Reference arrays
         if (!validationErrors.Any())
         {
+            // Get all the Paths from ArrayUniquenessConstraints
+            var uniquenessParentPaths = context
+                .ResourceSchema.ArrayUniquenessConstraints.SelectMany(group => group)
+                .Select(jsonPath =>
+                {
+                    int lastDot = jsonPath.Value.LastIndexOf('.');
+                    return lastDot > 0 ? jsonPath.Value.Substring(0, lastDot) : jsonPath.Value;
+                })
+                .ToHashSet();
+
             foreach (var referenceArray in context.DocumentInfo.DocumentReferenceArrays)
             {
                 if (uniquenessParentPaths.Contains(referenceArray.arrayPath.Value))
@@ -88,7 +101,7 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
             logger.LogDebug("Duplicated reference Id - {TraceId}", context.FrontendRequest.TraceId.Value);
 
             // Convert to Dictionary<string, string[]> for ForDataValidation
-            var validationErrorsArray = validationErrors.ToDictionary(
+            Dictionary<string, string[]> validationErrorsArray = validationErrors.ToDictionary(
                 kvp => kvp.Key,
                 kvp => kvp.Value.ToArray()
             );
@@ -117,6 +130,21 @@ internal class DisallowDuplicateReferencesMiddleware(ILogger logger) : IPipeline
         string message =
             $"The {GetOrdinal(index + 1)} item of the {shortArrayName} has the same identifying values as another item earlier in the list.";
         return (errorKey, message);
+    }
+
+    private static string GetArrayRootPath(IEnumerable<JsonPath> paths)
+    {
+        // Find the common path until the first [*]
+        return paths.First().Value.Split(["[*]"], StringSplitOptions.None)[0] + "[*]";
+    }
+
+    private static string GetRelativePath(string root, string fullPath)
+    {
+        if (fullPath.StartsWith(root))
+        {
+            return fullPath.Substring(root.Length).TrimStart('.');
+        }
+        return fullPath;
     }
 
     private static string GetOrdinal(int number)

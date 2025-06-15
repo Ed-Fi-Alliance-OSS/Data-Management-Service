@@ -15,7 +15,7 @@ internal static class DataTableExtensions
         var descriptors = new List<string>();
 
         // Use regex to extract descriptor namespaces in this format: "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
-        var regex = @"\buri://.*\b";
+        var regex = @"\buri://[^""#]+#[^""]+\b";
         foreach (var row in dataTable.Rows)
         {
             foreach (var cell in row)
@@ -29,23 +29,25 @@ internal static class DataTableExtensions
         }
 
         // then build the descriptor object with string splitting operations
-        return descriptors.Distinct().Select(d =>
-        {
-            // eg: "GradeLevelDescriptors"
-            var descriptorName = d.Split('#')[0][(d.LastIndexOf('/') + 1)..] + 's';
-            // eg: "Tenth Grade"
-            var codeValue = d.Split('#')[1];
-            // eg: "uri://ed-fi.org/GradeLevelDescriptor"
-            var namespaceName = d.Split('#')[0];
-
-            return new Dictionary<string, object>()
+        return descriptors
+            .Distinct()
+            .Select(d =>
             {
-                { "descriptorName", descriptorName},
-                { "codeValue",  codeValue},
-                { "description", codeValue },
-                { "namespace", namespaceName },
-                { "shortDescription", codeValue }
-            };
-        });
+                // eg: "GradeLevelDescriptors"
+                var descriptorName = d.Split('#')[0][(d.LastIndexOf('/') + 1)..] + 's';
+                // eg: "Tenth Grade"
+                var codeValue = d.Split('#')[1];
+                // eg: "uri://ed-fi.org/GradeLevelDescriptor"
+                var namespaceName = d.Split('#')[0];
+
+                return new Dictionary<string, object>()
+                {
+                    { "descriptorName", descriptorName },
+                    { "codeValue", codeValue },
+                    { "description", codeValue },
+                    { "namespace", namespaceName },
+                    { "shortDescription", codeValue },
+                };
+            });
     }
 }

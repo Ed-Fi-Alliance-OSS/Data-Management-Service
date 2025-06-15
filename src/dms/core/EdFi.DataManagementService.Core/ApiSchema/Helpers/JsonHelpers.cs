@@ -384,67 +384,40 @@ internal static class JsonHelpers
     /// </summary>
     public static (string? arrayPath, int dupeIndex) FindDuplicatesWithArrayPath(
         this JsonNode jsonNode,
-        IList<string> jsonPaths,
+        string arrayRootPath,
+        IList<string> relativePaths,
         ILogger logger
     )
     {
-        if (jsonPaths.Count == 0)
+        var arrayItems = jsonNode.SelectNodesFromArrayPath(arrayRootPath, logger).ToList();
+
+        // If the array has 0 or 1 element, there are no duplicates possible.
+        if (arrayItems.Count <= 1)
         {
             return (null, -1);
         }
 
-        // Evaluate all paths and group by number of values
-        var pathResults = jsonPaths
-            .Select(path => new
-            {
-                Path = path,
-                Values = jsonNode.SelectNodesFromArrayPathCoerceToStrings(path, logger).ToList(),
-            })
-            .ToList();
+        var seen = new Dictionary<string, int>();
 
-        // Group to discard all arrays that have no values in the document or that only have one value
-        var groups = pathResults.GroupBy(x => x.Values.Count).Where(g => g.Key > 1);
-
-        foreach (var group in groups)
+        for (int i = 0; i < arrayItems.Count; i++)
         {
-            var groupPaths = group.ToList();
-            int itemCount = group.Key;
-
-            // Defensive validation: all paths in the group must have the same number of values
-            bool allSameCount = groupPaths.TrueForAll(gp => gp.Values.Count == itemCount);
-            if (!allSameCount)
+            var item = arrayItems[i];
+            var keyParts = new List<string>();
+            foreach (string relPath in relativePaths)
             {
-                continue;
+                // There can be multiple values if the path is an array, you join them with '|'
+                string normalizedPath = relPath.StartsWith("$.") ? relPath : "$." + relPath;
+                var values = item!.SelectNodesFromArrayPathCoerceToStrings(normalizedPath, logger).ToList();
+                keyParts.Add(string.Join("|", values));
             }
+            string key = string.Join("||", keyParts);
 
-            // Using HashSet to detect duplicates efficiently
-            var seen = new Dictionary<string, int>();
-            for (int i = 0; i < itemCount; i++)
+            if (seen.TryGetValue(key, out _))
             {
-                // Build the uniqueness key for the current item
-                var sb = new StringBuilder();
-                for (int p = 0; p < groupPaths.Count; p++)
-                {
-                    if (p > 0)
-                    {
-                        sb.Append('|');
-                    }
-                    sb.Append(groupPaths[p].Values[i] ?? "null");
-                }
-                string key = sb.ToString();
-
-                if (seen.TryGetValue(key, out _))
-                {
-                    string arrayPath = groupPaths[0].Path;
-                    return (arrayPath, i);
-                }
-                else
-                {
-                    seen[key] = i;
-                }
+                return (arrayRootPath, i);
             }
+            seen[key] = i;
         }
-
         return (null, -1);
     }
 }
