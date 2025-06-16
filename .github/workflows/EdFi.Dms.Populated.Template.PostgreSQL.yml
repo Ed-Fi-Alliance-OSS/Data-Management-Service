@@ -79,6 +79,7 @@ jobs:
           retention-days: 10
 
       - name: Setup tmate session
+        if: failure()
         uses: mxschmitt/action-tmate@v3
 
       - name: Upload Populated Template Package as Artifact
