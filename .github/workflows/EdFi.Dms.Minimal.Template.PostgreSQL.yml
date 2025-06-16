@@ -45,6 +45,7 @@ jobs:
 
       - name: Start DMS Docker
         run: |
+          $env:USE_API_SCHEMA_PATH="false"
           ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -enableConfig
         working-directory: eng/docker-compose/
 
@@ -63,6 +64,14 @@ jobs:
                   -StandardVersion '5.2.0'`
                   -PackageVersion $packageVersion
         working-directory: eng/DatabaseTemplates/
+
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: Bulkload-logs
+          path: ${{ github.workspace }}/eng/DatabaseTemplates/.packages/**/logfile.txt
+          retention-days: 10
 
       - name: Upload Minimal Template Package as Artifact
         if: success()
