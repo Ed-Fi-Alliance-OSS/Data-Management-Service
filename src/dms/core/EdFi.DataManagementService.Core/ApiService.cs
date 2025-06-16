@@ -412,7 +412,7 @@ internal class ApiService(
     /// </summary>
     private void AddOAuth2SecuritySection(JsonNode specification)
     {
-        string schemeName = "auth2_client_credentials";
+        string schemeName = "oauth2_client_credentials";
 
         string tokenUrl = _appSettings.Value.AuthenticationService!;
         if (specification["components"] is not JsonObject components)
