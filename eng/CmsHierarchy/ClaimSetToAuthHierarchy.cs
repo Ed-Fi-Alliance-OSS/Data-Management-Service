@@ -12,18 +12,18 @@ public class ClaimSetToAuthHierarchy
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    public static Claim[] GetBaseClaimHierarchy()
+    public static List<Claim> GetBaseClaimHierarchy()
     {
         var path = Path.Combine("ClaimSetFiles", "AuthorizationHierarchy.json");
         var jsonData = File.ReadAllText(path);
         var claims = JsonSerializer.Deserialize<List<Claim>>(jsonData);
-        return [.. claims!];
+        return claims!;
     }
 
     /// <summary>
     /// Transforms the existing claims by applying the modifications specified in the given claim set file.
     /// </summary>
-    public static Claim[] TransformClaims(string claimSetFileToTransform, Claim[] existingClaims)
+    public static List<Claim> TransformClaims(string claimSetFileToTransform, List<Claim> existingClaims)
     {
         var path = Path.Combine("ClaimSetFiles", claimSetFileToTransform);
         var jsonData = File.ReadAllText(path);
@@ -31,7 +31,42 @@ public class ClaimSetToAuthHierarchy
         var claimSetName = claimSetData!.Name;
         foreach (ResourceClaim resourceClaim in claimSetData.ResourceClaims)
         {
-            if (resourceClaim != null)
+            if (resourceClaim.IsParent)
+            {
+                var existingClaim = existingClaims
+                    .SelectMany(x => SearchRecursive(x, resourceClaim.Name!))
+                    .SingleOrDefault();
+
+                if (existingClaim! != null)
+                {
+                    // Add additional claims
+                    var childClaims = resourceClaim.Children.Select(x => new Claim { Name = x.Name });
+                    existingClaim.Claims!.AddRange(childClaims);
+                }
+                else
+                {
+                    // Claim is added at root level
+                    existingClaims.Add(
+                        new Claim
+                        {
+                            Name = resourceClaim.Name,
+                            Claims = resourceClaim.Children.Select(x => new Claim { Name = x.Name }).ToList(),
+                            ClaimSets = resourceClaim.ClaimSets,
+                            DefaultAuthorization = new DefaultAuthorization
+                            {
+                                Actions = resourceClaim
+                                    .DefaultAuthorizationStrategiesForCRUD.Select(x => new Model.Action
+                                    {
+                                        Name = x.ActionName,
+                                        AuthorizationStrategies = x.AuthorizationStrategies.ToList(),
+                                    })
+                                    .ToList(),
+                            },
+                        }
+                    );
+                }
+            }
+            else
             {
                 var singularName = PluralToSingular(resourceClaim.Name!);
 
@@ -105,7 +140,7 @@ public class ClaimSetToAuthHierarchy
 
             Uri uri = new(resourceUri);
             string[] pathSegments = uri.AbsolutePath.Split('/');
-            return pathSegments[^1];
+            return string.Join("/", pathSegments[^2..]);
         }
     }
 
