@@ -136,6 +136,8 @@ image from source code.
 Open your browser and go to http://localhost:8082
 Use the dropdown menu to select either the Resources or Descriptors spec.
 Swagger UI is configured to consume the DMS endpoints published on the host (localhost and the port defined in DMS_HTTP_PORTS).
+[!NOTE]
+> The user that is configured to use swagger must have the Web Origins configuration in Keycloak to allow CORS. To do this you must search for your Client in keycloak and add Web Origins (Example: Web origions: http://localhost:8082).
 
 ## Tips
 
