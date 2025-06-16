@@ -5,9 +5,6 @@
 
 name: Data Management System SDK Generation
 on:
-  release:
-    types:
-      - prereleased
   pull_request:
     branches:
       - main
@@ -24,7 +21,7 @@ permissions: read-all
 jobs:
   build-sdk:
     name: Build And Pack DMS Core SDK
-    if: startsWith(github.event.release.tag_name, 'dms-')
+    
     runs-on: ubuntu-latest
     defaults:
       run:
