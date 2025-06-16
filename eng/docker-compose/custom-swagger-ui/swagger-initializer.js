@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-window.onload = function() {
+window.onload = function () {
     const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
 
     window.ui = SwaggerUIBundle({
@@ -20,7 +20,7 @@ window.onload = function() {
     // Update the title of the page
     document.title = "Ed-Fi DMS API Documentation";
 
-    // Update the label for the download URL
+    // Update the label
     const updateLabel = () => {
         const labels = document.querySelectorAll('.download-url-wrapper .select-label');
         labels.forEach(label => {
@@ -42,3 +42,4 @@ window.onload = function() {
         }
     }, 300);
 };
+

@@ -5,14 +5,14 @@
 
 services:
   swagger-ui:
-    image: swaggerapi/swagger-ui:v5.24.1@sha256:a3e4f9c5f35497a98a1f621cb81d7fbe242708a94c6503ac87512bfb9a4287b4
+    image: nginx:alpine
     container_name: dms-swagger-ui
     ports:
-      - "${DMS_SWAGGER_UI_PORT:-8082}:8080"
+      - "${DMS_SWAGGER_UI_PORT:-8082}:80"
     environment:
       - DMS_HTTP_PORTS=${DMS_HTTP_PORTS:-8080}
     volumes:
-      - ./swagger-initializer.js:/usr/share/nginx/html/swagger-initializer.js
+      - ./custom-swagger-ui:/usr/share/nginx/html:ro
     networks:
       - dms
 
