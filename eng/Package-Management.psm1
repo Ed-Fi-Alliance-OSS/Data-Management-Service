@@ -39,6 +39,50 @@ function Invoke-SemanticSort {
 
 <#
 .SYNOPSIS
+    Returns the latest Semantic Version from a list of versions.
+
+.DESCRIPTION
+    This function parses Semantic Versions and returns the latest one.
+    It supports pre-release versions by considering them as lower than
+    the corresponding release version.
+
+.EXAMPLE
+    Get-LatestSemanticVersion @("5.1.0", "5.1.1", "5.2.0-alpha.0.1", "5.2.0")
+
+    Output: "5.2.0"
+
+    Get-LatestSemanticVersion @("5.1.0", "5.1.1", "5.2.0-alpha.0.1", "5.2.0-alpha.0.2")
+
+    Output: "5.2.0-alpha.0.2"
+#>
+function Get-LatestSemanticVersion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]] $Versions
+    )
+
+    $parsed = $Versions | ForEach-Object {
+        $version = $_
+        $versionMatches = [regex]::Match($version, '^(\d+)\.(\d+)\.(\d+)(?:-alpha\.0\.(\d+))?$')
+        if ($versionMatches.Success) {
+            [PSCustomObject]@{
+                Raw       = $version
+                Major     = [int]$versionMatches.Groups[1].Value
+                Minor     = [int]$versionMatches.Groups[2].Value
+                Patch     = [int]$versionMatches.Groups[3].Value
+                IsPre     = -not [string]::IsNullOrEmpty($versionMatches.Groups[4].Value)
+                PreNumber = if ($versionMatches.Groups[4].Success) { [int]$versionMatches.Groups[4].Value } else { -1 }
+            }
+        }
+    }
+
+    $parsed |
+        Sort-Object Major, Minor, Patch, IsPre, PreNumber -Descending |
+        Select-Object -First 1 -ExpandProperty Raw
+}
+
+<#
+.SYNOPSIS
     Downloads and extracts the latest compatible version of a NuGet package.
 
 .DESCRIPTION
@@ -100,7 +144,8 @@ function Get-NugetPackage {
 
     if ([string]::IsNullOrWhiteSpace($PackageVersion)) {
         Write-Host -ForegroundColor Yellow "No version specified. Using latest available version."
-        $versionSearch = $versions[-1]
+        $versionSearch = Get-LatestSemanticVersion $versions
+        Write-Host -ForegroundColor Yellow "Using version: $versionSearch"
     }
     else {
         # pad this out to three part semver if only partial
