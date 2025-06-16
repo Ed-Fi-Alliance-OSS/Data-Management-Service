@@ -3,7 +3,22 @@
     "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
     "claims": [
       {
-        "name": "http://ed-fi.org/identity/claims/ed-fi/schoolYearType"
+        "name": "http://ed-fi.org/identity/claims/ed-fi/schoolYearType",
+        "claimSets": [
+          {
+            "name": "BootstrapDescriptorsandEdOrgs",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       }
     ],
     "claimSets": [
