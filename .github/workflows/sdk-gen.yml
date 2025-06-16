@@ -8,7 +8,10 @@ on:
   release:
     types:
       - prereleased
-
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 env:
   SDK_PACKAGE_NAME: "EdFi.Api.Sdk.Standard.5.2.0"
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
