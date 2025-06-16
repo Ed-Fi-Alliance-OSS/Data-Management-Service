@@ -23,22 +23,26 @@ public class KeycloakTokenManager(
             var client = httpClientFactory.CreateClient();
             client.Timeout = _defaultTimeout;
 
-            var content = new FormUrlEncodedContent(credentials.ToList());
+            var contentList = credentials.ToList();
 
-            string url = $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
-
-            using var response = await client.PostAsync(url, content);
+            var content = new FormUrlEncodedContent(contentList);
+            string path =
+                $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
+            var response = await client.PostAsync(path, content);
             string responseString = await response.Content.ReadAsStringAsync();
 
             return response.StatusCode switch
             {
                 HttpStatusCode.OK => new TokenResult.Success(responseString),
                 HttpStatusCode.Unauthorized => new TokenResult.FailureIdentityProvider(
-                    new IdentityProviderError.Unauthorized(responseString)),
+                    new IdentityProviderError.Unauthorized(responseString)
+                ),
                 HttpStatusCode.Forbidden => new TokenResult.FailureIdentityProvider(
-                    new IdentityProviderError.Forbidden(responseString)),
+                    new IdentityProviderError.Forbidden(responseString)
+                ),
                 HttpStatusCode.NotFound => new TokenResult.FailureIdentityProvider(
-                    new IdentityProviderError.NotFound(responseString)),
+                    new IdentityProviderError.NotFound(responseString)
+                ),
                 _ => new TokenResult.FailureIdentityProvider(new IdentityProviderError(responseString)),
             };
         }
