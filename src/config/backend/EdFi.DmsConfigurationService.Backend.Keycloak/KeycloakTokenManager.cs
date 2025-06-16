@@ -21,8 +21,6 @@ public class KeycloakTokenManager(
         try
         {
             var client = httpClientFactory.CreateClient();
-            client.Timeout = _defaultTimeout;
-
             var contentList = credentials.ToList();
 
             var content = new FormUrlEncodedContent(contentList);
