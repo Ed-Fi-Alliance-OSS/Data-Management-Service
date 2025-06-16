@@ -51,9 +51,19 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
-if (string.IsNullOrEmpty(command) || string.IsNullOrEmpty(input) || string.IsNullOrEmpty(outputFormat))
+if (
+    string.IsNullOrEmpty(command)
+    || string.IsNullOrEmpty(input)
+    || string.IsNullOrEmpty(outputFormat)
+    || (
+        outputFormat.Equals("ToFile", StringComparison.InvariantCultureIgnoreCase)
+        && string.IsNullOrEmpty(output)
+    )
+)
 {
-    Console.WriteLine("Please provide valid command, input, and output format.");
+    Console.WriteLine(
+        "Please provide valid command, input, output (if outputFormat is ToFile), and output format."
+    );
     return;
 }
 

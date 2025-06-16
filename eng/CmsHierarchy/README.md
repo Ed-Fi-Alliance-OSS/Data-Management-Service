@@ -60,7 +60,7 @@ dotnet run --no-launch-profile --command Transform --input input1.json;input2.js
 # To transform claims using one or more JSON files and print the result as JSON:
 dotnet run --no-launch-profile --command Transform --input input1.json;input2.json --outputFormat Json
 
-# To transform claims using one or more JSON files, remove NotImplementedAuth auht strategies and print the result as JSON:
+# To transform claims using one or more JSON files, remove NotImplementedAuth auth strategies and print the result as JSON:
 dotnet run --no-launch-profile --command Transform --input input1.json;input2.json --outputFormat Json --skipAuths NotImplementedAuth
 
 ```
