@@ -26,7 +26,7 @@ public class KeycloakTokenManager(
             var content = new FormUrlEncodedContent(contentList);
             string path =
                 $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
-            var response = await client.PostAsync(path, content);
+            using var response = await client.PostAsync(path, content);
             string responseString = await response.Content.ReadAsStringAsync();
 
             return response.StatusCode switch
