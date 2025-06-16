@@ -16,6 +16,7 @@ services:
       xpack.security.enabled: false
       xpack.security.transport.ssl.enabled: false
       xpack.security.http.ssl.enabled: false
+      ingest.geoip.downloader.enabled: false
     ports:
       - '127.0.0.1:${ELASTICSEARCH_ANALYZER_PORT:-9300}:9300'
       - '127.0.0.1:${ELASTICSEARCH_HTTP_PORT:-9200}:9200'

@@ -98,6 +98,7 @@ services:
       DISABLE_INSTALL_DEMO_CONFIG: true
       # disables security plugin entirely in OpenSearch by setting plugins.security.disabled: true in opensearch.yml
       DISABLE_SECURITY_PLUGIN: true
+      OPENSEARCH_INGEST_GEOIP_DOWNLOADER_ENABLED: false
     ports:
       - '127.0.0.1:${OPENSEARCH_ANALYZER_PORT:-9600}:9600' # required for Performance Analyzer
       - '127.0.0.1:${OPENSEARCH_HTTP_PORT:-9200}:9200'
