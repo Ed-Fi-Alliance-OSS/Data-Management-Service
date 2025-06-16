@@ -15,14 +15,11 @@ public class KeycloakTokenManager(
     ILogger<KeycloakTokenManager> logger,
     IHttpClientFactory httpClientFactory) : ITokenManager
 {
-    private readonly TimeSpan _defaultTimeout = TimeSpan.FromSeconds(30);
-
     public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
     {
         try
         {
             var client = httpClientFactory.CreateClient();
-            client.Timeout = _defaultTimeout;
 
             var contentList = credentials.ToList();
 

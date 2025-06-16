@@ -62,7 +62,19 @@ public static class WebApplicationBuilderExtensions
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
-        webApplicationBuilder.Services.AddHttpClient();
+        IConfiguration config = webApplicationBuilder.Configuration;
+        var settings = config.GetSection("AppSettings");
+        var appSettings = config.GetSection("AppSettings").Get<AppSettings>();
+        if (appSettings == null)
+        {
+            logger.Error("Error reading appSettings");
+            throw new InvalidOperationException("Unable to read appSettings");
+        }
+
+        webApplicationBuilder.Services.AddHttpClient("KeycloakClient", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+        });
 
         webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
@@ -173,14 +185,6 @@ public static class WebApplicationBuilderExtensions
 
         webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
-        var settings = config.GetSection("AppSettings");
-        var appSettings = config.GetSection("AppSettings").Get<AppSettings>();
-        if (appSettings == null)
-        {
-            logger.Error("Error reading appSettings");
-            throw new InvalidOperationException("Unable to read appSettings");
-        }
-
         if (
             string.Equals(
                 webApplicationBuilder.Configuration.GetSection("AppSettings:IdentityProvider").Value,
@@ -193,8 +197,7 @@ public static class WebApplicationBuilderExtensions
                 identitySettings.Authority,
                 identitySettings.ClientId,
                 identitySettings.ClientSecret,
-                identitySettings.RoleClaimType,
-                appSettings.TokenRequestTimeoutSeconds
+                identitySettings.RoleClaimType
             );
         }
     }

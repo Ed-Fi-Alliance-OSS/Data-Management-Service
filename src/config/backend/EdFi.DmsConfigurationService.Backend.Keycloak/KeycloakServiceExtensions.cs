@@ -18,15 +18,14 @@ public static class KeycloakServiceExtensions
         string Authority,
         string ClientId,
         string ClientSecret,
-        string RoleClaimType,
-        int TokenRequestTimeoutSeconds
+        string RoleClaimType
     )
     {
         var uri = new Uri(Authority);
         var baseUrl = uri.GetLeftPart(UriPartial.Authority);
         var realm = Authority.TrimEnd('/').Split('/').Last();
 
-        services.AddScoped(x => new KeycloakContext(baseUrl, realm, ClientId, ClientSecret, RoleClaimType, TokenRequestTimeoutSeconds));
+        services.AddScoped(x => new KeycloakContext(baseUrl, realm, ClientId, ClientSecret, RoleClaimType));
 
         services.AddTransient<IClientRepository, KeycloakClientRepository>();
         services.AddTransient<ITokenManager, KeycloakTokenManager>();
