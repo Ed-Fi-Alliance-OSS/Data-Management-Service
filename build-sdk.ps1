@@ -72,7 +72,7 @@ param(
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
 
-$packageName = "EdFi.Api.Sdk"
+$packageName = "EdFi.OdsApi.Sdk"
 $solutionRoot = "$PSScriptRoot/$OutputFolder"
 $projectPath = "$solutionRoot/src/$packageName/$packageName.csproj"
 $nuspecPath = "$PSScriptRoot/eng/sdkGen/$packageName.nuspec"
@@ -86,14 +86,17 @@ function DownloadCodeGen {
 function GenerateSdk {
     param (
         [string]
-        $Namespace,
+        $ApiPackage,
+
+        [string]
+        $ModelPackage,
 
         [string]
         $Endpoint
     )
 
     &java -jar openApi-codegen-cli.jar generate -g csharp -i $Endpoint `
-    --api-package Api.$Namespace --model-package Models.$Namespace -o $OutputFolder `
+    --api-package $ApiPackage --model-package $ModelPackage -o $OutputFolder `
     --additional-properties "packageName=$packageName,targetFramework=net8.0,netCoreProjectFile=true" `
     --global-property modelTests=false --global-property apiTests=false --global-property apiDocs=false --global-property modelDocs=false --skip-validate-spec
 }
@@ -154,9 +157,9 @@ function PushPackage {
 function Invoke-BuildCore {
     Invoke-Step { DownloadCodeGen }
 
-    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
+    Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
 
-    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
+    Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
 
     Invoke-Step { BuildSdk }
 }
