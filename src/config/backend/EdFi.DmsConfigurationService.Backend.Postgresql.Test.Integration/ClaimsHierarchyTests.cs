@@ -21,6 +21,12 @@ public class ClaimsHierarchyTests : DatabaseTest
         NullLogger<ClaimsHierarchyRepository>.Instance
     );
 
+    [SetUp]
+    public async Task Setup()
+    {
+        await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy(clearOnly: true);
+    }
+
     [Test]
     public async Task Should_return_failure_when_no_hierarchy_exists()
     {

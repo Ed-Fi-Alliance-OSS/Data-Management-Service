@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Net;
 using System.Security.Claims;
 using System.Text;
@@ -21,7 +22,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
-using Claim = EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy.Claim;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -123,7 +123,7 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
 
-            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
                 .Returns(
                     new ClaimsHierarchyGetResult.Success(
                         [new() { Name = "Testing-POST-for-ClaimSet" }],
@@ -215,7 +215,7 @@ public class ClaimSetModuleTests
         [SetUp]
         public void Setup()
         {
-            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
                 .Returns(
                     new ClaimsHierarchyGetResult.Success(
                         [new() { Name = "Test ResourceClaim" }],
@@ -571,7 +571,7 @@ public class ClaimSetModuleTests
             A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
                 .Returns(new ClaimSetImportResult.FailureUnknown(""));
 
-            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
                 .Returns(
                     new ClaimsHierarchyGetResult.Success(
                         [
@@ -693,7 +693,7 @@ public class ClaimSetModuleTests
         {
             A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
 
-            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
                 .Returns(
                     new ClaimsHierarchyGetResult.Success([new() { Name = "Test-Duplicate" }], DateTime.Now)
                 );

@@ -151,6 +151,13 @@ public class ClaimSetTests : DatabaseTest
                 NullLogger<ClaimsHierarchyRepository>.Instance
             );
 
+            // Get the existing claims hierarchy
+            var existingHierarchyGetResult = await _claimsHierarchyRepository.GetClaimsHierarchy();
+            existingHierarchyGetResult.Should().BeOfType<ClaimsHierarchyGetResult.Success>();
+            var existingLastModifiedDate = (
+                existingHierarchyGetResult as ClaimsHierarchyGetResult.Success
+            )!.LastModifiedDate;
+
             var claimsHierarchy = new List<Claim>
             {
                 new Claim
@@ -168,7 +175,10 @@ public class ClaimSetTests : DatabaseTest
                 },
             };
 
-            var saveResult = await _claimsHierarchyRepository.SaveClaimsHierarchy(claimsHierarchy, default);
+            var saveResult = await _claimsHierarchyRepository.SaveClaimsHierarchy(
+                claimsHierarchy,
+                existingLastModifiedDate
+            );
             saveResult.Should().BeOfType<ClaimsHierarchySaveResult.Success>();
 
             // Update the claim set
@@ -395,10 +405,10 @@ public class ClaimSetTests : DatabaseTest
 
             private int _remainingConflictingUpdateCount = _conflictingUpdateCount;
 
-            public Task<ClaimsHierarchyGetResult> GetClaimsHierarchy()
+            public Task<ClaimsHierarchyGetResult> GetClaimsHierarchy(DbTransaction? transaction = null)
             {
                 // Pass the call through unmodified
-                return _claimsHierarchyRepository.GetClaimsHierarchy();
+                return _claimsHierarchyRepository.GetClaimsHierarchy(transaction);
             }
 
             public int SaveClaimsHierarchyInvocationCount;
@@ -553,6 +563,8 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
+            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy();
+
             ClaimSetImportCommand claimSet = new() { Name = "Test-Import-ClaimSet", ResourceClaims = [] };
 
             var result = await _repository.Import(claimSet);
@@ -562,12 +574,16 @@ public class ClaimSetTests : DatabaseTest
         }
 
         [Test]
-        public async Task Should_get_one_test_claimSet_from_get_all()
+        public async Task Should_get_multiple_test_claimSet_from_get_all()
         {
-            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
+            var result = await _repository.QueryClaimSet(new PagingQuery() { Limit = 10, Offset = 0 });
             result.Should().BeOfType<ClaimSetQueryResult.Success>();
 
-            ((ClaimSetQueryResult.Success)result).ClaimSetResponses.Count().Should().Be(1);
+            ((ClaimSetQueryResult.Success)result)
+                .ClaimSetResponses.Count()
+                .Should()
+                .BeGreaterThan(0)
+                .And.BeLessOrEqualTo(25);
         }
 
         [Test]

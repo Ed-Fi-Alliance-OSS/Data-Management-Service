@@ -13,7 +13,7 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IClaimsHierarchyRepository
 {
-    Task<ClaimsHierarchyGetResult> GetClaimsHierarchy();
+    Task<ClaimsHierarchyGetResult> GetClaimsHierarchy(DbTransaction? transaction = null);
 
     Task<ClaimsHierarchySaveResult> SaveClaimsHierarchy(
         List<Claim> claimsHierarchy,

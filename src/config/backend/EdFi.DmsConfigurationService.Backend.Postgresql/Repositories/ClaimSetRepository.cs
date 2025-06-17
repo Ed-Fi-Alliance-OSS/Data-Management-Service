@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
@@ -515,46 +516,51 @@ public class ClaimSetRepository(
                 transaction
             );
 
-            if (existingClaimSetId == null)
+            if (existingClaimSetId != null)
             {
-                // Insert new claim set if it does not exist
-                string insertSql = """
-                        INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
-                        VALUES(@ClaimSetName, @IsSystemReserved)
-                        RETURNING Id;
-                    """;
-                var parameters = new { ClaimSetName = command.Name, IsSystemReserved = false };
-                existingClaimSetId = await connection.ExecuteScalarAsync<long>(
-                    insertSql,
-                    parameters,
-                    transaction
-                );
+                return new ClaimSetImportResult.FailureDuplicateClaimSetName();
             }
 
-            // Load the JSON hierarchy
-            string loadHierarchySql = """
-                    SELECT Hierarchy::jsonb, LastModifiedDate
-                    FROM dmscs.ClaimsHierarchy;
+            // Insert new claim set
+            string insertSql = """
+                    INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
+                    VALUES(@ClaimSetName, @IsSystemReserved)
+                    RETURNING Id;
                 """;
-            var hierarchyData = await connection.QueryAsync<(
-                string HierarchyJson,
-                DateTime LastModifiedDate
-            )>(loadHierarchySql, transaction: transaction);
+            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = false };
+            existingClaimSetId = await connection.ExecuteScalarAsync<long>(
+                insertSql,
+                parameters,
+                transaction
+            );
 
-            if (hierarchyData.Count() != 1)
+            var claimsHierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy(transaction);
+
+            var claimImportResult = claimsHierarchyResult switch
             {
-                return new ClaimSetImportResult.FailureUnknown(
-                    $"Exactly one JSON hierarchy record was expected but {hierarchyData.Count()} were found."
-                );
+                ClaimsHierarchyGetResult.FailureHierarchyNotFound => new ClaimSetImportResult.FailureUnknown(
+                    "Claims hierarchy not found."
+                ),
+                ClaimsHierarchyGetResult.FailureMultipleHierarchiesFound =>
+                    new ClaimSetImportResult.FailureUnknown(
+                        "Multiple claims hierarchies found when exactly one was expected."
+                    ),
+                ClaimsHierarchyGetResult.FailureUnknown failureUnknown =>
+                    new ClaimSetImportResult.FailureUnknown(failureUnknown.FailureMessage),
+                ClaimsHierarchyGetResult.Success => null,
+                _ => throw new NotSupportedException(
+                    $"'{claimsHierarchyResult.GetType().Name}' is not a handled {nameof(claimsHierarchyResult)}."
+                ),
+            };
+
+            if (claimImportResult != null)
+            {
+                return claimImportResult;
             }
 
-            var (hierarchyJson, lastModifiedDate) = hierarchyData.Single();
-            var claimsHierarchy = JsonSerializer.Deserialize<List<Claim>>(hierarchyJson);
-
-            if (claimsHierarchy == null)
-            {
-                return new ClaimSetImportResult.FailureUnknown("Unable to load JSON hierarchy.");
-            }
+            var success = claimsHierarchyResult as ClaimsHierarchyGetResult.Success;
+            var claimsHierarchy = success!.Claims;
+            var lastModifiedDate = success!.LastModifiedDate;
 
             // Remove existing metadata for the claim set
             claimsHierarchyManager.RemoveClaimSetFromHierarchy(command.Name, claimsHierarchy);
@@ -564,19 +570,31 @@ public class ClaimSetRepository(
 
             // Save the JSON hierarchy with optimistic locking
             var retryPolicy = Policy
-                .Handle<Exception>()
+                .Handle<DBConcurrencyException>()
                 .RetryAsync(
                     3,
                     async (exception, retryCount) =>
                     {
                         logger.LogWarning("Retrying save due to conflict. Attempt {RetryCount}.", retryCount);
+
                         // Reload hierarchy and reapply changes
-                        hierarchyData = await connection.QueryAsync<(
-                            string HierarchyJson,
-                            DateTime LastModifiedDate
-                        )>(loadHierarchySql, transaction: transaction);
-                        (hierarchyJson, lastModifiedDate) = hierarchyData.Single();
-                        claimsHierarchy = JsonSerializer.Deserialize<List<Claim>>(hierarchyJson);
+                        claimsHierarchyResult = (
+                            await claimsHierarchyRepository.GetClaimsHierarchy(transaction)
+                        );
+
+                        success = claimsHierarchyResult as ClaimsHierarchyGetResult.Success;
+
+                        if (success == null)
+                        {
+                            throw new Exception(
+                                "An unexpected error occurred while reloading the claims hierarchy due to a concurrency check failure."
+                            );
+                        }
+
+                        claimsHierarchy = success.Claims;
+                        lastModifiedDate = success.LastModifiedDate;
+
+                        // Apply the changes to the refreshed claims hierarchy
                         claimsHierarchyManager.RemoveClaimSetFromHierarchy(command.Name, claimsHierarchy!);
                         claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(command, claimsHierarchy!);
                     }
@@ -584,25 +602,22 @@ public class ClaimSetRepository(
 
             await retryPolicy.ExecuteAsync(async () =>
             {
-                string saveHierarchySql = """
-                    UPDATE dmscs.ClaimsHierarchy
-                    SET Hierarchy = @HierarchyJson::jsonb, LastModifiedDate = NOW()
-                    WHERE LastModifiedDate = @LastModifiedDate;
-                """;
-                var saveParameters = new
-                {
-                    HierarchyJson = JsonSerializer.Serialize(claimsHierarchy),
-                    LastModifiedDate = lastModifiedDate,
-                };
-                int affectedRows = await connection.ExecuteAsync(
-                    saveHierarchySql,
-                    saveParameters,
+                var saveResults = await claimsHierarchyRepository.SaveClaimsHierarchy(
+                    claimsHierarchy,
+                    lastModifiedDate,
                     transaction
                 );
 
-                if (affectedRows == 0)
+                if (saveResults is ClaimsHierarchySaveResult.FailureMultiUserConflict)
                 {
-                    throw new Exception("Optimistic concurrency failure.");
+                    throw new DBConcurrencyException("Optimistic lock concurrency failure.");
+                }
+
+                if (saveResults is not ClaimsHierarchySaveResult.Success)
+                {
+                    throw new Exception(
+                        "An unexpected error occurred while saving reloading the claims hierarchy due to a concurrency check failure."
+                    );
                 }
             });
 
