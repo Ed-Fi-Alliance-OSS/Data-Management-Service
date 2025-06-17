@@ -62,7 +62,18 @@ public static class WebApplicationBuilderExtensions
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
-        webApplicationBuilder.Services.AddHttpClient();
+        var settingsSection = webApplicationBuilder.Configuration.GetSection("AppSettings");
+        var appSettings = settingsSection.Get<AppSettings>();
+        if (appSettings == null)
+        {
+            logger.Error("Error reading appSettings");
+            throw new InvalidOperationException("Unable to read appSettings");
+        }
+
+        webApplicationBuilder.Services.AddHttpClient("KeycloakClient", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+        });
 
         webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();

@@ -9,6 +9,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 
 public class AppSettings
 {
+    public int TokenRequestTimeoutSeconds { get; set; }
     public bool DeployDatabaseOnStartup { get; set; }
     public required string Datastore { get; set; }
     public required string IdentityProvider { get; set; }

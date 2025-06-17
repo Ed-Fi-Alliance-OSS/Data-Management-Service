@@ -4,24 +4,29 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using Keycloak.Net.Models.Clients;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
-public class KeycloakTokenManager(KeycloakContext keycloakContext, ILogger<KeycloakTokenManager> logger) : ITokenManager
+public class KeycloakTokenManager(
+    KeycloakContext keycloakContext,
+    ILogger<KeycloakTokenManager> logger,
+    IHttpClientFactory httpClientFactory) : ITokenManager
 {
     public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
     {
         try
         {
-            using var client = new HttpClient();
+            var client = httpClientFactory.CreateClient("KeycloakClient");
 
             var contentList = credentials.ToList();
 
             var content = new FormUrlEncodedContent(contentList);
             string path =
                 $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
-            var response = await client.PostAsync(path, content);
+            using var response = await client.PostAsync(path, content);
             string responseString = await response.Content.ReadAsStringAsync();
 
             return response.StatusCode switch
