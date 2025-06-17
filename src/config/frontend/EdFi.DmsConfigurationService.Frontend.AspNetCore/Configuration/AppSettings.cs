@@ -9,6 +9,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 
 public class AppSettings
 {
+    public int TokenRequestTimeoutSeconds { get; set; }
     public bool DeployDatabaseOnStartup { get; set; }
     public required string Datastore { get; set; }
     public required string IdentityProvider { get; set; }
@@ -41,9 +42,7 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         // We only support keycloak for now
         if (!options.IdentityProvider.Equals("keycloak", StringComparison.CurrentCultureIgnoreCase))
         {
-            return ValidateOptionsResult.Fail(
-                "AppSettings value IdentityProvider must be one of: keycloak"
-            );
+            return ValidateOptionsResult.Fail("AppSettings value IdentityProvider must be one of: keycloak");
         }
 
         return ValidateOptionsResult.Success;
