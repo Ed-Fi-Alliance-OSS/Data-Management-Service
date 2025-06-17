@@ -10,5 +10,5 @@ internal enum RequestMethod
     POST,
     GET,
     PUT,
-    DELETE
+    DELETE,
 }

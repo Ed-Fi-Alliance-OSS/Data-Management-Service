@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Utilities;
@@ -17,6 +18,63 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class DuplicateReferenceValidationMiddleware(ILogger logger) : IPipelineStep
 {
+    /// <summary>
+    /// Extracts parent paths from ArrayUniquenessConstraints
+    /// to determine which reference arrays are already covered by uniqueness constraints
+    /// </summary>
+    /// <param name="arrayUniquenessConstraints">The array uniqueness constraints from ResourceSchema</param>
+    /// <returns>A HashSet of parent paths that are covered by uniqueness constraints</returns>
+    private static HashSet<string> GetUniquenessParentPaths(
+        IReadOnlyList<ArrayUniquenessConstraint> arrayUniquenessConstraints
+    )
+    {
+        var parentPaths = new HashSet<string>();
+
+        foreach (var constraint in arrayUniquenessConstraints)
+        {
+            // Add paths from simple constraints
+            if (constraint.Paths != null)
+            {
+                var simplePaths = constraint.Paths.Select(jsonPath =>
+                {
+                    int lastDot = jsonPath.Value.LastIndexOf('.');
+                    return lastDot > 0 ? jsonPath.Value.Substring(0, lastDot) : jsonPath.Value;
+                });
+                foreach (var parentPath in simplePaths)
+                {
+                    parentPaths.Add(parentPath);
+                }
+            }
+
+            // Add paths from nested constraints
+            if (constraint.NestedConstraints != null)
+            {
+                foreach (var nestedConstraint in constraint.NestedConstraints)
+                {
+                    if (nestedConstraint.BasePath != null)
+                    {
+                        parentPaths.Add(nestedConstraint.BasePath.Value.Value);
+                    }
+
+                    if (nestedConstraint.Paths != null)
+                    {
+                        foreach (var jsonPath in nestedConstraint.Paths)
+                        {
+                            // For nested constraints, combine base path with relative path
+                            string? basePathValue = nestedConstraint.BasePath?.Value;
+                            string fullPath = basePathValue + "." + jsonPath.Value.TrimStart('$', '.');
+                            int lastDot = fullPath.LastIndexOf('.');
+                            string parentPath = lastDot > 0 ? fullPath.Substring(0, lastDot) : fullPath;
+                            parentPaths.Add(parentPath);
+                        }
+                    }
+                }
+            }
+        }
+
+        return parentPaths;
+    }
+
     public async Task Execute(PipelineContext context, Func<Task> next)
     {
         logger.LogDebug(
@@ -24,11 +82,11 @@ internal class DuplicateReferenceValidationMiddleware(ILogger logger) : IPipelin
             context.FrontendRequest.TraceId.Value
         );
 
-        var validationError = ValidateDuplicateReferences(context);
+        (string errorKey, string message)? validationError = ValidateDuplicateReferences(context);
         if (validationError.HasValue)
         {
             var (errorKey, message) = validationError.Value;
-            var validationErrors = new Dictionary<string, string[]> { [errorKey] = [message] };
+            Dictionary<string, string[]> validationErrors = new() { [errorKey] = [message] };
 
             context.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
                 validationErrors,
@@ -48,13 +106,11 @@ internal class DuplicateReferenceValidationMiddleware(ILogger logger) : IPipelin
     /// <summary>
     /// Validates all document reference arrays for duplicate ReferentialIds
     /// </summary>
-    /// <param name="context">The pipeline context containing document and schema information</param>
     /// <returns>A validation error tuple if duplicates are found, null otherwise</returns>
     private static (string errorKey, string message)? ValidateDuplicateReferences(PipelineContext context)
     {
         // Get paths already handled by ArrayUniquenessConstraints to avoid double-validation
-        // This replicates the exact logic from the original middleware (lines 57-65)
-        var uniquenessParentPaths = ArrayPathHelper.GetUniquenessParentPaths(
+        HashSet<string> uniquenessParentPaths = GetUniquenessParentPaths(
             context.ResourceSchema.ArrayUniquenessConstraints
         );
 
@@ -68,7 +124,7 @@ internal class DuplicateReferenceValidationMiddleware(ILogger logger) : IPipelin
 
             if (referenceArray.DocumentReferences.Length > 1)
             {
-                var duplicateIndex = FindDuplicateReferenceIndex(referenceArray.DocumentReferences);
+                int duplicateIndex = FindDuplicateReferenceIndex(referenceArray.DocumentReferences);
                 if (duplicateIndex >= 0)
                 {
                     return ValidationErrorFactory.BuildValidationError(
@@ -84,14 +140,13 @@ internal class DuplicateReferenceValidationMiddleware(ILogger logger) : IPipelin
 
     /// <summary>
     /// Finds the index of the first duplicate ReferentialId in a document reference array
-    /// Uses HashSet for O(n) performance instead of O(n²) nested loop comparison
     /// </summary>
     /// <param name="documentReferences">Array of document references to check</param>
     /// <returns>Index of the first duplicate found, or -1 if no duplicates exist</returns>
     private static int FindDuplicateReferenceIndex(DocumentReference[] documentReferences)
     {
         // Use HashSet for O(n) duplicate detection instead of O(n²)
-        var seenIds = new HashSet<string>();
+        HashSet<string> seenIds = [];
 
         for (int i = 0; i < documentReferences.Length; i++)
         {

@@ -5,7 +5,10 @@
       "name": "dotnet-format-staged-files",
       "command": "dotnet",
       "args": [
+        "tool",
+        "run",
         "csharpier",
+        "format",
         "${staged}"
       ],
       "include": [

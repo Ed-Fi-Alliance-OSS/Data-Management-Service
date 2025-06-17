@@ -121,8 +121,8 @@ public class ConfigurationServiceTokenHandlerTests
             SetConfigurationServiceTokenHandler(HttpStatusCode.BadRequest);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(
-                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            Assert.ThrowsAsync<HttpRequestException>(async () =>
+                await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
         }
 
@@ -133,8 +133,8 @@ public class ConfigurationServiceTokenHandlerTests
             SetConfigurationServiceTokenHandler(HttpStatusCode.Unauthorized);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(
-                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            Assert.ThrowsAsync<HttpRequestException>(async () =>
+                await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
         }
 
@@ -145,8 +145,8 @@ public class ConfigurationServiceTokenHandlerTests
             SetConfigurationServiceTokenHandler(HttpStatusCode.NotFound);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(
-                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            Assert.ThrowsAsync<HttpRequestException>(async () =>
+                await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
         }
 
@@ -157,8 +157,8 @@ public class ConfigurationServiceTokenHandlerTests
             SetConfigurationServiceTokenHandler(HttpStatusCode.Forbidden);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(
-                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            Assert.ThrowsAsync<HttpRequestException>(async () =>
+                await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
         }
 
@@ -169,8 +169,8 @@ public class ConfigurationServiceTokenHandlerTests
             SetConfigurationServiceTokenHandler(HttpStatusCode.InternalServerError);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(
-                async () => await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
+            Assert.ThrowsAsync<HttpRequestException>(async () =>
+                await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
         }
 

@@ -55,8 +55,8 @@ public class RelationshipsWithEdOrgsOnlyFiltersProviderTests
             var clientAuthorizations = new ClientAuthorizations("", "", [], []);
 
             // Act & Assert
-            var exception = Assert.Throws<AuthorizationException>(
-                () => filtersProvider.GetFilters(clientAuthorizations)
+            var exception = Assert.Throws<AuthorizationException>(() =>
+                filtersProvider.GetFilters(clientAuthorizations)
             );
             exception.Should().NotBeNull();
             exception!

@@ -46,25 +46,4 @@ internal static class ArrayPathHelper
         }
         return fullPath;
     }
-
-    /// <summary>
-    /// Extracts parent paths from ArrayUniquenessConstraints for overlap detection
-    /// This method replicates the exact logic from the original middleware (lines 57-65)
-    /// to determine which reference arrays are already covered by uniqueness constraints
-    /// </summary>
-    /// <param name="arrayUniquenessConstraints">The array uniqueness constraints from ResourceSchema</param>
-    /// <returns>A HashSet of parent paths that are covered by uniqueness constraints</returns>
-    public static HashSet<string> GetUniquenessParentPaths(
-        IReadOnlyList<IReadOnlyList<JsonPath>> arrayUniquenessConstraints
-    )
-    {
-        return arrayUniquenessConstraints
-            .SelectMany(group => group)
-            .Select(jsonPath =>
-            {
-                int lastDot = jsonPath.Value.LastIndexOf('.');
-                return lastDot > 0 ? jsonPath.Value.Substring(0, lastDot) : jsonPath.Value;
-            })
-            .ToHashSet();
-    }
 }

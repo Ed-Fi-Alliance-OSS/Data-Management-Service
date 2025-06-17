@@ -60,8 +60,5 @@ internal record ReferencePaths(
 /// <summary>
 /// A JsonPath for a scalar MetaEd property
 /// </summary>
-internal record ScalarPaths(
-    Dictionary<string, string> paths,
-    string[] pathOrder,
-    bool isReference
-) : DocumentPaths(paths, pathOrder, isReference);
+internal record ScalarPaths(Dictionary<string, string> paths, string[] pathOrder, bool isReference)
+    : DocumentPaths(paths, pathOrder, isReference);

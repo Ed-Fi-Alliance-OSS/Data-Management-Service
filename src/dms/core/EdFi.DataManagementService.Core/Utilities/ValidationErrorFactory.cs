@@ -22,6 +22,13 @@ internal static class ValidationErrorFactory
     /// <returns>A tuple containing the error key and error message</returns>
     public static (string errorKey, string message) BuildValidationError(string arrayPath, int index)
     {
+        if (!arrayPath.Contains("[*]"))
+        {
+            throw new InvalidOperationException(
+                $"Array validation failure: Array path {arrayPath} in ApiSchema.json must contain '[*]' to identify the array."
+            );
+        }
+
         string errorKey = arrayPath.Substring(0, arrayPath.IndexOf("[*]", StringComparison.Ordinal));
         string[] parts = errorKey.Split('.');
         string shortArrayName = parts[^1];

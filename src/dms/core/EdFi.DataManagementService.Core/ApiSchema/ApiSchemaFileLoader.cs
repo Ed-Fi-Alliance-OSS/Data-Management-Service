@@ -127,13 +127,16 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
         }
         else
         {
-
             JsonNode coreApiSchemaNode = new JsonObject();
             JsonNode[] extensionApiSchemaNodes = Array.Empty<JsonNode>();
 
             var projectDirectory = Path.GetFullPath(AppDomain.CurrentDomain.BaseDirectory);
             string apiSchemaPath = Path.GetFullPath(projectDirectory);
-            var assemblies = Directory.GetFiles(apiSchemaPath, "*.ApiSchema.dll", SearchOption.AllDirectories);
+            var assemblies = Directory.GetFiles(
+                apiSchemaPath,
+                "*.ApiSchema.dll",
+                SearchOption.AllDirectories
+            );
             var apiSchemaAssemblyLoadContext = new ApiSchemaAssemblyLoadContext();
             foreach (var assemblyPath in assemblies)
             {
@@ -153,14 +156,22 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
 
                 if (coreSchemaResourceName != null)
                 {
-                    _logger.LogInformation("Loading {CoreSchemaResourceName} from assembly", coreSchemaResourceName);
+                    _logger.LogInformation(
+                        "Loading {CoreSchemaResourceName} from assembly",
+                        coreSchemaResourceName
+                    );
                     coreApiSchemaNode = LoadFromAssembly(coreSchemaResourceName, assembly);
                 }
                 else if (extensionSchemaResourceName != null)
                 {
-                    _logger.LogInformation("Loading {ExtensionSchemaResourceName} from assembly", extensionSchemaResourceName);
+                    _logger.LogInformation(
+                        "Loading {ExtensionSchemaResourceName} from assembly",
+                        extensionSchemaResourceName
+                    );
                     var extensionNodes = LoadFromAssembly(extensionSchemaResourceName, assembly);
-                    extensionApiSchemaNodes = extensionApiSchemaNodes.Concat(new[] { extensionNodes }).ToArray();
+                    extensionApiSchemaNodes = extensionApiSchemaNodes
+                        .Concat(new[] { extensionNodes })
+                        .ToArray();
                 }
             }
             return new ApiSchemaNodes(coreApiSchemaNode, extensionApiSchemaNodes);
@@ -180,6 +191,7 @@ internal class ApiSchemaFileLoader(ILogger<ApiSchemaFileLoader> _logger, IOption
     /// </summary>
     private sealed class ApiSchemaAssemblyLoadContext : AssemblyLoadContext
     {
-        public ApiSchemaAssemblyLoadContext() : base(isCollectible: true) { }
+        public ApiSchemaAssemblyLoadContext()
+            : base(isCollectible: true) { }
     }
 }

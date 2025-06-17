@@ -89,7 +89,8 @@ internal class ApiService(
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
-                new DisallowDuplicateReferencesMiddleware(_logger),
+                new DuplicateReferenceValidationMiddleware(_logger),
+                new ArrayUniquenessValidationMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
@@ -110,55 +111,53 @@ internal class ApiService(
     /// <summary>
     /// The pipeline steps to satisfy a get by id request
     /// </summary>
-    private readonly Lazy<PipelineProvider> _getByIdSteps = new(
-        () =>
-            new(
-                [
-                    new CoreExceptionLoggingMiddleware(_logger),
-                    new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
-                    new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
-                    new ParsePathMiddleware(_logger),
-                    new ValidateEndpointMiddleware(_logger),
-                    new BuildResourceInfoMiddleware(
-                        _logger,
-                        _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                    ),
-                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
-                    new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                    new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-                    new GetByIdHandler(
-                        _documentStoreRepository,
-                        _logger,
-                        _resiliencePipeline,
-                        _authorizationServiceFactory
-                    ),
-                ]
-            )
+    private readonly Lazy<PipelineProvider> _getByIdSteps = new(() =>
+        new(
+            [
+                new CoreExceptionLoggingMiddleware(_logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ParsePathMiddleware(_logger),
+                new ValidateEndpointMiddleware(_logger),
+                new BuildResourceInfoMiddleware(
+                    _logger,
+                    _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+                ),
+                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
+                new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+                new ProvideAuthorizationSecurableInfoMiddleware(_logger),
+                new GetByIdHandler(
+                    _documentStoreRepository,
+                    _logger,
+                    _resiliencePipeline,
+                    _authorizationServiceFactory
+                ),
+            ]
+        )
     );
 
     /// <summary>
     /// The pipeline steps to satisfy a query request
     /// </summary>
-    private readonly Lazy<PipelineProvider> _querySteps = new(
-        () =>
-            new(
-                [
-                    new CoreExceptionLoggingMiddleware(_logger),
-                    new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
-                    new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
-                    new ParsePathMiddleware(_logger),
-                    new ValidateEndpointMiddleware(_logger),
-                    new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-                    new BuildResourceInfoMiddleware(
-                        _logger,
-                        _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                    ),
-                    new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
-                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
-                    new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                    new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
-                ]
-            )
+    private readonly Lazy<PipelineProvider> _querySteps = new(() =>
+        new(
+            [
+                new CoreExceptionLoggingMiddleware(_logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ParsePathMiddleware(_logger),
+                new ValidateEndpointMiddleware(_logger),
+                new ProvideAuthorizationSecurableInfoMiddleware(_logger),
+                new BuildResourceInfoMiddleware(
+                    _logger,
+                    _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+                ),
+                new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
+                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
+                new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+                new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
+            ]
+        )
     );
 
     /// <summary>
@@ -205,7 +204,8 @@ internal class ApiService(
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
-                new DisallowDuplicateReferencesMiddleware(_logger),
+                new DuplicateReferenceValidationMiddleware(_logger),
+                new ArrayUniquenessValidationMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
@@ -225,31 +225,30 @@ internal class ApiService(
     /// <summary>
     /// The pipeline steps to satisfy a delete by id request
     /// </summary>
-    private readonly Lazy<PipelineProvider> _deleteByIdSteps = new(
-        () =>
-            new(
-                [
-                    new CoreExceptionLoggingMiddleware(_logger),
-                    new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
-                    new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
-                    new ParsePathMiddleware(_logger),
-                    new ValidateEndpointMiddleware(_logger),
-                    new BuildResourceInfoMiddleware(
-                        _logger,
-                        _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                    ),
-                    new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
-                    new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                    new ProvideAuthorizationPathwayMiddleware(_logger),
-                    new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-                    new DeleteByIdHandler(
-                        _documentStoreRepository,
-                        _logger,
-                        _resiliencePipeline,
-                        _authorizationServiceFactory
-                    ),
-                ]
-            )
+    private readonly Lazy<PipelineProvider> _deleteByIdSteps = new(() =>
+        new(
+            [
+                new CoreExceptionLoggingMiddleware(_logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ParsePathMiddleware(_logger),
+                new ValidateEndpointMiddleware(_logger),
+                new BuildResourceInfoMiddleware(
+                    _logger,
+                    _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+                ),
+                new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
+                new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+                new ProvideAuthorizationPathwayMiddleware(_logger),
+                new ProvideAuthorizationSecurableInfoMiddleware(_logger),
+                new DeleteByIdHandler(
+                    _documentStoreRepository,
+                    _logger,
+                    _resiliencePipeline,
+                    _authorizationServiceFactory
+                ),
+            ]
+        )
     );
 
     /// <summary>

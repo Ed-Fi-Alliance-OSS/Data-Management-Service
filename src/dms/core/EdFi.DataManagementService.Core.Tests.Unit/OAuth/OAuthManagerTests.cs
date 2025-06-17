@@ -36,7 +36,12 @@ public class OAuthManagerTests
             await Act(authHeader, HttpStatusCode.OK, "{}", grantType);
         }
 
-        public async Task Act(string authHeader, HttpStatusCode responseCode, string responseMessage, string grantType = "")
+        public async Task Act(
+            string authHeader,
+            HttpStatusCode responseCode,
+            string responseMessage,
+            string grantType = ""
+        )
         {
             // Arrange
             var fakeResponse = A.Fake<HttpResponseMessage>();
@@ -48,7 +53,13 @@ public class OAuthManagerTests
             var system = new OAuthManager(_logger);
 
             // Act
-            _response = await system.GetAccessTokenAsync(_httpClient, grantType, authHeader, DestinationUri, TraceId);
+            _response = await system.GetAccessTokenAsync(
+                _httpClient,
+                grantType,
+                authHeader,
+                DestinationUri,
+                TraceId
+            );
         }
 
         public async Task ActWithException(string message)
@@ -89,15 +100,14 @@ public class OAuthManagerTests
             [Test]
             public void Then_The_Original_Header_Should_Have_Been_Forwarded()
             {
-                A.CallTo(
-                        () =>
-                            _httpClient.SendAsync(
-                                A<HttpRequestMessage>.That.Matches(m =>
-                                    m.Headers.Any(x =>
-                                        x.Key == "Authorization" && x.Value.Any(y => y == AuthHeader)
-                                    )
+                A.CallTo(() =>
+                        _httpClient.SendAsync(
+                            A<HttpRequestMessage>.That.Matches(m =>
+                                m.Headers.Any(x =>
+                                    x.Key == "Authorization" && x.Value.Any(y => y == AuthHeader)
                                 )
                             )
+                        )
                     )
                     .MustHaveHappened();
             }
@@ -105,16 +115,15 @@ public class OAuthManagerTests
             [Test]
             public void Then_The_Content_Type_Must_Have_Been_UrlEncoded()
             {
-                A.CallTo(
-                        () =>
-                            _httpClient.SendAsync(
-                                A<HttpRequestMessage>.That.Matches(m =>
-                                    m.Content != null
-                                    && m.Content.Headers.ContentType != null
-                                    && m.Content!.Headers.ContentType!.ToString()
-                                        == "application/x-www-form-urlencoded; charset=utf-8"
-                                )
+                A.CallTo(() =>
+                        _httpClient.SendAsync(
+                            A<HttpRequestMessage>.That.Matches(m =>
+                                m.Content != null
+                                && m.Content.Headers.ContentType != null
+                                && m.Content!.Headers.ContentType!.ToString()
+                                    == "application/x-www-form-urlencoded; charset=utf-8"
                             )
+                        )
                     )
                     .MustHaveHappened();
             }
@@ -122,13 +131,12 @@ public class OAuthManagerTests
             [Test]
             public void Then_The_Grant_Type_Must_Be_Client_Credentials()
             {
-                A.CallTo(
-                        () =>
-                            _httpClient.SendAsync(
-                                A<HttpRequestMessage>.That.Matches(m =>
-                                    m.Content!.ReadAsStringAsync().Result == "grant_type=client_credentials"
-                                )
+                A.CallTo(() =>
+                        _httpClient.SendAsync(
+                            A<HttpRequestMessage>.That.Matches(m =>
+                                m.Content!.ReadAsStringAsync().Result == "grant_type=client_credentials"
                             )
+                        )
                     )
                     .MustHaveHappened();
             }
@@ -136,13 +144,10 @@ public class OAuthManagerTests
             [Test]
             public void Then_The_Proxy_Request_Should_Go_To_The_Right_Uri()
             {
-                A.CallTo(
-                        () =>
-                            _httpClient.SendAsync(
-                                A<HttpRequestMessage>.That.Matches(m =>
-                                    m.RequestUri == new Uri(DestinationUri)
-                                )
-                            )
+                A.CallTo(() =>
+                        _httpClient.SendAsync(
+                            A<HttpRequestMessage>.That.Matches(m => m.RequestUri == new Uri(DestinationUri))
+                        )
                     )
                     .MustHaveHappened();
             }
@@ -162,15 +167,14 @@ public class OAuthManagerTests
             [Test]
             public void Then_The_Original_Header_Should_Have_Been_Forwarded()
             {
-                A.CallTo(
-                        () =>
-                            _httpClient.SendAsync(
-                                A<HttpRequestMessage>.That.Matches(m =>
-                                    m.Headers.Any(x =>
-                                        x.Key == "Authorization" && x.Value.Any(y => y == AuthHeader)
-                                    )
+                A.CallTo(() =>
+                        _httpClient.SendAsync(
+                            A<HttpRequestMessage>.That.Matches(m =>
+                                m.Headers.Any(x =>
+                                    x.Key == "Authorization" && x.Value.Any(y => y == AuthHeader)
                                 )
                             )
+                        )
                     )
                     .MustHaveHappened();
             }
@@ -230,8 +234,9 @@ public class OAuthManagerTests
     "error": "invalid_client",
     "error_description": "Invalid client or Invalid client credentials"
 }
-"""
-                , GrantType);
+""",
+                    GrantType
+                );
             }
 
             [Test]

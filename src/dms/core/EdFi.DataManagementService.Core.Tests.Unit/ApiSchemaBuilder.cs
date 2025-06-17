@@ -933,25 +933,16 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Add array uniqueness constraints to a resource.
+    /// Add array uniqueness constraint with simple paths to a resource.
     /// </summary>
-    /// Example for parameters:
-    /// [
-    ///   [
-    ///     "$.identificationCodes[*].assessmentIdentificationSystemDescriptor"
-    ///   ],
-    ///   [
+    /// <param name="paths">List of JSON paths for the constraint</param>
+    /// <example>
+    /// WithArrayUniquenessConstraint([
     ///     "$.performanceLevels[*].assessmentReportingMethodDescriptor",
     ///     "$.performanceLevels[*].performanceLevelDescriptor"
-    ///   ],
-    ///   [
-    ///     "$.periods[*].assessmentPeriodDescriptor"
-    ///   ],
-    ///   [
-    ///     "$.scores[*].assessmentReportingMethodDescriptor"
-    ///   ]
-    /// ]
-    public ApiSchemaBuilder WithArrayUniquenessConstraints(List<string> constraints)
+    /// ])
+    /// </example>
+    public ApiSchemaBuilder WithArrayUniquenessConstraint(List<string> paths)
     {
         if (_currentProjectNode == null)
         {
@@ -962,7 +953,10 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
-        var jsonArray = new JsonArray(constraints.Select(s => JsonValue.Create(s)!).ToArray());
+        var constraintObject = new JsonObject
+        {
+            ["paths"] = new JsonArray(paths.Select(p => JsonValue.Create(p)!).ToArray()),
+        };
 
         if (_currentResourceNode["arrayUniquenessConstraints"] is not JsonArray constraintsArray)
         {
@@ -970,7 +964,93 @@ public class ApiSchemaBuilder
             _currentResourceNode["arrayUniquenessConstraints"] = constraintsArray;
         }
 
-        constraintsArray.Add(jsonArray);
+        constraintsArray.Add(constraintObject);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Add array uniqueness constraint with nested constraints to a resource.
+    /// </summary>
+    /// <param name="nestedConstraints">List of nested constraint objects</param>
+    /// <example>
+    /// WithArrayUniquenessConstraintWithNested([
+    ///     new { basePath = "$.addresses[*]", paths = new[] { "$.periods[*].beginDate" } }
+    /// ])
+    /// </example>
+    public ApiSchemaBuilder WithArrayUniquenessConstraintWithNested(List<object> nestedConstraints)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        var nestedArray = new JsonArray();
+        foreach (var nested in nestedConstraints)
+        {
+            var nestedJson = JsonSerializer.SerializeToNode(nested)!;
+            nestedArray.Add(nestedJson);
+        }
+
+        var constraintObject = new JsonObject { ["nestedConstraints"] = nestedArray };
+
+        if (_currentResourceNode["arrayUniquenessConstraints"] is not JsonArray constraintsArray)
+        {
+            constraintsArray = new JsonArray();
+            _currentResourceNode["arrayUniquenessConstraints"] = constraintsArray;
+        }
+
+        constraintsArray.Add(constraintObject);
+
+        return this;
+    }
+
+    /// <summary>
+    /// Add a complex array uniqueness constraint with both paths and nested constraints.
+    /// </summary>
+    public ApiSchemaBuilder WithComplexArrayUniquenessConstraint(
+        List<string>? paths = null,
+        List<object>? nestedConstraints = null
+    )
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        var constraintObject = new JsonObject();
+
+        if (paths != null && paths.Count > 0)
+        {
+            constraintObject["paths"] = new JsonArray(paths.Select(p => JsonValue.Create(p)!).ToArray());
+        }
+
+        if (nestedConstraints != null && nestedConstraints.Count > 0)
+        {
+            var nestedArray = new JsonArray();
+            foreach (var nested in nestedConstraints)
+            {
+                var nestedJson = JsonSerializer.SerializeToNode(nested)!;
+                nestedArray.Add(nestedJson);
+            }
+            constraintObject["nestedConstraints"] = nestedArray;
+        }
+
+        if (_currentResourceNode["arrayUniquenessConstraints"] is not JsonArray constraintsArray)
+        {
+            constraintsArray = new JsonArray();
+            _currentResourceNode["arrayUniquenessConstraints"] = constraintsArray;
+        }
+
+        constraintsArray.Add(constraintObject);
 
         return this;
     }

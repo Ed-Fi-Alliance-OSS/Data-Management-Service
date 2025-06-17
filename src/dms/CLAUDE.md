@@ -263,3 +263,7 @@ This system is specifically designed for K-12 education data management, impleme
 This is an enterprise-grade educational data platform following modern .NET development practices
 with comprehensive testing, containerization, and DevOps workflows specifically designed for educational
 data privacy and compliance requirements.
+
+## Memories
+
+- Build a project with "dotnet build path/to/YourTestProject.csproj" and run a test with "dotnet test --filter FullyQualifiedName~Namespace.MyTests"

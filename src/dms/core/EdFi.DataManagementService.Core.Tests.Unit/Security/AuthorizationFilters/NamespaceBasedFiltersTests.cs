@@ -54,8 +54,8 @@ public class NamespaceBasedFiltersTests
             var clientAuthorizations = new ClientAuthorizations("", "", [], []);
 
             // Act & Assert
-            var exception = Assert.Throws<AuthorizationException>(
-                () => filters.GetFilters(clientAuthorizations)
+            var exception = Assert.Throws<AuthorizationException>(() =>
+                filters.GetFilters(clientAuthorizations)
             );
             exception.Should().NotBeNull();
             exception!
