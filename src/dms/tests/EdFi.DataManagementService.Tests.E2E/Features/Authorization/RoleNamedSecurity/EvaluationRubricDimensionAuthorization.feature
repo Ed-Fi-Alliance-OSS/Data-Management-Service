@@ -2,10 +2,6 @@ Feature: EvaluationRubricDimension Authorization
 
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
-              And the system has these descriptors
-                  | descriptorValue                                                |
-                  | uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year  |
-                  | uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey |
               And the system has these "localEducationAgencies"
                   | localEducationAgencyId | nameOfInstitution | categories                                                                                                          | localEducationAgencyCategoryDescriptor                     |
                   | 255901                 | Test LEA          | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC |

@@ -2,9 +2,6 @@ Feature: DisciplineAction Authorization
 
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
-              And the system has these descriptors
-                  | descriptorValue                                           |
-                  | uri://ed-fi.org/DisciplineDescriptor#in school suspension |
               And the system has these "localEducationAgencies"
                   | localEducationAgencyId | nameOfInstitution | categories                                                                                                          | localEducationAgencyCategoryDescriptor                     |
                   | 255901                 | Test LEA          | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC |
@@ -22,8 +19,8 @@ Feature: DisciplineAction Authorization
                   | incidentIdentifier | incidentDate | schoolReference         |
                   | "1"                | 2024-01-25   | {"schoolId": 255901001} |
               And the system has these "disciplineActions"
-                  | _storeResultingIdInVariable | disciplineActionIdentifier | disciplineDate | responsibilitySchoolReference | assignmentSchoolReference | studentReference          | studentDisciplineIncidentAssociations                                                                                              | disciplines                                                                               |
-                  | disciplineActionId          | TEST-001                   | 2022-02-09     | {"schoolId": 255901001}       | {"schoolId": 255901044}   | {"studentUniqueId": "61"} | [{ "studentDisciplineIncidentAssociationReference": {"studentUniqueId": "61", "incidentIdentifier": "1", "schoolId": 255901001} }] | [{ "disciplineDescriptor": "uri://ed-fi.org/DisciplineDescriptor#In School Suspension" }] |
+                  | _storeResultingIdInVariable | disciplineActionIdentifier | disciplineDate | responsibilitySchoolReference | assignmentSchoolReference | studentReference          | disciplines                                                                               |
+                  | disciplineActionId          | TEST-001                   | 2022-02-09     | {"schoolId": 255901001}       | {"schoolId": 255901044}   | {"studentUniqueId": "61"} | [{ "disciplineDescriptor": "uri://ed-fi.org/DisciplineDescriptor#In School Suspension" }] |
 
     Rule: When the client is authorized
         Background:
@@ -47,15 +44,6 @@ Feature: DisciplineAction Authorization
                     "disciplines": [
                         {
                             "disciplineDescriptor": "uri://ed-fi.org/DisciplineDescriptor#In School Suspension"
-                        }
-                    ],
-                    "studentDisciplineIncidentAssociations": [
-                        {
-                            "studentDisciplineIncidentAssociationReference": {
-                                "studentUniqueId": "61",
-                                "incidentIdentifier": "1",
-                                "schoolId": 255901001
-                            }
                         }
                     ]
                   }
@@ -85,15 +73,6 @@ Feature: DisciplineAction Authorization
                     "disciplines": [
                         {
                             "disciplineDescriptor": "uri://ed-fi.org/DisciplineDescriptor#In School Suspension"
-                        }
-                    ],
-                    "studentDisciplineIncidentAssociations": [
-                        {
-                            "studentDisciplineIncidentAssociationReference": {
-                                "studentUniqueId": "61",
-                                "incidentIdentifier": "1",
-                                "schoolId": 255901001
-                            }
                         }
                     ]
                   }
@@ -126,15 +105,6 @@ Feature: DisciplineAction Authorization
                     "disciplines": [
                         {
                             "disciplineDescriptor": "uri://ed-fi.org/DisciplineDescriptor#In School Suspension"
-                        }
-                    ],
-                    "studentDisciplineIncidentAssociations": [
-                        {
-                            "studentDisciplineIncidentAssociationReference": {
-                                "studentUniqueId": "61",
-                                "incidentIdentifier": "1",
-                                "schoolId": 255901001
-                            }
                         }
                     ]
                   }
@@ -190,15 +160,6 @@ Feature: DisciplineAction Authorization
                     "disciplines": [
                         {
                             "disciplineDescriptor": "uri://ed-fi.org/DisciplineDescriptor#In School Suspension"
-                        }
-                    ],
-                    "studentDisciplineIncidentAssociations": [
-                        {
-                            "studentDisciplineIncidentAssociationReference": {
-                                "studentUniqueId": "61",
-                                "incidentIdentifier": "1",
-                                "schoolId": 255901001
-                            }
                         }
                     ]
                   }
