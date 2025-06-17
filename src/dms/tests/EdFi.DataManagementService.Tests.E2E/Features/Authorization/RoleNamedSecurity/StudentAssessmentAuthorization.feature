@@ -2,9 +2,6 @@ Feature: StudentAssessment Authorization
 
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
-              And the system has these descriptors
-                  | descriptorValue                                           |
-                  | uri://ed-fi.org/DisciplineDescriptor#in school suspension |
               And the system has these "localEducationAgencies"
                   | localEducationAgencyId | nameOfInstitution | categories                                                                                                          | localEducationAgencyCategoryDescriptor                     |
                   | 255901                 | Test LEA          | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC |
@@ -49,9 +46,46 @@ Feature: StudentAssessment Authorization
                   """
              Then it should respond with 201
 
-        Scenario: 02 Ensure authorized client can get a StudentAssessment
+        Scenario: 02.1 Ensure authorized client can get a StudentAssessment
              When a GET request is made to "/ed-fi/studentAssessments/{studentAssessmentId}"
              Then it should respond with 200
+
+        Scenario: 02.2 Ensure authorized client can get a StudentAssessment
+            Given a POST request is made to "/ed-fi/studentAssessments" with
+                  """
+                  {
+                    "reportedSchoolReference": {
+                        "schoolId": 255901001
+                    },
+                    "studentAssessmentIdentifier": "New Test Student Assessment",
+                    "studentReference": {
+                        "studentUniqueId": "61"
+                    },
+                    "assessmentReference": {
+                        "assessmentIdentifier": "Test Assessment","namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                    }
+                  }
+                  """
+             When a GET request is made to "/ed-fi/studentAssessments?studentAssessmentIdentifier=New Test Student Assessment"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "id": "{id}",
+                        "reportedSchoolReference": {
+                            "schoolId": 255901001
+                        },
+                        "studentAssessmentIdentifier": "New Test Student Assessment",
+                        "studentReference": {
+                            "studentUniqueId": "61"
+                        },
+                        "assessmentReference": {
+                            "assessmentIdentifier": "Test Assessment","namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                        }
+                    }
+                  ]
+                  """
 
         Scenario: 03 Ensure authorized client can update a StudentAssessment
              When a PUT request is made to "/ed-fi/studentAssessments/{studentAssessmentId}" with
@@ -113,7 +147,7 @@ Feature: StudentAssessment Authorization
                   }
                   """
 
-        Scenario: 06 Ensure unauthorized client can not get a StudentAssessment
+        Scenario: 06.1 Ensure unauthorized client can not get a StudentAssessment by id
              When a GET request is made to "/ed-fi/studentAssessments/{studentAssessmentId}"
              Then it should respond with 403
               And the response body is
@@ -128,6 +162,14 @@ Feature: StudentAssessment Authorization
                         "No relationships have been established between the caller's education organization id claims ('255901044') and the resource item's EducationOrganizationId value."
                      ]
                   }
+                  """
+
+        Scenario: 06.2 Ensure unauthorized client can not get a StudentAssessment by query
+             When a GET request is made to "/ed-fi/studentAssessments?studentAssessmentIdentifier=Test Student Assessment"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
                   """
 
         Scenario: 07 Ensure unauthorized client can not update a StudentAssessment
