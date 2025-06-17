@@ -19,7 +19,7 @@ public class KeycloakTokenManager(
     {
         try
         {
-            var client = httpClientFactory.CreateClient();
+            var client = httpClientFactory.CreateClient("KeycloakClient");
 
             var contentList = credentials.ToList();
 

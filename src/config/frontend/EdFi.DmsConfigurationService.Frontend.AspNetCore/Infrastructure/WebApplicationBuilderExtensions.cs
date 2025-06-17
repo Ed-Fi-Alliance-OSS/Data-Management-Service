@@ -62,9 +62,8 @@ public static class WebApplicationBuilderExtensions
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
-        IConfiguration config = webApplicationBuilder.Configuration;
-        var settings = config.GetSection("AppSettings");
-        var appSettings = config.GetSection("AppSettings").Get<AppSettings>();
+        var settingsSection = webApplicationBuilder.Configuration.GetSection("AppSettings");
+        var appSettings = settingsSection.Get<AppSettings>();
         if (appSettings == null)
         {
             logger.Error("Error reading appSettings");
