@@ -28,9 +28,46 @@ Feature: OrganizationDepartment Authorization
                   """
              Then it should respond with 201
 
-        Scenario: 02 Ensure authorized client can get a OrganizationDepartment
+        Scenario: 02.1 Ensure authorized client can get a OrganizationDepartment by id
              When a GET request is made to "/ed-fi/organizationDepartments/{orgDepId}"
              Then it should respond with 200
+
+        Scenario: 02.2 Ensure authorized client can get a OrganizationDepartment by query
+            Given a POST request is made to "/ed-fi/organizationDepartments" with
+                  """
+                  {
+                    "parentEducationOrganizationReference": {
+                        "educationOrganizationId": 255901
+                    },
+                    "organizationDepartmentId": 255901102,
+                    "nameOfInstitution": "New Test Office",
+                    "categories": [
+                        {
+                            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department"
+                        }
+                    ]
+                  }
+                  """
+             When a GET request is made to "/ed-fi/organizationDepartments?nameOfInstitution=New Test Office"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "id": "{id}",
+                        "parentEducationOrganizationReference": {
+                            "educationOrganizationId": 255901
+                        },
+                        "organizationDepartmentId": 255901102,
+                        "nameOfInstitution": "New Test Office",
+                        "categories": [
+                            {
+                                "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Organization Department"
+                            }
+                        ]
+                    }
+                  ]
+                  """
 
         Scenario: 03 Ensure authorized client can update a OrganizationDepartment
              When a PUT request is made to "/ed-fi/organizationDepartments/{orgDepId}" with
@@ -90,7 +127,7 @@ Feature: OrganizationDepartment Authorization
                   }
                   """
 
-        Scenario: 06 Ensure unauthorized client can not get a OrganizationDepartment
+        Scenario: 06.1 Ensure unauthorized client can not get a OrganizationDepartment by id
              When a GET request is made to "/ed-fi/organizationDepartments/{orgDepId}"
              Then it should respond with 403
               And the response body is
@@ -105,6 +142,14 @@ Feature: OrganizationDepartment Authorization
                         "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
                      ]
                   }
+                  """
+
+        Scenario: 06.2 Ensure unauthorized client can not get a OrganizationDepartment by query
+             When a GET request is made to "/ed-fi/organizationDepartments?nameOfInstitution=Test Office"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
                   """
 
         Scenario: 07 Ensure unauthorized client can not update a OrganizationDepartment
