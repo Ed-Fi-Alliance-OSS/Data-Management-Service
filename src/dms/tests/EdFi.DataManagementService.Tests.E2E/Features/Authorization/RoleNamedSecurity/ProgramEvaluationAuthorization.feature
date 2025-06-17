@@ -29,9 +29,42 @@ Feature: ProgramEvaluation Authorization
                   """
              Then it should respond with 201
 
-        Scenario: 02 Ensure authorized client can get a ProgramEvaluation
+        Scenario: 02.1 Ensure authorized client can get a ProgramEvaluation by id
              When a GET request is made to "/ed-fi/programEvaluations/{programEvaluationId}"
              Then it should respond with 200
+
+        Scenario: 02.2 Ensure authorized client can get a ProgramEvaluation by query
+            Given a POST request is made to "/ed-fi/programEvaluations" with
+                  """
+                  {
+                    "programReference": {
+                        "educationOrganizationId": 255901,
+                        "programName": "21st CCLC",
+                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"
+                    },
+                    "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year",
+                    "programEvaluationTitle": "New Test Evaluation",
+                    "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey"
+                  }
+                  """
+             When a GET request is made to "/ed-fi/programEvaluations?programEvaluationTitle=New Test Evaluation"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "id": "{id}",
+                        "programReference": {
+                            "educationOrganizationId": 255901,
+                            "programName": "21st CCLC",
+                            "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"
+                        },
+                        "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year",
+                        "programEvaluationTitle": "New Test Evaluation",
+                        "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey"
+                    }
+                  ]
+                  """
 
         Scenario: 03 Ensure authorized client can update a ProgramEvaluation
              When a PUT request is made to "/ed-fi/programEvaluations/{programEvaluationId}" with
@@ -87,7 +120,7 @@ Feature: ProgramEvaluation Authorization
                   }
                   """
 
-        Scenario: 06 Ensure unauthorized client can not get a ProgramEvaluation
+        Scenario: 06.1 Ensure unauthorized client can not get a ProgramEvaluation by id
              When a GET request is made to "/ed-fi/programEvaluations/{programEvaluationId}"
              Then it should respond with 403
               And the response body is
@@ -102,6 +135,14 @@ Feature: ProgramEvaluation Authorization
                         "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
                      ]
                   }
+                  """
+
+        Scenario: 06.2 Ensure unauthorized client can not get a ProgramEvaluation by query
+             When a GET request is made to "/ed-fi/programEvaluations?programEvaluationTitle=Test Evaluation"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
                   """
 
         Scenario: 07 Ensure unauthorized client can not update a ProgramEvaluation

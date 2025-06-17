@@ -50,9 +50,58 @@ Feature: DisciplineAction Authorization
                   """
              Then it should respond with 201
 
-        Scenario: 02 Ensure authorized client can get a DisciplineAction
+        Scenario: 02.1 Ensure authorized client can get a DisciplineAction by id
              When a GET request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 200
+
+        Scenario: 02.2 Ensure authorized client can get a DisciplineAction by query
+            Given a POST request is made to "/ed-fi/disciplineActions" with
+                  """
+                  {
+                    "responsibilitySchoolReference": {
+                        "schoolId": 255901001
+                    },
+                    "assignmentSchoolReference": {
+                        "schoolId": 255901044
+                    },
+                    "studentReference": {
+                        "studentUniqueId": "61"
+                    },
+                    "disciplineActionIdentifier": "New TEST-001",
+                    "disciplineDate": "2022-02-09",
+                    "disciplines": [
+                        {
+                            "disciplineDescriptor": "uri://ed-fi.org/DisciplineDescriptor#In School Suspension"
+                        }
+                    ]
+                  }
+                  """
+             When a GET request is made to "/ed-fi/disciplineActions?disciplineActionIdentifier=New TEST-001"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "id": "{id}",
+                        "responsibilitySchoolReference": {
+                            "schoolId": 255901001
+                        },
+                        "assignmentSchoolReference": {
+                            "schoolId": 255901044
+                        },
+                        "studentReference": {
+                            "studentUniqueId": "61"
+                        },
+                        "disciplineActionIdentifier": "New TEST-001",
+                        "disciplineDate": "2022-02-09",
+                        "disciplines": [
+                            {
+                                "disciplineDescriptor": "uri://ed-fi.org/DisciplineDescriptor#In School Suspension"
+                            }
+                        ]
+                    }
+                  ]
+                  """
 
         Scenario: 03 Ensure authorized client can update a DisciplineAction
              When a PUT request is made to "/ed-fi/disciplineActions/{disciplineActionId}" with
@@ -124,7 +173,7 @@ Feature: DisciplineAction Authorization
                   }
                   """
 
-        Scenario: 06 Ensure unauthorized client can not get a DisciplineAction
+        Scenario: 06.1 Ensure unauthorized client can not get a DisciplineAction by id
              When a GET request is made to "/ed-fi/disciplineActions/{disciplineActionId}"
              Then it should respond with 403
               And the response body is
@@ -139,6 +188,14 @@ Feature: DisciplineAction Authorization
                         "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
                      ]
                   }
+                  """
+
+        Scenario: 06.2 Ensure unauthorized client can not get a DisciplineAction by query
+             When a GET request is made to "/ed-fi/disciplineActions?disciplineActionIdentifier=TEST-001"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
                   """
 
         Scenario: 07 Ensure unauthorized client can not update a DisciplineAction
