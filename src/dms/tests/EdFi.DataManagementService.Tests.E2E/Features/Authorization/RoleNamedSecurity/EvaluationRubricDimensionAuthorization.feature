@@ -2,10 +2,6 @@ Feature: EvaluationRubricDimension Authorization
 
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901"
-              And the system has these descriptors
-                  | descriptorValue                                                |
-                  | uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year  |
-                  | uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey |
               And the system has these "localEducationAgencies"
                   | localEducationAgencyId | nameOfInstitution | categories                                                                                                          | localEducationAgencyCategoryDescriptor                     |
                   | 255901                 | Test LEA          | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#District" }] | uri://ed-fi.org/localEducationAgencyCategoryDescriptor#ABC |
@@ -45,9 +41,48 @@ Feature: EvaluationRubricDimension Authorization
                   """
              Then it should respond with 201
 
-        Scenario: 02 Ensure authorized client can get a EvaluationRubricDimension
+        Scenario: 02.1 Ensure authorized client can get a EvaluationRubricDimension by id
              When a GET request is made to "/ed-fi/evaluationRubricDimensions/{evaluationRubricDimensionId}"
              Then it should respond with 200
+
+        Scenario: 02.2 Ensure authorized client can get a EvaluationRubricDimension by query
+            Given a POST request is made to "/ed-fi/evaluationRubricDimensions" with
+                  """
+                  {
+                    "evaluationRubricRating": 101,
+                    "programEvaluationElementReference": {
+                        "programEducationOrganizationId": 255901,
+                        "programEvaluationElementTitle": "Test Evaluation Element",
+                        "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year",
+                        "programEvaluationTitle": "Test Evaluation",
+                        "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey",
+                        "programName": "21st CCLC",
+                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"
+                    },
+                    "evaluationCriterionDescription": "Test Evaluation Criterion"
+                  }
+                  """
+             When a GET request is made to "/ed-fi/evaluationRubricDimensions?evaluationRubricRating=101"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "id": "{id}",
+                        "evaluationRubricRating": 101,
+                        "programEvaluationElementReference": {
+                            "programEducationOrganizationId": 255901,
+                            "programEvaluationElementTitle": "Test Evaluation Element",
+                            "programEvaluationPeriodDescriptor": "uri://ed-fi.org/ProgramEvaluationPeriodDescriptor#End of Year",
+                            "programEvaluationTitle": "Test Evaluation",
+                            "programEvaluationTypeDescriptor": "uri://ed-fi.org/ProgramEvaluationTypeDescriptor#Teacher survey",
+                            "programName": "21st CCLC",
+                            "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Support"
+                        },
+                        "evaluationCriterionDescription": "Test Evaluation Criterion"
+                    }
+                  ]
+                  """
 
         Scenario: 03 Ensure authorized client can update a EvaluationRubricDimension
              When a PUT request is made to "/ed-fi/evaluationRubricDimensions/{evaluationRubricDimensionId}" with
@@ -109,7 +144,7 @@ Feature: EvaluationRubricDimension Authorization
                   }
                   """
 
-        Scenario: 06 Ensure unauthorized client can not get a EvaluationRubricDimension
+        Scenario: 06.1 Ensure unauthorized client can not get a EvaluationRubricDimension by id
              When a GET request is made to "/ed-fi/evaluationRubricDimensions/{evaluationRubricDimensionId}"
              Then it should respond with 403
               And the response body is
@@ -124,6 +159,14 @@ Feature: EvaluationRubricDimension Authorization
                         "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
                      ]
                   }
+                  """
+
+        Scenario: 06.2 Ensure unauthorized client can not get a EvaluationRubricDimension by query
+             When a GET request is made to "/ed-fi/evaluationRubricDimensions?evaluationRubricRating=10"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  []
                   """
 
         Scenario: 07 Ensure unauthorized client can not update a EvaluationRubricDimension
