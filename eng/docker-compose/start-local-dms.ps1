@@ -34,6 +34,9 @@ param (
     [Switch]
     $EnableConfig,
 
+    # Enable Swagger UI for the DMS API
+    [switch]$EnableSwaggerUI,
+
     # Load seed data using database template package
     [Switch]
     $LoadSeedData
@@ -88,6 +91,23 @@ else {
     )
     if ($r) { $upArgs += @("--build") }
 
+
+    Write-Output "Starting Keycloak..."
+    docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
+    }
+
+    Write-Output "Running setup-keycloak.ps1 scripts..."
+    # Create client with default edfi_admin_api/full_access scope
+    ./setup-keycloak.ps1
+
+    # Create client with edfi_admin_api/readonly_access scope
+    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+
+    # Create client with edfi_admin_api/authMetadata_readonly_access scope
+    ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+
     Write-Output "Starting locally-built DMS"
     $env:NEED_DATABASE_SETUP = if ($LoadSeedData) { "false" } else { $env:NEED_DATABASE_SETUP }
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
@@ -97,7 +117,7 @@ else {
         throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
     }
 
-    Start-Sleep 10
+    Start-Sleep 20
 
     if($LoadSeedData)
     {
@@ -108,26 +128,6 @@ else {
             throw "Failed to load initial data, with exit code $LASTEXITCODE."
         }
     }
-
-    Write-Output "Starting Keycloak..."
-    docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
-    }
-
-    Write-Output "Waiting for Keycloak to initialize..."
-    Start-Sleep 5
-
-    Write-Output "Running setup-keycloak.ps1 scripts..."
-    Start-Sleep 5
-    # Create client with default edfi_admin_api/full_access scope
-    ./setup-keycloak.ps1
-
-    # Create client with edfi_admin_api/readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
-
-    # Create client with edfi_admin_api/authMetadata_readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
 
     Start-Sleep 10
 
