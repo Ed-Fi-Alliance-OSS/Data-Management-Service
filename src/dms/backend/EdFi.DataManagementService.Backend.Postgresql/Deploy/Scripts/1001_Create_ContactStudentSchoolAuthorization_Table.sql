@@ -13,7 +13,7 @@ CREATE TABLE dms.ContactStudentSchoolAuthorization(
     StudentSchoolAssociationId BIGINT,
     StudentSchoolAssociationPartitionKey SMALLINT,
     CONSTRAINT FK_ContactStudentSchoolAuthorization_SSA_Document FOREIGN KEY (StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey)
-        REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE SET NULL,
+        REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
 
     CONSTRAINT FK_ContactStudentSchoolAuthorization_SCA_Document FOREIGN KEY (StudentContactAssociationId, StudentContactAssociationPartitionKey)
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED

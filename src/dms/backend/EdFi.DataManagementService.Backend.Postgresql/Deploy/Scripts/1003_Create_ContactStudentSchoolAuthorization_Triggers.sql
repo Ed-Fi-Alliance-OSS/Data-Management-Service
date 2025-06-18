@@ -56,6 +56,19 @@ BEGIN
     student_id := NEW.EdfiDoc->'studentReference'->>'studentUniqueId';
     contact_id := NEW.EdfiDoc->'contactReference'->>'contactUniqueId';
 
+    -- INSERT StudentContactRelation
+    INSERT INTO dms.StudentContactRelation (
+        StudentUniqueId,
+        ContactUniqueId,
+        StudentContactAssociationDocumentId,
+        StudentContactAssociationDocumentPartitionKey
+    )
+    SELECT
+        student_id,
+        contact_id,
+        NEW.Id,
+        NEW.DocumentPartitionKey;
+
     -- Extract student school association document details
     INSERT INTO dms.ContactStudentSchoolAuthorization (
         ContactUniqueId,

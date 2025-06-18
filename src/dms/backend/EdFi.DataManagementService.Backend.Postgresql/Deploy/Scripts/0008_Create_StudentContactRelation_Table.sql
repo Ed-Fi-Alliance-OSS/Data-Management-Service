@@ -6,7 +6,7 @@
 CREATE TABLE dms.StudentContactRelation(
     Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     StudentUniqueId VARCHAR(32) NOT NULL,
-    StudentContactId VARCHAR(32) NOT NULL,
+    ContactUniqueId VARCHAR(32) NOT NULL,
     StudentContactAssociationDocumentId BIGINT NOT NULL,
     StudentContactAssociationDocumentPartitionKey SMALLINT NOT NULL,
     CONSTRAINT FK_StudentContactAssociation_Document FOREIGN KEY (StudentContactAssociationDocumentId, StudentContactAssociationDocumentPartitionKey)
@@ -14,4 +14,4 @@ CREATE TABLE dms.StudentContactRelation(
 );
 
 CREATE INDEX IX_StudentContactRelation_StudentUniqueId ON dms.StudentContactRelation (StudentUniqueId);
-CREATE INDEX IX_StudentContactRelation_StudentContactId ON dms.StudentContactRelation (StudentContactId);
+CREATE INDEX IX_StudentContactRelation_ContactUniqueId ON dms.StudentContactRelation (ContactUniqueId);
