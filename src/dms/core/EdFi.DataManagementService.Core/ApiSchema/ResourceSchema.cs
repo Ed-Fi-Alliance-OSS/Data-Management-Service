@@ -524,11 +524,6 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             nestedConstraints = nestedArray.Select(ParseArrayUniquenessConstraint).ToList().AsReadOnly();
         }
 
-        return new ArrayUniquenessConstraint
-        {
-            BasePath = basePath,
-            Paths = paths,
-            NestedConstraints = nestedConstraints,
-        };
+        return new ArrayUniquenessConstraint(basePath, paths, nestedConstraints);
     }
 }

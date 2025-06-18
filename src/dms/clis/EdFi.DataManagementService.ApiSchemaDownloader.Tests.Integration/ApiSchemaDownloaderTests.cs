@@ -37,14 +37,13 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
             public void ShouldThrowExceptionWhenPackageNotFound()
             {
                 // Act
-                var ex = Assert.ThrowsAsync<Exception>(
-                    async () =>
-                        await _downloader.DownloadNuGetPackageAsync(
-                            "NonExistentPackage",
-                            "1.0.0",
-                            "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
-                            _tempDirectory
-                        )
+                var ex = Assert.ThrowsAsync<Exception>(async () =>
+                    await _downloader.DownloadNuGetPackageAsync(
+                        "NonExistentPackage",
+                        "1.0.0",
+                        "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
+                        _tempDirectory
+                    )
                 );
 
                 // Assert
@@ -87,7 +86,7 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
             {
                 // Arrange
                 string packageId = "EdFi.DataStandard52.ApiSchema";
-                string packageVersion = "1.0.215";
+                string packageVersion = "1.0.216";
                 string feedUrl =
                     "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
@@ -119,13 +118,8 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit
                 File.WriteAllText(packagePath, "This is not a valid NuGet package.");
 
                 // Act & Assert
-                var ex = Assert.Throws<Exception>(
-                    () =>
-                        _downloader.ExtractApiSchemaJsonFromAssembly(
-                            "TestPackage",
-                            packagePath,
-                            _tempDirectory
-                        )
+                var ex = Assert.Throws<Exception>(() =>
+                    _downloader.ExtractApiSchemaJsonFromAssembly("TestPackage", packagePath, _tempDirectory)
                 );
 
                 Assert.That(

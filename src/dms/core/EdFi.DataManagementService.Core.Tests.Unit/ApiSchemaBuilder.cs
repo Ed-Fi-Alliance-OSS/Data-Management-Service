@@ -30,8 +30,6 @@ public class ApiSchemaBuilder
 
     private JsonNode? _currentQueryFieldMappingNode = null;
 
-    private JsonNode? _currentArrayUniquenessConstraints = null;
-
     /// <summary>
     /// A naive decapitalizer and pluralizer, which should be adequate for tests
     /// </summary>
@@ -381,7 +379,7 @@ public class ApiSchemaBuilder
     /// <summary>
     /// Adds a StaffSecurityElements section to a resource
     /// </summary>
-    public ApiSchemaBuilder WithStafftSecurityElements(string[] jsonPaths)
+    public ApiSchemaBuilder WithStaffSecurityElements(string[] jsonPaths)
     {
         if (_currentProjectNode == null)
         {
@@ -898,40 +896,6 @@ public class ApiSchemaBuilder
         return this;
     }
 
-    public ApiSchemaBuilder WithStartArrayUniquenessConstraints()
-    {
-        if (_currentProjectNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-        if (_currentResourceNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-
-        _currentArrayUniquenessConstraints = _currentResourceNode["arrayUniquenessConstraints"];
-        return this;
-    }
-
-    public ApiSchemaBuilder WithEndArrayUniquenessConstraints()
-    {
-        if (_currentProjectNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-        if (_currentResourceNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-        if (_currentArrayUniquenessConstraints == null)
-        {
-            throw new InvalidOperationException();
-        }
-
-        _currentArrayUniquenessConstraints = null;
-        return this;
-    }
-
     /// <summary>
     /// Add array uniqueness constraint with simple paths to a resource.
     /// </summary>
@@ -960,7 +924,7 @@ public class ApiSchemaBuilder
 
         if (_currentResourceNode["arrayUniquenessConstraints"] is not JsonArray constraintsArray)
         {
-            constraintsArray = new JsonArray();
+            constraintsArray = [];
             _currentResourceNode["arrayUniquenessConstraints"] = constraintsArray;
         }
 
@@ -1046,7 +1010,7 @@ public class ApiSchemaBuilder
 
         if (_currentResourceNode["arrayUniquenessConstraints"] is not JsonArray constraintsArray)
         {
-            constraintsArray = new JsonArray();
+            constraintsArray = [];
             _currentResourceNode["arrayUniquenessConstraints"] = constraintsArray;
         }
 
