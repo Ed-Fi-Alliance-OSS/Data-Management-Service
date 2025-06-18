@@ -15,6 +15,7 @@ services:
       - ./custom-swagger-ui:/usr/share/nginx/html:ro
     networks:
       - dms
+    hostname: dms-swagger-ui
 
 networks:
   dms:
