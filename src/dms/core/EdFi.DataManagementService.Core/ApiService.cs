@@ -89,7 +89,7 @@ internal class ApiService(
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
-                new DuplicateReferenceValidationMiddleware(_logger),
+                new ReferenceUniquenessValidationMiddleware(_logger),
                 new ArrayUniquenessValidationMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),
@@ -204,7 +204,7 @@ internal class ApiService(
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
                 ),
                 new ExtractDocumentInfoMiddleware(_logger),
-                new DuplicateReferenceValidationMiddleware(_logger),
+                new ReferenceUniquenessValidationMiddleware(_logger),
                 new ArrayUniquenessValidationMiddleware(_logger),
                 new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
                 new ResourceActionAuthorizationMiddleware(_claimSetCacheService, _logger),

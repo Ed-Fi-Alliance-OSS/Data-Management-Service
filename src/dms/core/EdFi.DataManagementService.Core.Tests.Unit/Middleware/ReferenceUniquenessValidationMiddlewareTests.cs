@@ -18,9 +18,9 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
-public class DuplicateReferenceValidationMiddlewareTests
+public class ReferenceUniquenessValidationMiddlewareTests
 {
-    internal static ApiSchemaDocuments DocRefSchemaDocuments()
+    internal static ApiSchemaDocuments BellScheduleApiSchema()
     {
         var result = new ApiSchemaBuilder()
             .WithStartProject()
@@ -41,35 +41,53 @@ public class DuplicateReferenceValidationMiddlewareTests
         return result;
     }
 
-    internal PipelineContext DocRefContext(FrontendRequest frontendRequest, RequestMethod method)
+    internal static async Task<PipelineContext> CreateContextAndExecute(
+        ApiSchemaDocuments apiSchema,
+        string jsonBody,
+        string endpointName,
+        RequestMethod method
+    )
     {
-        PipelineContext docRefContext = new(frontendRequest, method)
+        FrontendRequest frontEndRequest = new(
+            Path: $"ed-fi/{endpointName}",
+            Body: jsonBody,
+            Headers: [],
+            QueryParameters: [],
+            TraceId: new TraceId(""),
+            new ClientAuthorizations(
+                TokenId: "",
+                ClaimSetName: "",
+                EducationOrganizationIds: [],
+                NamespacePrefixes: []
+            )
+        );
+
+        PipelineContext context = new(frontEndRequest, method)
         {
-            ApiSchemaDocuments = DocRefSchemaDocuments(),
+            ApiSchemaDocuments = apiSchema,
             PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
-                EndpointName: new("bellschedules"),
+                EndpointName: new(endpointName),
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        docRefContext.ProjectSchema = docRefContext.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+        context.ProjectSchema = context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
             new("ed-fi")
         )!;
-        docRefContext.ResourceSchema = new ResourceSchema(
-            docRefContext.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("bellschedules"))
-                ?? new JsonObject()
+        context.ResourceSchema = new ResourceSchema(
+            context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName)) ?? new JsonObject()
         );
 
-        if (docRefContext.FrontendRequest.Body != null)
+        var body = JsonNode.Parse(context.FrontendRequest.Body!);
+        if (body != null)
         {
-            var body = JsonNode.Parse(docRefContext.FrontendRequest.Body);
-            if (body != null)
-            {
-                docRefContext.ParsedBody = body;
-            }
+            context.ParsedBody = body;
         }
 
-        return docRefContext;
+        await BuildResourceInfo().Execute(context, NullNext);
+        await ExtractDocument().Execute(context, NullNext);
+        await Middleware().Execute(context, NullNext);
+        return context;
     }
 
     internal static BuildResourceInfoMiddleware BuildResourceInfo()
@@ -82,13 +100,13 @@ public class DuplicateReferenceValidationMiddlewareTests
         return new ExtractDocumentInfoMiddleware(NullLogger.Instance);
     }
 
-    internal static DuplicateReferenceValidationMiddleware Middleware()
+    internal static ReferenceUniquenessValidationMiddleware Middleware()
     {
-        return new DuplicateReferenceValidationMiddleware(NullLogger.Instance);
+        return new ReferenceUniquenessValidationMiddleware(NullLogger.Instance);
     }
 
     [TestFixture]
-    public class Given_Document_With_Duplicate_References : DuplicateReferenceValidationMiddlewareTests
+    public class Given_Document_With_Duplicate_References : ReferenceUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -121,26 +139,12 @@ public class DuplicateReferenceValidationMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/bellschedules",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+            _context = await CreateContextAndExecute(
+                BellScheduleApiSchema(),
+                jsonBody,
+                "bellschedules",
+                RequestMethod.POST
             );
-
-            _context = DocRefContext(frontEndRequest, RequestMethod.POST);
-
-            await BuildResourceInfo().Execute(_context, NullNext);
-            await ExtractDocument().Execute(_context, NullNext);
-
-            await Middleware().Execute(_context, NullNext);
         }
 
         [Test]
@@ -166,7 +170,7 @@ public class DuplicateReferenceValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_With_Unique_References : DuplicateReferenceValidationMiddlewareTests
+    public class Given_Document_With_Unique_References : ReferenceUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -199,26 +203,12 @@ public class DuplicateReferenceValidationMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/bellschedules",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+            _context = await CreateContextAndExecute(
+                BellScheduleApiSchema(),
+                jsonBody,
+                "bellschedules",
+                RequestMethod.POST
             );
-
-            _context = DocRefContext(frontEndRequest, RequestMethod.POST);
-
-            await BuildResourceInfo().Execute(_context, NullNext);
-            await ExtractDocument().Execute(_context, NullNext);
-
-            await Middleware().Execute(_context, NullNext);
         }
 
         [Test]
@@ -229,7 +219,7 @@ public class DuplicateReferenceValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_With_Single_Reference : DuplicateReferenceValidationMiddlewareTests
+    public class Given_Document_With_Single_Reference : ReferenceUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -256,26 +246,12 @@ public class DuplicateReferenceValidationMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/bellschedules",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+            _context = await CreateContextAndExecute(
+                BellScheduleApiSchema(),
+                jsonBody,
+                "bellschedules",
+                RequestMethod.POST
             );
-
-            _context = DocRefContext(frontEndRequest, RequestMethod.POST);
-
-            await BuildResourceInfo().Execute(_context, NullNext);
-            await ExtractDocument().Execute(_context, NullNext);
-
-            await Middleware().Execute(_context, NullNext);
         }
 
         [Test]
@@ -286,7 +262,7 @@ public class DuplicateReferenceValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_With_No_Reference_Arrays : DuplicateReferenceValidationMiddlewareTests
+    public class Given_Document_With_No_Reference_Arrays : ReferenceUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -303,26 +279,12 @@ public class DuplicateReferenceValidationMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/bellschedules",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+            _context = await CreateContextAndExecute(
+                BellScheduleApiSchema(),
+                jsonBody,
+                "bellschedules",
+                RequestMethod.POST
             );
-
-            _context = DocRefContext(frontEndRequest, RequestMethod.POST);
-
-            await BuildResourceInfo().Execute(_context, NullNext);
-            await ExtractDocument().Execute(_context, NullNext);
-
-            await Middleware().Execute(_context, NullNext);
         }
 
         [Test]
