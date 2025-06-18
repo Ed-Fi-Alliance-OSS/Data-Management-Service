@@ -326,11 +326,11 @@ public class ClaimSetModule : IEndpointModule
         await validator.GuardAsync(validationContext);
 
         // Import the claim set
-        var insertResult = await claimSetRepository.Import(importCommand);
+        var importResult = await claimSetRepository.Import(importCommand);
 
         var request = httpContext.Request;
 
-        return insertResult switch
+        return importResult switch
         {
             ClaimSetImportResult.Success success => Results.Created(
                 $"{request.Scheme}://{request.Host}{request.PathBase}{GetClaimSetsPath()}/{success.Id}",

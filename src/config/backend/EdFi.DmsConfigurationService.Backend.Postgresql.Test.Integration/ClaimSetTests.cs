@@ -583,7 +583,7 @@ public class ClaimSetTests : DatabaseTest
                 .ClaimSetResponses.Count()
                 .Should()
                 .BeGreaterThan(0)
-                .And.BeLessOrEqualTo(25);
+                .And.BeLessOrEqualTo(10);
         }
 
         [Test]
@@ -597,6 +597,7 @@ public class ClaimSetTests : DatabaseTest
 
             var response = (ClaimSetResponse)claimSetFromDb;
             response.Name.Should().Be("Test-Import-ClaimSet");
+            response.IsSystemReserved.Should().BeFalse();
         }
 
         [Test]
@@ -606,6 +607,22 @@ public class ClaimSetTests : DatabaseTest
 
             var resultDup = await _repository.Import(claimSetDup);
             resultDup.Should().BeOfType<ClaimSetImportResult.FailureDuplicateClaimSetName>();
+        }
+
+        [Test]
+        public async Task Should_get_unknown_failure_when_no_claims_hierarchy_exists()
+        {
+            // Don't reinitialize the claims hierarchy
+            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy(clearOnly: true);
+
+            ClaimSetImportCommand command = new() { Name = "Test-New-ClaimSet", ResourceClaims = [] };
+
+            var resultNoHierarchy = await _repository.Import(command);
+            resultNoHierarchy.Should().BeOfType<ClaimSetImportResult.FailureUnknown>();
+
+            (resultNoHierarchy as ClaimSetImportResult.FailureUnknown)!
+                .FailureMessage.Should()
+                .Be("Claims hierarchy not found.");
         }
     }
 
