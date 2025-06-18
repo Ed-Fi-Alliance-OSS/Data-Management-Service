@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -21,42 +22,40 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
     /// <summary>
     /// Validates all array uniqueness constraints for the current document
     /// </summary>
-    /// <returns>A validation error tuple if violations are found, null otherwise</returns>
-    private static (string errorKey, string message)? ValidateArrayUniquenessConstraints(
+    /// <returns>A list of all validation errors found</returns>
+    private static List<(string errorKey, string message)> ValidateArrayUniquenessConstraints(
         PipelineContext context,
         ILogger logger
     )
     {
+        var errors = new List<(string errorKey, string message)>();
+
         foreach (var constraint in context.ResourceSchema.ArrayUniquenessConstraints)
         {
-            var validationError = ValidateConstraint(constraint, context, logger);
-            if (validationError.HasValue)
-            {
-                return validationError;
-            }
+            var constraintErrors = ValidateConstraint(constraint, context, logger);
+            errors.AddRange(constraintErrors);
         }
 
-        return null;
+        return errors;
     }
 
     /// <summary>
     /// Validates a single array uniqueness constraint, handling both simple paths and nested constraints
     /// </summary>
-    private static (string errorKey, string message)? ValidateConstraint(
+    private static List<(string errorKey, string message)> ValidateConstraint(
         ArrayUniquenessConstraint constraint,
         PipelineContext context,
         ILogger logger,
         string? parentBasePath = null
     )
     {
+        var errors = new List<(string errorKey, string message)>();
+
         // Handle simple paths constraint
         if (constraint.Paths != null && constraint.Paths.Count > 0)
         {
-            var validationError = ValidatePathsConstraint(constraint.Paths, context, logger, parentBasePath);
-            if (validationError.HasValue)
-            {
-                return validationError;
-            }
+            var pathErrors = ValidatePathsConstraint(constraint.Paths, context, logger, parentBasePath);
+            errors.AddRange(pathErrors);
         }
 
         // Handle nested constraints
@@ -68,66 +67,318 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
                     nestedConstraint.BasePath?.Value
                     ?? throw new InvalidOperationException("Nested constraint must have a basePath");
 
-                var validationError = ValidateConstraint(nestedConstraint, context, logger, nestedBasePath);
-                if (validationError.HasValue)
-                {
-                    return validationError;
-                }
+                var nestedErrors = ValidateConstraint(nestedConstraint, context, logger, nestedBasePath);
+                errors.AddRange(nestedErrors);
             }
         }
 
-        return null;
+        return errors;
     }
 
     /// <summary>
     /// Validates uniqueness for a set of paths within an array
     /// </summary>
-    private static (string errorKey, string message)? ValidatePathsConstraint(
+    private static List<(string errorKey, string message)> ValidatePathsConstraint(
         IReadOnlyList<External.Model.JsonPath> paths,
         PipelineContext context,
         ILogger logger,
         string? basePath = null
     )
     {
+        var errors = new List<(string errorKey, string message)>();
+
         if (paths.Count == 0)
         {
+            return errors;
+        }
+
+        try
+        {
+            if (basePath != null)
+            {
+                // For nested constraints, collect BOTH cross-item and within-item errors
+                var crossItemResult = ValidateNestedConstraintAcrossItems(basePath, paths, context, logger);
+                if (crossItemResult.HasValue)
+                {
+                    errors.Add(crossItemResult.Value);
+                }
+
+                var withinItemResult = ValidateNestedConstraintWithinItems(basePath, paths, context, logger);
+                if (withinItemResult.HasValue)
+                {
+                    errors.Add(withinItemResult.Value);
+                }
+
+                return errors;
+            }
+            else
+            {
+                // For simple constraints, detect the array root path from the first path
+                var arrayRootPath = ArrayPathHelper.GetArrayRootPath(paths);
+                var relativePaths = paths
+                    .Select(p => ArrayPathHelper.GetRelativePath(arrayRootPath, p.Value))
+                    .ToList();
+
+                logger.LogDebug(
+                    "Array root path: {ArrayRootPath}, Relative paths: {RelativePaths}",
+                    arrayRootPath,
+                    string.Join(", ", relativePaths)
+                );
+
+                // Use existing duplicate detection logic with additional error handling
+                (string? arrayPath, int dupeIndex) = context.ParsedBody.FindDuplicatesWithArrayPath(
+                    arrayRootPath,
+                    relativePaths,
+                    logger
+                );
+
+                if (dupeIndex >= 0 && arrayPath != null)
+                {
+                    logger.LogDebug(
+                        "Duplicate found at index {DupeIndex} for path {ArrayPath}",
+                        dupeIndex,
+                        arrayPath
+                    );
+                    var validationError = ValidationErrorFactory.BuildValidationError(arrayPath, dupeIndex);
+                    errors.Add(validationError);
+                }
+            }
+
+            return errors;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Unhandled exception in ValidatePathsConstraint for basePath: {BasePath}, paths: {Paths}",
+                basePath,
+                string.Join(", ", paths.Select(p => p.Value))
+            );
+            throw new InvalidOperationException(
+                $"Array uniqueness validation failed for constraint with basePath '{basePath}'",
+                ex
+            );
+        }
+    }
+
+    /// <summary>
+    /// Validates nested constraints by checking for duplicates across all parent items
+    /// using the original cross-item duplicate detection logic
+    /// </summary>
+    private static (string errorKey, string message)? ValidateNestedConstraintAcrossItems(
+        string basePath,
+        IReadOnlyList<External.Model.JsonPath> paths,
+        PipelineContext context,
+        ILogger logger
+    )
+    {
+        logger.LogDebug("Validating nested constraint across items - basePath: {BasePath}", basePath);
+
+        try
+        {
+            // Use the provided base path and compute relative paths
+            var arrayRootPath = basePath;
+            var relativePaths = paths
+                .Select(p => ArrayPathHelper.GetRelativePath(arrayRootPath, p.Value))
+                .ToList();
+
+            logger.LogDebug(
+                "Cross-item validation - Array root path: {ArrayRootPath}, Relative paths: {RelativePaths}",
+                arrayRootPath,
+                string.Join(", ", relativePaths)
+            );
+
+            // Use existing duplicate detection logic
+            var (arrayPath, dupeIndex) = context.ParsedBody.FindDuplicatesWithArrayPath(
+                arrayRootPath,
+                relativePaths,
+                logger
+            );
+
+            if (dupeIndex >= 0 && arrayPath != null)
+            {
+                logger.LogDebug(
+                    "Cross-item duplicate found at index {DupeIndex} for path {ArrayPath}",
+                    dupeIndex,
+                    arrayPath
+                );
+                return ValidationErrorFactory.BuildValidationError(arrayPath, dupeIndex);
+            }
+
             return null;
         }
-
-        // Determine the array root path
-        string arrayRootPath;
-        List<string> relativePaths;
-
-        if (basePath != null)
+        catch (Exception ex)
         {
-            // For nested constraints, use the provided base path
-            arrayRootPath = basePath;
-            relativePaths = paths
-                .Select(p => ArrayPathHelper.GetRelativePath(arrayRootPath, p.Value))
-                .ToList();
+            logger.LogDebug(ex, "Cross-item validation failed for basePath: {BasePath}", basePath);
+            // Don't throw here, let the within-item validation try instead
+            return null;
         }
-        else
+    }
+
+    /// <summary>
+    /// Validates nested constraints by checking for duplicates within individual parent items
+    /// rather than across all items in the parent array
+    /// </summary>
+    private static (string errorKey, string message)? ValidateNestedConstraintWithinItems(
+        string basePath,
+        IReadOnlyList<External.Model.JsonPath> paths,
+        PipelineContext context,
+        ILogger logger
+    )
+    {
+        logger.LogDebug("Validating nested constraint within items - basePath: {BasePath}", basePath);
+
+        try
         {
-            // For simple constraints, detect the array root path from the first path
-            arrayRootPath = ArrayPathHelper.GetArrayRootPath(paths);
-            relativePaths = paths
-                .Select(p => ArrayPathHelper.GetRelativePath(arrayRootPath, p.Value))
-                .ToList();
+            // Get all items from the base path array
+            var baseItems = context.ParsedBody.SelectNodesFromArrayPath(basePath, logger).ToList();
+            logger.LogDebug("Found {ItemCount} base items for path {BasePath}", baseItems.Count, basePath);
+
+            for (int itemIndex = 0; itemIndex < baseItems.Count; itemIndex++)
+            {
+                var item = baseItems[itemIndex];
+                if (item == null)
+                {
+                    continue;
+                }
+
+                logger.LogDebug("Processing base item {ItemIndex}", itemIndex);
+
+                // Check each path for duplicates within this specific item
+                // Cannot use LINQ here because we need early return when first duplicate is found
+#pragma warning disable S3267 // Loops should be simplified with "LINQ" expressions
+                foreach (var path in paths)
+                {
+                    try
+                    {
+                        // The path in nested constraints is relative to the base path item
+                        var relativePath = path.Value;
+                        logger.LogDebug(
+                            "Checking for duplicates in item {ItemIndex} with path: {RelativePath}",
+                            itemIndex,
+                            relativePath
+                        );
+
+                        // Use the existing duplicate detection, but on the individual item
+                        var duplicateResult = FindDuplicatesWithinSingleItem(item, relativePath, logger);
+
+                        if (duplicateResult.HasValue)
+                        {
+                            var (nestedArrayName, duplicateIndex) = duplicateResult.Value;
+                            // Construct the full error path: basePath[itemIndex].nestedArrayName[*]
+                            var itemPath = basePath.Replace("[*]", $"[{itemIndex}]");
+                            var fullErrorPath = $"{itemPath}.{nestedArrayName}[*]";
+                            logger.LogDebug(
+                                "Found duplicates in nested array at path {ErrorPath}",
+                                fullErrorPath
+                            );
+                            return ValidationErrorFactory.BuildValidationError(fullErrorPath, duplicateIndex);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogError(
+                            ex,
+                            "Error processing nested constraint for item {ItemIndex}, path {Path}",
+                            itemIndex,
+                            path.Value
+                        );
+                        throw new InvalidOperationException(
+                            $"Failed to process nested constraint for item {itemIndex}, path {path.Value}",
+                            ex
+                        );
+                    }
+                }
+#pragma warning restore S3267 // Loops should be simplified with "LINQ" expressions
+            }
+
+            return null;
         }
-
-        // Use existing duplicate detection logic
-        (string? arrayPath, int dupeIndex) = context.ParsedBody.FindDuplicatesWithArrayPath(
-            arrayRootPath,
-            relativePaths,
-            logger
-        );
-
-        if (dupeIndex >= 0 && arrayPath != null)
+        catch (Exception ex)
         {
-            return ValidationErrorFactory.BuildValidationError(arrayPath, dupeIndex);
+            var pathValues = paths.Select(p => p.Value);
+            logger.LogError(
+                ex,
+                "Unhandled exception in ValidateNestedConstraintWithinItems for basePath: {BasePath}, paths: {Paths}",
+                basePath,
+                string.Join(", ", pathValues)
+            );
+            throw new InvalidOperationException(
+                $"Nested constraint validation failed for basePath '{basePath}'",
+                ex
+            );
         }
+    }
 
-        return null;
+    /// <summary>
+    /// Finds duplicates within a single JSON item for a given path
+    /// Returns the array name and duplicate index if found, null otherwise
+    /// </summary>
+    private static (string arrayName, int duplicateIndex)? FindDuplicatesWithinSingleItem(
+        JsonNode item,
+        string relativePath,
+        ILogger logger
+    )
+    {
+        try
+        {
+            logger.LogDebug("Finding duplicates within single item for path: {RelativePath}", relativePath);
+
+            // For nested constraints, the path is already in the form "$.dates[*].immunizationDate"
+            // We need to extract the array root and relative paths
+            var arrayRootPath = ArrayPathHelper.GetArrayRootPath([new External.Model.JsonPath(relativePath)]);
+            var relativePathsList = new List<string>
+            {
+                ArrayPathHelper.GetRelativePath(arrayRootPath, relativePath),
+            };
+
+            logger.LogDebug(
+                "Array root path: {ArrayRootPath}, Relative path: {RelativePath}",
+                arrayRootPath,
+                relativePathsList[0]
+            );
+
+            // Use the existing duplicate detection logic on the individual item
+            var (_, dupeIndex) = item.FindDuplicatesWithArrayPath(arrayRootPath, relativePathsList, logger);
+
+            if (dupeIndex >= 0)
+            {
+                // Extract array name from the array root path
+                var arrayName = arrayRootPath.Replace("$.", "").Replace("[*]", "");
+                logger.LogDebug(
+                    "Found duplicate at index {DupeIndex} in array {ArrayName}",
+                    dupeIndex,
+                    arrayName
+                );
+                return (arrayName, dupeIndex);
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Error finding duplicates within single item for path {RelativePath}",
+                relativePath
+            );
+            throw new InvalidOperationException(
+                $"Failed to find duplicates within single item for path {relativePath}",
+                ex
+            );
+        }
+    }
+
+    /// <summary>
+    /// Aggregates validation errors by grouping messages under the same error key
+    /// </summary>
+    private static Dictionary<string, string[]> AggregateValidationErrors(
+        List<(string errorKey, string message)> errors
+    )
+    {
+        return errors
+            .GroupBy(e => e.errorKey)
+            .ToDictionary(g => g.Key, g => g.Select(e => e.message).ToArray());
     }
 
     public async Task Execute(PipelineContext context, Func<Task> next)
@@ -139,22 +390,19 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
 
         if (context.ResourceSchema.ArrayUniquenessConstraints.Count > 0)
         {
-            (string errorKey, string message)? validationError = ValidateArrayUniquenessConstraints(
-                context,
-                logger
-            );
-            if (validationError.HasValue)
+            var validationErrors = ValidateArrayUniquenessConstraints(context, logger);
+            if (validationErrors.Count > 0)
             {
-                (string errorKey, string message) = validationError.Value;
-                Dictionary<string, string[]> validationErrors = new() { [errorKey] = [message] };
+                var errorDictionary = AggregateValidationErrors(validationErrors);
 
                 context.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
-                    validationErrors,
+                    errorDictionary,
                     context.FrontendRequest.TraceId
                 );
 
                 logger.LogDebug(
-                    "Array uniqueness constraint violation - {TraceId}",
+                    "Array uniqueness constraint violations found: {ErrorCount} - {TraceId}",
+                    validationErrors.Count,
                     context.FrontendRequest.TraceId.Value
                 );
                 return;

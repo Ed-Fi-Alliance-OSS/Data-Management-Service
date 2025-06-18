@@ -20,39 +20,37 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class ArrayUniquenessValidationMiddlewareTests
 {
-    internal static ApiSchemaDocuments SimpleArrayUniquenessDocument()
+    internal static ArrayUniquenessValidationMiddleware Middleware()
     {
-        return new ApiSchemaBuilder()
-            .WithStartProject()
-            .WithStartResource("Assessment")
-            .WithStartDocumentPathsMapping()
-            .WithDocumentPathDescriptor(
-                "AssessmentItemResultDescriptor",
-                "$.items[*].assessmentItemResultDescriptor"
-            )
-            .WithEndDocumentPathsMapping()
-            .WithArrayUniquenessConstraintSimple(
-                [
-                    "$.performanceLevels[*].assessmentReportingMethodDescriptor",
-                    "$.performanceLevels[*].performanceLevelDescriptor",
-                ]
-            )
-            .WithEndResource()
-            .WithEndProject()
-            .ToApiSchemaDocuments();
+        return new ArrayUniquenessValidationMiddleware(NullLogger.Instance);
     }
 
-    internal static PipelineContext ArrayUniquenessContext(
-        FrontendRequest frontendRequest,
-        RequestMethod method
+    internal static async Task<PipelineContext> CreateContextAndExecute(
+        ApiSchemaDocuments apiSchema,
+        string jsonBody,
+        string endpointName
     )
     {
-        PipelineContext context = new(frontendRequest, method)
+        FrontendRequest frontEndRequest = new(
+            Path: $"ed-fi/{endpointName}",
+            Body: jsonBody,
+            Headers: [],
+            QueryParameters: [],
+            TraceId: new TraceId(""),
+            new ClientAuthorizations(
+                TokenId: "",
+                ClaimSetName: "",
+                EducationOrganizationIds: [],
+                NamespacePrefixes: []
+            )
+        );
+
+        PipelineContext context = new(frontEndRequest, RequestMethod.POST)
         {
-            ApiSchemaDocuments = SimpleArrayUniquenessDocument(),
+            ApiSchemaDocuments = apiSchema,
             PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
-                EndpointName: new("assessments"),
+                EndpointName: new(endpointName),
                 DocumentUuid: No.DocumentUuid
             ),
         };
@@ -60,210 +58,17 @@ public class ArrayUniquenessValidationMiddlewareTests
             new("ed-fi")
         )!;
         context.ResourceSchema = new ResourceSchema(
-            context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("assessments")) ?? new JsonObject()
+            context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName)) ?? new JsonObject()
         );
 
-        if (context.FrontendRequest.Body != null)
+        var body = JsonNode.Parse(context.FrontendRequest.Body!);
+        if (body != null)
         {
-            JsonNode? body = JsonNode.Parse(context.FrontendRequest.Body);
-            if (body != null)
-            {
-                context.ParsedBody = body;
-            }
+            context.ParsedBody = body;
         }
 
+        await Middleware().Execute(context, NullNext);
         return context;
-    }
-
-    internal static ArrayUniquenessValidationMiddleware Middleware()
-    {
-        return new ArrayUniquenessValidationMiddleware(NullLogger.Instance);
-    }
-
-    [TestFixture]
-    public class Given_Document_With_Same_PerformanceLevelDescriptor_And_AssessmentReportingMethodDescriptor
-        : ArrayUniquenessValidationMiddlewareTests
-    {
-        private PipelineContext _context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            string jsonBody = """
-                {
-                 "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
-                 "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
-                 "assessmentTitle": "3rd Grade Reading 1st Six Weeks 2021-2022",
-                 "performanceLevels": [
-                   {
-                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Advanced",
-                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale score",
-                     "minimumScore": "23",
-                     "maximumScore": "26"
-                   },
-                   {
-                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Advanced",
-                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale score",
-                     "minimumScore": "27",
-                     "maximumScore": "30"
-                   }
-                 ]
-                }
-                """;
-
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/assessments",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
-            );
-
-            _context = ArrayUniquenessContext(frontEndRequest, RequestMethod.POST);
-
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_returns_status_400()
-        {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
-        }
-
-        [Test]
-        public void It_returns_validation_error_with_duplicated_array_constraint()
-        {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
-
-            _context
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Contain(
-                    """
-                    "validationErrors":{"$.performanceLevels":["The 2nd item of the performanceLevels has the same identifying values as another item earlier in the list."]}
-                    """
-                );
-        }
-    }
-
-    [TestFixture]
-    public class Given_Document_With_Different_PerformanceLevelDescriptors
-        : ArrayUniquenessValidationMiddlewareTests
-    {
-        private PipelineContext _context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            string jsonBody = """
-                {
-                 "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
-                 "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
-                 "assessmentTitle": "3rd Grade Reading 1st Six Weeks 2021-2022",
-                 "performanceLevels": [
-                   {
-                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Advanced",
-                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale score",
-                     "minimumScore": "23",
-                     "maximumScore": "26"
-                   },
-                   {
-                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Proficient",
-                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale score",
-                     "minimumScore": "15",
-                     "maximumScore": "22"
-                   }
-                 ]
-                }
-                """;
-
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/assessments",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
-            );
-
-            _context = ArrayUniquenessContext(frontEndRequest, RequestMethod.POST);
-
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_continues_to_next_middleware()
-        {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
-    }
-
-    [TestFixture]
-    public class Given_Document_With_Different_AssessmentReportingMethodDescriptors
-        : ArrayUniquenessValidationMiddlewareTests
-    {
-        private PipelineContext _context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            string jsonBody = """
-                {
-                 "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
-                 "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
-                 "assessmentTitle": "3rd Grade Reading 1st Six Weeks 2021-2022",
-                 "performanceLevels": [
-                   {
-                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Advanced",
-                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#NotScale score",
-                     "minimumScore": "23",
-                     "maximumScore": "26"
-                   },
-                   {
-                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Advanced",
-                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale score",
-                     "minimumScore": "15",
-                     "maximumScore": "22"
-                   }
-                 ]
-                }
-                """;
-
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/assessments",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
-            );
-
-            _context = ArrayUniquenessContext(frontEndRequest, RequestMethod.POST);
-
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_continues_to_next_middleware()
-        {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
     }
 
     [TestFixture]
@@ -276,7 +81,7 @@ public class ArrayUniquenessValidationMiddlewareTests
         public async Task Setup()
         {
             // Use a schema without array uniqueness constraints
-            var NoArrayUniquenessDocument = new ApiSchemaBuilder()
+            var noArrayUniquenessDocument = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("SimpleResource")
                 .WithStartDocumentPathsMapping()
@@ -291,44 +96,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/simpleresources",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
-            {
-                ApiSchemaDocuments = NoArrayUniquenessDocument,
-                PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
-                    EndpointName: new("simpleresources"),
-                    DocumentUuid: No.DocumentUuid
-                ),
-            };
-            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                new("ed-fi")
-            )!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("simpleresources"))
-                    ?? new JsonObject()
-            );
-
-            var body = JsonNode.Parse(_context.FrontendRequest.Body!);
-            if (body != null)
-            {
-                _context.ParsedBody = body;
-            }
-
-            await Middleware().Execute(_context, NullNext);
+            _context = await CreateContextAndExecute(noArrayUniquenessDocument, jsonBody, "simpleresources");
         }
 
         [Test]
@@ -339,7 +107,7 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_With_Duplicate_Descriptor_Reference : ArrayUniquenessValidationMiddlewareTests
+    public class Given_Has_No_Duplicates : ArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -347,7 +115,60 @@ public class ArrayUniquenessValidationMiddlewareTests
         public async Task Setup()
         {
             // Create schema with gradeLevel descriptor uniqueness constraint
-            var schemaDocuments = new ApiSchemaBuilder()
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("School")
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathDescriptor("GradeLevelDescriptor", "$.gradeLevels[*].gradeLevelDescriptor")
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraintSimple(["$.gradeLevels[*].gradeLevelDescriptor"])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                  "schoolId":255901001,
+                  "nameOfInstitution":"School Test",
+                  "gradeLevels": [
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seventh grade"
+                      }
+                   ],
+                   "educationOrganizationCategories":[
+                      {
+                         "educationOrganizationCategoryDescriptor":"uri://ed-fi.org/educationOrganizationCategoryDescriptor#School"
+                      }
+                   ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "schools");
+        }
+
+        [Test]
+        public void It_continues_to_next_middleware()
+        {
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Has_Duplicate_Descriptors : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create schema with gradeLevel descriptor uniqueness constraint
+            var apiSchema = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("School")
                 .WithStartDocumentPathsMapping()
@@ -373,22 +194,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                         "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
                       },
                       {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Second grade"
-                      },
-                      {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Third grade"
-                      },
-                      {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Fourth grade"
-                      },
-                      {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Fifth grade"
-                      },
-                      {
                         "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seventh grade"
-                      },
-                      {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
                       }
                    ],
                    "educationOrganizationCategories":[
@@ -399,44 +205,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/schools",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
-            {
-                ApiSchemaDocuments = schemaDocuments,
-                PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
-                    EndpointName: new("schools"),
-                    DocumentUuid: No.DocumentUuid
-                ),
-            };
-            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                new("ed-fi")
-            )!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
-                    ?? new JsonObject()
-            );
-
-            var body = JsonNode.Parse(_context.FrontendRequest.Body!);
-            if (body != null)
-            {
-                _context.ParsedBody = body;
-            }
-
-            await Middleware().Execute(_context, NullNext);
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "schools");
         }
 
         [Test]
@@ -448,10 +217,10 @@ public class ArrayUniquenessValidationMiddlewareTests
         [Test]
         public void It_returns_validation_error_with_duplicated_descriptor()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
+            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
 
             _context
-                .FrontendResponse.Body?.ToJsonString()
+                .FrontendResponse.Body!.ToJsonString()
                 .Should()
                 .Contain(
                     """
@@ -462,14 +231,14 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_Has_Reference_Uniqueness_In_Array : ArrayUniquenessValidationMiddlewareTests
+    public class Given_Has_Multiple_Element_Duplication : ArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
         {
-            var schemaDocuments = new ApiSchemaBuilder()
+            var apiSchema = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Assessment")
                 .WithArrayUniquenessConstraintSimple(
@@ -507,44 +276,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/assessments",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
-            {
-                ApiSchemaDocuments = schemaDocuments,
-                PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
-                    EndpointName: new("assessments"),
-                    DocumentUuid: No.DocumentUuid
-                ),
-            };
-            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                new("ed-fi")
-            )!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("assessments"))
-                    ?? new JsonObject()
-            );
-
-            var body = JsonNode.Parse(_context.FrontendRequest.Body!);
-            if (body != null)
-            {
-                _context.ParsedBody = body;
-            }
-
-            await Middleware().Execute(_context, NullNext);
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "assessments");
         }
 
         [Test]
@@ -556,10 +288,10 @@ public class ArrayUniquenessValidationMiddlewareTests
         [Test]
         public void It_returns_validation_error_with_duplicate_items()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
+            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
 
             _context
-                .FrontendResponse.Body?.ToJsonString()
+                .FrontendResponse.Body!.ToJsonString()
                 .Should()
                 .Contain(
                     """
@@ -570,7 +302,64 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_Has_Nested_Array_Unique_References : ArrayUniquenessValidationMiddlewareTests
+    public class Given_Has_Multiple_Element_Only_Partial_Duplication
+        : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Assessment")
+                .WithArrayUniquenessConstraintSimple(
+                    [
+                        "$.items[*].assessmentItemReference.assessmentIdentifier",
+                        "$.items[*].assessmentItemReference.identificationCode",
+                        "$.items[*].assessmentItemReference.namespace",
+                    ]
+                )
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                 "assessmentTitle": "Reading",
+                 "items": [
+                   {
+                     "assessmentResponse": "A",
+                     "assessmentItemReference": {
+                       "identificationCode": "000000",
+                       "assessmentIdentifier": "222222",
+                       "namespace": "uri://ed-fi.org/Assessment"
+                     }
+                   },
+                   {
+                     "assessmentResponse": "B",
+                     "assessmentItemReference": {
+                       "identificationCode": "111111",
+                       "assessmentIdentifier": "222222",
+                       "namespace": "uri://ed-fi.org/Assessment"
+                     }
+                   }
+                 ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "assessments");
+        }
+
+        [Test]
+        public void It_continues_to_next_middleware()
+        {
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Has_Two_Levels_And_No_Duplicates : ArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -578,7 +367,7 @@ public class ArrayUniquenessValidationMiddlewareTests
         public async Task Setup()
         {
             // Create schema with nested array uniqueness constraints
-            var schemaDocuments = new ApiSchemaBuilder()
+            var apiSchema = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("RequiredImmunization")
                 .WithStartDocumentPathsMapping()
@@ -587,13 +376,15 @@ public class ArrayUniquenessValidationMiddlewareTests
                     [
                         new
                         {
-                            basePath = "$.requiredImmunizations[*]",
-                            paths = new[] { "$.dates[*].immunizationDate" },
-                        },
-                        new
-                        {
-                            basePath = "$.requiredImmunizations[*]",
-                            paths = new[] { "$.immunizationTypeDescriptor" },
+                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                            nestedConstraints = new[]
+                            {
+                                new
+                                {
+                                    basePath = "$.requiredImmunizations[*]",
+                                    paths = new[] { "$.dates[*].immunizationDate" },
+                                },
+                            },
                         },
                     ]
                 )
@@ -624,50 +415,415 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/requiredimmunizations",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
-            {
-                ApiSchemaDocuments = schemaDocuments,
-                PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
-                    EndpointName: new("requiredimmunizations"),
-                    DocumentUuid: No.DocumentUuid
-                ),
-            };
-            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                new("ed-fi")
-            )!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("requiredimmunizations"))
-                    ?? new JsonObject()
-            );
-
-            var body = JsonNode.Parse(_context.FrontendRequest.Body!);
-            if (body != null)
-            {
-                _context.ParsedBody = body;
-            }
-
-            await Middleware().Execute(_context, NullNext);
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
         }
 
         [Test]
         public void It_continues_to_next_middleware()
         {
             _context.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Has_1st_Level_Duplicates : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create schema with nested array uniqueness constraints
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("RequiredImmunization")
+                .WithStartDocumentPathsMapping()
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraint(
+                    [
+                        new
+                        {
+                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                            nestedConstraints = new[]
+                            {
+                                new
+                                {
+                                    basePath = "$.requiredImmunizations[*]",
+                                    paths = new[] { "$.dates[*].immunizationDate" },
+                                },
+                            },
+                        },
+                    ]
+                )
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                 "requiredImmunizations": [
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2007-07-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#MMR"
+                    },
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2007-07-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                    }
+                  ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_validation_error_with_duplicate_items()
+        {
+            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Contain(
+                    """
+                    "validationErrors":{"$.requiredImmunizations":["The 2nd item of the requiredImmunizations has the same identifying values as another item earlier in the list."]}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Has_2nd_Level_Duplicates : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create schema with nested array uniqueness constraints
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("RequiredImmunization")
+                .WithStartDocumentPathsMapping()
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraint(
+                    [
+                        new
+                        {
+                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                            nestedConstraints = new[]
+                            {
+                                new
+                                {
+                                    basePath = "$.requiredImmunizations[*]",
+                                    paths = new[] { "$.dates[*].immunizationDate" },
+                                },
+                            },
+                        },
+                    ]
+                )
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                 "requiredImmunizations": [
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2007-07-01"
+                            },
+                            {
+                                "immunizationDate": "2007-07-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#MMR"
+                    },
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2010-04-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                    }
+                  ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_validation_error_with_duplicate_items()
+        {
+            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Contain(
+                    """
+                    "validationErrors":{"$.requiredImmunizations[0].dates":["The 2nd item of the dates has the same identifying values as another item earlier in the list."]}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Document_Has_Two_Levels_Of_Duplicates : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create schema with nested array uniqueness constraints
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("RequiredImmunization")
+                .WithStartDocumentPathsMapping()
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraint(
+                    [
+                        new
+                        {
+                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                            nestedConstraints = new[]
+                            {
+                                new
+                                {
+                                    basePath = "$.requiredImmunizations[*]",
+                                    paths = new[] { "$.dates[*].immunizationDate" },
+                                },
+                            },
+                        },
+                    ]
+                )
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                 "requiredImmunizations": [
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2007-07-01"
+                            },
+                            {
+                                "immunizationDate": "2007-07-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                    },
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2010-04-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                    }
+                  ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_validation_error_with_duplicate_items()
+        {
+            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+
+            var responseBody = _context.FrontendResponse.Body!.ToJsonString();
+
+            responseBody
+                .Should()
+                .Contain("$.requiredImmunizations")
+                .And.Contain(
+                    "The 2nd item of the requiredImmunizations has the same identifying values as another item earlier in the list."
+                );
+
+            responseBody
+                .Should()
+                .Contain("$.requiredImmunizations[0].dates")
+                .And.Contain(
+                    "The 2nd item of the dates has the same identifying values as another item earlier in the list."
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Document_Has_Two_Levels_Of_Duplicates_For_Multiple_Constraints
+        : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create schema with nested array uniqueness constraints
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("RequiredImmunization")
+                .WithStartDocumentPathsMapping()
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraint(
+                    [
+                        new
+                        {
+                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                            nestedConstraints = new[]
+                            {
+                                new
+                                {
+                                    basePath = "$.requiredImmunizations[*]",
+                                    paths = new[] { "$.dates[*].immunizationDate" },
+                                },
+                            },
+                        },
+                        new
+                        {
+                            paths = new[] { "$.documentations[*].documentationTypeDescriptor" },
+                            nestedConstraints = new[]
+                            {
+                                new
+                                {
+                                    basePath = "$.documentations[*]",
+                                    paths = new[] { "$.dates[*].documentationDate" },
+                                },
+                            },
+                        },
+                    ]
+                )
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                "requiredImmunizations": [
+                    {
+                    "dates": [
+                        {
+                        "immunizationDate": "2010-04-01"
+                        }
+                    ],
+                    "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                    },
+                    {
+                    "dates": [
+                        {
+                        "immunizationDate": "2007-07-01"
+                        },
+                        {
+                        "immunizationDate": "2007-07-01"
+                        }
+                    ],
+                    "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                    }
+                ],
+                "documentations": [
+                    {
+                    "dates": [
+                        {
+                        "documentationDate": "2010-04-01"
+                        }
+                    ],
+                    "documentationTypeDescriptor": "uri://ed-fi.org/documentationTypeDescriptor#Card"
+                    },
+                    {
+                    "dates": [
+                        {
+                        "documentationDate": "2020-01-01"
+                        },
+                        {
+                        "documentationDate": "2007-01-01"
+                        },
+                        {
+                        "documentationDate": "2020-01-01"
+                        }
+                    ],
+                    "documentationTypeDescriptor": "uri://ed-fi.org/documentationTypeDescriptor#Card"
+                    }
+                ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_validation_error_with_duplicate_items()
+        {
+            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+
+            var responseBody = _context.FrontendResponse.Body!.ToJsonString();
+
+            responseBody
+                .Should()
+                .Contain("$.requiredImmunizations")
+                .And.Contain(
+                    "The 2nd item of the requiredImmunizations has the same identifying values as another item earlier in the list."
+                );
+
+            responseBody
+                .Should()
+                .Contain("$.requiredImmunizations[1].dates")
+                .And.Contain(
+                    "The 2nd item of the dates has the same identifying values as another item earlier in the list."
+                );
+
+            responseBody
+                .Should()
+                .Contain("$.documentations")
+                .And.Contain(
+                    "The 2nd item of the documentations has the same identifying values as another item earlier in the list."
+                );
+
+            responseBody
+                .Should()
+                .Contain("$.documentations[1].dates")
+                .And.Contain(
+                    "The 3rd item of the dates has the same identifying values as another item earlier in the list."
+                );
         }
     }
 }

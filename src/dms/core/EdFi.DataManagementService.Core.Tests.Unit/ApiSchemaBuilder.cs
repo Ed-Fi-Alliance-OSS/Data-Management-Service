@@ -938,10 +938,10 @@ public class ApiSchemaBuilder
     /// An example nested parameter:
     //    [
     ///       new {
-    ///           basePath = "$.schools[*]",
+    ///           paths = "$.schools[*].schoolId",
     ///           nestedConstraints = new[] {
     ///               new {
-    ///                   basePath = "$.gradeLevels[*]",
+    ///                   basePath = "$.schools[*]",
     ///                   paths = new[] { "$.sections[*].sectionIdentifier", "$.sections[*].sessionName" }
     ///               }
     ///           }
@@ -958,22 +958,17 @@ public class ApiSchemaBuilder
             throw new InvalidOperationException();
         }
 
-        JsonArray constraintArray = [];
-        foreach (var constraint in constraints)
-        {
-            JsonNode nestedJson = JsonSerializer.SerializeToNode(constraint)!;
-            constraintArray.Add(nestedJson);
-        }
-
-        JsonObject constraintObject = new() { ["nestedConstraints"] = constraintArray };
-
         if (_currentResourceNode["arrayUniquenessConstraints"] is not JsonArray constraintsArray)
         {
             constraintsArray = [];
             _currentResourceNode["arrayUniquenessConstraints"] = constraintsArray;
         }
 
-        constraintsArray.Add(constraintObject);
+        foreach (var constraint in constraints)
+        {
+            JsonNode constraintJson = JsonSerializer.SerializeToNode(constraint)!;
+            constraintsArray.Add(constraintJson);
+        }
 
         return this;
     }
