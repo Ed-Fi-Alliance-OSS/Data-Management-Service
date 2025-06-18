@@ -10,7 +10,13 @@ CREATE TABLE dms.StudentContactRelation(
     StudentContactAssociationDocumentId BIGINT NOT NULL,
     StudentContactAssociationDocumentPartitionKey SMALLINT NOT NULL,
     CONSTRAINT FK_StudentContactAssociation_Document FOREIGN KEY (StudentContactAssociationDocumentId, StudentContactAssociationDocumentPartitionKey)
-        REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
+        REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE,
+    CONSTRAINT UQ_StudentContactRelation_Composite UNIQUE (
+        StudentUniqueId,
+        ContactUniqueId,
+        StudentContactAssociationDocumentId,
+        StudentContactAssociationDocumentPartitionKey
+    )
 );
 
 CREATE INDEX IX_StudentContactRelation_StudentUniqueId ON dms.StudentContactRelation (StudentUniqueId);

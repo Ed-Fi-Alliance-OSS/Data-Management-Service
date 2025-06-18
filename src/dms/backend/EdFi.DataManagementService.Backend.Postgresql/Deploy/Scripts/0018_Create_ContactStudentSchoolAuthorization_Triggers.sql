@@ -67,7 +67,8 @@ BEGIN
         student_id,
         contact_id,
         NEW.Id,
-        NEW.DocumentPartitionKey;
+        NEW.DocumentPartitionKey
+    ON CONFLICT DO NOTHING;
 
     -- Extract student school association document details
     INSERT INTO dms.ContactStudentSchoolAuthorization (
