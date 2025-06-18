@@ -20,9 +20,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [TestFixture]
 public class ArrayUniquenessValidationMiddlewareTests
 {
-    internal static ApiSchemaDocuments ArrayUniquenessSchemaDocuments()
+    internal static ApiSchemaDocuments SimpleArrayUniquenessDocument()
     {
-        var result = new ApiSchemaBuilder()
+        return new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("Assessment")
             .WithStartDocumentPathsMapping()
@@ -31,7 +31,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 "$.items[*].assessmentItemResultDescriptor"
             )
             .WithEndDocumentPathsMapping()
-            .WithArrayUniquenessConstraint(
+            .WithArrayUniquenessConstraintSimple(
                 [
                     "$.performanceLevels[*].assessmentReportingMethodDescriptor",
                     "$.performanceLevels[*].performanceLevelDescriptor",
@@ -40,15 +40,16 @@ public class ArrayUniquenessValidationMiddlewareTests
             .WithEndResource()
             .WithEndProject()
             .ToApiSchemaDocuments();
-
-        return result;
     }
 
-    internal PipelineContext ArrayUniquenessContext(FrontendRequest frontendRequest, RequestMethod method)
+    internal static PipelineContext ArrayUniquenessContext(
+        FrontendRequest frontendRequest,
+        RequestMethod method
+    )
     {
         PipelineContext context = new(frontendRequest, method)
         {
-            ApiSchemaDocuments = ArrayUniquenessSchemaDocuments(),
+            ApiSchemaDocuments = SimpleArrayUniquenessDocument(),
             PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
                 EndpointName: new("assessments"),
@@ -80,7 +81,7 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_With_Array_Uniqueness_Constraint_Violation
+    public class Given_Document_With_Same_PerformanceLevelDescriptor_And_AssessmentReportingMethodDescriptor
         : ArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
@@ -152,7 +153,8 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_With_Unique_Array_Elements : ArrayUniquenessValidationMiddlewareTests
+    public class Given_Document_With_Different_PerformanceLevelDescriptors
+        : ArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -173,7 +175,64 @@ public class ArrayUniquenessValidationMiddlewareTests
                    },
                    {
                      "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Proficient",
-                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score",
+                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale score",
+                     "minimumScore": "15",
+                     "maximumScore": "22"
+                   }
+                 ]
+                }
+                """;
+
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/assessments",
+                Body: jsonBody,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId(""),
+                new ClientAuthorizations(
+                    TokenId: "",
+                    ClaimSetName: "",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: []
+                )
+            );
+
+            _context = ArrayUniquenessContext(frontEndRequest, RequestMethod.POST);
+
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_continues_to_next_middleware()
+        {
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Document_With_Different_AssessmentReportingMethodDescriptors
+        : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string jsonBody = """
+                {
+                 "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                 "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                 "assessmentTitle": "3rd Grade Reading 1st Six Weeks 2021-2022",
+                 "performanceLevels": [
+                   {
+                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Advanced",
+                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#NotScale score",
+                     "minimumScore": "23",
+                     "maximumScore": "26"
+                   },
+                   {
+                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Advanced",
+                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale score",
                      "minimumScore": "15",
                      "maximumScore": "22"
                    }
@@ -217,7 +276,7 @@ public class ArrayUniquenessValidationMiddlewareTests
         public async Task Setup()
         {
             // Use a schema without array uniqueness constraints
-            var schemaDocuments = new ApiSchemaBuilder()
+            var NoArrayUniquenessDocument = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("SimpleResource")
                 .WithStartDocumentPathsMapping()
@@ -248,7 +307,7 @@ public class ArrayUniquenessValidationMiddlewareTests
 
             _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
             {
-                ApiSchemaDocuments = schemaDocuments,
+                ApiSchemaDocuments = NoArrayUniquenessDocument,
                 PathComponents = new(
                     ProjectNamespace: new("ed-fi"),
                     EndpointName: new("simpleresources"),
@@ -294,7 +353,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .WithStartDocumentPathsMapping()
                 .WithDocumentPathDescriptor("GradeLevelDescriptor", "$.gradeLevels[*].gradeLevelDescriptor")
                 .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraint(["$.gradeLevels[*].gradeLevelDescriptor"])
+                .WithArrayUniquenessConstraintSimple(["$.gradeLevels[*].gradeLevelDescriptor"])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -308,16 +367,10 @@ public class ArrayUniquenessValidationMiddlewareTests
                         "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
                       },
                       {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
-                      },
-                      {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
-                      },
-                      {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
-                      },
-                      {
                         "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#First grade"
+                      },
+                      {
+                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
                       },
                       {
                         "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Second grade"
@@ -402,114 +455,24 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .Should()
                 .Contain(
                     """
-                    "validationErrors":{"$.gradeLevels":["The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list."]}
+                    "validationErrors":{"$.gradeLevels":["The 3rd item of the gradeLevels has the same identifying values as another item earlier in the list."]}
                     """
                 );
         }
     }
 
     [TestFixture]
-    public class Given_Document_With_Two_Different_Descriptor_Reference
-        : ArrayUniquenessValidationMiddlewareTests
+    public class Given_Document_Has_Reference_Uniqueness_In_Array : ArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
         [SetUp]
         public async Task Setup()
         {
-            // Create schema with gradeLevel descriptor uniqueness constraint
-            var schemaDocuments = new ApiSchemaBuilder()
-                .WithStartProject()
-                .WithStartResource("School")
-                .WithStartDocumentPathsMapping()
-                .WithDocumentPathDescriptor("GradeLevelDescriptor", "$.gradeLevels[*].gradeLevelDescriptor")
-                .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraint(["$.gradeLevels[*].gradeLevelDescriptor"])
-                .WithEndResource()
-                .WithEndProject()
-                .ToApiSchemaDocuments();
-
-            string jsonBody = """
-                {
-                  "schoolId":255901001,
-                  "nameOfInstitution":"School Test",
-                  "gradeLevels": [
-                      {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
-                      },
-                      {
-                        "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Seven grade"
-                      }
-                   ]
-                }
-                """;
-
-            FrontendRequest frontEndRequest = new(
-                Path: "ed-fi/schools",
-                Body: jsonBody,
-                Headers: [],
-                QueryParameters: [],
-                TraceId: new TraceId(""),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
-            );
-
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
-            {
-                ApiSchemaDocuments = schemaDocuments,
-                PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
-                    EndpointName: new("schools"),
-                    DocumentUuid: No.DocumentUuid
-                ),
-            };
-            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                new("ed-fi")
-            )!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
-                    ?? new JsonObject()
-            );
-
-            var body = JsonNode.Parse(_context.FrontendRequest.Body!);
-            if (body != null)
-            {
-                _context.ParsedBody = body;
-            }
-
-            await Middleware().Execute(_context, NullNext);
-        }
-
-        [Test]
-        public void It_continues_to_next_middleware()
-        {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
-        }
-    }
-
-    [TestFixture]
-    public class Given_Document_Has_Combined_Unique_References : ArrayUniquenessValidationMiddlewareTests
-    {
-        private PipelineContext _context = No.PipelineContext();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            // Create schema with combined uniqueness constraints on items array
             var schemaDocuments = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Assessment")
-                .WithStartDocumentPathsMapping()
-                .WithDocumentPathDescriptor(
-                    "AssessmentItemResultDescriptor",
-                    "$.items[*].assessmentItemResultDescriptor"
-                )
-                .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraint(
+                .WithArrayUniquenessConstraintSimple(
                     [
                         "$.items[*].assessmentItemReference.assessmentIdentifier",
                         "$.items[*].assessmentItemReference.identificationCode",
@@ -522,50 +485,23 @@ public class ArrayUniquenessValidationMiddlewareTests
 
             string jsonBody = """
                 {
-                 "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
-                 "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
-                 "assessmentTitle": "3rd Grade Reading 1st Six Weeks 2021-2022",
-                 "academicSubjects": [
-                   {
-                     "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
-                   }
-                 ],
-                 "performanceLevels": [
-                   {
-                     "performanceLevelDescriptor": "uri://ed-fi.org/PerformanceLevelDescriptor#Advanced",
-                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Scale score",
-                     "minimumScore": "23",
-                     "maximumScore": "26"
-                   }
-                 ],
+                 "assessmentTitle": "Reading",
                  "items": [
                    {
-                     "assessmentResponse": "G",
-                     "responseIndicatorDescriptor": "uri://ed-fi.org/ResponseIndicatorDescriptor#Nonscorable response",
-                     "assessmentItemResultDescriptor": "uri://ed-fi.org/AssessmentItemResultDescriptor#Correct",
+                     "assessmentResponse": "A",
                      "assessmentItemReference": {
-                       "identificationCode": "9848478",
-                       "assessmentIdentifier": "ae049cb3-33d0-431f-b0f3-a751df7217ef",
-                       "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                       "identificationCode": "111111",
+                       "assessmentIdentifier": "222222",
+                       "namespace": "uri://ed-fi.org/Assessment"
                      }
                    },
                    {
-                     "assessmentResponse": "G",
-                     "responseIndicatorDescriptor": "uri://ed-fi.org/ResponseIndicatorDescriptor#Nonscorable response",
-                     "assessmentItemResultDescriptor": "uri://ed-fi.org/AssessmentItemResultDescriptor#Correct",
+                     "assessmentResponse": "B",
                      "assessmentItemReference": {
-                       "identificationCode": "9848478",
-                       "assessmentIdentifier": "ae049cb3-33d0-431f-b0f3-a751df7217ef",
-                       "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                       "identificationCode": "111111",
+                       "assessmentIdentifier": "222222",
+                       "namespace": "uri://ed-fi.org/Assessment"
                      }
-                   }
-                 ],
-                 "scores": [
-                   {
-                     "assessmentReportingMethodDescriptor": "uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score",
-                     "maximumScore": "10",
-                     "minimumScore": "0",
-                     "resultDatatypeTypeDescriptor": "uri://ed-fi.org/ResultDatatypeTypeDescriptor#Integer"
                    }
                  ]
                 }
@@ -647,7 +583,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .WithStartResource("RequiredImmunization")
                 .WithStartDocumentPathsMapping()
                 .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraintWithNested(
+                .WithArrayUniquenessConstraint(
                     [
                         new
                         {
