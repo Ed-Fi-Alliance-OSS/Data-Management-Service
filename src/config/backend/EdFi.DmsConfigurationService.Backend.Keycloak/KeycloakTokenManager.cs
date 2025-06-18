@@ -13,7 +13,8 @@ namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 public class KeycloakTokenManager(
     KeycloakContext keycloakContext,
     ILogger<KeycloakTokenManager> logger,
-    IHttpClientFactory httpClientFactory) : ITokenManager
+    IHttpClientFactory httpClientFactory
+) : ITokenManager
 {
     public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
     {

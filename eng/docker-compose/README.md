@@ -24,7 +24,8 @@ start up different configurations:
 5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
 6. `keycloak.yml` runs KeyCloak (identity provider).
 7. `kafka-elasticsearch.yml` covers Kafka, ElasticSearch
-8. `kafka-elasticsearch-ui` covers KafkaUI, ElasticSearch(Kibana) Dashboard
+8. `kafka-elasticsearch-ui.yml` covers KafkaUI, ElasticSearch(Kibana) Dashboard
+9. `swagger-ui.yml` covers SwaggerUI
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -105,6 +106,13 @@ Search engine type. Valid values are `OpenSearch`, `ElasticSearch`. Default: `Op
 ./start-local-dms.ps1 -SearchEngine "ElasticSearch"
 ```
 
+You can launch Swagger UI as part of your local environment to explore DMS endpoints from your browser.
+
+```pwsh
+# To enable Swagger UI
+./start-local-dms.ps1 -EnableSwaggerUI
+```
+
 ```pwsh
 # To set up the Keycloak container for enabling authorization 
 ./start-local-dms.ps1
@@ -122,6 +130,14 @@ image from source code.
 * The DMS API: [http://localhost:8080](http://localhost:8080)
 * Kafka UI: [http://localhost:8088/](http://localhost:8088/)
 * OpenSearch Dashboard: [http://localhost:5601/](http://localhost:5601/)
+* Swagger UI: [http://localhost:8082](http://localhost:8082)
+
+## Accessing Swagger UI
+Open your browser and go to http://localhost:8082
+Use the dropdown menu to select either the Resources or Descriptors spec.
+Swagger UI is configured to consume the DMS endpoints published on the host (localhost and the port defined in DMS_HTTP_PORTS).
+[!NOTE]
+> The user that is configured to use swagger must have the Web Origins configuration in Keycloak to allow CORS. To do this you must search for your Client in keycloak and add Web Origins (Example: Web origins: http://localhost:8082).
 
 ## Tips
 

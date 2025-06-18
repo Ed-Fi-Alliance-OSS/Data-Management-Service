@@ -70,10 +70,13 @@ public static class WebApplicationBuilderExtensions
             throw new InvalidOperationException("Unable to read appSettings");
         }
 
-        webApplicationBuilder.Services.AddHttpClient("KeycloakClient", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
-        });
+        webApplicationBuilder.Services.AddHttpClient(
+            "KeycloakClient",
+            client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+            }
+        );
 
         webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();

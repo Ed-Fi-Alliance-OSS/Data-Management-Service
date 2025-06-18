@@ -42,9 +42,7 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         // We only support keycloak for now
         if (!options.IdentityProvider.Equals("keycloak", StringComparison.CurrentCultureIgnoreCase))
         {
-            return ValidateOptionsResult.Fail(
-                "AppSettings value IdentityProvider must be one of: keycloak"
-            );
+            return ValidateOptionsResult.Fail("AppSettings value IdentityProvider must be one of: keycloak");
         }
 
         return ValidateOptionsResult.Success;

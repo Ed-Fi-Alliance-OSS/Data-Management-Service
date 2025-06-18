@@ -36,5 +36,10 @@ namespace EdFi.DataManagementService.Core.Configuration
         /// including both core and extension files.
         /// </summary>
         public string? ApiSchemaPath { get; set; }
+
+        /// <summary>
+        /// Get or set the authentication service URL.
+        /// </summary>
+        public string? AuthenticationService { get; set; }
     }
 }
