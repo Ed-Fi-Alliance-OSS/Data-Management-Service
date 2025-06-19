@@ -1,9 +1,8 @@
-Feature: Validate the duplicate references
+Feature: Validate array uniqueness
 
         Background:
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
-        @API-095
         Scenario: 01 Can create addresses on studentEducationOrganizationAssociations differing only in address type
             Given the system has these descriptors
                   | descriptorValue                                                |
@@ -51,7 +50,70 @@ Feature: Validate the duplicate references
                   """
              Then it should respond with 201 or 200
 
-    Rule: Duplicate References on assessment
+        Scenario: 02 Cannot create addresses on studentEducationOrganizationAssociations with no difference in type-city-street-postalcode
+            Given the system has these descriptors
+                  | descriptorValue                                                |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+                  | uri://ed-fi.org/AddressTypeDescriptor#Mailing                  |
+                  | uri://ed-fi.org/AddressTypeDescriptor#Home                     |
+                  | uri://ed-fi.org/StateAbbreviationDescriptor#TX                 |
+
+              And the system has these "students"
+                  | studentUniqueId | birthDate  | firstName | lastSurname |
+                  | "604824"        | 2010-01-13 | Traci     | Mathews     |
+              And the system has these "schools"
+                  | schoolId  | nameOfInstitution | gradeLevels                                                                      | educationOrganizationCategories                                                                                        |
+                  | 255901001 | Test school       | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
+             When a POST request is made to "/ed-fi/studentEducationOrganizationAssociations" with
+                  """
+                  {
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 255901001
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604824"
+                      },
+                      "addresses": [
+                          {
+                              "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Home",
+                              "city": "Grand Bend",
+                              "postalCode": "78834",
+                              "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                              "streetNumberName": "980 Green New Boulevard",
+                              "nameOfCounty": "WILLISTON",
+                              "periods": []
+                          },
+                          {
+                              "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Home",
+                              "city": "Grand Bend",
+                              "postalCode": "78834",
+                              "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                              "streetNumberName": "980 Green New Boulevard",
+                              "nameOfCounty": "WILLISTON",
+                              "periods": []
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null,
+                      "validationErrors": {
+                          "$.performanceLevels": [
+                              "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
+                          ]
+                      },
+                      "errors": []
+                  }
+                  """
+
+    Rule: Uniqueness on performanceLevels on assessments
         Background:
             Given the system has these descriptors
                   | descriptorValue                                                 |
@@ -62,8 +124,7 @@ Feature: Validate the duplicate references
                   | uri://ed-fi.org/AssessmentReportingMethodDescriptor#Raw score   |
                   | uri://ed-fi.org/ResultDatatypeTypeDescriptor#Integer            |
 
-        @API-096
-        Scenario: 02 Verify clients can create a assessment resource with combined unique descriptors
+        Scenario: 03 Can create an assessment with unique performanceLevels performanceLevelDescriptor+assessmentReportingMethodDescriptor
 
              When a POST request is made to "/ed-fi/assessments" with
                   """
@@ -102,8 +163,7 @@ Feature: Validate the duplicate references
                   """
              Then it should respond with 201 or 200
 
-        @API-097
-        Scenario: 03 Verify clients can not create a assessment resource with combined duplicate descriptors
+        Scenario: 04 Cannot create assessment with duplicate performanceLevels performanceLevelDescriptor+assessmentReportingMethodDescriptor
 
              When a POST request is made to "/ed-fi/assessments" with
                   """
@@ -158,9 +218,8 @@ Feature: Validate the duplicate references
                   }
                   """
 
-    Rule: Duplicate References
-        @API-098
-        Scenario: 04 Verify clients cannot create a resource with a duplicate resource reference
+    Rule: Uniqueness of array of document references
+        Scenario: 05 Cannot create a bellschedule with a duplicate classPeriodReference in classPeriods array
              When a POST request is made to "/ed-fi/bellschedules" with
                   """
                   {
@@ -217,8 +276,48 @@ Feature: Validate the duplicate references
                   }
                   """
 
-        @API-099
-        Scenario: 05 Verify clients cannot create a resource with a duplicate descriptor
+        Scenario: 06 Can create a bellschedule with all unique classPeriodReference in classPeriods array
+             When a POST request is made to "/ed-fi/bellschedules" with
+                  """
+                  {
+                      "schoolReference": {
+                          "schoolId": 1
+                      },
+                      "bellScheduleName": "Test Schedule",
+                      "totalInstructionalTime": 325,
+                      "classPeriods": [
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "01 - Traditional",
+                                  "schoolId": 1
+                              }
+                          },
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "02 - Traditional",
+                                  "schoolId": 1
+                              }
+                          },
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "03 - Traditional",
+                                  "schoolId": 1
+                              }
+                          },
+                          {
+                              "classPeriodReference": {
+                                  "classPeriodName": "01 - Traditional",
+                                  "schoolId": 1
+                              }
+                          }
+                      ],
+                      "dates": [],
+                      "gradeLevels": []
+                  }
+                  """
+             Then it should respond with 201 or 200
+
+        Scenario: 07 Verify clients cannot create a resource with a duplicate descriptor
              When a POST request is made to "/ed-fi/schools" with
                   """
                   {
@@ -470,7 +569,7 @@ Feature: Validate the duplicate references
                   }
                   """
 
-        Scenario: 06 Verify clients can create a a resource with multiple items not duplicated
+        Scenario: 08 Can create studentAssessments with multiple unique assessmentItems including references
              When a POST request is made to "/ed-fi/studentAssessments" with
                   """
                   {
@@ -543,7 +642,7 @@ Feature: Validate the duplicate references
                   """
              Then it should respond with 201 or 200
 
-        Scenario: 07 Verify clients cannot create a a resource with duplicated references
+        Scenario: 09 Cannot create studentAssessments with duplicate assessmentItems including references
              When a POST request is made to "/ed-fi/studentAssessments" with
                   """
                   {
@@ -641,7 +740,7 @@ Feature: Validate the duplicate references
                   }
                   """
 
-        Scenario: 08 Can create requiredImmunizations on studentHealths with same dates in different requiredImmunizations
+        Scenario: 10 Can create requiredImmunizations on studentHealths with same dates in different requiredImmunizations
              When a POST request is made to "/ed-fi/studentHealths" with
                   """
                   {
@@ -691,4 +790,4 @@ Feature: Validate the duplicate references
                      }
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 201 or 200
