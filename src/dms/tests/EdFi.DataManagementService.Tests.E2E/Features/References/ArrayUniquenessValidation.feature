@@ -105,7 +105,7 @@ Feature: Validate array uniqueness
                       "status": 400,
                       "correlationId": null,
                       "validationErrors": {
-                          "$.performanceLevels": [
+                          "$.addresses": [
                               "The 2nd item of the addresses has the same identifying values as another item earlier in the list."
                           ]
                       },
@@ -276,48 +276,7 @@ Feature: Validate array uniqueness
                   }
                   """
 
-        Scenario: 06 Can create a bellschedule with all unique classPeriodReference in classPeriods array
-             When a POST request is made to "/ed-fi/bellschedules" with
-                  """
-                  {
-                      "schoolReference": {
-                          "schoolId": 1
-                      },
-                      "bellScheduleName": "Test Schedule",
-                      "totalInstructionalTime": 325,
-                      "classPeriods": [
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "01 - Traditional",
-                                  "schoolId": 1
-                              }
-                          },
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "02 - Traditional",
-                                  "schoolId": 1
-                              }
-                          },
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "03 - Traditional",
-                                  "schoolId": 1
-                              }
-                          },
-                          {
-                              "classPeriodReference": {
-                                  "classPeriodName": "01 - Traditional",
-                                  "schoolId": 1
-                              }
-                          }
-                      ],
-                      "dates": [],
-                      "gradeLevels": []
-                  }
-                  """
-             Then it should respond with 201 or 200
-
-        Scenario: 07 Verify clients cannot create a resource with a duplicate descriptor
+        Scenario: 06 Verify clients cannot create a resource with a duplicate descriptor
              When a POST request is made to "/ed-fi/schools" with
                   """
                   {
@@ -569,7 +528,7 @@ Feature: Validate array uniqueness
                   }
                   """
 
-        Scenario: 08 Can create studentAssessments with multiple unique assessmentItems including references
+        Scenario: 07 Can create studentAssessments with multiple unique assessmentItems including references
              When a POST request is made to "/ed-fi/studentAssessments" with
                   """
                   {
@@ -642,7 +601,7 @@ Feature: Validate array uniqueness
                   """
              Then it should respond with 201 or 200
 
-        Scenario: 09 Cannot create studentAssessments with duplicate assessmentItems including references
+        Scenario: 08 Cannot create studentAssessments with duplicate assessmentItems including references
              When a POST request is made to "/ed-fi/studentAssessments" with
                   """
                   {
@@ -740,7 +699,7 @@ Feature: Validate array uniqueness
                   }
                   """
 
-        Scenario: 10 Can create requiredImmunizations on studentHealths with same dates in different requiredImmunizations
+        Scenario: 09 Can create requiredImmunizations on studentHealths with same dates in different requiredImmunizations
              When a POST request is made to "/ed-fi/studentHealths" with
                   """
                   {
