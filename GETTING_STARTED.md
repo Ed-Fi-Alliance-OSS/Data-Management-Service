@@ -163,6 +163,27 @@ Explore the `.env` file you just created to see what configuration options are
 available; however, most of them should not be altered. After editing the
 `.env`, stop and then restart the containers.
 
+## Load Seed Data Using Database Template Package
+
+To load initial seed data into the database, set the appropriate database template
+package name using the .env variable:
+
+**Example:**
+
+```env
+DATABASE_TEMPLATE_PACKAGE=EdFi.Dms.Minimal.Template.PostgreSql.5.2.0
+```
+
+Then, run the following command in PowerShell to start the local DMS instance
+and load the seed data:
+
+```powershell
+./start-local-dms.ps1 -EnableConfig -EnableSearchEngineUI -LoadSeedData
+```
+
+This will ensure your environment is initialized with the required schema
+and data from the specified template package.
+
 ## Stopping the Containers
 
 When you are ready to stop the containers, append the `-d` ("down") flag to the
