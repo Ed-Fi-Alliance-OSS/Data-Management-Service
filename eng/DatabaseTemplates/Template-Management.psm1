@@ -265,6 +265,18 @@ function Invoke-DatabaseDump {
 
     & docker @options | Out-File -FilePath $backupPath -Encoding utf8
 
+    # Read CREATE PUBLICATION SQL from the file
+    $publicationSqlFilePath = "../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Deploy/Scripts/0099_Configure_Replication.sql"
+
+    $publicationStatements = Get-Content $publicationSqlFilePath | Where-Object {
+    -not $_.TrimStart().StartsWith("--")
+    }
+
+    $scriptToExecute = $publicationStatements -join "`n"
+
+    # Append publication statements to the SQL file
+    Add-Content -Path $BackupPath -Value $scriptToExecute
+
     Write-Host
     Write-Host "Backup Created: " -ForegroundColor Green -NoNewline
     Write-Host (Resolve-Path $backupPath)
@@ -509,13 +521,13 @@ enum TemplateType {
 #>
 function Build-Template {
     param (
-        
+
         [Parameter(Mandatory = $true)]
         [TemplateType]$TemplateType,
 
         [Parameter(Mandatory = $true)]
         [string]$DmsUrl,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$CmsUrl,
 
@@ -526,13 +538,13 @@ function Build-Template {
 
         [Parameter(Mandatory = $true)]
         [string]$Extension,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$ConfigFilePath,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$StandardVersion,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$PackageVersion
     )
