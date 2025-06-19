@@ -34,6 +34,18 @@
                 },
                 "tags": {
                     "type": "array"
+                },
+                "security": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
                 }
             },
             "additionalProperties": false
@@ -58,6 +70,18 @@
                 },
                 "tags": {
                     "type": "array"
+                },
+                "security": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
                 }
             },
             "additionalProperties": false
