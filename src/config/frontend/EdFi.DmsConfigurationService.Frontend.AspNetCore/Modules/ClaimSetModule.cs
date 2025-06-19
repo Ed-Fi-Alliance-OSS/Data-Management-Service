@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -325,11 +326,11 @@ public class ClaimSetModule : IEndpointModule
         await validator.GuardAsync(validationContext);
 
         // Import the claim set
-        var insertResult = await claimSetRepository.Import(importCommand);
+        var importResult = await claimSetRepository.Import(importCommand);
 
         var request = httpContext.Request;
 
-        return insertResult switch
+        return importResult switch
         {
             ClaimSetImportResult.Success success => Results.Created(
                 $"{request.Scheme}://{request.Host}{request.PathBase}{GetClaimSetsPath()}/{success.Id}",

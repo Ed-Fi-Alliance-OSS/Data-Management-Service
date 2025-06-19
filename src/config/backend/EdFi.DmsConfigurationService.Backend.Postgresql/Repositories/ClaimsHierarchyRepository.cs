@@ -6,6 +6,7 @@
 using System.Data.Common;
 using System.Text.Json;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -18,10 +19,9 @@ public class ClaimsHierarchyRepository(
     ILogger<ClaimsHierarchyRepository> logger
 ) : IClaimsHierarchyRepository
 {
-    public async Task<ClaimsHierarchyGetResult> GetClaimsHierarchy()
+    public async Task<ClaimsHierarchyGetResult> GetClaimsHierarchy(DbTransaction? transaction = null)
     {
-        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
-        await connection.OpenAsync();
+        (DbConnection connection, bool shouldDispose) = await GetConnectionAsync(transaction);
 
         try
         {
@@ -58,6 +58,13 @@ public class ClaimsHierarchyRepository(
             logger.LogError(ex, "Unable to get claims hierarchy");
 
             return new ClaimsHierarchyGetResult.FailureUnknown(ex.Message);
+        }
+        finally
+        {
+            if (shouldDispose)
+            {
+                await connection.DisposeAsync();
+            }
         }
     }
 
@@ -144,26 +151,16 @@ public class ClaimsHierarchyRepository(
         }
     }
 
-    private async Task<(DbConnection connection, bool shouldDispose)> GetConnectionAsync(
-        DbTransaction? transaction
-    )
+    private async Task<(DbConnection conn, bool shouldDispose)> GetConnectionAsync(DbTransaction? transaction)
     {
-        bool shouldDispose = false;
-
-        DbConnection? connection;
-        DbConnection? suppliedConnection = transaction?.Connection;
-
-        if (suppliedConnection == null)
+        if (transaction?.Connection != null)
         {
-            connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync();
-            shouldDispose = true;
-        }
-        else
-        {
-            connection = suppliedConnection;
+            return (transaction.Connection, shouldDispose: false);
         }
 
-        return (connection, shouldDispose);
+        var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+
+        return (connection, shouldDispose: true);
     }
 }

@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Net;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
@@ -90,7 +92,7 @@ public class ClaimsHierarchyModuleTests
             },
         ];
 
-        A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy())
+        A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
             .Returns(new ClaimsHierarchyGetResult.Success(claims, DateTime.Now));
 
         var suppliedAuthorizationMetadataResponse = new AuthorizationMetadataResponse(

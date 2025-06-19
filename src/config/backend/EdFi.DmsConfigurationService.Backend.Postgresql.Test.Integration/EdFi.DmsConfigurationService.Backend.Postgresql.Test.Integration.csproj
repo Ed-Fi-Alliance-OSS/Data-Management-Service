@@ -43,4 +43,9 @@
     </None>
   </ItemGroup>
 
+  <ItemGroup>
+    <None Remove="ClaimsHierarchyMetadata.json" />
+    <EmbeddedResource Include="ClaimsHierarchyMetadata.json" />
+  </ItemGroup>
+
 </Project>

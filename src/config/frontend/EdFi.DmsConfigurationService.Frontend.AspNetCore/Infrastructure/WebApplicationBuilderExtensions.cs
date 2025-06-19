@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -80,6 +81,7 @@ public static class WebApplicationBuilderExtensions
 
         webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
+        webApplicationBuilder.Services.AddTransient<IClaimsHierarchyManager, ClaimsHierarchyManager>();
         webApplicationBuilder.Services.AddTransient<
             IAuthorizationMetadataResponseFactory,
             AuthorizationMetadataResponseFactory

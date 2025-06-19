@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using FluentAssertions;
@@ -19,6 +20,12 @@ public class ClaimsHierarchyTests : DatabaseTest
         Configuration.DatabaseOptions,
         NullLogger<ClaimsHierarchyRepository>.Instance
     );
+
+    [SetUp]
+    public async Task Setup()
+    {
+        await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy(clearOnly: true);
+    }
 
     [Test]
     public async Task Should_return_failure_when_no_hierarchy_exists()
