@@ -22,7 +22,7 @@ function LoadSeedData {
         Write-Host -ForegroundColor Green "Using package from environment variable: $PackageId"
     }
 
-    Write-Output "Setting up database template with package: $PackageId"
+    Write-Host -ForegroundColor Cyan "Setting up database template with package: $PackageId"
 
     Import-Module ../Package-Management.psm1
 
