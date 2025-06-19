@@ -898,14 +898,15 @@ public class ApiSchemaBuilder
 
     /// <summary>
     /// Add array uniqueness constraint with simple paths to a resource.
+    /// Must be of form "$.someArray[*].scalarPathFromHere"
     /// </summary>
     /// <param name="paths">List of JSON paths for the constraint</param>
-    /// <example>
-    /// WithArrayUniquenessConstraint([
+    ///
+    /// An example parameter:
+    /// [
     ///     "$.performanceLevels[*].assessmentReportingMethodDescriptor",
     ///     "$.performanceLevels[*].performanceLevelDescriptor"
-    /// ])
-    /// </example>
+    /// ]
     public ApiSchemaBuilder WithArrayUniquenessConstraintSimple(List<string> paths)
     {
         if (_currentProjectNode == null)

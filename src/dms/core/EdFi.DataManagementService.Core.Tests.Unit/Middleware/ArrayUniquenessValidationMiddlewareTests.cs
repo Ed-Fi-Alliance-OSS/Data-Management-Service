@@ -894,4 +894,75 @@ public class ArrayUniquenessValidationMiddlewareTests
             _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
+
+    [TestFixture]
+    public class Given_Addresses_Differing_Only_In_AddressType : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create schema with address array uniqueness constraint on multiple fields
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("StudentEducationOrganizationAssociation")
+                .WithStartDocumentPathsMapping()
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraintSimple(
+                    [
+                        "$.addresses[*].addressTypeDescriptor",
+                        "$.addresses[*].city",
+                        "$.addresses[*].postalCode",
+                        "$.addresses[*].streetNumberName",
+                    ]
+                )
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                    "educationOrganizationReference": {
+                        "educationOrganizationId": 255901001
+                    },
+                    "studentReference": {
+                        "studentUniqueId": "604824"
+                    },
+                    "addresses": [
+                        {
+                            "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
+                            "city": "Grand Bend",
+                            "postalCode": "78834",
+                            "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                            "streetNumberName": "980 Green New Boulevard",
+                            "nameOfCounty": "WILLISTON",
+                            "periods": []
+                        },
+                        {
+                            "addressTypeDescriptor": "uri://ed-fi.org/AddressTypeDescriptor#Home",
+                            "city": "Grand Bend",
+                            "postalCode": "78834",
+                            "stateAbbreviationDescriptor": "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                            "streetNumberName": "980 Green New Boulevard",
+                            "nameOfCounty": "WILLISTON",
+                            "periods": []
+                        }
+                    ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(
+                apiSchema,
+                jsonBody,
+                "studenteducationorganizationassociations"
+            );
+        }
+
+        [Test]
+        public void It_continues_to_next_middleware()
+        {
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
 }
