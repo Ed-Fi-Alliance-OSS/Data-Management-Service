@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -153,15 +152,15 @@ public partial class SqlAction() : ISqlAction
         return JsonPathPrefixRegex().Replace(documentPath.Value, "");
     }
 
-    private static string JoinWithLastSeparator(IList<string> values, string separator, string lastSeparator)
+    private static string ReplaceLast(string source, string find, string replace)
     {
-        return values.Count switch
+        int place = source.LastIndexOf(find, StringComparison.Ordinal);
+        if (place == -1)
         {
-            0 => "",
-            1 => values[0],
-            2 => string.Join(lastSeparator, values),
-            _ => string.Join(separator, values, 0, values.Count - 1) + lastSeparator + values[^1]
-        };
+            return source;
+        }
+
+        return source.Remove(place, find.Length).Insert(place, replace);
     }
 
     private void BuildAuthorization(
@@ -336,14 +335,13 @@ public partial class SqlAction() : ISqlAction
     {
         foreach (var queryElement in queryElements)
         {
-            var propertyChain = new List<string> { "edfidoc" };
-            propertyChain.AddRange(
-                // TODO AXEL when do we have multiple document paths?
+            var fieldChain = new List<string> { "edfidoc" };
+            fieldChain.AddRange(
                 QueryFieldFrom(queryElement.DocumentPaths[0]).Split('.').Select(field => $"'{field}'")
             );
-            var propertyPath = JoinWithLastSeparator(propertyChain, "->", "->>");
+            var field = ReplaceLast(string.Join("->", fieldChain), "->", "->>");
 
-            whereConditions.Add($"{propertyPath} ILIKE ${parameters.Count + 1}");
+            whereConditions.Add($"{field} ILIKE ${parameters.Count + 1}");
             parameters.Add(new NpgsqlParameter { Value = queryElement.Value });
         }
     }
