@@ -11,10 +11,10 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Middleware responsible for validating reference uniqueness
+/// Middleware responsible for validating reference array uniqueness
 /// by checking for duplicate ReferentialIds within reference arrays
 /// </summary>
-internal class ReferenceUniquenessValidationMiddleware(ILogger logger) : IPipelineStep
+internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineStep
 {
     public async Task Execute(PipelineContext context, Func<Task> next)
     {

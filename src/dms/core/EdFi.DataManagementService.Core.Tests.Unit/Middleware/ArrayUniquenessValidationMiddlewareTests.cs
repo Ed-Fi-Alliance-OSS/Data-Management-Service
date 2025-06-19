@@ -468,12 +468,12 @@ public class ArrayUniquenessValidationMiddlewareTests
                                 "immunizationDate": "2007-07-01"
                             }
                         ],
-                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#MMR"
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
                     },
                     {
                         "dates": [
                             {
-                                "immunizationDate": "2007-07-01"
+                                "immunizationDate": "2010-04-01"
                             }
                         ],
                         "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
@@ -824,6 +824,74 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .And.Contain(
                     "The 3rd item of the dates has the same identifying values as another item earlier in the list."
                 );
+        }
+    }
+
+    [TestFixture]
+    public class Given_Document_Has_Duplicate_Dates_But_In_Different_RequiredImmunizations
+        : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create schema with nested array uniqueness constraints
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("RequiredImmunization")
+                .WithStartDocumentPathsMapping()
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraint(
+                    [
+                        new
+                        {
+                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                            nestedConstraints = new[]
+                            {
+                                new
+                                {
+                                    basePath = "$.requiredImmunizations[*]",
+                                    paths = new[] { "$.dates[*].immunizationDate" },
+                                },
+                            },
+                        },
+                    ]
+                )
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                "requiredImmunizations": [
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2007-07-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#MMR"
+                    },
+                    {
+                        "dates": [
+                            {
+                                "immunizationDate": "2007-07-01"
+                            }
+                        ],
+                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                    }
+                  ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+        }
+
+        [Test]
+        public void It_continues_to_next_middleware()
+        {
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

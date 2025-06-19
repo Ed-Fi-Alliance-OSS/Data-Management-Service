@@ -106,13 +106,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
         {
             if (basePath != null)
             {
-                // For nested constraints, collect BOTH cross-item and within-item errors
-                var crossItemResult = ValidateNestedConstraintAcrossItems(basePath, paths, context, logger);
-                if (crossItemResult.HasValue)
-                {
-                    errors.Add(crossItemResult.Value);
-                }
-
+                // For nested constraints, only validate within each parent item
                 var withinItemResult = ValidateNestedConstraintWithinItems(basePath, paths, context, logger);
                 if (withinItemResult.HasValue)
                 {
@@ -168,51 +162,6 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
                 ex
             );
         }
-    }
-
-    /// <summary>
-    /// Validates nested constraints by checking for duplicates across all parent items
-    /// using cross-item duplicate detection logic
-    /// </summary>
-    private static (string errorKey, string message)? ValidateNestedConstraintAcrossItems(
-        string arrayRootPath,
-        IReadOnlyList<JsonPath> paths,
-        PipelineContext context,
-        ILogger logger
-    )
-    {
-        logger.LogDebug(
-            "Validating nested constraint across items - arrayRootPath: {ArrayRootPath}",
-            arrayRootPath
-        );
-
-        var relativePaths = paths
-            .Select(p => ArrayPathHelper.GetRelativePath(arrayRootPath, p.Value))
-            .ToList();
-
-        logger.LogDebug(
-            "Cross-item validation - Array root path: {ArrayRootPath}, Relative paths: {RelativePaths}",
-            arrayRootPath,
-            string.Join(", ", relativePaths)
-        );
-
-        var (arrayPath, dupeIndex) = context.ParsedBody.FindDuplicatesWithArrayPath(
-            arrayRootPath,
-            relativePaths,
-            logger
-        );
-
-        if (dupeIndex >= 0 && arrayPath != null)
-        {
-            logger.LogDebug(
-                "Cross-item duplicate found at index {DupeIndex} for path {ArrayPath}",
-                dupeIndex,
-                arrayPath
-            );
-            return ValidationErrorFactory.BuildValidationError(arrayPath, dupeIndex);
-        }
-
-        return null;
     }
 
     /// <summary>

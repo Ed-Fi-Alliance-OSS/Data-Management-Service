@@ -18,7 +18,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
-public class ReferenceUniquenessValidationMiddlewareTests
+public class ReferenceArrayUniquenessValidationMiddlewareTests
 {
     internal static ApiSchemaDocuments BellScheduleApiSchema()
     {
@@ -100,13 +100,13 @@ public class ReferenceUniquenessValidationMiddlewareTests
         return new ExtractDocumentInfoMiddleware(NullLogger.Instance);
     }
 
-    internal static ReferenceUniquenessValidationMiddleware Middleware()
+    internal static ReferenceArrayUniquenessValidationMiddleware Middleware()
     {
-        return new ReferenceUniquenessValidationMiddleware(NullLogger.Instance);
+        return new ReferenceArrayUniquenessValidationMiddleware(NullLogger.Instance);
     }
 
     [TestFixture]
-    public class Given_Document_With_Duplicate_References : ReferenceUniquenessValidationMiddlewareTests
+    public class Given_Document_With_Duplicate_References : ReferenceArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -170,7 +170,7 @@ public class ReferenceUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_With_Unique_References : ReferenceUniquenessValidationMiddlewareTests
+    public class Given_Document_With_Unique_References : ReferenceArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -219,7 +219,7 @@ public class ReferenceUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_With_Single_Reference : ReferenceUniquenessValidationMiddlewareTests
+    public class Given_Document_With_Single_Reference : ReferenceArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 
@@ -262,7 +262,7 @@ public class ReferenceUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
-    public class Given_Document_With_No_Reference_Arrays : ReferenceUniquenessValidationMiddlewareTests
+    public class Given_Document_With_No_Reference_Arrays : ReferenceArrayUniquenessValidationMiddlewareTests
     {
         private PipelineContext _context = No.PipelineContext();
 

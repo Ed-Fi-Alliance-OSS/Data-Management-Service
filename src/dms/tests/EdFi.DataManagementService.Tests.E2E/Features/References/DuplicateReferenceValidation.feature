@@ -4,7 +4,7 @@ Feature: Validate the duplicate references
             Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
         @API-095
-        Scenario: 01 Verify clients can create a studentEducationOrganizationAssociation resource with combined unique descriptors
+        Scenario: 01 Can create addresses on studentEducationOrganizationAssociations differing only in address type
             Given the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
@@ -641,54 +641,54 @@ Feature: Validate the duplicate references
                   }
                   """
 
-        Scenario: 08 Verify clients can create a a resource with items not duplicated
+        Scenario: 08 Can create requiredImmunizations on studentHealths with same dates in different requiredImmunizations
              When a POST request is made to "/ed-fi/studentHealths" with
-             """
-             {
-                "asOfDate": "2021-08-23",
-                "educationOrganizationReference": {
-                    "educationOrganizationId": "255901001"
-                },
-                "requiredImmunizations": [
-                    {
-                        "dates": [
-                            {
-                                "immunizationDate": "2007-07-01"
-                            }
-                        ],
-                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#MMR"
-                    },
-                    {
-                        "dates": [
-                            {
-                                "immunizationDate": "2010-04-01"
-                            }
-                        ],
-                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
-                    },
-                    {
-                        "dates": [
-                            {
-                                "immunizationDate": "2010-04-01"
-                            }
-                        ],
-                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#DTaP"
-                    },
-                    {
-                        "dates": [
-                            {
-                                "immunizationDate": "2010-12-01"
-                            }
-                        ],
-                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#VAR"
-                    },
-                    {
-                        "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#HepB"
-                    }
-                ],
-                "studentReference": {
-                    "studentUniqueId": "605475"
-                }
-             }
-             """
+                  """
+                  {
+                     "asOfDate": "2021-08-23",
+                     "educationOrganizationReference": {
+                         "educationOrganizationId": "255901001"
+                     },
+                     "requiredImmunizations": [
+                         {
+                             "dates": [
+                                 {
+                                     "immunizationDate": "2007-07-01"
+                                 }
+                             ],
+                             "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#MMR"
+                         },
+                         {
+                             "dates": [
+                                 {
+                                     "immunizationDate": "2010-04-01"
+                                 }
+                             ],
+                             "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#IPV"
+                         },
+                         {
+                             "dates": [
+                                 {
+                                     "immunizationDate": "2010-04-01"
+                                 }
+                             ],
+                             "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#DTaP"
+                         },
+                         {
+                             "dates": [
+                                 {
+                                     "immunizationDate": "2010-12-01"
+                                 }
+                             ],
+                             "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#VAR"
+                         },
+                         {
+                             "immunizationTypeDescriptor": "uri://ed-fi.org/ImmunizationTypeDescriptor#HepB"
+                         }
+                     ],
+                     "studentReference": {
+                         "studentUniqueId": "605475"
+                     }
+                  }
+                  """
              Then it should respond with 201
