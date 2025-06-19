@@ -520,6 +520,8 @@ public abstract class DatabaseTest : DatabaseTestBase
                 SearchParameters = searchParameters,
                 PaginationParameters = paginationParameters,
                 TraceId = traceId,
+                QueryElements = new QueryElement[] { },
+                AuthorizationSecurableInfo = new AuthorizationSecurableInfo[] { }
             }
         ).ActLike<IQueryRequest>();
     }
