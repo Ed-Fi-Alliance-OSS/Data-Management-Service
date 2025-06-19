@@ -265,6 +265,23 @@ function Invoke-DatabaseDump {
 
     & docker @options | Out-File -FilePath $backupPath -Encoding utf8
 
+    # Read CREATE PUBLICATION SQL from the file
+    $publicationSqlFilePath = Join-Path -Path $PSScriptRoot -ChildPath "../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Deploy/Scripts/0099_Configure_Replication.sql"
+
+     if (-not (Test-Path $publicationSqlFilePath)) {
+        Write-Error "The publication SQL file '$publicationSqlFilePath' does not exist. Ensure the file is present before running this script."
+        return
+    }
+
+    $publicationStatements = Get-Content $publicationSqlFilePath | Where-Object {
+    -not $_.TrimStart().StartsWith("--")
+    }
+
+    $scriptToExecute = $publicationStatements -join [Environment]::NewLine
+
+    # Append publication statements to the SQL file
+    Add-Content -Path $BackupPath -Value $scriptToExecute -Encoding utf8
+
     Write-Host
     Write-Host "Backup Created: " -ForegroundColor Green -NoNewline
     Write-Host (Resolve-Path $backupPath)
@@ -509,13 +526,13 @@ enum TemplateType {
 #>
 function Build-Template {
     param (
-        
+
         [Parameter(Mandatory = $true)]
         [TemplateType]$TemplateType,
 
         [Parameter(Mandatory = $true)]
         [string]$DmsUrl,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$CmsUrl,
 
@@ -526,13 +543,13 @@ function Build-Template {
 
         [Parameter(Mandatory = $true)]
         [string]$Extension,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$ConfigFilePath,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$StandardVersion,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$PackageVersion
     )
