@@ -959,7 +959,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 if (!isGetById)
                 {
                     // Sleep before executing GetAll requests so that OpenSearch gets up to date
-                    await Task.Delay(5000);
+                    await Task.Delay(0);
                     _featureContext["_waitOnNextQuery"] = false;
                 }
             }

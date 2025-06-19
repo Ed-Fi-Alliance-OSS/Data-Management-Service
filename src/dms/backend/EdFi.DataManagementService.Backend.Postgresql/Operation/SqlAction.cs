@@ -163,7 +163,11 @@ public partial class SqlAction() : ISqlAction
         return source.Remove(place, find.Length).Insert(place, replace);
     }
 
-    private void BuildAuthorization(List<NpgsqlParameter> parameters, List<string> whereConditions, IQueryRequest queryRequest)
+    private void BuildAuthorization(
+        List<NpgsqlParameter> parameters,
+        List<string> whereConditions,
+        IQueryRequest queryRequest
+    )
     {
         // Helper to get all values from filters based on the filter type
         List<string> GetFilterValues(
@@ -180,8 +184,7 @@ public partial class SqlAction() : ISqlAction
                 .Distinct()
                 .ToList();
 
-        foreach (var authorizationSecurableInfo in queryRequest
-                     .AuthorizationSecurableInfo)
+        foreach (var authorizationSecurableInfo in queryRequest.AuthorizationSecurableInfo)
         {
             switch (authorizationSecurableInfo.SecurableKey)
             {
@@ -212,10 +215,9 @@ public partial class SqlAction() : ISqlAction
             }
         }
 
-
         void BuildNamespaceFilter(List<string> namespaces)
         {
-            if(namespaces.Count == 0)
+            if (namespaces.Count == 0)
             {
                 return;
             }
@@ -229,13 +231,15 @@ public partial class SqlAction() : ISqlAction
             }
 
             var where = string.Join(" OR ", namespaceConditions);
-            whereConditions.Add(@$"
+            whereConditions.Add(
+                @$"
             EXISTS (
 		            SELECT 1
 		            FROM jsonb_array_elements_text(securityelements->'Namespace') AS resourceNamespace
 		            WHERE {where}
 	        )
-            ");
+            "
+            );
         }
 
         void BuildEducationOrganizationFilter(List<string> edOrgIds)
@@ -245,19 +249,18 @@ public partial class SqlAction() : ISqlAction
                 return;
             }
 
-            whereConditions.Add($@"
+            whereConditions.Add(
+                $@"
             EXISTS (
 		        SELECT 1
 		        FROM jsonb_array_elements(securityelements->'EducationOrganization') AS resourceEdorgid
 		        JOIN (SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1})) AS application(edorgids)
 			        on application.edorgids = resourceEdorgid->>'Id'
 	        )
-            ");
+            "
+            );
 
-            parameters.Add(new NpgsqlParameter
-            {
-                Value = edOrgIds.Select(long.Parse).ToArray(),
-            });
+            parameters.Add(new NpgsqlParameter { Value = edOrgIds.Select(long.Parse).ToArray() });
         }
 
         void BuildStudentFilter(List<string> studentEdOrgIds)
@@ -267,41 +270,39 @@ public partial class SqlAction() : ISqlAction
                 return;
             }
 
-            whereConditions.Add($@"
+            whereConditions.Add(
+                $@"
             EXISTS (
 		            SELECT 1
 		            FROM jsonb_array_elements_text(studentschoolauthorizationedorgids) AS resource(edorgids)
 		            JOIN (SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1})) AS application(edorgids)
 			            ON application.edorgids = resource.edorgids
 	              )
-            ");
+            "
+            );
 
-            parameters.Add(new NpgsqlParameter
-            {
-                Value = studentEdOrgIds.Select(long.Parse).ToArray(),
-            });
+            parameters.Add(new NpgsqlParameter { Value = studentEdOrgIds.Select(long.Parse).ToArray() });
         }
 
-        void BuildContactFilter(List< string> contactEdOrgIds)
+        void BuildContactFilter(List<string> contactEdOrgIds)
         {
             if (contactEdOrgIds.Count == 0)
             {
                 return;
             }
 
-            whereConditions.Add($@"
+            whereConditions.Add(
+                $@"
             EXISTS (
 		            SELECT 1
 		            FROM jsonb_array_elements_text(contactstudentschoolauthorizationedorgids) AS resource(edorgids)
 		            JOIN (SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1})) AS application(edorgids)
 			            ON application.edorgids = resource.edorgids
 	              )
-            ");
+            "
+            );
 
-            parameters.Add(new NpgsqlParameter
-            {
-                Value = contactEdOrgIds.Select(long.Parse).ToArray(),
-            });
+            parameters.Add(new NpgsqlParameter { Value = contactEdOrgIds.Select(long.Parse).ToArray() });
         }
 
         void BuildStaffFilter(List<string> staffEdOrgIds)
@@ -311,23 +312,26 @@ public partial class SqlAction() : ISqlAction
                 return;
             }
 
-            whereConditions.Add($@"
+            whereConditions.Add(
+                $@"
             EXISTS (
 		            SELECT 1
 		            FROM jsonb_array_elements_text(staffeducationorganizationauthorizationedorgids) AS resource(edorgids)
 		            JOIN (SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1})) AS application(edorgids)
 			            ON application.edorgids = resource.edorgids
 	              )
-            ");
+            "
+            );
 
-            parameters.Add(new NpgsqlParameter
-            {
-                Value = staffEdOrgIds.Select(long.Parse).ToArray(),
-            });
+            parameters.Add(new NpgsqlParameter { Value = staffEdOrgIds.Select(long.Parse).ToArray() });
         }
     }
 
-    private void BuildQuery(List<NpgsqlParameter> parameters, List<string> whereConditions, QueryElement[] queryElements)
+    private void BuildQuery(
+        List<NpgsqlParameter> parameters,
+        List<string> whereConditions,
+        QueryElement[] queryElements
+    )
     {
         foreach (var queryElement in queryElements)
         {
