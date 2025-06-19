@@ -95,7 +95,7 @@ function GenerateSdk {
         $Endpoint
     )
 
-    &java -jar openApi-codegen-cli.jar generate -g csharp -i $Endpoint `
+    &java -Xmx5g -jar openApi-codegen-cli.jar generate -g csharp -i $Endpoint `
     --api-package $ApiPackage --model-package $ModelPackage -o $OutputFolder `
     --additional-properties "packageName=$packageName,targetFramework=net8.0,netCoreProjectFile=true" `
     --global-property modelTests=false --global-property apiTests=false --global-property apiDocs=false --global-property modelDocs=false --skip-validate-spec
