@@ -43,6 +43,7 @@ The program accepts the following command line arguments:
    > while running the command.
 * --output: The output file path for the resulting JSON
 * --outputFormat: The output format (ToFile or Json)
+* --skipAuths: Not implemented auth strategies, separated by semicolon (`;`)
 
 ## Example Usage
 
@@ -59,6 +60,9 @@ dotnet run --no-launch-profile --command Transform --input input1.json;input2.js
 # To transform claims using one or more JSON files and print the result as JSON:
 dotnet run --no-launch-profile --command Transform --input input1.json;input2.json --outputFormat Json
 
+# To transform claims using one or more JSON files, remove NotImplementedAuth auth strategies and print the result as JSON:
+dotnet run --no-launch-profile --command Transform --input input1.json;input2.json --outputFormat Json --skipAuths NotImplementedAuth
+
 ```
 
 ## Steps for Adding the ClaimSet as Claims to Hierarchy JSON
@@ -70,6 +74,6 @@ dotnet run --no-launch-profile --command Transform --input input1.json;input2.js
   authorization hierarchy JSON
 * Use the command line arguments to specify the input and output files
 * Once you have the updated authorization hierarchy JSON, then update the VALUE
-  in `dmscs.claimshierarchy` table [Claims Hierarchy Script](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0012_Insert_ClaimsHierarchy.sql)
+  in `dmscs.claimshierarchy` table [Claims Hierarchy Script](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0011_Insert_ClaimsHierarchy.sql)
 * Add new ClaimSet details to VALUES [Insert
-  ClaimSets](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0011_Insert_Claimset.sql)
+  ClaimSets](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0010_Insert_Claimset.sql)

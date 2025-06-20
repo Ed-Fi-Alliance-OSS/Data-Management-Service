@@ -665,53 +665,53 @@ INSERT INTO dmscs.claimshierarchy(
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/administrationEnvironmentDescriptor",
-		"claimSets": [
-			{
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "ReadChanges",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			}
-		]
+        "claimSets": [
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/administrativeFundingControlDescriptor"
@@ -771,153 +771,153 @@ INSERT INTO dmscs.claimshierarchy(
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/assessmentIdentificationSystemDescriptor",
-		"claimSets": [
-			{
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "ReadChanges",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			}
-		]
+        "claimSets": [
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/assessmentItemCategoryDescriptor",
-		"claimSets": [
-			{
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "ReadChanges",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			}
-		]
+        "claimSets": [
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/assessmentItemResultDescriptor",
-		"claimSets": [
-			{
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "ReadChanges",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			}
-		]
+        "claimSets": [
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/assignmentLateStatusDescriptor"
@@ -1809,51 +1809,51 @@ INSERT INTO dmscs.claimshierarchy(
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/immunizationTypeDescriptor",
         "claimSets": [
-        {
+          {
             "name": "E2E-NoFurtherAuthRequiredClaimSet",
             "actions": [
-            {
+              {
                 "name": "Create",
                 "authorizationStrategyOverrides": [
-                {
+                  {
                     "name": "NoFurtherAuthorizationRequired"
-                }
+                  }
                 ]
-            },
-            {
+              },
+              {
                 "name": "Read",
                 "authorizationStrategyOverrides": [
-                {
+                  {
                     "name": "NoFurtherAuthorizationRequired"
-                }
+                  }
                 ]
-            },
-            {
+              },
+              {
                 "name": "Update",
                 "authorizationStrategyOverrides": [
-                {
+                  {
                     "name": "NoFurtherAuthorizationRequired"
-                }
+                  }
                 ]
-            },
-            {
+              },
+              {
                 "name": "Delete",
                 "authorizationStrategyOverrides": [
-                {
+                  {
                     "name": "NoFurtherAuthorizationRequired"
-                }
+                  }
                 ]
-            },
-            {
+              },
+              {
                 "name": "ReadChanges",
                 "authorizationStrategyOverrides": [
-                {
+                  {
                     "name": "NoFurtherAuthorizationRequired"
-                }
+                  }
                 ]
-            }
+              }
             ]
-        }
+          }
         ]
       },
       {
@@ -1891,53 +1891,53 @@ INSERT INTO dmscs.claimshierarchy(
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/languageDescriptor",
-		"claimSets": [
-			{
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "ReadChanges",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			}
-		]
+        "claimSets": [
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/languageInstructionProgramServiceDescriptor"
@@ -1953,53 +1953,53 @@ INSERT INTO dmscs.claimshierarchy(
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/learningStandardScopeDescriptor",
-		"claimSets": [
-			{
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "ReadChanges",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			}
-		]
+        "claimSets": [
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/levelOfEducationDescriptor"
@@ -2364,53 +2364,53 @@ INSERT INTO dmscs.claimshierarchy(
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/responseIndicatorDescriptor",
-		"claimSets": [
-			{
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "ReadChanges",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			}
-		]
+        "claimSets": [
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/responsibilityDescriptor"
@@ -2470,53 +2470,53 @@ INSERT INTO dmscs.claimshierarchy(
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/retestIndicatorDescriptor",
-		"claimSets": [
-			{
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "ReadChanges",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			}
-		]
+        "claimSets": [
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/schoolCategoryDescriptor"
@@ -2849,6 +2849,15 @@ INSERT INTO dmscs.claimshierarchy(
             "name": "http://ed-fi.org/identity/claims/tpdm/rubricRatingLevelDescriptor"
           }
         ]
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/artMediumDescriptor"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/favoriteBookCategoryDescriptor"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/membershipTypeDescriptor"
       }
     ]
   },
@@ -6450,6 +6459,12 @@ INSERT INTO dmscs.claimshierarchy(
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/studentEducationOrganizationAssessmentAccommodationGeneralAccommodation"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/studentArtProgramAssociation"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/studentGraduationPlanAssociation"
       }
     ]
   },
@@ -6681,53 +6696,53 @@ INSERT INTO dmscs.claimshierarchy(
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/assessmentItem",
-		"claimSets": [
-			{
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "ReadChanges",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			}
-		]
+        "claimSets": [
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "ReadChanges",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/assessmentScoreRangeLearningStandard"
@@ -7169,43 +7184,6 @@ INSERT INTO dmscs.claimshierarchy(
               }
             ]
           },
-		  {
-				"name": "E2E-NoFurtherAuthRequiredClaimSet",
-				"actions": [
-					{
-						"name": "Create",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Read",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Update",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					},
-					{
-						"name": "Delete",
-						"authorizationStrategyOverrides": [
-							{
-								"name": "NoFurtherAuthorizationRequired"
-							}
-						]
-					}
-				]
-			},
           {
             "name": "AssessmentRead",
             "actions": [
@@ -7219,6 +7197,43 @@ INSERT INTO dmscs.claimshierarchy(
             "actions": [
               {
                 "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "E2E-NoFurtherAuthRequiredClaimSet",
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Read",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategyOverrides": [
+                  {
+                    "name": "NoFurtherAuthorizationRequired"
+                  }
+                ]
+              },
+              {
+                "name": "Delete",
                 "authorizationStrategyOverrides": [
                   {
                     "name": "NoFurtherAuthorizationRequired"
@@ -8166,51 +8181,6 @@ INSERT INTO dmscs.claimshierarchy(
     },
     "claimSets": [
       {
-        "name": "E2E-NoFurtherAuthRequiredClaimSet",
-        "actions": [
-            {
-            "name": "Create",
-            "authorizationStrategyOverrides": [
-                {
-                "name": "NoFurtherAuthorizationRequired"
-                }
-            ]
-            },
-            {
-            "name": "Read",
-            "authorizationStrategyOverrides": [
-                {
-                "name": "NoFurtherAuthorizationRequired"
-                }
-            ]
-            },
-            {
-            "name": "Update",
-            "authorizationStrategyOverrides": [
-                {
-                "name": "NoFurtherAuthorizationRequired"
-                }
-            ]
-            },
-            {
-            "name": "Delete",
-            "authorizationStrategyOverrides": [
-                {
-                "name": "NoFurtherAuthorizationRequired"
-                }
-            ]
-            },
-            {
-            "name": "ReadChanges",
-            "authorizationStrategyOverrides": [
-                {
-                "name": "NoFurtherAuthorizationRequired"
-                }
-            ]
-            }
-        ]
-      },
-      {
         "name": "EdFiSandbox",
         "actions": [
           {
@@ -8257,178 +8227,54 @@ INSERT INTO dmscs.claimshierarchy(
             "name": "Delete"
           }
         ]
-      }
-    ]
-  },
-  {
-  "name": "http://ed-fi.org/identity/claims/domains/homograph",
-  "defaultAuthorization": {
-    "actions": [
-      {
-        "name": "Create",
-        "authorizationStrategies": [
-          {
-            "name": "NoFurtherAuthorizationRequired"
-          }
-        ]
       },
       {
-        "name": "Read",
-        "authorizationStrategies": [
+        "name": "E2E-NoFurtherAuthRequiredClaimSet",
+        "actions": [
           {
-            "name": "NoFurtherAuthorizationRequired"
-          }
-        ]
-      },
-      {
-        "name": "Update",
-        "authorizationStrategies": [
+            "name": "Create",
+            "authorizationStrategyOverrides": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
           {
-            "name": "NoFurtherAuthorizationRequired"
-          }
-        ]
-      },
-      {
-        "name": "Delete",
-        "authorizationStrategies": [
+            "name": "Read",
+            "authorizationStrategyOverrides": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
           {
-            "name": "NoFurtherAuthorizationRequired"
-          }
-        ]
-      },
-      {
-        "name": "ReadChanges",
-        "authorizationStrategies": [
+            "name": "Update",
+            "authorizationStrategyOverrides": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
           {
-            "name": "NoFurtherAuthorizationRequired"
-          }
-        ]
-      }
-    ]
-  },
-  "claimSets": [
-    {
-      "name": "EdFiSandbox",
-      "actions": [
-        {
-          "name": "Create"
-        },
-        {
-          "name": "Read"
-        },
-        {
-          "name": "Update"
-        },
-        {
-          "name": "Delete"
-        },
-        {
-          "name": "ReadChanges"
-        }
-      ]
-    }
-  ],
-  "claims": [
-    {
-      "name": "http://ed-fi.org/identity/claims/homograph/name"
-    },
-    {
-      "name": "http://ed-fi.org/identity/claims/homograph/school"
-    },
-    {
-      "name": "http://ed-fi.org/identity/claims/homograph/contact"
-    },
-    {
-      "name": "http://ed-fi.org/identity/claims/homograph/student"
-    },
-    {
-      "name": "http://ed-fi.org/identity/claims/homograph/staff"
-    },
-    {
-      "name": "http://ed-fi.org/identity/claims/homograph/schoolYearType"
-    },
-    {
-      "name": "http://ed-fi.org/identity/claims/homograph/studentSchoolAssociation"
-    }
-  ]
-},
-{
-  "name": "http://ed-fi.org/identity/claims/domains/sample",
-  "defaultAuthorization": {
-    "actions": [
-      {
-        "name": "Create",
-        "authorizationStrategies": [
+            "name": "Delete",
+            "authorizationStrategyOverrides": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
           {
-            "name": "NoFurtherAuthorizationRequired"
-          }
-        ]
-      },
-      {
-        "name": "Read",
-        "authorizationStrategies": [
-          {
-            "name": "NoFurtherAuthorizationRequired"
-          }
-        ]
-      },
-      {
-        "name": "Update",
-        "authorizationStrategies": [
-          {
-            "name": "NoFurtherAuthorizationRequired"
-          }
-        ]
-      },
-      {
-        "name": "Delete",
-        "authorizationStrategies": [
-          {
-            "name": "NoFurtherAuthorizationRequired"
-          }
-        ]
-      },
-      {
-        "name": "ReadChanges",
-        "authorizationStrategies": [
-          {
-            "name": "NoFurtherAuthorizationRequired"
+            "name": "ReadChanges",
+            "authorizationStrategyOverrides": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
           }
         ]
       }
     ]
   },
-  "claimSets": [
-    {
-      "name": "EdFiSandbox",
-      "actions": [
-        {
-          "name": "Create"
-        },
-        {
-          "name": "Read"
-        },
-        {
-          "name": "Update"
-        },
-        {
-          "name": "Delete"
-        },
-        {
-          "name": "ReadChanges"
-        }
-      ]
-    }
-  ],
-  "claims": [
-    {
-      "name": "http://ed-fi.org/identity/claims/sample/bus"
-    },
-    {
-      "name": "http://ed-fi.org/identity/claims/sample/busRoute"
-    }
-  ]
-},
   {
     "name": "http://ed-fi.org/identity/claims/domains/tpdm",
     "claimSets": [
@@ -8752,6 +8598,175 @@ INSERT INTO dmscs.claimshierarchy(
             ]
           }
         ]
+      }
+    ]
+  },
+  {
+    "name": "http://ed-fi.org/identity/claims/domains/homograph",
+    "defaultAuthorization": {
+      "actions": [
+        {
+          "name": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Delete",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    "claimSets": [
+      {
+        "name": "EdFiSandbox",
+        "actions": [
+          {
+            "name": "Create"
+          },
+          {
+            "name": "Read"
+          },
+          {
+            "name": "Update"
+          },
+          {
+            "name": "Delete"
+          },
+          {
+            "name": "ReadChanges"
+          }
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/name"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/school"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/contact"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/student"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/staff"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/schoolYearType"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/studentSchoolAssociation"
+      }
+    ]
+  },
+  {
+    "name": "http://ed-fi.org/identity/claims/domains/sample",
+    "defaultAuthorization": {
+      "actions": [
+        {
+          "name": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Delete",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    "claimSets": [
+      {
+        "name": "EdFiSandbox",
+        "actions": [
+          {
+            "name": "Create"
+          },
+          {
+            "name": "Read"
+          },
+          {
+            "name": "Update"
+          },
+          {
+            "name": "Delete"
+          },
+          {
+            "name": "ReadChanges"
+          }
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/bus"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/busRoute"
       }
     ]
   }
