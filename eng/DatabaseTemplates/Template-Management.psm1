@@ -570,7 +570,8 @@ function Build-Template {
         -SampleDataDirectory $MinimalSampleDataDirectory `
         -Extension $Extension `
         -BulkLoadClientPaths $bulkLoadClientPaths `
-        -ForceReloadData $true
+        -ForceReloadData `
+        -ForceReloadMetadata
 
     if ($TemplateType -eq [TemplateType]::Populated) {
 
@@ -587,7 +588,8 @@ function Build-Template {
             -SampleDataDirectory $PopulatedSampleDataDirectory `
             -Extension $Extension `
             -BulkLoadClientPaths $bulkLoadClientPaths `
-            -ForceReloadData $true
+            -ForceReloadData `
+            -ForceReloadMetadata
     }
 
     Build-TemplateNuGetPackage -ConfigFilePath $ConfigFilePath -StandardVersion $StandardVersion -PackageVersion $PackageVersion
