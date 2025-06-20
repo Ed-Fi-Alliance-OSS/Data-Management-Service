@@ -111,7 +111,6 @@ else {
     Write-Output "Starting locally-built DMS"
     $env:NEED_DATABASE_SETUP = if ($LoadSeedData) { "false" } else { $env:NEED_DATABASE_SETUP }
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
-    Remove-Item Env:NEED_DATABASE_SETUP
 
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start local Docker environment, with exit code $LASTEXITCODE."
