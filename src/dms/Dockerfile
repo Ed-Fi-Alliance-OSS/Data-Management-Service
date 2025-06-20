@@ -47,19 +47,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef62
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
 # gettext: provides `envsubst`, used to inject env values into appsettings
-RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0
+RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0 jq
 
 FROM runtimebase AS setup
 
 ENV ASPNETCORE_HTTP_PORTS=8080
-ENV CORE_PACKAGE=EdFi.DataStandard52.ApiSchema
-ENV CORE_PACKAGE_VERSION=1.0.216
-ENV TPDM_PACKAGE=EdFi.TPDM.ApiSchema
-ENV TPDM_PACKAGE_VERSION=1.0.216
-ENV SAMPLE_PACKAGE=EdFi.Sample.ApiSchema
-ENV SAMPLE_PACKAGE_VERSION=1.0.216
-ENV HOMOGRAPH_PACKAGE=EdFi.Homograph.ApiSchema
-ENV HOMOGRAPH_PACKAGE_VERSION=1.0.216
 ENV START_YEAR=1991
 ENV END_YEAR=2037
 ENV CURRENT_SCHOOL_YEAR=2025
