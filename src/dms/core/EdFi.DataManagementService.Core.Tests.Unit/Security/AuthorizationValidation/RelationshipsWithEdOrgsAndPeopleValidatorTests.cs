@@ -622,11 +622,8 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
 
             A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
                 .Returns([255901L]);
-            A.CallTo(
-                    () =>
-                        _authorizationRepository.GetAncestorEducationOrganizationIds(
-                            _educationOrganizationIds
-                        )
+            A.CallTo(() =>
+                    _authorizationRepository.GetAncestorEducationOrganizationIds(_educationOrganizationIds)
                 )
                 .Returns([255901L]);
 
@@ -690,11 +687,8 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
 
             A.CallTo(() => _authorizationRepository.GetEducationOrganizationsForStudent("12345"))
                 .Returns([255901L]);
-            A.CallTo(
-                    () =>
-                        _authorizationRepository.GetAncestorEducationOrganizationIds(
-                            _educationOrganizationIds
-                        )
+            A.CallTo(() =>
+                    _authorizationRepository.GetAncestorEducationOrganizationIds(_educationOrganizationIds)
                 )
                 .Returns([255901L]);
 

@@ -63,9 +63,9 @@ internal class DocumentPath(JsonNode _documentPathsNode)
     private readonly Lazy<bool> _isRequired = new(() =>
     {
         return _documentPathsNode["isRequired"]?.GetValue<bool>()
-               ?? throw new InvalidOperationException(
-                   "Expected isRequired to be on DocumentPath, invalid ApiSchema"
-               );
+            ?? throw new InvalidOperationException(
+                "Expected isRequired to be on DocumentPath, invalid ApiSchema"
+            );
     });
 
     /// <summary>

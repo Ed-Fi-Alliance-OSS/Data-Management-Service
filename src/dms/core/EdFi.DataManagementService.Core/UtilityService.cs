@@ -27,7 +27,8 @@ public static partial class UtilityService
     public static partial Regex MinifyRegex();
 
     //Use to avoid HTML escaping in output message that we construct
-    public static readonly JsonSerializerOptions SerializerOptions =
-        new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+    public static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 }
-

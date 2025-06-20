@@ -47,11 +47,13 @@ public class SchoolYearEnumerationDocumentTests
         [Test]
         public void It_has_derived_the_document_info()
         {
-            var documentInfo = document!.ToDocumentInfo(new BaseResourceInfo(
+            var documentInfo = document!.ToDocumentInfo(
+                new BaseResourceInfo(
                     ProjectName: new ProjectName("ProjectName"),
                     ResourceName: new ResourceName("SchoolYear"),
                     IsDescriptor: false
-                ));
+                )
+            );
             documentInfo.DocumentReferences.Should().BeEmpty();
             documentInfo.DescriptorReferences.Should().BeEmpty();
             documentInfo.SuperclassIdentity.Should().BeNull();

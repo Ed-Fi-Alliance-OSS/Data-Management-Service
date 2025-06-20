@@ -58,8 +58,7 @@ internal class DescriptorDocument(JsonNode _document)
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
-            SuperclassIdentity: null,
-            ArrayUniquenessConstraints: []
+            SuperclassIdentity: null
         );
     }
 }

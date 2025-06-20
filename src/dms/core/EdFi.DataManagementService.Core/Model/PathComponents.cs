@@ -11,7 +11,6 @@ namespace EdFi.DataManagementService.Core.Model;
 /// <summary>
 /// The important parts of the request URL in object form
 /// </summary>
-
 internal record PathComponents(
     /// <summary>
     /// Project namespace, all lowercased

@@ -50,7 +50,10 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
                 "Evaluation of targetPathResult.Matches resulted in unexpected null"
             );
 
-            var combinedValues = new HashSet<JsonNode?>(sourcePathResult.Matches.Select(s => s.Value), new JsonNodeEqualityComparer());
+            var combinedValues = new HashSet<JsonNode?>(
+                sourcePathResult.Matches.Select(s => s.Value),
+                new JsonNodeEqualityComparer()
+            );
             combinedValues.UnionWith(targetPathResult.Matches.Select(t => t.Value));
 
             if (combinedValues.Count > 1)
@@ -63,12 +66,17 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
         return validationErrors;
     }
 
-    private static void AddValidationError(Dictionary<string, string[]> validationErrors, JsonPath path, string conflictValues)
+    private static void AddValidationError(
+        Dictionary<string, string[]> validationErrors,
+        JsonPath path,
+        string conflictValues
+    )
     {
         string segment = path.Segments[^1].ToString().TrimStart('.');
-        string errorMessage = $"All values supplied for '{segment}' must match."
-                + " Review all references (including those higher up in the resource's data)"
-                + $" and align the following conflicting values: {conflictValues}";
+        string errorMessage =
+            $"All values supplied for '{segment}' must match."
+            + " Review all references (including those higher up in the resource's data)"
+            + $" and align the following conflicting values: {conflictValues}";
 
         if (validationErrors.TryGetValue(path.ToString(), out string[]? existingErrors))
         {

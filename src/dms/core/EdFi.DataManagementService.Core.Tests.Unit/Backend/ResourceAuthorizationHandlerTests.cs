@@ -39,14 +39,13 @@ public class ResourceAuthorizationHandlerTests
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
 
             var validator = A.Fake<IAuthorizationValidator>();
-            A.CallTo(
-                    () =>
-                        validator.ValidateAuthorization(
-                            documentSecurityElements,
-                            evaluator.Filters,
-                            authorizationSecurableInfo,
-                            OperationType.Get
-                        )
+            A.CallTo(() =>
+                    validator.ValidateAuthorization(
+                        documentSecurityElements,
+                        evaluator.Filters,
+                        authorizationSecurableInfo,
+                        OperationType.Get
+                    )
                 )
                 .Returns(new ResourceAuthorizationResult.Authorized());
 
@@ -97,14 +96,13 @@ public class ResourceAuthorizationHandlerTests
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
 
             var validator = A.Fake<IAuthorizationValidator>();
-            A.CallTo(
-                    () =>
-                        validator.ValidateAuthorization(
-                            documentSecurityElements,
-                            evaluator.Filters,
-                            authorizationSecurableInfo,
-                            OperationType.Upsert
-                        )
+            A.CallTo(() =>
+                    validator.ValidateAuthorization(
+                        documentSecurityElements,
+                        evaluator.Filters,
+                        authorizationSecurableInfo,
+                        OperationType.Upsert
+                    )
                 )
                 .Returns(new ResourceAuthorizationResult.NotAuthorized(["Not authorized"]));
 
@@ -201,21 +199,19 @@ public class ResourceAuthorizationHandlerTests
             );
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
             var validator = A.Fake<IAuthorizationValidator>();
-            A.CallTo(
-                    () =>
-                        validator.ValidateAuthorization(
-                            documentSecurityElements,
-                            authStrategyEvaluators.Filters,
-                            authorizationSecurableInfo,
-                            OperationType.Get
-                        )
+            A.CallTo(() =>
+                    validator.ValidateAuthorization(
+                        documentSecurityElements,
+                        authStrategyEvaluators.Filters,
+                        authorizationSecurableInfo,
+                        OperationType.Get
+                    )
                 )
                 .Returns(new ResourceAuthorizationResult.Authorized());
-            A.CallTo(
-                    () =>
-                        _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                            "RelationshipsWithEdOrgsOnly"
-                        )
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                        "RelationshipsWithEdOrgsOnly"
+                    )
                 )
                 .Returns(validator);
 
@@ -267,21 +263,19 @@ public class ResourceAuthorizationHandlerTests
             );
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
             var validator = A.Fake<IAuthorizationValidator>();
-            A.CallTo(
-                    () =>
-                        validator.ValidateAuthorization(
-                            documentSecurityElements,
-                            authStrategyEvaluators.Filters,
-                            authorizationSecurableInfo,
-                            OperationType.Get
-                        )
+            A.CallTo(() =>
+                    validator.ValidateAuthorization(
+                        documentSecurityElements,
+                        authStrategyEvaluators.Filters,
+                        authorizationSecurableInfo,
+                        OperationType.Get
+                    )
                 )
                 .Returns(new ResourceAuthorizationResult.NotAuthorized(["Not authorized"]));
-            A.CallTo(
-                    () =>
-                        _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                            "RelationshipsWithEdOrgsOnly"
-                        )
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                        "RelationshipsWithEdOrgsOnly"
+                    )
                 )
                 .Returns(validator);
 
@@ -347,40 +341,36 @@ public class ResourceAuthorizationHandlerTests
             };
             var authorizationSecurableInfo = new AuthorizationSecurableInfo[] { new("") };
             var validatorForEdOrg = A.Fake<IAuthorizationValidator>();
-            A.CallTo(
-                    () =>
-                        validatorForEdOrg.ValidateAuthorization(
-                            documentSecurityElements,
-                            authStrategyEvaluators[0].Filters,
-                            authorizationSecurableInfo,
-                            OperationType.Get
-                        )
+            A.CallTo(() =>
+                    validatorForEdOrg.ValidateAuthorization(
+                        documentSecurityElements,
+                        authStrategyEvaluators[0].Filters,
+                        authorizationSecurableInfo,
+                        OperationType.Get
+                    )
                 )
                 .Returns(new ResourceAuthorizationResult.Authorized());
-            A.CallTo(
-                    () =>
-                        _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                            "RelationshipsWithEdOrgsOnly"
-                        )
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                        "RelationshipsWithEdOrgsOnly"
+                    )
                 )
                 .Returns(validatorForEdOrg);
 
             var validatorForStudent = A.Fake<IAuthorizationValidator>();
-            A.CallTo(
-                    () =>
-                        validatorForStudent.ValidateAuthorization(
-                            documentSecurityElements,
-                            authStrategyEvaluators[1].Filters,
-                            authorizationSecurableInfo,
-                            OperationType.Get
-                        )
+            A.CallTo(() =>
+                    validatorForStudent.ValidateAuthorization(
+                        documentSecurityElements,
+                        authStrategyEvaluators[1].Filters,
+                        authorizationSecurableInfo,
+                        OperationType.Get
+                    )
                 )
                 .Returns(new ResourceAuthorizationResult.Authorized());
-            A.CallTo(
-                    () =>
-                        _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
-                            "RelationshipsWithPeopleOnly"
-                        )
+            A.CallTo(() =>
+                    _authorizationServiceFactory.GetByName<IAuthorizationValidator>(
+                        "RelationshipsWithPeopleOnly"
+                    )
                 )
                 .Returns(validatorForStudent);
 

@@ -459,29 +459,71 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     public IEnumerable<DecimalValidationInfo> DecimalPropertyValidationInfos =>
         _decimalPropertyValidationInfos.Value;
 
-    private readonly Lazy<IReadOnlyList<IReadOnlyList<JsonPath>>> _arrayUniquenessConstraints = new(() =>
+    private readonly Lazy<IReadOnlyList<ArrayUniquenessConstraint>> _arrayUniquenessConstraints = new(() =>
     {
+        var constraintsNode = _resourceSchemaNode["arrayUniquenessConstraints"];
+        if (constraintsNode == null)
+        {
+            return Array.Empty<ArrayUniquenessConstraint>().ToList().AsReadOnly();
+        }
+
         var outerArray =
-            _resourceSchemaNode["arrayUniquenessConstraints"]!.AsArray()
+            constraintsNode.AsArray()
             ?? throw new InvalidOperationException(
-                "Expected arrayUniquenessConstraints to be on ResourceSchema, invalid ApiSchema"
+                "Expected arrayUniquenessConstraints to be an array on ResourceSchema, invalid ApiSchema"
             );
 
-        return outerArray
-            .Select(innerJsonElement =>
-                innerJsonElement!
-                    .AsArray()
-                    .Select(pathElement => new JsonPath(pathElement!.GetValue<string>()!))
-                    .ToList()
-                    .AsReadOnly()
-            )
-            .ToList()
-            .AsReadOnly();
+        return outerArray.Select(ParseArrayUniquenessConstraint).ToList().AsReadOnly();
     });
 
     /// <summary>
-    /// The ArrayUniquenessConstraints the resource is part of.
+    /// The ArrayUniquenessConstraints for this resource using the new object-based format.
     /// </summary>
-    public IReadOnlyList<IReadOnlyList<JsonPath>> ArrayUniquenessConstraints =>
+    public IReadOnlyList<ArrayUniquenessConstraint> ArrayUniquenessConstraints =>
         _arrayUniquenessConstraints.Value;
+
+    /// <summary>
+    /// Parses an array uniqueness constraint from JSON using the new object-based format
+    /// </summary>
+    private static ArrayUniquenessConstraint ParseArrayUniquenessConstraint(JsonNode? constraintNode)
+    {
+        if (constraintNode == null)
+        {
+            throw new InvalidOperationException("Array uniqueness constraint node cannot be null");
+        }
+
+        if (constraintNode is not JsonObject constraintObject)
+        {
+            throw new InvalidOperationException(
+                $"Invalid array uniqueness constraint format. Expected object, got {constraintNode.GetType()}"
+            );
+        }
+
+        JsonPath? basePath = null;
+        IReadOnlyList<JsonPath>? paths = null;
+        IReadOnlyList<ArrayUniquenessConstraint>? nestedConstraints = null;
+
+        // Parse basePath if present
+        if (constraintObject["basePath"] != null)
+        {
+            basePath = new JsonPath(constraintObject["basePath"]!.GetValue<string>());
+        }
+
+        // Parse paths if present
+        if (constraintObject["paths"] is JsonArray pathsArray)
+        {
+            paths = pathsArray
+                .Select(pathElement => new JsonPath(pathElement!.GetValue<string>()!))
+                .ToList()
+                .AsReadOnly();
+        }
+
+        // Parse nestedConstraints if present
+        if (constraintObject["nestedConstraints"] is JsonArray nestedArray)
+        {
+            nestedConstraints = nestedArray.Select(ParseArrayUniquenessConstraint).ToList().AsReadOnly();
+        }
+
+        return new ArrayUniquenessConstraint(basePath, paths, nestedConstraints);
+    }
 }

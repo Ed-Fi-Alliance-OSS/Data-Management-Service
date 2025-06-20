@@ -15,10 +15,6 @@ public static class Utility
     /// </summary>
     public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
     {
-        return new JsonObject
-        {
-            ["error"] = errorInfo,
-            ["correlationId"] = traceId.Value,
-        };
+        return new JsonObject { ["error"] = errorInfo, ["correlationId"] = traceId.Value };
     }
 }

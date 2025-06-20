@@ -200,8 +200,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         public void Throws_exception()
         {
             // Act & Assert
-            Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
             );
         }
     }
@@ -237,8 +237,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         public void Throws_exception()
         {
             // Act & Assert
-            Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
             );
         }
     }
@@ -269,8 +269,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         public void Throws_exception()
         {
             // Act & Assert
-            Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
             );
         }
     }
@@ -392,8 +392,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         public void Throws_exception()
         {
             // Act & Assert
-            Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
             );
         }
     }
@@ -426,8 +426,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         public void Throws_exception()
         {
             // Act & Assert
-            Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
             );
         }
     }
@@ -551,8 +551,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         public void Throws_exception()
         {
             // Act & Assert
-            Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
             );
         }
     }
@@ -585,8 +585,8 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         public void Throws_exception()
         {
             // Act & Assert
-            Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+            Assert.ThrowsAsync<InvalidOperationException>(async () =>
+                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
             );
         }
     }
