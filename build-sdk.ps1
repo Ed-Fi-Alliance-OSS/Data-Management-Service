@@ -95,10 +95,47 @@ function GenerateSdk {
         $Endpoint
     )
 
-    &java -Xmx5g -jar openApi-codegen-cli.jar generate -g csharp -i $Endpoint `
-    --api-package $ApiPackage --model-package $ModelPackage -o $OutputFolder `
+    # Download and parse OpenAPI spec
+    $spec = Invoke-WebRequest -Uri $Endpoint | ConvertFrom-Json
+
+    # Find all operationIds that contain an underscore
+    $operationIds = $spec.paths.PSObject.Properties.Value | ForEach-Object {
+        $_.PSObject.Properties.Value | Where-Object { $_.operationId -and $_.operationId -like "*_*" } | ForEach-Object { $_.operationId }
+    }
+
+    # Normalize operationId to camelCase without underscores (for the left side of mapping)
+    function Normalize-OperationId {
+        param($opId)
+        $parts = $opId -split '_'
+        $camel = $parts[0] + ($parts[1..($parts.Count-1)] | ForEach-Object { $_.Substring(0,1).ToUpper() + $_.Substring(1) } | ForEach-Object { $_ }) -join ''
+        return $camel
+    }
+
+    # Capitalize the first character of the string
+    function Capitalize-FirstChar {
+        param($s)
+        if ($s.Length -eq 0) { return $s }
+        return $s.Substring(0,1).ToUpper() + $s.Substring(1)
+    }
+
+    # Build mappings string: left = normalized, right = original with first char uppercased
+    $mappings = ($operationIds | Sort-Object -Unique | ForEach-Object { "$(Normalize-OperationId $_)=$(Capitalize-FirstChar $_)" }) -join ","
+    # Example --operation-id-name-mappings deleteHomographContactsById=Delete_HomographContactsById
+
+    & java -Xmx5g -jar openApi-codegen-cli.jar generate `
+    -g csharp `
+    -i $Endpoint `
+    --api-package $ApiPackage `
+    --model-package $ModelPackage `
+    -o $OutputFolder `
+    --operation-id-name-mappings $mappings `
     --additional-properties "packageName=$packageName,targetFramework=net8.0,netCoreProjectFile=true" `
-    --global-property modelTests=false --global-property apiTests=false --global-property apiDocs=false --global-property modelDocs=false --skip-validate-spec
+    --global-property modelTests=false `
+    --global-property apiTests=false `
+    --global-property apiDocs=false `
+    --global-property modelDocs=false `
+    --skip-validate-spec
+
 }
 
 function BuildSdk {
