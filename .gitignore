@@ -431,8 +431,7 @@ sdk/
 .env
 
 # Local copies of ApiSchema.json
-**/ApiSchema.json
-**/ApiSchema.Extension.json
+apiSchema*.json
 
 src/dms/EdFi.DataStandard52.ApiSchema/
 
