@@ -92,7 +92,10 @@ public static class RelationshipsBasedAuthorizationHelper
         OperationType operationType
     )
     {
-        var propertyName = "EducationOrganizationId";
+        string propertyName = string.Join(
+            ", ",
+            securityElements.EducationOrganization.Select(e => e.PropertyName.Value).Distinct()
+        );
 
         List<EducationOrganizationId> requestSecurableEdOrgIds = securityElements
             .EducationOrganization.Select(e => e.Id)

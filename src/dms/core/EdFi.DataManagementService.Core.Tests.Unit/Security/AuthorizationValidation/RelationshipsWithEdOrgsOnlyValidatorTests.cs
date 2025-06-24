@@ -69,7 +69,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     [
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(255901)
                         ),
                     ],
@@ -108,7 +108,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     ["uri://not-matching/resource"],
                     [
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(289766)
                         ),
                     ],
@@ -157,11 +157,11 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     [
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(233)
                         ),
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(244)
                         ),
                     ],
@@ -209,7 +209,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     [
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(255901)
                         ),
                     ],
@@ -253,11 +253,11 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("SomeEdOrgReference1"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(1001)
                     ),
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("SomeEdOrgReference2"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(2001)
                     ),
                 ],

@@ -363,7 +363,7 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
         return _resourceSchemaNode["securableElements"]
                 ?["EducationOrganization"]?.AsArray()
                 .Select(x => new EducationOrganizationSecurityElementPath(
-                    new ResourceName(x!["metaEdName"]!.GetValue<string>()),
+                    new MetaEdPropertyFullName(x!["metaEdName"]!.GetValue<string>()),
                     new JsonPath(x!["jsonPath"]!.GetValue<string>())
                 ))
             ?? throw new InvalidOperationException(

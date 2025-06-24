@@ -23,11 +23,14 @@ public record DocumentSecurityElements(
 );
 
 /// <summary>
-/// The ResourceName and Id of an EducationOrganization type referenced by a document
+/// The PropertyName and Id of an EducationOrganization type referenced by a document
 /// </summary>
-public record EducationOrganizationSecurityElement(ResourceName ResourceName, EducationOrganizationId Id);
+public record EducationOrganizationSecurityElement(
+    MetaEdPropertyFullName PropertyName,
+    EducationOrganizationId Id
+);
 
 /// <summary>
 /// The ResourceName and JsonPath of an EducationOrganization type referenced by a document
 /// </summary>
-public record EducationOrganizationSecurityElementPath(ResourceName ResourceName, JsonPath Path);
+public record EducationOrganizationSecurityElementPath(MetaEdPropertyFullName PropertyName, JsonPath Path);

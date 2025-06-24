@@ -609,7 +609,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("School"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(999)
                     ),
                 ],
@@ -674,7 +674,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("School"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(255901)
                     ),
                 ],
