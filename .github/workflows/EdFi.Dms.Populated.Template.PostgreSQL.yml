@@ -83,6 +83,10 @@ jobs:
             ${{ github.workspace }}/eng/DatabaseTemplates/dms-logs.txt
           retention-days: 10
 
+      - name: Setup tmate session
+        if: success() || failure()
+        uses: mxschmitt/action-tmate@v3
+
       - name: Upload Populated Template Package as Artifact
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
