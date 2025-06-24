@@ -115,7 +115,7 @@ Feature: ProgramEvaluation Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's Program value."
                      ]
                   }
                   """
@@ -132,7 +132,7 @@ Feature: ProgramEvaluation Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's Program value."
                      ]
                   }
                   """
@@ -170,7 +170,7 @@ Feature: ProgramEvaluation Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's Program value."
                      ]
                   }
                   """
@@ -187,7 +187,7 @@ Feature: ProgramEvaluation Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's Program value."
                      ]
                   }
                   """
