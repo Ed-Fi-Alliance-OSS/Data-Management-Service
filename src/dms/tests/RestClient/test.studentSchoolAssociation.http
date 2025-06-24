@@ -6,10 +6,10 @@
  */
 
 #5126 or 8081
-@configPort=5126
+@configPort=8081
 
 #5198 or 8080
-@dmsPort=5198
+@dmsPort=8080
 @sysAdminId=sys-admin
 @sysAdminSecret=SdfH)98&Jk
 @encodedSysAdminSecret=SdfH%2998%26Jk
@@ -51,7 +51,7 @@ Content-Type: application/json
 Authorization: bearer {{configToken}}
 
 {
-    "company": "Demo Vendor2",
+    "company": "Demo Vendor",
     "contactName": "George Washington",
     "contactEmailAddress": "george@example.com",
     "namespacePrefixes": "uri://ed-fi.org"
@@ -77,7 +77,7 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
-    "claimSetName": "EdFiSandbox",
+    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
     "educationOrganizationIds": [6001010]
 }
 

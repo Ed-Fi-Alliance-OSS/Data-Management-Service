@@ -45,11 +45,11 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
             );
             if (edOrgResult.Type == AuthorizationResultType.MissingProperty)
             {
-                missingProperties.Add(edOrgResult.PropertyName);
+                missingProperties.AddRange(edOrgResult.PropertyNames);
             }
             else if (edOrgResult.Type == AuthorizationResultType.NotAuthorized)
             {
-                notAuthorizedProperties.Add(edOrgResult.PropertyName);
+                notAuthorizedProperties.AddRange(edOrgResult.PropertyNames);
             }
         }
 
@@ -68,11 +68,11 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
             );
             if (studentResult.Type == AuthorizationResultType.MissingProperty)
             {
-                missingProperties.Add(studentResult.PropertyName);
+                missingProperties.AddRange(studentResult.PropertyNames);
             }
             else if (studentResult.Type == AuthorizationResultType.NotAuthorized)
             {
-                notAuthorizedProperties.Add(studentResult.PropertyName);
+                notAuthorizedProperties.AddRange(studentResult.PropertyNames);
             }
         }
 
@@ -90,11 +90,11 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
             );
             if (staffResult.Type == AuthorizationResultType.MissingProperty)
             {
-                missingProperties.Add(staffResult.PropertyName);
+                missingProperties.AddRange(staffResult.PropertyNames);
             }
             else if (staffResult.Type == AuthorizationResultType.NotAuthorized)
             {
-                notAuthorizedProperties.Add(staffResult.PropertyName);
+                notAuthorizedProperties.AddRange(staffResult.PropertyNames);
             }
         }
 
@@ -112,11 +112,11 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
             );
             if (contactResult.Type == AuthorizationResultType.MissingProperty)
             {
-                missingProperties.Add(contactResult.PropertyName);
+                missingProperties.AddRange(contactResult.PropertyNames);
             }
             else if (contactResult.Type == AuthorizationResultType.NotAuthorized)
             {
-                notAuthorizedProperties.Add(contactResult.PropertyName);
+                notAuthorizedProperties.AddRange(contactResult.PropertyNames);
             }
         }
 
