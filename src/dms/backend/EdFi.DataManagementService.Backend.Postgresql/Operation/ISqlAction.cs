@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
@@ -37,7 +38,7 @@ public interface ISqlAction
 
     public Task<JsonArray> GetAllDocumentsByResourceName(
         string resourceName,
-        PaginationParameters paginationParameters,
+        IQueryRequest queryRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
@@ -45,6 +46,7 @@ public interface ISqlAction
 
     public Task<int> GetTotalDocumentsForResourceName(
         string resourceName,
+        IQueryRequest queryRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
