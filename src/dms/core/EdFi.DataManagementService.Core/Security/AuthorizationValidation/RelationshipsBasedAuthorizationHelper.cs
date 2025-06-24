@@ -103,7 +103,10 @@ public static class RelationshipsBasedAuthorizationHelper
 
         if (requestSecurableEdOrgIds.Count == 0)
         {
-            return new AuthorizationResult(AuthorizationResultType.MissingProperty, propertyName);
+            return new AuthorizationResult(
+                AuthorizationResultType.MissingProperty,
+                "EducationOrganizationId"
+            );
         }
 
         var requestEdOrgHierarchies = await Task.WhenAll(
