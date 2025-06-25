@@ -39,8 +39,30 @@ param (
 
     # Load seed data using database template package
     [Switch]
-    $LoadSeedData
+    $LoadSeedData,
+
+    # Load extension resource claims
+    [Switch]
+    $LoadExtensionResourceClaims
 )
+
+
+if($LoadExtensionResourceClaims)
+{
+    try {
+    Push-Location ../CmsHierarchy/
+    Write-Output "Loading extension resource claims..."
+    dotnet build CmsHierarchy.csproj -c Release
+    dotnet run --configuration Release --project "CmsHierarchy.csproj" --no-launch-profile -- --command TransformExtensionResourceClaims --input SampleExtensionResourceClaims.json  --outputFormat ToFile --output SecurityMetadata.json --outputFormat ToFile --skipAuths "RelationshipsWithEdOrgsAndPeopleInverted;RelationshipsWithStudentsOnlyThroughResponsibility;RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
+    }
+    catch {
+        Write-Error "Failed to load extension resource claims: $_"
+        exit 1
+    }
+    finally {
+        Pop-Location
+    }
+}
 
 $files = @(
     "-f",
@@ -107,6 +129,8 @@ else {
 
     # Create client with edfi_admin_api/authMetadata_readonly_access scope
     ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+
+
 
     Import-Module ./env-utility.psm1
     $envValues = ReadValuesFromEnvFile $EnvironmentFile

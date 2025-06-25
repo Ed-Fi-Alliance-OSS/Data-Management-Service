@@ -18,10 +18,16 @@
     <None Update="ClaimSetFiles\E2E-NameSpaceBasedClaimSet.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Update="ClaimSetFiles\HomographExtensionResourceClaims.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="ClaimSetFiles\E2E-NoFurtherAuthRequiredClaimSet.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="ClaimSetFiles\E2E-RelationshipsWithEdOrgsOnlyClaimSet.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="ClaimSetFiles\SampleExtensionResourceClaims.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

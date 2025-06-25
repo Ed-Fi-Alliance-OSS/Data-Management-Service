@@ -31,43 +31,7 @@ public class ClaimSetToAuthHierarchy
         var claimSetName = claimSetData!.Name;
         foreach (ResourceClaim resourceClaim in claimSetData.ResourceClaims)
         {
-            if (resourceClaim.IsParent)
-            {
-                var existingClaim = existingClaims
-                    .SelectMany(x => SearchRecursive(x, resourceClaim.Name!))
-                    .SingleOrDefault();
 
-                if (existingClaim! != null)
-                {
-                    // Add additional claims
-                    var childClaims = resourceClaim.Children.Select(x => new Claim { Name = x.Name });
-                    existingClaim.Claims!.AddRange(childClaims);
-                }
-                else
-                {
-                    // Claim is added at root level
-                    existingClaims.Add(
-                        new Claim
-                        {
-                            Name = resourceClaim.Name,
-                            Claims = resourceClaim.Children.Select(x => new Claim { Name = x.Name }).ToList(),
-                            ClaimSets = resourceClaim.ClaimSets,
-                            DefaultAuthorization = new DefaultAuthorization
-                            {
-                                Actions = resourceClaim
-                                    .DefaultAuthorizationStrategiesForCRUD.Select(x => new Model.Action
-                                    {
-                                        Name = x.ActionName,
-                                        AuthorizationStrategies = x.AuthorizationStrategies.ToList(),
-                                    })
-                                    .ToList(),
-                            },
-                        }
-                    );
-                }
-            }
-            else
-            {
                 var singularName = PluralToSingular(resourceClaim.Name!);
 
                 var existingClaim = existingClaims
@@ -107,7 +71,6 @@ public class ClaimSetToAuthHierarchy
                     }
                 }
             }
-        }
         return existingClaims;
     }
 
