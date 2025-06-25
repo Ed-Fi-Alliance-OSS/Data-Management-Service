@@ -52,13 +52,14 @@ public static class RelationshipsBasedAuthorizationHelper
         var missingProperties = new List<string>();
         var notAuthorizedProperties = new List<string>();
 
-        if (authorizationResult.Type == AuthorizationResultType.MissingProperty)
+        switch (authorizationResult)
         {
-            missingProperties.AddRange(authorizationResult.PropertyNames);
-        }
-        else if (authorizationResult.Type == AuthorizationResultType.NotAuthorized)
-        {
-            notAuthorizedProperties.AddRange(authorizationResult.PropertyNames);
+            case AuthorizationResult.MissingProperty missingProperty:
+                missingProperties.AddRange(missingProperty.PropertyNames);
+                break;
+            case AuthorizationResult.NotAuthorized notAuthorized:
+                notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
+                break;
         }
 
         if (missingProperties.Count != 0 || notAuthorizedProperties.Count != 0)
@@ -98,10 +99,7 @@ public static class RelationshipsBasedAuthorizationHelper
 
         if (requestSecurableEdOrgIds.Count == 0)
         {
-            return new AuthorizationResult(
-                AuthorizationResultType.MissingProperty,
-                ["EducationOrganizationId"]
-            );
+            return new AuthorizationResult.MissingProperty(["EducationOrganizationId"]);
         }
 
         var requestEdOrgHierarchies = await Task.WhenAll(
@@ -128,12 +126,11 @@ public static class RelationshipsBasedAuthorizationHelper
 
         if (!isAuthorized)
         {
-            return new AuthorizationResult(
-                AuthorizationResultType.NotAuthorized,
+            return new AuthorizationResult.NotAuthorized(
                 securityElements.EducationOrganization.Select(e => e.PropertyName.Value).Distinct().ToArray()
             );
         }
-        return new AuthorizationResult(AuthorizationResultType.Authorized, []);
+        return new AuthorizationResult.Authorized();
     }
 
     public static async Task<AuthorizationResult> ValidateStudentAuthorization(
@@ -145,7 +142,7 @@ public static class RelationshipsBasedAuthorizationHelper
         var propertyName = "StudentUniqueId";
         if (securityElements.Student.Length == 0)
         {
-            return new AuthorizationResult(AuthorizationResultType.MissingProperty, [propertyName]);
+            return new AuthorizationResult.MissingProperty([propertyName]);
         }
         var studentUniqueId = securityElements.Student[0].Value;
         var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStudent(
@@ -154,10 +151,10 @@ public static class RelationshipsBasedAuthorizationHelper
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, [propertyName]);
+            return new AuthorizationResult.NotAuthorized([propertyName]);
         }
 
-        return new AuthorizationResult(AuthorizationResultType.Authorized, []);
+        return new AuthorizationResult.Authorized();
     }
 
     public static async Task<AuthorizationResult> ValidateContactAuthorization(
@@ -169,7 +166,7 @@ public static class RelationshipsBasedAuthorizationHelper
         var propertyName = "ContactUniqueId";
         if (securityElements.Contact.Length == 0)
         {
-            return new AuthorizationResult(AuthorizationResultType.MissingProperty, [propertyName]);
+            return new AuthorizationResult.MissingProperty([propertyName]);
         }
         var contactUniqueId = securityElements.Contact[0].Value;
 
@@ -181,10 +178,10 @@ public static class RelationshipsBasedAuthorizationHelper
 
         if (!isAuthorized)
         {
-            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, [propertyName]);
+            return new AuthorizationResult.NotAuthorized([propertyName]);
         }
 
-        return new AuthorizationResult(AuthorizationResultType.Authorized, []);
+        return new AuthorizationResult.Authorized();
     }
 
     public static async Task<AuthorizationResult> ValidateStaffAuthorization(
@@ -196,24 +193,24 @@ public static class RelationshipsBasedAuthorizationHelper
         var propertyName = "StaffUniqueId";
         if (securityElements.Staff.Length == 0)
         {
-            return new AuthorizationResult(AuthorizationResultType.MissingProperty, [propertyName]);
+            return new AuthorizationResult.MissingProperty([propertyName]);
         }
         var staffUniqueId = securityElements.Staff[0].Value;
         var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStaff(staffUniqueId);
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, [propertyName]);
+            return new AuthorizationResult.NotAuthorized([propertyName]);
         }
-        return new AuthorizationResult(AuthorizationResultType.Authorized, []);
+        return new AuthorizationResult.Authorized();
     }
 }
 
-public enum AuthorizationResultType
+public abstract record AuthorizationResult
 {
-    Authorized,
-    NotAuthorized,
-    MissingProperty,
-}
+    public record Authorized() : AuthorizationResult;
 
-public record AuthorizationResult(AuthorizationResultType Type, string[] PropertyNames);
+    public record NotAuthorized(string[] PropertyNames) : AuthorizationResult;
+
+    public record MissingProperty(string[] PropertyNames) : AuthorizationResult;
+}
