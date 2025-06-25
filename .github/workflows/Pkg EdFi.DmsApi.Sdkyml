@@ -48,7 +48,7 @@ jobs:
 
       - name: Generate Core SDK
         run: |
-          ./build-sdk.ps1 BuildAndGenerateSdk -$PackageName "EdFi.OdsApi.TestSdk"
+          ./build-sdk.ps1 BuildAndGenerateSdk -PackageName "EdFi.OdsApi.TestSdk"
 
       - name: Package Core SDK
         run: |
