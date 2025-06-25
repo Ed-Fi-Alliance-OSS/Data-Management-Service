@@ -27,7 +27,7 @@ internal static class SecurityHelper
                         .EducationOrganization.Select(eo => new JsonObject
                         {
                             ["Id"] = JsonValue.Create(eo.Id.Value.ToString()),
-                            ["ResourceName"] = JsonValue.Create(eo.ResourceName.Value),
+                            ["PropertyName"] = JsonValue.Create(eo.PropertyName.Value),
                         })
                         .ToArray()
                 ),
@@ -58,7 +58,7 @@ internal static class SecurityHelper
             jsonObject["EducationOrganization"]
                 ?.AsArray()
                 .Select(eo => new EducationOrganizationSecurityElement(
-                    new ResourceName(eo!["ResourceName"]!.GetValue<string>()),
+                    new MetaEdPropertyFullName(eo!["PropertyName"]!.GetValue<string>()),
                     new EducationOrganizationId(long.Parse(eo["Id"]!.GetValue<string>()))
                 ))
                 .ToArray() ?? [];

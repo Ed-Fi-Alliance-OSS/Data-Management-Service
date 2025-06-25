@@ -168,7 +168,7 @@ Feature: DisciplineAction Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
+                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
                      ]
                   }
                   """
@@ -185,7 +185,7 @@ Feature: DisciplineAction Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
+                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
                      ]
                   }
                   """
@@ -231,7 +231,7 @@ Feature: DisciplineAction Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
+                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
                      ]
                   }
                   """
@@ -248,7 +248,7 @@ Feature: DisciplineAction Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
+                        "No relationships have been established between the caller's education organization id claims ('255901044') and one or more of the following properties of the resource item: 'ResponsibilitySchool', 'StudentUniqueId'."
                      ]
                   }
                   """

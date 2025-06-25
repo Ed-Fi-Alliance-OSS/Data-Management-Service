@@ -912,7 +912,7 @@ public class UpdateTests : DatabaseTest
                         [],
                         [
                             new EducationOrganizationSecurityElement(
-                                new ResourceName("School"),
+                                new MetaEdPropertyFullName("SchoolId"),
                                 new EducationOrganizationId(12345)
                             ),
                         ],
@@ -945,7 +945,7 @@ public class UpdateTests : DatabaseTest
                         [],
                         [
                             new EducationOrganizationSecurityElement(
-                                new ResourceName("School"),
+                                new MetaEdPropertyFullName("SchoolId"),
                                 new EducationOrganizationId(12345)
                             ),
                         ],
@@ -984,7 +984,7 @@ public class UpdateTests : DatabaseTest
                         [],
                         [
                             new EducationOrganizationSecurityElement(
-                                new ResourceName("School"),
+                                new MetaEdPropertyFullName("SchoolId"),
                                 new EducationOrganizationId(111)
                             ),
                         ],
