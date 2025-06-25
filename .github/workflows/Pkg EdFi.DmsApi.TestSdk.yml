@@ -5,26 +5,21 @@
 
 name: Pkg EdFi.DmsApi.TestSdk
 on:
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+  release:
+    types:
+      - prereleased
 env:
   SDK_PACKAGE_NAME: "EdFi.DmsApi.TestSdk.Standard.5.2.0"
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
-
 permissions: read-all
 
 jobs:
   build-sdk:
     name: Build And Pack DMS Test SDK
-
+    if: startsWith(github.event.release.tag_name, 'dms-')
     runs-on: ubuntu-latest
     defaults:
       run:
