@@ -1,6 +1,4 @@
-{
-  "name": "E2E-NameSpaceBasedClaimSet",
-  "resourceClaims": [
+ [
     {
       "isParent": true,
       "name": "domains/systemDescriptors",
@@ -25,97 +23,6 @@
         },
         {
           "name": "http://ed-fi.org/identity/claims/sample/studentGraduationPlanAssociation"
-        }
-      ]
-    },
-    {
-      "isParent": true,
-      "name": "http://ed-fi.org/identity/claims/domains/homograph",
-      "_defaultAuthorizationStrategiesForCrud": [
-        {
-          "actionName": "Create",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "actionName": "Read",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "actionName": "Update",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "actionName": "Delete",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "actionName": "ReadChanges",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        }
-      ],
-      "children": [
-        {
-          "name": "http://ed-fi.org/identity/claims/homograph/name"
-        },
-        {
-          "name": "http://ed-fi.org/identity/claims/homograph/school"
-        },
-        {
-          "name": "http://ed-fi.org/identity/claims/homograph/contact"
-        },
-        {
-          "name": "http://ed-fi.org/identity/claims/homograph/student"
-        },
-        {
-          "name": "http://ed-fi.org/identity/claims/homograph/staff"
-        },
-        {
-          "name": "http://ed-fi.org/identity/claims/homograph/schoolYearType"
-        },
-        {
-          "name": "http://ed-fi.org/identity/claims/homograph/studentSchoolAssociation"
-        }
-      ],
-      "claimSets": [
-        {
-          "name": "EdFiSandbox",
-          "actions": [
-            {
-              "name": "Create"
-            },
-            {
-              "name": "Read"
-            },
-            {
-              "name": "Update"
-            },
-            {
-              "name": "Delete"
-            },
-            {
-              "name": "ReadChanges"
-            }
-          ]
         }
       ]
     },
@@ -196,4 +103,3 @@
       ]
     }
   ]
-}
