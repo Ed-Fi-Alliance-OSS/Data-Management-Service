@@ -68,7 +68,7 @@ param(
 
     # Package name for the NuGet package
     [string]
-    [ValidateSet("EdFi.OdsApi.Sdk", "EdFi.OdsApi.TesSdk")]
+    [ValidateSet("EdFi.OdsApi.Sdk", "EdFi.OdsApi.TestSdk")]
     $PackageName = "EdFi.OdsApi.Sdk",
 
     [string]
@@ -199,7 +199,7 @@ function PushPackage {
 function Invoke-BuildAndGenerateSdk {
     Invoke-Step { DownloadCodeGen }
 
-    if ($PackageName -eq "EdFi.OdsApi.TesSdk") {
+    if ($PackageName -eq "EdFi.OdsApi.TestSdk") {
         Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
         Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
     } elseif ($PackageName -eq "EdFi.OdsApi.Sdk") {
