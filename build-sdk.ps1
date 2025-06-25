@@ -77,7 +77,6 @@ param(
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
 
-$PackageName = "EdFi.OdsApi.Sdk"
 $solutionRoot = "$PSScriptRoot/$OutputFolder"
 $projectPath = "$solutionRoot/src/$PackageName/$PackageName.csproj"
 $nuspecPath = "$PSScriptRoot/eng/sdkGen/$PackageName.nuspec"
