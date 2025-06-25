@@ -54,14 +54,14 @@ jobs:
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
-          ./build-sdk.ps1 Package -SDKVersion $packageVersion
+          ./build-sdk.ps1 Package -SDKVersion $packageVersion -PackageName  "EdFi.OdsApi.TestSdk"
 
       - name: Upload Test SDK Packages as Artifacts
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
           name: "${{ env.SDK_PACKAGE_NAME }}-NuGet"
-          path: ${{ github.workspace }}/*.nupkg
+          path: ${{ github.workspace }}/EdFi.OdsApi.TestSdk.nupkg
           if-no-files-found: error
           retention-days: 30
 
@@ -86,7 +86,7 @@ jobs:
 
       - name: Push DMS Package to Azure Artifacts
         run: |
-         $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
+         $artifact = (Get-ChildItem -Path $_ -Name -Include EdFi.OdsApi.TestSdk.nupkg)
          $arguments = @{
            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
