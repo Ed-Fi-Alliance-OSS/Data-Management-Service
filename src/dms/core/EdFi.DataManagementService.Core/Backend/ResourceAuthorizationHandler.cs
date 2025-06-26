@@ -81,6 +81,14 @@ public class ResourceAuthorizationHandler(
             .OfType<ResourceAuthorizationResult.NotAuthorized>()
             .SelectMany(x => x.ErrorMessages)
             .ToArray();
-        return new ResourceAuthorizationResult.NotAuthorized(errors);
+
+        string[] hints = results
+            .OfType<ResourceAuthorizationResult.NotAuthorized.WithHint>()
+            .SelectMany(x => x.Hints)
+            .ToArray();
+
+        return hints.Any()
+            ? new ResourceAuthorizationResult.NotAuthorized.WithHint(errors, hints)
+            : new ResourceAuthorizationResult.NotAuthorized(errors);
     }
 }

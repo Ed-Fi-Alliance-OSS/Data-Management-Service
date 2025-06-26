@@ -103,9 +103,17 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
-            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            _expectedResult!
+                .GetType()
+                .Should()
+                .Be(typeof(ResourceAuthorizationResult.NotAuthorized.WithHint));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorized)
             {
+                notAuthorized!.Hints.Should().HaveCount(1);
+                notAuthorized!
+                    .Hints[0]
+                    .Should()
+                    .Be("Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.");
                 notAuthorized!.ErrorMessages.Should().HaveCount(1);
                 notAuthorized!
                     .ErrorMessages[0]
@@ -197,9 +205,17 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
-            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            _expectedResult!
+                .GetType()
+                .Should()
+                .Be(typeof(ResourceAuthorizationResult.NotAuthorized.WithHint));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorized)
             {
+                notAuthorized!.Hints.Should().HaveCount(1);
+                notAuthorized!
+                    .Hints[0]
+                    .Should()
+                    .Be("Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.");
                 notAuthorized!.ErrorMessages.Should().HaveCount(1);
                 notAuthorized!
                     .ErrorMessages[0]
@@ -288,9 +304,17 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
-            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            _expectedResult!
+                .GetType()
+                .Should()
+                .Be(typeof(ResourceAuthorizationResult.NotAuthorized.WithHint));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorized)
             {
+                notAuthorized!.Hints.Should().HaveCount(1);
+                notAuthorized!
+                    .Hints[0]
+                    .Should()
+                    .Be("Hint: You may need to create a corresponding 'StudentContactAssociation' item.");
                 notAuthorized!.ErrorMessages.Should().HaveCount(1);
                 notAuthorized!
                     .ErrorMessages[0]
@@ -382,9 +406,17 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
         public void Should_Return_Expected_AuthorizationResult()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
-            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            _expectedResult!
+                .GetType()
+                .Should()
+                .Be(typeof(ResourceAuthorizationResult.NotAuthorized.WithHint));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorized)
             {
+                notAuthorized!.Hints.Should().HaveCount(1);
+                notAuthorized!
+                    .Hints[0]
+                    .Should()
+                    .Be("Hint: You may need to create a corresponding 'StudentContactAssociation' item.");
                 notAuthorized!.ErrorMessages.Should().HaveCount(1);
                 notAuthorized!
                     .ErrorMessages[0]

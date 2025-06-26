@@ -175,9 +175,21 @@ internal static class FailureResponse
             errors: []
         );
 
-    public static JsonNode ForForbidden(TraceId traceId, string[] errors, string typeExtension = "") =>
-        CreateBaseJsonObject(
-            detail: "Access to the resource could not be authorized.",
+    public static JsonNode ForForbidden(
+        TraceId traceId,
+        string[] errors,
+        string typeExtension = "",
+        string[]? hints = null
+    )
+    {
+        var detail = "Access to the resource could not be authorized.";
+        if (hints?.Length > 0)
+        {
+            detail += " " + string.Join(" ", hints);
+        }
+
+        return CreateBaseJsonObject(
+            detail: detail,
             type: $"{_forbiddenType}:{typeExtension}",
             title: "Authorization Denied",
             status: 403,
@@ -185,6 +197,7 @@ internal static class FailureResponse
             validationErrors: [],
             errors: errors
         );
+    }
 
     public static JsonNode ForGatewayError(TraceId traceId, string detail = "") =>
         CreateBaseJsonObject(

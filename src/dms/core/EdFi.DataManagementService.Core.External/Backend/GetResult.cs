@@ -33,7 +33,7 @@ public record GetResult
     /// <summary>
     /// A failure because the client is not authorized to get the document
     /// </summary>
-    public record GetFailureNotAuthorized(string[] ErrorMessages) : GetResult();
+    public record GetFailureNotAuthorized(string[] ErrorMessages, string[]? Hints = null) : GetResult();
 
     /// <summary>
     /// A transient failure due to a retryable condition, for example a serialization issue

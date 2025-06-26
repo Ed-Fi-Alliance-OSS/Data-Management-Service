@@ -29,6 +29,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
     {
         var missingProperties = new List<string>();
         var notAuthorizedProperties = new List<string>();
+        var hints = new List<string>();
 
         if (
             RelationshipsBasedAuthorizationHelper.HasSecurable(
@@ -74,6 +75,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                     break;
                 case AuthorizationResult.NotAuthorized notAuthorized:
                     notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
+                    hints.Add(notAuthorized.Hint);
                     break;
             }
         }
@@ -97,6 +99,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                     break;
                 case AuthorizationResult.NotAuthorized notAuthorized:
                     notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
+                    hints.Add(notAuthorized.Hint);
                     break;
             }
         }
@@ -120,17 +123,25 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                     break;
                 case AuthorizationResult.NotAuthorized notAuthorized:
                     notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
+                    hints.Add(notAuthorized.Hint);
                     break;
             }
         }
 
         if (missingProperties.Count != 0 || notAuthorizedProperties.Count != 0)
         {
-            var errorMessage = RelationshipsBasedAuthorizationHelper.BuildErrorMessage(
+            string errorMessage = RelationshipsBasedAuthorizationHelper.BuildErrorMessage(
                 authorizationFilters,
                 missingProperties,
                 notAuthorizedProperties
             );
+            if (hints.Count != 0)
+            {
+                return new ResourceAuthorizationResult.NotAuthorized.WithHint(
+                    [errorMessage],
+                    hints.ToArray()
+                );
+            }
             return new ResourceAuthorizationResult.NotAuthorized([errorMessage]);
         }
 

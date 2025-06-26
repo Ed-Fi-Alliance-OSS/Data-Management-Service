@@ -24,14 +24,14 @@ public static class RelationshipsBasedAuthorizationHelper
     {
         if (missingProperties != null && missingProperties.Any())
         {
-            var propertyOrProperties = missingProperties.Count() > 1 ? "properties" : "property";
+            string propertyOrProperties = missingProperties.Count() > 1 ? "properties" : "property";
             return $"No {string.Join(", ", missingProperties.Select(p => $"'{p}'"))} {propertyOrProperties} could be found on the resource in order to perform authorization. Should a different authorization strategy be used?";
         }
 
         if (notAuthorizedProperties != null && notAuthorizedProperties.Any())
         {
             string edOrgIdsFromFilters = string.Join(", ", authorizationFilters.Select(x => $"'{x.Value}'"));
-            var notAuthorizedMessage =
+            string notAuthorizedMessage =
                 $"No relationships have been established between the caller's education organization id claims ({edOrgIdsFromFilters}) and the resource item's {notAuthorizedProperties.First()} value.";
             if (notAuthorizedProperties.Count() > 1)
             {
@@ -127,7 +127,8 @@ public static class RelationshipsBasedAuthorizationHelper
         if (!isAuthorized)
         {
             return new AuthorizationResult.NotAuthorized(
-                securityElements.EducationOrganization.Select(e => e.PropertyName.Value).Distinct().ToArray()
+                securityElements.EducationOrganization.Select(e => e.PropertyName.Value).Distinct().ToArray(),
+                ""
             );
         }
         return new AuthorizationResult.Authorized();
@@ -139,19 +140,22 @@ public static class RelationshipsBasedAuthorizationHelper
         AuthorizationFilter[] authorizationFilters
     )
     {
-        var propertyName = "StudentUniqueId";
+        string propertyName = "StudentUniqueId";
         if (securityElements.Student.Length == 0)
         {
             return new AuthorizationResult.MissingProperty([propertyName]);
         }
-        var studentUniqueId = securityElements.Student[0].Value;
-        var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStudent(
+        string studentUniqueId = securityElements.Student[0].Value;
+        long[] educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStudent(
             studentUniqueId
         );
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult.NotAuthorized([propertyName]);
+            return new AuthorizationResult.NotAuthorized(
+                [propertyName],
+                "Hint: You may need to create a corresponding 'StudentSchoolAssociation' item."
+            );
         }
 
         return new AuthorizationResult.Authorized();
@@ -163,14 +167,14 @@ public static class RelationshipsBasedAuthorizationHelper
         AuthorizationFilter[] authorizationFilters
     )
     {
-        var propertyName = "ContactUniqueId";
+        string propertyName = "ContactUniqueId";
         if (securityElements.Contact.Length == 0)
         {
             return new AuthorizationResult.MissingProperty([propertyName]);
         }
-        var contactUniqueId = securityElements.Contact[0].Value;
+        string contactUniqueId = securityElements.Contact[0].Value;
 
-        var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForContact(
+        long[] educationOrgIds = await authorizationRepository.GetEducationOrganizationsForContact(
             contactUniqueId
         );
 
@@ -178,7 +182,10 @@ public static class RelationshipsBasedAuthorizationHelper
 
         if (!isAuthorized)
         {
-            return new AuthorizationResult.NotAuthorized([propertyName]);
+            return new AuthorizationResult.NotAuthorized(
+                [propertyName],
+                "Hint: You may need to create a corresponding 'StudentContactAssociation' item."
+            );
         }
 
         return new AuthorizationResult.Authorized();
@@ -190,17 +197,22 @@ public static class RelationshipsBasedAuthorizationHelper
         AuthorizationFilter[] authorizationFilters
     )
     {
-        var propertyName = "StaffUniqueId";
+        string propertyName = "StaffUniqueId";
         if (securityElements.Staff.Length == 0)
         {
             return new AuthorizationResult.MissingProperty([propertyName]);
         }
-        var staffUniqueId = securityElements.Staff[0].Value;
-        var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStaff(staffUniqueId);
+        string staffUniqueId = securityElements.Staff[0].Value;
+        long[] educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStaff(
+            staffUniqueId
+        );
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult.NotAuthorized([propertyName]);
+            return new AuthorizationResult.NotAuthorized(
+                [propertyName],
+                "Hint: You may need to create a corresponding 'StaffSchoolAssociation' item."
+            );
         }
         return new AuthorizationResult.Authorized();
     }
@@ -210,7 +222,7 @@ public abstract record AuthorizationResult
 {
     public record Authorized() : AuthorizationResult;
 
-    public record NotAuthorized(string[] PropertyNames) : AuthorizationResult;
+    public record NotAuthorized(string[] PropertyNames, string Hint) : AuthorizationResult;
 
     public record MissingProperty(string[] PropertyNames) : AuthorizationResult;
 }
