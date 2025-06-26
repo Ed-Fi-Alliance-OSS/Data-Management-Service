@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Deploy;
 
 public class DatabaseDeploy : IDatabaseDeploy
 {
-    public DatabaseDeployResult DeployDatabase(string connectionString, bool optimizeForQueryHandler = false)
+    public DatabaseDeployResult DeployDatabase(string connectionString, bool optimizeForQueryHandler)
     {
         try
         {
