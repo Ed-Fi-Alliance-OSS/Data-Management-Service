@@ -13,10 +13,12 @@
     <copyright>Copyright @ $year$ Ed-Fi Alliance, LLC and Contributors</copyright>
     <tags>Ed-Fi Data Management Service SDK</tags>
     <dependencies>
-      <dependency id="NewtonSoft.Json" version="13.0.3" />
-      <dependency id="JsonSubTypes" version="2.0.1" />
-      <dependency id="RestSharp" version="112.0.0" />
-      <dependency id="Polly" version="8.1.0" />
+      <group targetFramework="net8.0">
+        <dependency id="NewtonSoft.Json" version="13.0.3" />
+        <dependency id="JsonSubTypes" version="2.0.1" />
+        <dependency id="RestSharp" version="112.0.0" />
+        <dependency id="Polly" version="8.1.0" />
+      </group>
     </dependencies>
   </metadata>
   <files>
