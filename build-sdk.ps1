@@ -11,11 +11,11 @@
     .DESCRIPTION
         Provides automation of the following tasks:
 
-        * BuildCore: runs `dotnet clean`
+        * BuildAndGenerateSdk: runs `dotnet clean`
         * Package: builds package for the Data Management Service SDK
         * Push: uploads a NuGet package to the NuGet feed
     .EXAMPLE
-        .\build-sdk.ps1 BuildCore
+        .\build-sdk.ps1 BuildAndGenerateSdk
 
         Generates the SDK using openapi codegen cli.
 
@@ -29,10 +29,10 @@
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
 param(
-    # Command to execute, defaults to "BuildCore".
+    # Command to execute, defaults to "BuildAndGenerateSdk".
     [string]
-    [ValidateSet("BuildCore", "Package", "Push")]
-    $Command = "BuildCore",
+    [ValidateSet("BuildAndGenerateSdk", "Package", "Push")]
+    $Command = "BuildAndGenerateSdk",
 
     # Assembly and package version number for the Data Management Service SDK. The
     # current package number is configured in the build automation tool and
@@ -66,16 +66,20 @@ param(
     [string]
     $OutputFolder = "./eng/sdkGen/csharp",
 
+    # Package name for the NuGet package
+    [string]
+    [ValidateSet("EdFi.OdsApi.Sdk", "EdFi.OdsApi.TestSdk")]
+    $PackageName = "EdFi.OdsApi.Sdk",
+
     [string]
     $StandardVersion = "5.2.0"
 )
 
 Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
 
-$packageName = "EdFi.Api.Sdk"
 $solutionRoot = "$PSScriptRoot/$OutputFolder"
-$projectPath = "$solutionRoot/src/$packageName/$packageName.csproj"
-$nuspecPath = "$PSScriptRoot/eng/sdkGen/$packageName.nuspec"
+$projectPath = "$solutionRoot/src/$PackageName/$PackageName.csproj"
+$nuspecPath = "$PSScriptRoot/eng/sdkGen/$PackageName.nuspec"
 
 function DownloadCodeGen {
     if (-not (Test-Path -Path openApi-codegen-cli.jar)) {
@@ -86,16 +90,56 @@ function DownloadCodeGen {
 function GenerateSdk {
     param (
         [string]
-        $Namespace,
+        $ApiPackage,
+
+        [string]
+        $ModelPackage,
 
         [string]
         $Endpoint
     )
 
-    &java -jar openApi-codegen-cli.jar generate -g csharp -i $Endpoint `
-    --api-package Api.$Namespace --model-package Models.$Namespace -o $OutputFolder `
-    --additional-properties "packageName=$packageName,targetFramework=net8.0,netCoreProjectFile=true" `
-    --global-property modelTests=false --global-property apiTests=false --global-property apiDocs=false --global-property modelDocs=false --skip-validate-spec
+    # Download and parse OpenAPI spec
+    $spec = Invoke-WebRequest -Uri $Endpoint | ConvertFrom-Json
+
+    # Find all operationIds that contain an underscore
+    $operationIds = $spec.paths.PSObject.Properties.Value | ForEach-Object {
+        $_.PSObject.Properties.Value | Where-Object { $_.operationId -and $_.operationId -like "*_*" } | ForEach-Object { $_.operationId }
+    }
+
+    # Normalize operationId to camelCase without underscores (for the left side of mapping)
+    function Normalize-OperationId {
+        param($opId)
+        $parts = $opId -split '_'
+        $camel = $parts[0] + ($parts[1..($parts.Count-1)] | ForEach-Object { $_.Substring(0,1).ToUpper() + $_.Substring(1) } | ForEach-Object { $_ }) -join ''
+        return $camel
+    }
+
+    # Capitalize the first character of the string
+    function Capitalize-FirstChar {
+        param($s)
+        if ($s.Length -eq 0) { return $s }
+        return $s.Substring(0,1).ToUpper() + $s.Substring(1)
+    }
+
+    # Build mappings string: left = normalized, right = original with first char uppercased
+    $mappings = ($operationIds | Sort-Object -Unique | ForEach-Object { "$(Normalize-OperationId $_)=$(Capitalize-FirstChar $_)" }) -join ","
+    # Example --operation-id-name-mappings deleteHomographContactsById=Delete_HomographContactsById
+
+    & java -Xmx5g -jar openApi-codegen-cli.jar generate `
+    -g csharp `
+    -i $Endpoint `
+    --api-package $ApiPackage `
+    --model-package $ModelPackage `
+    -o $OutputFolder `
+    --operation-id-name-mappings $mappings `
+    --additional-properties "packageName=$PackageName,targetFramework=net8.0,netCoreProjectFile=true" `
+    --global-property modelTests=false `
+    --global-property apiTests=false `
+    --global-property apiDocs=false `
+    --global-property modelDocs=false `
+    --skip-validate-spec
+
 }
 
 function BuildSdk {
@@ -113,7 +157,7 @@ function RunNuGetPack {
     # This worksaround an issue using -p:NuspecProperties (https://github.com/dotnet/sdk/issues/15482)
     # where only the first property is parsed correctly
     [xml] $xml = Get-Content $nuspecPath
-    $xml.package.metadata.id = "$packageName.Standard.$StandardVersion"
+    $xml.package.metadata.id = "$PackageName.Standard.$StandardVersion"
     $xml.package.metadata.copyright = "Copyright @ $copyrightYear Ed-Fi Alliance, LLC and Contributors"
     $xml.Save($nuspecPath)
 
@@ -151,12 +195,18 @@ function PushPackage {
     }
 }
 
-function Invoke-BuildCore {
+function Invoke-BuildAndGenerateSdk {
     Invoke-Step { DownloadCodeGen }
 
-    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
-
-    Invoke-Step { GenerateSdk -Namespace "Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
+    if ($PackageName -eq "EdFi.OdsApi.TestSdk") {
+        Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
+        Invoke-Step { GenerateSdk -ApiPackage "Apis.All" -ModelPackage "Models.All" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
+    } elseif ($PackageName -eq "EdFi.OdsApi.Sdk") {
+        Invoke-Step { GenerateSdk -ApiPackage "Apis.Ed_Fi" -ModelPackage "Models.Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/resources-spec.json" }
+        Invoke-Step { GenerateSdk -ApiPackage "Apis.Ed_Fi" -ModelPackage "Models.Ed_Fi" -Endpoint "$DmsUrl/metadata/specifications/descriptors-spec.json" }
+    } else {
+        throw "Unknown PackageName value: $PackageName"
+    }
 
     Invoke-Step { BuildSdk }
 }
@@ -171,7 +221,7 @@ function Invoke-BuildPackage {
 
 Invoke-Main {
     switch ($Command) {
-        BuildCore { Invoke-BuildCore }
+        BuildAndGenerateSdk { Invoke-BuildAndGenerateSdk }
         Package { Invoke-BuildPackage }
         Push { Invoke-PushPackage }
         default { throw "Command '$Command' is not recognized" }

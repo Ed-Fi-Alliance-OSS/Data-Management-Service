@@ -3,18 +3,16 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: Data Management System SDK Generation
+name: Pkg EdFi.DmsApi.Sdk
 on:
   release:
     types:
       - prereleased
-
 env:
-  SDK_PACKAGE_NAME: "EdFi.Api.Sdk.Standard.5.2.0"
+  SDK_PACKAGE_NAME: "EdFi.DmsApi.Sdk.Standard.5.2.0"
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
-
 
 permissions: read-all
 
@@ -45,13 +43,13 @@ jobs:
 
       - name: Generate Core SDK
         run: |
-          ./build-sdk.ps1 BuildCore
+          ./build-sdk.ps1 BuildAndGenerateSdk -PackageName "EdFi.OdsApi.Sdk"
 
       - name: Package Core SDK
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
-          ./build-sdk.ps1 Package -SDKVersion $packageVersion
+          ./build-sdk.ps1 Package -SDKVersion $packageVersion  -PackageName "EdFi.OdsApi.Sdk"
 
       - name: Upload Core SDK Packages as Artifacts
         if: success()
@@ -63,7 +61,7 @@ jobs:
           retention-days: 30
 
   publish-package-sdk:
-    name: Publish SDK NuGet Package
+    name: Publish Core SDK NuGet Package
     needs: build-sdk
     runs-on: ubuntu-latest
     defaults:

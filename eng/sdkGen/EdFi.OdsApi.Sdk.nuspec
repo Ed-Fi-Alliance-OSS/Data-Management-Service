@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package>
   <metadata>
-    <id>EdFi.Api.Sdk</id>
+    <id>EdFi.OdsApi.Sdk</id>
     <version>$version$</version>
-    <title>EdFi.Api.Sdk</title>
+    <title>EdFi.OdsApi.Sdk</title>
     <authors>Ed-Fi Alliance</authors>
     <owners>Ed-Fi Alliance</owners>
     <projectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</projectUrl>
@@ -13,14 +13,16 @@
     <copyright>Copyright @ $year$ Ed-Fi Alliance, LLC and Contributors</copyright>
     <tags>Ed-Fi Data Management Service SDK</tags>
     <dependencies>
-      <dependency id="NewtonSoft.Json" version="13.0.3" />
-      <dependency id="JsonSubTypes" version="2.0.1" />
-      <dependency id="RestSharp" version="112.0.0" />
-      <dependency id="Polly" version="8.1.0" />
+      <group targetFramework="net8.0">
+        <dependency id="NewtonSoft.Json" version="13.0.3" />
+        <dependency id="JsonSubTypes" version="2.0.1" />
+        <dependency id="RestSharp" version="112.0.0" />
+        <dependency id="Polly" version="8.1.0" />
+      </group>
     </dependencies>
   </metadata>
   <files>
     <file src="readme.txt" target="" />
-    <file src="csharp\src\EdFi.Api.Sdk\bin\Release\net8.0\EdFi.Api.Sdk.dll" target="lib\net8.0" />
+    <file src="csharp\src\EdFi.OdsApi.Sdk\bin\Release\net8.0\EdFi.OdsApi.Sdk.dll" target="lib\net8.0" />
   </files>
 </package>
