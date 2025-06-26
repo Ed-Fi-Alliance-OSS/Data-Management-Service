@@ -365,7 +365,7 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
 
             // Assert
             authorizations.Should().NotBeNull();
-            authorizations.Should().HaveCount(2);
+            authorizations.Should().HaveCount(1);
 
             var authorization1 = authorizations[0];
             authorization1.StudentUniqueId.Should().Be(student1Id);
@@ -379,20 +379,6 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
             authorization1.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
             authorization1.StudentSchoolAssociationId.Should().BeGreaterThan(0);
             authorization1.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
-
-            // The 2nd authorization should have empty EdOrgIds and the columns that reference the deleted StudentSchoolAssociation be null
-            var authorization2 = authorizations[1];
-            authorization2.StudentUniqueId.Should().Be(student2Id);
-            authorization2.ContactUniqueId.Should().Be(contactUniqueId);
-            ParseEducationOrganizationIds(
-                    authorization2.ContactStudentSchoolAuthorizationEducationOrganizationIds
-                )
-                .Should()
-                .BeEquivalentTo(new long[] { });
-            authorization2.StudentContactAssociationId.Should().BeGreaterThan(0);
-            authorization2.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
-            authorization2.StudentSchoolAssociationId.Should().BeNull();
-            authorization2.StudentSchoolAssociationPartitionKey.Should().BeNull();
 
             // Securables should 3, one for each contact and student contact association
             securables.Count.Should().Be(3);
@@ -579,7 +565,7 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
 
             // Assert
             authorizations.Should().NotBeNull();
-            authorizations.Should().HaveCount(2);
+            authorizations.Should().HaveCount(1);
 
             var authorization1 = authorizations[0];
             authorization1.StudentUniqueId.Should().Be(student1Id);
@@ -593,20 +579,6 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
             authorization1.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
             authorization1.StudentSchoolAssociationId.Should().BeGreaterThan(0);
             authorization1.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
-
-            // The 2nd authorization should have empty EdOrgIds and the columns that reference the deleted StudentSchoolAssociation be null
-            var authorization2 = authorizations[1];
-            authorization2.StudentUniqueId.Should().Be(student1Id);
-            authorization2.ContactUniqueId.Should().Be(contactUniqueId);
-            ParseEducationOrganizationIds(
-                    authorization2.ContactStudentSchoolAuthorizationEducationOrganizationIds
-                )
-                .Should()
-                .BeEquivalentTo(new long[] { });
-            authorization2.StudentContactAssociationId.Should().BeGreaterThan(0);
-            authorization2.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
-            authorization2.StudentSchoolAssociationId.Should().BeNull();
-            authorization2.StudentSchoolAssociationPartitionKey.Should().BeNull();
 
             // Securables should be 2, one for the contact and one for the student contact association
             securables.Count.Should().Be(2);
@@ -685,10 +657,8 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
 
             // Assert
             authorizations.Should().NotBeNull();
-            authorizations.Should().HaveCount(2);
+            authorizations.Should().HaveCount(1);
 
-            // A ContactStudentSchoolAuthorization row with empty EdOrgIds from the SSA that was deleted,
-            // this is garbage that will be deleted in an asynchronous cleanup process
             var authorization1 = authorizations[0];
             authorization1.StudentUniqueId.Should().Be(student1Id);
             authorization1.ContactUniqueId.Should().Be(contactUniqueId);
@@ -696,24 +666,11 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
                     authorization1.ContactStudentSchoolAuthorizationEducationOrganizationIds
                 )
                 .Should()
-                .BeEquivalentTo(new long[] { });
+                .BeEquivalentTo([school1Id]);
             authorization1.StudentContactAssociationId.Should().BeGreaterThan(0);
             authorization1.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
-            authorization1.StudentSchoolAssociationId.Should().BeNull();
-            authorization1.StudentSchoolAssociationPartitionKey.Should().BeNull();
-
-            var authorization2 = authorizations[1];
-            authorization2.StudentUniqueId.Should().Be(student1Id);
-            authorization2.ContactUniqueId.Should().Be(contactUniqueId);
-            ParseEducationOrganizationIds(
-                    authorization2.ContactStudentSchoolAuthorizationEducationOrganizationIds
-                )
-                .Should()
-                .BeEquivalentTo([school1Id]);
-            authorization2.StudentContactAssociationId.Should().BeGreaterThan(0);
-            authorization2.StudentContactAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
-            authorization2.StudentSchoolAssociationId.Should().BeGreaterThan(0);
-            authorization2.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
+            authorization1.StudentSchoolAssociationId.Should().BeGreaterThan(0);
+            authorization1.StudentSchoolAssociationPartitionKey.Should().BeGreaterThanOrEqualTo(0);
 
             // Securables should be 2, one for the contact and one for the student contact association
             securables.Count.Should().Be(2);
@@ -1001,7 +958,7 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
 
             // Assert
             authorizations.Should().NotBeNull();
-            authorizations.Should().HaveCount(3);
+            authorizations.Should().HaveCount(2);
 
             // First authorization: contact1/student1 - still valid, no EdOrg access
             var authorization1 = authorizations[0];
@@ -1022,23 +979,6 @@ public class ContactStudentSchoolAuthorizationTests : DatabaseIntegrationTestHel
                 )
                 .Should()
                 .BeEquivalentTo([school1Id]);
-
-            // Third authorization: same contact2/student2 but SSA has been deleted
-            var authorization3 = authorizations[2];
-            authorization3.StudentUniqueId.Should().Be(student2Id);
-            authorization3.ContactUniqueId.Should().Be(contact2UniqueId);
-            authorization3.StudentSchoolAssociationId.Should().BeNull();
-            authorization3.StudentSchoolAssociationPartitionKey.Should().BeNull();
-            ParseEducationOrganizationIds(
-                    authorization3.ContactStudentSchoolAuthorizationEducationOrganizationIds
-                )
-                .Should()
-                .BeEmpty(); // EdOrg access removed due to SSA deletion
-
-            // Both second and third authorizations should relate to the same student contact association
-            authorization2
-                .StudentContactAssociationId.Should()
-                .Be(authorization3.StudentContactAssociationId);
 
             // Contact1 still has no access
             edOrgIdsForContact1Securable.Should().NotBeNull();

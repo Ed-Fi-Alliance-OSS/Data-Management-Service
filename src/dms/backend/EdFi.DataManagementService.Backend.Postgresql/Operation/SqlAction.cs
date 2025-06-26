@@ -3,10 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Npgsql;
 
@@ -19,7 +22,7 @@ public record UpdateDocumentValidationResult(bool DocumentExists, bool Referenti
 /// Connections and transactions are managed by the caller.
 /// Exceptions are handled by the caller.
 /// </summary>
-public class SqlAction() : ISqlAction
+public partial class SqlAction() : ISqlAction
 {
     /// <summary>
     /// Returns a Document from a data reader row for the Document table
@@ -142,30 +145,244 @@ public class SqlAction() : ISqlAction
         return await ExtractDocumentFrom(reader);
     }
 
+    [GeneratedRegex(@"^\$\.")]
+    public partial Regex JsonPathPrefixRegex();
+
+    private string QueryFieldFrom(JsonPath documentPath)
+    {
+        return JsonPathPrefixRegex().Replace(documentPath.Value, "");
+    }
+
+    /// <summary>
+    /// Similar to string.Join but allows specifying a different separator for the last element.
+    /// For example: values=["a","b","c"] separator=", " lastSeparator=" and " produces="a, b and c"
+    /// </summary>
+    private static string JoinWithLastSeparator(string[] values, string separator, string lastSeparator)
+    {
+        return values.Length switch
+        {
+            0 => "",
+            1 => values[0],
+            2 => string.Join(lastSeparator, values),
+            _ => string.Join(separator, values.ToArray(), 0, values.Length - 1) + lastSeparator + values[^1],
+        };
+    }
+
+    /// <summary>
+    /// Inspects the <see cref="IQueryRequest.AuthorizationSecurableInfo"/> and determines which security
+    /// elements (such as Namespace, EducationOrganization, Student, Contact, or Staff) should be enforced in the query.
+    /// It appends the appropriate SQL WHERE clause and parameters to the provided lists.
+    /// </summary>
+    private void BuildAuthorization(
+        List<NpgsqlParameter> parameters,
+        List<string> whereConditions,
+        IQueryRequest queryRequest
+    )
+    {
+        // Helper to get all values from filters based on the filter type
+        List<string> GetFilterValues(
+            string filterType = SecurityElementNameConstants.EducationOrganization
+        ) =>
+            queryRequest
+                .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
+                    evaluator
+                        .Filters.Where(f => f.GetType().Name == filterType)
+                        .Select(f => f.Value?.ToString())
+                        .Where(ns => !string.IsNullOrEmpty(ns))
+                        .Cast<string>()
+                )
+                .Distinct()
+                .ToList();
+
+        foreach (var authorizationSecurableInfo in queryRequest.AuthorizationSecurableInfo)
+        {
+            switch (authorizationSecurableInfo.SecurableKey)
+            {
+                case SecurityElementNameConstants.Namespace:
+                    var namespaces = GetFilterValues(SecurityElementNameConstants.Namespace);
+                    BuildNamespaceFilter(namespaces);
+                    break;
+
+                case SecurityElementNameConstants.EducationOrganization:
+                    var edOrgIds = GetFilterValues();
+                    BuildEducationOrganizationFilter(edOrgIds);
+                    break;
+
+                case SecurityElementNameConstants.StudentUniqueId:
+                    var studentEdOrgIds = GetFilterValues();
+                    BuildStudentFilter(studentEdOrgIds);
+                    break;
+
+                case SecurityElementNameConstants.ContactUniqueId:
+                    var contactEdOrgIds = GetFilterValues();
+                    BuildContactFilter(contactEdOrgIds);
+                    break;
+
+                case SecurityElementNameConstants.StaffUniqueId:
+                    var staffEdOrgIds = GetFilterValues();
+                    BuildStaffFilter(staffEdOrgIds);
+                    break;
+            }
+        }
+
+        void BuildNamespaceFilter(List<string> namespaces)
+        {
+            if (namespaces.Count == 0)
+            {
+                return;
+            }
+
+            var namespaceConditions = new List<string>();
+
+            foreach (var ns in namespaces)
+            {
+                namespaceConditions.Add($"resourceNamespace LIKE ${parameters.Count + 1}");
+                parameters.Add(new NpgsqlParameter { Value = $"{ns}%" });
+            }
+
+            var where = string.Join(" OR ", namespaceConditions);
+            whereConditions.Add(
+                @$"EXISTS (
+		                    SELECT 1
+		                    FROM jsonb_array_elements_text(securityelements->'Namespace') AS resourceNamespace
+		                    WHERE {where}
+	                )"
+            );
+        }
+
+        void BuildEducationOrganizationFilter(List<string> edOrgIds)
+        {
+            if (edOrgIds.Count == 0)
+            {
+                return;
+            }
+
+            whereConditions.Add(
+                $@"EXISTS (
+		                    SELECT 1
+		                    FROM jsonb_array_elements(securityelements->'EducationOrganization') AS resourceEdorgid
+		                    JOIN (SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1})) AS application(edorgid)
+			                    ON application.edorgid = resourceEdorgid->>'Id'
+	                    )"
+            );
+
+            parameters.Add(new NpgsqlParameter { Value = edOrgIds.Select(long.Parse).ToArray() });
+        }
+
+        void BuildStudentFilter(List<string> studentEdOrgIds)
+        {
+            if (studentEdOrgIds.Count == 0)
+            {
+                return;
+            }
+
+            whereConditions.Add(
+                $@"EXISTS (
+		                    SELECT 1
+		                    FROM jsonb_array_elements_text(studentschoolauthorizationedorgids) AS resource(edorgid)
+		                    JOIN (SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1})) AS application(edorgid)
+			                    ON application.edorgid = resource.edorgid
+	                  )"
+            );
+
+            parameters.Add(new NpgsqlParameter { Value = studentEdOrgIds.Select(long.Parse).ToArray() });
+        }
+
+        void BuildContactFilter(List<string> contactEdOrgIds)
+        {
+            if (contactEdOrgIds.Count == 0)
+            {
+                return;
+            }
+
+            whereConditions.Add(
+                $@"EXISTS (
+		                    SELECT 1
+		                    FROM jsonb_array_elements_text(contactstudentschoolauthorizationedorgids) AS resource(edorgid)
+		                    JOIN (SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1})) AS application(edorgid)
+			                    ON application.edorgid = resource.edorgid
+	              )"
+            );
+
+            parameters.Add(new NpgsqlParameter { Value = contactEdOrgIds.Select(long.Parse).ToArray() });
+        }
+
+        void BuildStaffFilter(List<string> staffEdOrgIds)
+        {
+            if (staffEdOrgIds.Count == 0)
+            {
+                return;
+            }
+
+            whereConditions.Add(
+                $@"EXISTS (
+		                    SELECT 1
+		                    FROM jsonb_array_elements_text(staffeducationorganizationauthorizationedorgids) AS resource(edorgid)
+		                    JOIN (SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1})) AS application(edorgid)
+			                    ON application.edorgid = resource.edorgid
+	              )"
+            );
+
+            parameters.Add(new NpgsqlParameter { Value = staffEdOrgIds.Select(long.Parse).ToArray() });
+        }
+    }
+
+    /// <summary>
+    /// For each <see cref="QueryElement"/>, generates SQL conditions that match the specified document paths (fields)
+    /// to the provided value, using ILIKE for case-insensitive matching.
+    /// </summary>
+    private void BuildQuery(
+        List<NpgsqlParameter> parameters,
+        List<string> whereConditions,
+        QueryElement[] queryElements
+    )
+    {
+        foreach (var queryElement in queryElements)
+        {
+            List<string> orConditions = [];
+
+            foreach (var path in queryElement.DocumentPaths)
+            {
+                var propertyChain = new List<string> { "edfidoc" };
+                propertyChain.AddRange(QueryFieldFrom(path).Split('.').Select(field => $"'{field}'"));
+                var propertyPath = JoinWithLastSeparator(propertyChain.ToArray(), "->", "->>");
+
+                orConditions.Add($"{propertyPath} ILIKE ${parameters.Count + 1}");
+            }
+
+            whereConditions.Add($"({string.Join(" OR ", orConditions)})");
+            parameters.Add(new NpgsqlParameter { Value = queryElement.Value });
+        }
+    }
+
     /// <summary>
     /// Returns an array of Documents from the database corresponding to the given ResourceName
     /// </summary>
     public async Task<JsonArray> GetAllDocumentsByResourceName(
         string resourceName,
-        PaginationParameters paginationParameters,
+        IQueryRequest queryRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
     )
     {
+        var whereConditions = new List<string> { "ResourceName = $1" };
+        var parameters = new List<NpgsqlParameter> { new() { Value = resourceName } };
+
+        BuildQuery(parameters, whereConditions, queryRequest.QueryElements);
+        BuildAuthorization(parameters, whereConditions, queryRequest);
+
+        string where = string.Join(" AND ", whereConditions);
+
         await using NpgsqlCommand command = new(
-            @"SELECT EdfiDoc FROM dms.Document WHERE ResourceName = $1 ORDER BY CreatedAt OFFSET $2 ROWS FETCH FIRST $3 ROWS ONLY;",
+            $"SELECT EdfiDoc FROM dms.Document WHERE {where} ORDER BY CreatedAt OFFSET ${parameters.Count + 1} ROWS FETCH FIRST ${parameters.Count + 2} ROWS ONLY;",
             connection,
             transaction
-        )
-        {
-            Parameters =
-            {
-                new() { Value = resourceName },
-                new() { Value = paginationParameters.Offset ?? 0 },
-                new() { Value = paginationParameters.Limit ?? 25 },
-            },
-        };
+        );
+
+        parameters.Add(new NpgsqlParameter { Value = queryRequest.PaginationParameters.Offset ?? 0 });
+        parameters.Add(new NpgsqlParameter { Value = queryRequest.PaginationParameters.Limit ?? 25 });
+        command.Parameters.AddRange(parameters.ToArray());
 
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
@@ -191,20 +408,27 @@ public class SqlAction() : ISqlAction
     /// </summary>
     public async Task<int> GetTotalDocumentsForResourceName(
         string resourceName,
+        IQueryRequest queryRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
     )
     {
+        var whereConditions = new List<string> { "ResourceName = $1" };
+        var parameters = new List<NpgsqlParameter> { new() { Value = resourceName } };
+
+        BuildQuery(parameters, whereConditions, queryRequest.QueryElements);
+        BuildAuthorization(parameters, whereConditions, queryRequest);
+
+        string where = string.Join(" AND ", whereConditions);
+
         await using NpgsqlCommand command = new(
-            @"SELECT Count(1) Total FROM dms.Document WHERE resourcename = $1;",
+            $@"SELECT Count(1) Total FROM dms.Document WHERE {where};",
             connection,
             transaction
-        )
-        {
-            Parameters = { new() { Value = resourceName } },
-        };
+        );
 
+        command.Parameters.AddRange(parameters.ToArray());
         await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 

@@ -166,7 +166,7 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("School"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(schoolId)
                     ),
                 ],
@@ -274,7 +274,7 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("School"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(schoolId)
                     ),
                 ],
@@ -552,7 +552,7 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("EducationOrganization"),
+                        new MetaEdPropertyFullName("EducationOrganizationId"),
                         new EducationOrganizationId(educationOrganizationId)
                     ),
                 ],
@@ -623,7 +623,7 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("School"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(educationOrganizationId)
                     ),
                 ],

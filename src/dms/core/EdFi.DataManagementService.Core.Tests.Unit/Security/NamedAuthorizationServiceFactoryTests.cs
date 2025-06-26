@@ -93,7 +93,7 @@ public class NamedAuthorizationServiceFactoryTests
                         [],
                         [
                             new EducationOrganizationSecurityElement(
-                                new ResourceName("School"),
+                                new MetaEdPropertyFullName("SchoolId"),
                                 new EducationOrganizationId(255901)
                             ),
                         ],

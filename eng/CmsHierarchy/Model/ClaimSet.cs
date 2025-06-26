@@ -25,8 +25,6 @@ public class ResourceClaim
     public string? ParentName { get; set; }
     public string? Name { get; set; }
     public List<ResourceClaimAction>? Actions { get; set; }
-
-    [JsonIgnore]
     public bool IsParent { get; set; }
 
     [JsonPropertyName("_defaultAuthorizationStrategiesForCrud")]
@@ -35,12 +33,14 @@ public class ResourceClaim
     public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCRUD { get; set; } =
         [];
     public List<ResourceClaim> Children { get; set; }
+    public List<ClaimSet> ClaimSets { get; set; }
 
     public ResourceClaim()
     {
         Children = [];
         DefaultAuthorizationStrategiesForCRUD = [];
         AuthorizationStrategyOverridesForCRUD = [];
+        ClaimSets = [];
     }
 }
 

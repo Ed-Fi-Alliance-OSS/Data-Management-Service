@@ -7,5 +7,6 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public interface IEndpointModule
 {
+    // Maps the endpoints for the module to the provided endpoint route builder.
     void MapEndpoints(IEndpointRouteBuilder endpoints);
 }

@@ -54,11 +54,11 @@ public static class RelationshipsBasedAuthorizationHelper
 
         if (authorizationResult.Type == AuthorizationResultType.MissingProperty)
         {
-            missingProperties.Add(authorizationResult.PropertyName);
+            missingProperties.AddRange(authorizationResult.PropertyNames);
         }
         else if (authorizationResult.Type == AuthorizationResultType.NotAuthorized)
         {
-            notAuthorizedProperties.Add(authorizationResult.PropertyName);
+            notAuthorizedProperties.AddRange(authorizationResult.PropertyNames);
         }
 
         if (missingProperties.Count != 0 || notAuthorizedProperties.Count != 0)
@@ -92,15 +92,16 @@ public static class RelationshipsBasedAuthorizationHelper
         OperationType operationType
     )
     {
-        var propertyName = "EducationOrganizationId";
-
         List<EducationOrganizationId> requestSecurableEdOrgIds = securityElements
             .EducationOrganization.Select(e => e.Id)
             .ToList();
 
         if (requestSecurableEdOrgIds.Count == 0)
         {
-            return new AuthorizationResult(AuthorizationResultType.MissingProperty, propertyName);
+            return new AuthorizationResult(
+                AuthorizationResultType.MissingProperty,
+                ["EducationOrganizationId"]
+            );
         }
 
         var requestEdOrgHierarchies = await Task.WhenAll(
@@ -119,7 +120,7 @@ public static class RelationshipsBasedAuthorizationHelper
             .ToHashSet();
 
         // Token must have access to *all* edOrg hierarchies
-        var isAuthorized = Array.TrueForAll(
+        bool isAuthorized = Array.TrueForAll(
             requestEdOrgHierarchies,
             requestEdOrgIdHierarchy =>
                 requestEdOrgIdHierarchy.Any(edOrgId => filterEdOrgIds.Contains(edOrgId))
@@ -127,9 +128,12 @@ public static class RelationshipsBasedAuthorizationHelper
 
         if (!isAuthorized)
         {
-            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, propertyName);
+            return new AuthorizationResult(
+                AuthorizationResultType.NotAuthorized,
+                securityElements.EducationOrganization.Select(e => e.PropertyName.Value).Distinct().ToArray()
+            );
         }
-        return new AuthorizationResult(AuthorizationResultType.Authorized);
+        return new AuthorizationResult(AuthorizationResultType.Authorized, []);
     }
 
     public static async Task<AuthorizationResult> ValidateStudentAuthorization(
@@ -141,7 +145,7 @@ public static class RelationshipsBasedAuthorizationHelper
         var propertyName = "StudentUniqueId";
         if (securityElements.Student.Length == 0)
         {
-            return new AuthorizationResult(AuthorizationResultType.MissingProperty, propertyName);
+            return new AuthorizationResult(AuthorizationResultType.MissingProperty, [propertyName]);
         }
         var studentUniqueId = securityElements.Student[0].Value;
         var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStudent(
@@ -150,10 +154,10 @@ public static class RelationshipsBasedAuthorizationHelper
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, propertyName);
+            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, [propertyName]);
         }
 
-        return new AuthorizationResult(AuthorizationResultType.Authorized);
+        return new AuthorizationResult(AuthorizationResultType.Authorized, []);
     }
 
     public static async Task<AuthorizationResult> ValidateContactAuthorization(
@@ -165,7 +169,7 @@ public static class RelationshipsBasedAuthorizationHelper
         var propertyName = "ContactUniqueId";
         if (securityElements.Contact.Length == 0)
         {
-            return new AuthorizationResult(AuthorizationResultType.MissingProperty, propertyName);
+            return new AuthorizationResult(AuthorizationResultType.MissingProperty, [propertyName]);
         }
         var contactUniqueId = securityElements.Contact[0].Value;
 
@@ -177,10 +181,10 @@ public static class RelationshipsBasedAuthorizationHelper
 
         if (!isAuthorized)
         {
-            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, propertyName);
+            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, [propertyName]);
         }
 
-        return new AuthorizationResult(AuthorizationResultType.Authorized);
+        return new AuthorizationResult(AuthorizationResultType.Authorized, []);
     }
 
     public static async Task<AuthorizationResult> ValidateStaffAuthorization(
@@ -192,16 +196,16 @@ public static class RelationshipsBasedAuthorizationHelper
         var propertyName = "StaffUniqueId";
         if (securityElements.Staff.Length == 0)
         {
-            return new AuthorizationResult(AuthorizationResultType.MissingProperty, propertyName);
+            return new AuthorizationResult(AuthorizationResultType.MissingProperty, [propertyName]);
         }
         var staffUniqueId = securityElements.Staff[0].Value;
         var educationOrgIds = await authorizationRepository.GetEducationOrganizationsForStaff(staffUniqueId);
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, propertyName);
+            return new AuthorizationResult(AuthorizationResultType.NotAuthorized, [propertyName]);
         }
-        return new AuthorizationResult(AuthorizationResultType.Authorized);
+        return new AuthorizationResult(AuthorizationResultType.Authorized, []);
     }
 }
 
@@ -212,4 +216,4 @@ public enum AuthorizationResultType
     MissingProperty,
 }
 
-public record AuthorizationResult(AuthorizationResultType Type, string PropertyName = "");
+public record AuthorizationResult(AuthorizationResultType Type, string[] PropertyNames);

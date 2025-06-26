@@ -54,12 +54,12 @@ CREATE OR REPLACE FUNCTION dms.InsertContactStudentSchoolAuthorization(
 RETURNS VOID
 AS $$
 DECLARE
-    existing_contact RECORD;
+    student_contact RECORD;
 BEGIN
 
-    FOR existing_contact IN
-        SELECT ContactUniqueId, StudentContactAssociationId, StudentContactAssociationPartitionKey
-        FROM dms.ContactStudentSchoolAuthorization WHERE StudentUniqueId = student_id
+    FOR student_contact IN
+        SELECT ContactUniqueId, StudentContactAssociationDocumentId, StudentContactAssociationDocumentPartitionKey
+        FROM dms.StudentContactRelation WHERE StudentUniqueId = student_id
     LOOP
         -- Insert into ContactStudentSchoolAuthorization table
         INSERT INTO dms.ContactStudentSchoolAuthorization (
@@ -72,16 +72,16 @@ BEGIN
             StudentSchoolAssociationPartitionKey
         )
         VALUES (
-            COALESCE(contact_id, existing_contact.ContactUniqueId),
+            COALESCE(contact_id, student_contact.ContactUniqueId),
             student_id,
             ed_org_ids,
-            existing_contact.StudentContactAssociationId,
-            existing_contact.StudentContactAssociationPartitionKey,
+            student_contact.StudentContactAssociationDocumentId,
+            student_contact.StudentContactAssociationDocumentPartitionKey,
             ssa_id,
             ssa_partition_key
         );
 
-        PERFORM dms.SetEdOrgIdsToContactSecurables(dms.GetContactEdOrgIds(COALESCE(contact_id, existing_contact.ContactUniqueId)), COALESCE(contact_id, existing_contact.ContactUniqueId));
+        PERFORM dms.SetEdOrgIdsToContactSecurables(dms.GetContactEdOrgIds(COALESCE(contact_id, student_contact.ContactUniqueId)), COALESCE(contact_id, student_contact.ContactUniqueId));
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;

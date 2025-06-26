@@ -183,7 +183,7 @@ public class ResourceAuthorizationHandlerTests
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("School"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(6001)
                     ),
                 ],
@@ -248,7 +248,7 @@ public class ResourceAuthorizationHandlerTests
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("School"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(9999)
                     ),
                 ],
@@ -317,7 +317,7 @@ public class ResourceAuthorizationHandlerTests
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("School"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(9999)
                     ),
                 ],

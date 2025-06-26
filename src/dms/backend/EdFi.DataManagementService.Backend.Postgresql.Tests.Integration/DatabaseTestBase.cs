@@ -23,7 +23,7 @@ public abstract class DatabaseTestBase
     [OneTimeSetUp]
     public void OneTimeSetup()
     {
-        new Deploy.DatabaseDeploy().DeployDatabase(_connectionString);
+        new Deploy.DatabaseDeploy().DeployDatabase(_connectionString, false);
     }
 
     [SetUp]

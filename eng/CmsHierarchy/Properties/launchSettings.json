@@ -2,7 +2,7 @@
   "profiles": {
     "CmsHierarchy": {
       "commandName": "Project",
-      "commandLineArgs": "--command Transform --input E2E-NameSpaceBasedClaimSet.json;E2E-NoFurtherAuthRequiredClaimSet.json;E2E-RelationshipsWithEdOrgsOnlyClaimSet.json --output C:\\Temp\\SecurityMetadata2.json --outputFormat ToFile"
+      "commandLineArgs": "--command Transform --input E2E-ExtensionsClaimSet.json;E2E-NameSpaceBasedClaimSet.json;E2E-NoFurtherAuthRequiredClaimSet.json;E2E-RelationshipsWithEdOrgsOnlyClaimSet.json --output C:\\Temp\\SecurityMetadata2.json --outputFormat ToFile --skipAuths RelationshipsWithEdOrgsAndPeopleInverted;RelationshipsWithStudentsOnlyThroughResponsibility;RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
     }
   }
 }

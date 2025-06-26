@@ -3,7 +3,7 @@
   "resourceClaims": [
     {
       "id": 1,
-      "name": "schoolYearTypes",
+      "name": "ed-fi/schoolYearTypes",
       "actions": [
         {
           "name": "Create",
@@ -84,7 +84,7 @@
     },
     {
       "id": 2,
-      "name": "surveys",
+      "name": "ed-fi/surveys",
       "actions": [
         {
           "name": "Create",
@@ -165,7 +165,7 @@
     },
     {
       "id": 3,
-      "name": "absenceEventCategoryDescriptors",
+      "name": "ed-fi/absenceEventCategoryDescriptors",
       "actions": [
         {
           "name": "Create",

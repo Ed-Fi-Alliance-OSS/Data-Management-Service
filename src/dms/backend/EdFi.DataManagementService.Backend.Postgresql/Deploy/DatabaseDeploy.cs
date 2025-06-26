@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Deploy;
 
 public class DatabaseDeploy : IDatabaseDeploy
 {
-    public DatabaseDeployResult DeployDatabase(string connectionString)
+    public DatabaseDeployResult DeployDatabase(string connectionString, bool optimizeForQueryHandler)
     {
         try
         {
@@ -22,9 +22,18 @@ public class DatabaseDeploy : IDatabaseDeploy
             return new DatabaseDeployResult.DatabaseDeployFailure(e);
         }
 
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionString)
-            .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
+        var upgrader = DeployChanges
+            .To.PostgresqlDatabase(connectionString)
+            .WithScriptsEmbeddedInAssembly(
+                Assembly.GetExecutingAssembly(),
+                script =>
+                    script.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)
+                    && (
+                        optimizeForQueryHandler
+                        // Exclude "*QueryHandler.sql" files if optimizeForQueryHandler is false
+                        || !script.EndsWith("QueryHandler.sql", StringComparison.OrdinalIgnoreCase)
+                    )
+            )
             .WithVariablesDisabled()
             .LogScriptOutput()
             .LogToAutodetectedLog()
