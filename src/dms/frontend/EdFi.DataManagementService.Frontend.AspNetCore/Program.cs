@@ -91,7 +91,9 @@ bool ReportInvalidConfiguration(WebApplication app)
 
 void InitializeDatabase(WebApplication app)
 {
-    if (app.Services.GetRequiredService<IOptions<AppSettings>>().Value.DeployDatabaseOnStartup)
+    var appSettings = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
+
+    if (appSettings.DeployDatabaseOnStartup)
     {
         app.Logger.LogInformation("Running initial database deploy");
         try
@@ -99,7 +101,8 @@ void InitializeDatabase(WebApplication app)
             var result = app
                 .Services.GetRequiredService<IDatabaseDeploy>()
                 .DeployDatabase(
-                    app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection
+                    app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection,
+                    appSettings.QueryHandler.Equals("postgresql", StringComparison.OrdinalIgnoreCase)
                 );
             if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
             {

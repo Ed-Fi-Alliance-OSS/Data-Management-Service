@@ -34,7 +34,7 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
             return new QueryResult.QuerySuccess(
                 await _sqlAction.GetAllDocumentsByResourceName(
                     resourceName,
-                    queryRequest.PaginationParameters,
+                    queryRequest,
                     connection,
                     transaction,
                     queryRequest.TraceId
@@ -42,6 +42,7 @@ public class QueryDocument(ISqlAction _sqlAction, ILogger<QueryDocument> _logger
                 queryRequest.PaginationParameters.TotalCount
                     ? await _sqlAction.GetTotalDocumentsForResourceName(
                         resourceName,
+                        queryRequest,
                         connection,
                         transaction,
                         queryRequest.TraceId
