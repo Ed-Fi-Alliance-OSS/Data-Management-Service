@@ -1,4 +1,6 @@
- [
+{
+  "name": "SampleExtensionClaims",
+  "resourceClaims": [
     {
       "isParent": true,
       "name": "domains/systemDescriptors",
@@ -103,3 +105,4 @@
       ]
     }
   ]
+}

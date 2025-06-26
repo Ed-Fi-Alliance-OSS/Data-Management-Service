@@ -100,20 +100,6 @@ switch (command)
         resultJson = JsonSerializer.Serialize(claimsFromJson, jsonSerializerOptions);
         break;
 
-    case "TransformExtensionResourceClaims":
-        var existingClaims = ClaimSetToAuthHierarchy.GetBaseClaimHierarchy();
-        var extensionJsonFiles = input.Split(';');
-        foreach (var filePath in extensionJsonFiles)
-        {
-            existingClaims = ExtensionResourceClaimsToAuthHierarchy.TransformClaims(filePath, existingClaims);
-        }
-        if (!string.IsNullOrEmpty(skipAuthorizations))
-        {
-            existingClaims.RemoveAuthorizationStrategies(skipAuthorizations.Split(';'));
-        }
-        resultJson = JsonSerializer.Serialize(existingClaims, jsonSerializerOptions);
-        break;
-
     default:
         Console.WriteLine("Unknown command. Please use ParseXml or Transform.");
         return;
