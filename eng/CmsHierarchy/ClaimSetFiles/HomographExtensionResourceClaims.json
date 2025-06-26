@@ -1,4 +1,6 @@
-[
+{
+  "name": "HomographExtensionClaims",
+  "resourceClaims": [
     {
       "isParent": true,
       "name": "http://ed-fi.org/identity/claims/domains/homograph",
@@ -91,3 +93,4 @@
       ]
     }
   ]
+}
