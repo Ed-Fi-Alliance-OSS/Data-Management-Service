@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using CmsHierarchy;
+using CmsHierarchy.Extensions;
 using CmsHierarchy.Model;
 
 // Example usage: dotnet run --no-launch-profile --command ParseXml --input input.xml --output output.json --outputFormat ToFile
@@ -26,6 +27,7 @@ string command = string.Empty;
 string input = string.Empty;
 string output = string.Empty;
 string outputFormat = string.Empty;
+string skipAuthorizations = string.Empty;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -43,6 +45,9 @@ for (int i = 0; i < args.Length; i++)
         case "--outputFormat":
             outputFormat = args[++i];
             break;
+        case "--skipAuths":
+            skipAuthorizations = args[++i];
+            break;
     }
 }
 
@@ -50,9 +55,15 @@ if (
     string.IsNullOrEmpty(command)
     || string.IsNullOrEmpty(input)
     || string.IsNullOrEmpty(outputFormat)
+    || (
+        outputFormat.Equals("ToFile", StringComparison.InvariantCultureIgnoreCase)
+        && string.IsNullOrEmpty(output)
+    )
 )
 {
-    Console.WriteLine("Please provide valid command, input, and output format.");
+    Console.WriteLine(
+        "Please provide valid command, input, output (if outputFormat is ToFile), and output format."
+    );
     return;
 }
 
@@ -77,6 +88,12 @@ switch (command)
         {
             claimsFromJson = ClaimSetToAuthHierarchy.TransformClaims(filePath, claimsFromJson);
         }
+
+        if (!string.IsNullOrEmpty(skipAuthorizations))
+        {
+            claimsFromJson.RemoveAuthorizationStrategies(skipAuthorizations.Split(';'));
+        }
+
         resultJson = JsonSerializer.Serialize(claimsFromJson, jsonSerializerOptions);
         break;
 

@@ -3,7 +3,7 @@
   "resourceClaims": [
     {
       "id": 1,
-      "name": "schools",
+      "name": "ed-fi/schools",
       "actions": [
         {
           "name": "Create",
@@ -84,7 +84,7 @@
     },
     {
       "id": 2,
-      "name": "gradeLevelDescriptors",
+      "name": "ed-fi/gradeLevelDescriptors",
       "actions": [
         {
           "name": "Create",
@@ -165,7 +165,7 @@
     },
     {
       "id": 3,
-      "name": "educationOrganizationCategoryDescriptors",
+      "name": "ed-fi/educationOrganizationCategoryDescriptors",
       "actions": [
         {
           "name": "Create",
@@ -246,7 +246,7 @@
     },
     {
       "id": 4,
-      "name": "localEducationAgencyCategoryDescriptors",
+      "name": "ed-fi/localEducationAgencyCategoryDescriptors",
       "actions": [
         {
           "name": "Create",
@@ -327,7 +327,7 @@
     },
     {
       "id": 5,
-      "name": "stateEducationAgencies",
+      "name": "ed-fi/stateEducationAgencies",
       "actions": [
         {
           "name": "Create",
@@ -408,7 +408,7 @@
     },
     {
       "id": 6,
-      "name": "localEducationAgencies",
+      "name": "ed-fi/localEducationAgencies",
       "actions": [
         {
           "name": "Create",
@@ -489,7 +489,7 @@
     },
     {
       "id": 7,
-      "name": "classPeriods",
+      "name": "ed-fi/classPeriods",
       "actions": [
         {
           "name": "Create",
@@ -570,7 +570,7 @@
     },
     {
       "id": 8,
-      "name": "academicWeeks",
+      "name": "ed-fi/academicWeeks",
       "actions": [
         {
           "name": "Create",
@@ -651,7 +651,7 @@
     },
     {
       "id": 9,
-      "name": "bellSchedules",
+      "name": "ed-fi/bellSchedules",
       "actions": [
         {
           "name": "Create",

@@ -69,7 +69,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     [
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(255901)
                         ),
                     ],
@@ -108,7 +108,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     ["uri://not-matching/resource"],
                     [
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(289766)
                         ),
                     ],
@@ -133,7 +133,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "No relationships have been established between the caller's education organization id claims ('2455') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('2455') and the resource item's SchoolId value."
                     );
             }
         }
@@ -157,11 +157,11 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     [
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(233)
                         ),
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(244)
                         ),
                     ],
@@ -186,7 +186,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     .ErrorMessages[0]
                     .Should()
                     .Be(
-                        "No relationships have been established between the caller's education organization id claims ('567') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('567') and the resource item's SchoolId value."
                     );
             }
         }
@@ -209,7 +209,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                     [],
                     [
                         new EducationOrganizationSecurityElement(
-                            new ResourceName("School"),
+                            new MetaEdPropertyFullName("SchoolId"),
                             new EducationOrganizationId(255901)
                         ),
                     ],
@@ -253,11 +253,11 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
                 [],
                 [
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("SomeEdOrgReference1"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(1001)
                     ),
                     new EducationOrganizationSecurityElement(
-                        new ResourceName("SomeEdOrgReference2"),
+                        new MetaEdPropertyFullName("SchoolId"),
                         new EducationOrganizationId(2001)
                     ),
                 ],

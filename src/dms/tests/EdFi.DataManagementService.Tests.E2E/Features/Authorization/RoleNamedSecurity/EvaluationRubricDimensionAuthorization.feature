@@ -139,7 +139,7 @@ Feature: EvaluationRubricDimension Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ProgramEvaluationElement value."
                      ]
                   }
                   """
@@ -156,7 +156,7 @@ Feature: EvaluationRubricDimension Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ProgramEvaluationElement value."
                      ]
                   }
                   """
@@ -197,7 +197,7 @@ Feature: EvaluationRubricDimension Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ProgramEvaluationElement value."
                      ]
                   }
                   """
@@ -214,7 +214,7 @@ Feature: EvaluationRubricDimension Authorization
                      "status": 403,
                      "validationErrors": {},
                      "errors": [
-                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's EducationOrganizationId value."
+                        "No relationships have been established between the caller's education organization id claims ('255902') and the resource item's ProgramEvaluationElement value."
                      ]
                   }
                   """
