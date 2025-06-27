@@ -3,25 +3,64 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+function Get-SchemaPackagesFromEnv {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$EnvFilePath
+    )
+
+    # Initialize
+    $schemaJson = ""
+    $isReadingSchema = $false
+
+    # Read and process file
+    Get-Content $EnvFilePath | ForEach-Object {
+        $line = $_.Trim()
+
+        if ($line -match "^\s*#") { return }  # Skip comments
+
+        if (-not $isReadingSchema) {
+            if ($line -match "^SCHEMA_PACKAGES\s*=\s*'(.*)$") {
+                $schemaJson = $matches[1]
+                $isReadingSchema = $true
+
+                if ($schemaJson.Trim().EndsWith("'")) {
+                    $schemaJson = $schemaJson.TrimEnd("'")
+                    $isReadingSchema = $false
+                }
+            }
+        }
+        elseif ($isReadingSchema) {
+            $schemaJson += "`n$line"
+            if ($line.Trim().EndsWith("'")) {
+                $schemaJson = $schemaJson.TrimEnd("'")
+                $isReadingSchema = $false
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($schemaJson)) {
+        Write-Error "SCHEMA_PACKAGES not found or empty in $EnvFilePath"
+        return $null
+    }
+
+    try {
+        return $schemaJson | ConvertFrom-Json
+    }
+    catch {
+        Write-Error "Failed to parse SCHEMA_PACKAGES: $_"
+        return $null
+    }
+}
+
 function AddExtensionSecurityMetadata {
     param (
         [string]$EnvironmentFile
     )
 
-    Import-Module ./env-utility.psm1
-    $envValues = ReadValuesFromEnvFile $EnvironmentFile
-
     try {
 
-    $schemaPackagesJson = $envValues["SCHEMA_PACKAGES"]
-
-    if(!$schemaPackagesJson)
-    {
-        Write-Error "SCHEMA_PACKAGES environment variable is not set. Please set it to the path of the schema packages JSON file."
-        exit 1
-    }
-    # Parse JSON list
-    $schemaPackages = $schemaPackagesJson | ConvertFrom-Json
+    $schemaPackages = Get-SchemaPackagesFromEnv -EnvFilePath $EnvironmentFile
 
     # Initial file list
     $inputFileList = @(
@@ -39,6 +78,7 @@ function AddExtensionSecurityMetadata {
 
     # Join into a single string with semicolons
     $inputFileListString = $inputFileList -join ";"
+    Write-Host "Input file list: $inputFileListString"
 
     Push-Location ../CmsHierarchy/
     Write-Output "Loading extension resource claims..."

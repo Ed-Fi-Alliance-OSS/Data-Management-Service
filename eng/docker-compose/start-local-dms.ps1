@@ -50,10 +50,9 @@ param (
 if($AddExtensionSecurityMetadata)
 {
     Import-Module ./setup-extension-security-metadata.psm1 -Force
-    Write-Output "Loading extension resource claims..."
     AddExtensionSecurityMetadata -EnvironmentFile $EnvironmentFile
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to load extension resource claims, with exit code $LASTEXITCODE."
+        throw "Failed to set up extension security metadata, with exit code $LASTEXITCODE."
     }
 }
 
