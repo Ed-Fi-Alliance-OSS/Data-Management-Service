@@ -49,18 +49,18 @@ $files = @(
     "local-dms.yml"
 )
 
-if ($SearchEngine -eq "ElasticSearch") {
-    $files += @("-f", "kafka-elasticsearch.yml")
-    if ($EnableSearchEngineUI) {
-        $files += @("-f", "kafka-elasticsearch-ui.yml")
-    }
-}
-else {
-    $files += @("-f", "kafka-opensearch.yml")
-    if ($EnableSearchEngineUI) {
-        $files += @("-f", "kafka-opensearch-ui.yml")
-    }
-}
+# if ($SearchEngine -eq "ElasticSearch") {
+#     $files += @("-f", "kafka-elasticsearch.yml")
+#     if ($EnableSearchEngineUI) {
+#         $files += @("-f", "kafka-elasticsearch-ui.yml")
+#     }
+# }
+# else {
+#     $files += @("-f", "kafka-opensearch.yml")
+#     if ($EnableSearchEngineUI) {
+#         $files += @("-f", "kafka-opensearch-ui.yml")
+#     }
+# }
 
 if ($EnableConfig) {
     $files += @("-f", "local-config.yml")
@@ -132,8 +132,8 @@ else {
         }
     }
 
-    Start-Sleep 10
+    # Start-Sleep 10
 
-    Write-Output "Running connector setup..."
-    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
+    # Write-Output "Running connector setup..."
+    # ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 }

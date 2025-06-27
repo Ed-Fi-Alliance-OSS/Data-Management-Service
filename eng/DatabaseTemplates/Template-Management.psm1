@@ -266,7 +266,7 @@ function Invoke-DatabaseDump {
     & docker @options | Out-File -FilePath $backupPath -Encoding utf8
 
     # Read CREATE PUBLICATION SQL from the file
-    $publicationSqlFilePath = Join-Path -Path $PSScriptRoot -ChildPath "../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Deploy/Scripts/0099_Configure_Replication.sql"
+    $publicationSqlFilePath = Join-Path -Path $PSScriptRoot -ChildPath "../../src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Deploy/Scripts/0009_Configure_Replication.sql"
 
      if (-not (Test-Path $publicationSqlFilePath)) {
         Write-Error "The publication SQL file '$publicationSqlFilePath' does not exist. Ensure the file is present before running this script."
