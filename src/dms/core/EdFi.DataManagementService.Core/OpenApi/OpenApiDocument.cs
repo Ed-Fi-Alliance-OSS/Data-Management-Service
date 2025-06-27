@@ -251,7 +251,7 @@ public class OpenApiDocument(ILogger _logger)
     /// <summary>
     /// Creates an OpenAPI specification derived from the given core and extension ApiSchemas
     /// </summary>
-    public JsonNode CreateDocument(ApiSchemaNodes apiSchemas, DocumentSection documentSection)
+    public JsonNode CreateDocument(ApiSchemaDocumentNodes apiSchemas, DocumentSection documentSection)
     {
         // Get the core OpenAPI spec as a copy since we are going to modify it
         JsonNode openApiSpecification = apiSchemas

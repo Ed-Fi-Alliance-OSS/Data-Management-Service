@@ -14,7 +14,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions;
 [Binding]
 public sealed class HealthStepDefinitions
 {
-
     private readonly PlaywrightContext _playwrightContext;
 
     private IAPIResponse _APIResponse = null!;

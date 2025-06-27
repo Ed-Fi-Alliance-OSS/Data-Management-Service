@@ -16,6 +16,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class RejectResourceIdentifierMiddlewareTests
 {
     internal static IPipelineStep Middleware()
@@ -24,9 +25,10 @@ public class RejectResourceIdentifierMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Post_Request_Payload_With_ResourceId : RejectResourceIdentifierMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -73,9 +75,10 @@ public class RejectResourceIdentifierMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Post_Request_Payload_Without_ResourceId : RejectResourceIdentifierMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()

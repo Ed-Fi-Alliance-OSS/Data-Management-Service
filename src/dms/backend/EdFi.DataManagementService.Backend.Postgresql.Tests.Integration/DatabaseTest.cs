@@ -155,10 +155,33 @@ public abstract class DatabaseTest : DatabaseTestBase
 
     internal class ApiSchemaProvider : IApiSchemaProvider
     {
-        public ApiSchemaNodes GetApiSchemaNodes()
+        public ApiSchemaDocumentNodes GetApiSchemaNodes()
         {
             return new(_apiSchemaRootNode, []);
         }
+
+        public static Guid SchemaVersion => Guid.Empty;
+
+        public Task<(bool Success, List<ApiSchemaFailure> Failures)> ReloadApiSchemaAsync()
+        {
+            // Not needed for tests - just return success
+            return Task.FromResult<(bool Success, List<ApiSchemaFailure> Failures)>((true, []));
+        }
+
+        public Task<(bool Success, List<ApiSchemaFailure> Failures)> LoadApiSchemaFromAsync(
+            JsonNode coreSchema,
+            JsonNode[] extensionSchemas
+        )
+        {
+            // Not needed for tests - just return success
+            return Task.FromResult<(bool Success, List<ApiSchemaFailure> Failures)>((true, []));
+        }
+
+        public Guid ReloadId => Guid.Empty;
+
+        public bool IsSchemaValid => true;
+
+        public List<ApiSchemaFailure> ApiSchemaFailures => [];
     }
 
     [SetUp]
@@ -520,7 +543,7 @@ public abstract class DatabaseTest : DatabaseTestBase
                 PaginationParameters = paginationParameters,
                 TraceId = traceId,
                 QueryElements = new QueryElement[] { },
-                AuthorizationSecurableInfo = new AuthorizationSecurableInfo[] { }
+                AuthorizationSecurableInfo = new AuthorizationSecurableInfo[] { },
             }
         ).ActLike<IQueryRequest>();
     }

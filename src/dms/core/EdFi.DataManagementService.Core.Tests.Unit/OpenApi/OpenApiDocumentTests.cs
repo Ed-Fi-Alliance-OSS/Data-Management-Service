@@ -329,6 +329,7 @@ public class OpenApiDocumentTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Simple_Core_Schema_Document : OpenApiDocumentTests
     {
         private JsonNode openApiResourcesResult = new JsonObject();
@@ -487,6 +488,7 @@ public class OpenApiDocumentTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Core_Schema_And_Multiple_Extension_Schemas : OpenApiDocumentTests
     {
         private JsonNode openApiResourcesResult = new JsonObject();

@@ -438,4 +438,5 @@ src/dms/EdFi.DataStandard52.ApiSchema/
 # Locally suppress code analysis
 **/GlobalSuppressions.cs
 
+# Local Claude configuration files
 CLAUDE.local.md

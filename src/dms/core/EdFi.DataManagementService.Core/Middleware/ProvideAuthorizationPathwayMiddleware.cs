@@ -11,35 +11,35 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Initializes the AuthorizationPathways in the PipelineContext.
+/// Initializes the AuthorizationPathways in the RequestData.
 /// </summary>
 internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelineStep
 {
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         _logger.LogDebug(
             $"Entering {nameof(ProvideAuthorizationPathwayMiddleware)} - {{TraceId}}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
-        context.AuthorizationPathways = context
+        requestData.AuthorizationPathways = requestData
             .ResourceSchema.AuthorizationPathways.Select(authorizationPathway =>
                 authorizationPathway switch
                 {
                     "StudentSchoolAssociationAuthorization" =>
                         BuildStudentSchoolAssociationAuthorizationPathway(
-                            context.DocumentSecurityElements,
-                            context.Method
+                            requestData.DocumentSecurityElements,
+                            requestData.Method
                         ),
                     "ContactStudentSchoolAuthorization" =>
                         (AuthorizationPathway)BuildStudentContactAssociationAuthorizationPathway(
-                            context.DocumentSecurityElements,
-                            context.Method
+                            requestData.DocumentSecurityElements,
+                            requestData.Method
                         ),
                     "StaffEducationOrganizationAuthorization" =>
                         BuildStaffEducationOrganizationAuthorizationPathway(
-                            context.DocumentSecurityElements,
-                            context.Method
+                            requestData.DocumentSecurityElements,
+                            requestData.Method
                         ),
 
                     _ => throw new InvalidOperationException(

@@ -3,14 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.External.Interface;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
 using CommandLine;
-using Microsoft.Extensions.Hosting;
-using EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Configuration;
+using EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
 {
@@ -19,20 +19,24 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
         public static async Task<int> Main(string[] args)
         {
             var host = new HostBuilder()
-           .ConfigureAppConfiguration((hostingContext, config) =>
-           {
-               config.SetBasePath(AppContext.BaseDirectory);
-               config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-           })
-           .ConfigureServices((context, services) =>
-           {
-               HostBuilderExtensions.AddServices(context.Configuration, services);
-           })
-           .ConfigureLogging(logging =>
-           {
-               logging.AddConsole();
-           })
-           .Build();
+                .ConfigureAppConfiguration(
+                    (hostingContext, config) =>
+                    {
+                        config.SetBasePath(AppContext.BaseDirectory);
+                        config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+                    }
+                )
+                .ConfigureServices(
+                    (context, services) =>
+                    {
+                        HostBuilderExtensions.AddServices(context.Configuration, services);
+                    }
+                )
+                .ConfigureLogging(logging =>
+                {
+                    logging.AddConsole();
+                })
+                .Build();
 
             var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Program");
 
@@ -60,7 +64,9 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                     if (options.CurrentSchoolYear <= 0)
                     {
                         logger.LogCritical("Error: CurrentSchoolYear must be a positive integer.");
-                        throw new InvalidOperationException("Error: CurrentSchoolYear must be a positive integer.");
+                        throw new InvalidOperationException(
+                            "Error: CurrentSchoolYear must be a positive integer."
+                        );
                     }
 
                     await host.StartAsync();
@@ -78,7 +84,13 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                         throw new InvalidOperationException("ConfigurationServiceSettings cannot be null.");
                     }
 
-                    await SchoolYearProcessor.ProcessSchoolYearTypesAsync(logger, apiService, options.StartYear, options.EndYear, options.CurrentSchoolYear);
+                    await SchoolYearProcessor.ProcessSchoolYearTypesAsync(
+                        logger,
+                        apiService,
+                        options.StartYear,
+                        options.EndYear,
+                        options.CurrentSchoolYear
+                    );
                 });
                 await host.StopAsync();
                 return 0;

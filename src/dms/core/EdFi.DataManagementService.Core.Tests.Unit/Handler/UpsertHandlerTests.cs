@@ -35,6 +35,7 @@ public class UpsertHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Success : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -45,26 +46,27 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
+            await upsertHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(200);
-            context.FrontendResponse.Body.Should().BeNull();
-            context.FrontendResponse.Headers.Count.Should().Be(1);
-            context.FrontendResponse.LocationHeaderPath.Should().NotBeNullOrEmpty();
+            requestData.FrontendResponse.StatusCode.Should().Be(200);
+            requestData.FrontendResponse.Body.Should().BeNull();
+            requestData.FrontendResponse.Headers.Count.Should().Be(1);
+            requestData.FrontendResponse.LocationHeaderPath.Should().NotBeNullOrEmpty();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_References : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -80,20 +82,20 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
+            await upsertHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
-            context
+            requestData.FrontendResponse.StatusCode.Should().Be(409);
+            requestData
                 .FrontendResponse.Body?.AsJsonString()
                 .Should()
                 .Be(
@@ -101,12 +103,13 @@ public class UpsertHandlerTests
                     {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":"","validationErrors":{},"errors":[]}
                     """
                 );
-            context.FrontendResponse.Headers.Should().BeEmpty();
-            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
+            requestData.FrontendResponse.Headers.Should().BeEmpty();
+            requestData.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Identity_Conflict : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -124,26 +127,27 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
+            await upsertHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
-            context.FrontendResponse.Headers.Should().BeEmpty();
-            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
+            requestData.FrontendResponse.StatusCode.Should().Be(409);
+            requestData.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
+            requestData.FrontendResponse.Headers.Should().BeEmpty();
+            requestData.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Write_Conflict : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -154,25 +158,26 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
+            await upsertHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Headers.Should().BeEmpty();
-            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
+            requestData.FrontendResponse.StatusCode.Should().Be(409);
+            requestData.FrontendResponse.Headers.Should().BeEmpty();
+            requestData.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -186,19 +191,19 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly PipelineContext context = No.PipelineContext(_traceId);
+        private readonly RequestData requestData = No.RequestData(_traceId);
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(context, NullNext);
+            await upsertHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(500);
+            requestData.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = $$"""
 {
@@ -207,15 +212,15 @@ public class UpsertHandlerTests
 }
 """;
 
-            context.FrontendResponse.Body.Should().NotBeNull();
+            requestData.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(context.FrontendResponse.Body, JsonNode.Parse(expected))
+                .DeepEquals(requestData.FrontendResponse.Body, JsonNode.Parse(expected))
                 .Should()
                 .BeTrue(
                     $"""
 expected: {expected}
 
-actual: {context.FrontendResponse.Body}
+actual: {requestData.FrontendResponse.Body}
 """
                 );
         }

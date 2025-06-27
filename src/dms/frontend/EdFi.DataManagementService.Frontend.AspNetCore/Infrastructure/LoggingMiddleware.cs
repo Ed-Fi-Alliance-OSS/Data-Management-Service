@@ -21,7 +21,7 @@ public class LoggingMiddleware(RequestDelegate next)
                         method = context.Request.Method,
                         path = context.Request.Path.Value,
                         traceId = context.TraceIdentifier,
-                        clientId = context.Request.Host
+                        clientId = context.Request.Host,
                     }
                 )
             );
@@ -42,7 +42,7 @@ public class LoggingMiddleware(RequestDelegate next)
                         new
                         {
                             message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                            traceId = context.TraceIdentifier
+                            traceId = context.TraceIdentifier,
                         }
                     )
                 );

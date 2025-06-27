@@ -20,5 +20,5 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// </summary>
 internal interface IPipelineStep
 {
-    Task Execute(PipelineContext context, Func<Task> next);
+    Task Execute(RequestData requestData, Func<Task> next);
 }

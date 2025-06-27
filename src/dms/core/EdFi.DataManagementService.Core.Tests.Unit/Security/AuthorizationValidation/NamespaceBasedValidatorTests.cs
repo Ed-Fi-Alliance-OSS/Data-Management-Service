@@ -14,6 +14,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security.AuthorizationValid
 public class NamespaceBasedValidatorTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_Request_Has_No_Namespaces
     {
         private ResourceAuthorizationResult? _expectedResult;
@@ -49,6 +50,7 @@ public class NamespaceBasedValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Matching_NamespacePrefix_And_Namespace
     {
         private ResourceAuthorizationResult? _expectedResult;
@@ -74,6 +76,7 @@ public class NamespaceBasedValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Non_Matching_NamespacePrefix_And_Namespace
     {
         private ResourceAuthorizationResult? _expectedResult;
@@ -109,6 +112,7 @@ public class NamespaceBasedValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Non_Matching_NamespacePrefixes_And_Namespaces
     {
         private ResourceAuthorizationResult? _expectedResult;

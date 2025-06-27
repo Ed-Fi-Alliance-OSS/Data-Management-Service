@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Model;
@@ -14,19 +15,22 @@ using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
+using No = EdFi.DataManagementService.Core.Model.No;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ProvideApiSchemaMiddlewareTests
 {
     // SUT
     private ProvideApiSchemaMiddleware? _provideApiSchemaMiddleware;
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Api_Schema_With_Resource_Extensions : ProvideApiSchemaMiddlewareTests
     {
-        private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
+        private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject("Ed-Fi", "5.0.0")
             .WithStartResource("School")
             .WithEqualityConstraints(
@@ -182,7 +186,7 @@ public class ProvideApiSchemaMiddlewareTests
         public async Task Copies_paths_to_core()
         {
             // Act
-            var fakePipelineContext = A.Fake<PipelineContext>();
+            var fakePipelineContext = A.Fake<RequestData>();
             await _provideApiSchemaMiddleware!.Execute(fakePipelineContext, NullNext);
 
             // Assert
@@ -281,6 +285,175 @@ public class ProvideApiSchemaMiddlewareTests
                 .Select(node => node!.GetRequiredNode("targetJsonPath").GetValue<string>())
                 .Should()
                 .Contain("$.evaluationElementReference.evaluationTitle");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class HotReloadScenarios : ProvideApiSchemaMiddlewareTests
+    {
+        private IApiSchemaProvider _mockProvider = null!;
+        private ProvideApiSchemaMiddleware _middleware = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _mockProvider = A.Fake<IApiSchemaProvider>();
+            _middleware = new ProvideApiSchemaMiddleware(
+                _mockProvider,
+                NullLogger<ProvideApiSchemaMiddleware>.Instance
+            );
+        }
+
+        [Test]
+        public async Task Process_AfterSchemaReload_ProvidesNewSchema()
+        {
+            // Arrange
+            var requestData = No.RequestData();
+            var initialVersion = Guid.NewGuid();
+            var newVersion = Guid.NewGuid();
+
+            var initialSchema = new ApiSchemaBuilder()
+                .WithStartProject("Ed-Fi", "5.0.0")
+                .WithStartResource("InitialResource")
+                .WithIdentityJsonPaths(["$.id"])
+                .WithJsonSchemaForInsert(new JsonSchemaBuilder().Build())
+                .WithEndResource()
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            var updatedSchema = new ApiSchemaBuilder()
+                .WithStartProject("Ed-Fi", "5.1.0")
+                .WithStartResource("UpdatedResource")
+                .WithIdentityJsonPaths(["$.id"])
+                .WithJsonSchemaForInsert(new JsonSchemaBuilder().Build())
+                .WithEndResource()
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            // Setup version changes
+            A.CallTo(() => _mockProvider.ReloadId).ReturnsNextFromSequence(initialVersion, newVersion);
+
+            A.CallTo(() => _mockProvider.GetApiSchemaNodes())
+                .ReturnsNextFromSequence(initialSchema, updatedSchema);
+
+            // Act
+            await _middleware.Execute(requestData, NullNext);
+            var firstSchemaVersion = requestData
+                .ApiSchemaDocuments.GetCoreProjectSchema()
+                .ResourceVersion.Value;
+
+            // Reset requestData for second execution
+            requestData = No.RequestData();
+            await _middleware.Execute(requestData, NullNext);
+            var secondSchemaVersion = requestData
+                .ApiSchemaDocuments.GetCoreProjectSchema()
+                .ResourceVersion.Value;
+
+            // Assert
+            firstSchemaVersion.Should().Be("5.0.0");
+            secondSchemaVersion.Should().Be("5.1.0");
+
+            A.CallTo(() => _mockProvider.GetApiSchemaNodes()).MustHaveHappenedTwiceExactly();
+        }
+
+        [Test]
+        public async Task Process_MultipleRequestsAfterReload_ConsistentSchema()
+        {
+            // Arrange
+            var contexts = Enumerable.Range(0, 10).Select(_ => No.RequestData()).ToList();
+            var version = Guid.NewGuid();
+
+            var schema = new ApiSchemaBuilder()
+                .WithStartProject("Ed-Fi", "5.0.0")
+                .WithStartResource("TestResource")
+                .WithIdentityJsonPaths(["$.id"])
+                .WithJsonSchemaForInsert(new JsonSchemaBuilder().Build())
+                .WithEndResource()
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            A.CallTo(() => _mockProvider.ReloadId).Returns(version);
+            A.CallTo(() => _mockProvider.GetApiSchemaNodes()).Returns(schema);
+
+            // Act
+            var tasks = contexts.Select(requestData => _middleware.Execute(requestData, NullNext)).ToArray();
+            await Task.WhenAll(tasks);
+
+            // Assert
+            var projectVersions = contexts
+                .Select(c => c.ApiSchemaDocuments.GetCoreProjectSchema().ResourceVersion.Value)
+                .ToList();
+
+            projectVersions
+                .Should()
+                .OnlyContain(v => v == "5.0.0", "all requests should get the same schema");
+
+            // Should use cache - only called once despite multiple requests
+            A.CallTo(() => _mockProvider.GetApiSchemaNodes()).MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task Process_ConcurrentWithSchemaChange_HandlesGracefully()
+        {
+            // Arrange
+            var contexts = Enumerable.Range(0, 20).Select(_ => No.RequestData()).ToList();
+            var versions = new[] { Guid.NewGuid(), Guid.NewGuid() };
+            var currentVersionIndex = 0;
+
+            var schemas = new[]
+            {
+                new ApiSchemaBuilder()
+                    .WithStartProject("Ed-Fi", "5.0.0")
+                    .WithStartResource("InitialResource")
+                    .WithIdentityJsonPaths(["$.id"])
+                    .WithJsonSchemaForInsert(new JsonSchemaBuilder().Build())
+                    .WithEndResource()
+                    .WithEndProject()
+                    .AsApiSchemaNodes(),
+                new ApiSchemaBuilder()
+                    .WithStartProject("Ed-Fi", "5.1.0")
+                    .WithStartResource("UpdatedResource")
+                    .WithIdentityJsonPaths(["$.id"])
+                    .WithJsonSchemaForInsert(new JsonSchemaBuilder().Build())
+                    .WithEndResource()
+                    .WithEndProject()
+                    .AsApiSchemaNodes(),
+            };
+
+            A.CallTo(() => _mockProvider.ReloadId).ReturnsLazily(() => versions[currentVersionIndex]);
+
+            A.CallTo(() => _mockProvider.GetApiSchemaNodes())
+                .ReturnsLazily(() => schemas[currentVersionIndex]);
+
+            // Act
+            var tasks = contexts
+                .Select(
+                    async (requestData, index) =>
+                    {
+                        // Change version midway through
+                        if (index == 10)
+                        {
+                            currentVersionIndex = 1;
+                        }
+                        await _middleware.Execute(requestData, NullNext);
+                    }
+                )
+                .ToArray();
+
+            await Task.WhenAll(tasks);
+
+            // Assert
+            var projectVersions = contexts
+                .Select(c => c.ApiSchemaDocuments.GetCoreProjectSchema().ResourceVersion.Value)
+                .ToList();
+
+            // Should have both versions represented
+            projectVersions.Should().Contain("5.0.0");
+            projectVersions.Should().Contain("5.1.0");
+
+            // Provider should be called at least twice (once per version)
+            A.CallTo(() => _mockProvider.GetApiSchemaNodes()).MustHaveHappenedTwiceOrMore();
         }
     }
 }

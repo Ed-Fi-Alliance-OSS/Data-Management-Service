@@ -59,4 +59,15 @@ public interface IApiService
     /// Servers array should be provided by the front end.
     /// </summary>
     public JsonNode GetDescriptorOpenApiSpecification(JsonArray servers);
+
+    /// <summary>
+    /// DMS entry point to reload the API schema from the configured source
+    /// </summary>
+    /// <returns>Frontend response with appropriate status code</returns>
+    public Task<IFrontendResponse> ReloadApiSchemaAsync();
+
+    /// <summary>
+    /// DMS entry point to upload and reload API schemas from the provided content
+    /// </summary>
+    public Task<UploadSchemaResponse> UploadAndReloadApiSchemaAsync(UploadSchemaRequest request);
 }

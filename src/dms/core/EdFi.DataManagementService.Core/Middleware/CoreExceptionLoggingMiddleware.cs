@@ -18,22 +18,22 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
 {
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         try
         {
             _logger.LogDebug(
                 "Entering CoreExceptionLoggingMiddleware - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
             await next();
         }
         catch (AuthorizationException ex)
         {
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: (int)HttpStatusCode.Forbidden,
                 Body: FailureResponse.ForForbidden(
-                    traceId: context.FrontendRequest.TraceId,
+                    traceId: requestData.FrontendRequest.TraceId,
                     errors: [ex.Message]
                 ),
                 Headers: [],
@@ -42,16 +42,16 @@ internal class CoreExceptionLoggingMiddleware(ILogger _logger) : IPipelineStep
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unknown Error - {TraceId}", context.FrontendRequest.TraceId.Value);
+            _logger.LogError(ex, "Unknown Error - {TraceId}", requestData.FrontendRequest.TraceId.Value);
 
             // Replace the frontend response (if any) with a 500 error
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
                 Body: new JsonObject
                 {
                     ["message"] =
                         "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                    ["traceId"] = context.FrontendRequest.TraceId.Value,
+                    ["traceId"] = requestData.FrontendRequest.TraceId.Value,
                 },
                 Headers: []
             );

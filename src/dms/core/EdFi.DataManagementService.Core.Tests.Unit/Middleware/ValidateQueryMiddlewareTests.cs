@@ -18,6 +18,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ValidateQueryMiddlewareTests
 {
     private static readonly int _maxPageSize = 500;
@@ -28,9 +29,10 @@ public class ValidateQueryMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Wrong_Query_Parameters : ValidateQueryMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -103,9 +105,10 @@ public class ValidateQueryMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Greater_Limit_Value : ValidateQueryMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -160,9 +163,10 @@ public class ValidateQueryMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Invalid_Type_Query_Parameters : ValidateQueryMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -184,12 +188,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static PipelineContext NewPipelineContext(
-            FrontendRequest frontendRequest,
-            RequestMethod method
-        )
+        private static RequestData NewPipelineContext(FrontendRequest frontendRequest, RequestMethod method)
         {
-            PipelineContext docRefContext = new(frontendRequest, method)
+            RequestData docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -311,9 +312,10 @@ public class ValidateQueryMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Valid_Type_Query_Parameters : ValidateQueryMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -335,12 +337,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static PipelineContext NewPipelineContext(
-            FrontendRequest frontendRequest,
-            RequestMethod method
-        )
+        private static RequestData NewPipelineContext(FrontendRequest frontendRequest, RequestMethod method)
         {
-            PipelineContext docRefContext = new(frontendRequest, method)
+            RequestData docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -408,9 +407,10 @@ public class ValidateQueryMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Valid_Type_Query_Boolean_Parameter : ValidateQueryMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -427,12 +427,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static PipelineContext NewPipelineContext(
-            FrontendRequest frontendRequest,
-            RequestMethod method
-        )
+        private static RequestData NewPipelineContext(FrontendRequest frontendRequest, RequestMethod method)
         {
-            PipelineContext docRefContext = new(frontendRequest, method)
+            RequestData docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -492,10 +489,11 @@ public class ValidateQueryMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Valid_Type_Query_DateTime_Parameter
         : ValidateQueryMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -512,12 +510,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static PipelineContext NewPipelineContext(
-            FrontendRequest frontendRequest,
-            RequestMethod method
-        )
+        private static RequestData NewPipelineContext(FrontendRequest frontendRequest, RequestMethod method)
         {
-            PipelineContext docRefContext = new(frontendRequest, method)
+            RequestData docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(

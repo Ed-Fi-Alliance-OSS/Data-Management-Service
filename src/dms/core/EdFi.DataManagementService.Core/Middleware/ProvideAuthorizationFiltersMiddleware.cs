@@ -23,17 +23,17 @@ internal class ProvideAuthorizationFiltersMiddleware(
     ILogger _logger
 ) : IPipelineStep
 {
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         try
         {
             _logger.LogDebug(
                 "Entering ProvideAuthorizationFiltersMiddleware - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
 
             List<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators = [];
-            foreach (string authorizationStrategy in context.ResourceActionAuthStrategies)
+            foreach (string authorizationStrategy in requestData.ResourceActionAuthStrategies)
             {
                 var authFiltersProvider =
                     _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
@@ -41,10 +41,10 @@ internal class ProvideAuthorizationFiltersMiddleware(
                     );
                 if (authFiltersProvider == null)
                 {
-                    context.FrontendResponse = new FrontendResponse(
+                    requestData.FrontendResponse = new FrontendResponse(
                         StatusCode: (int)HttpStatusCode.Forbidden,
                         Body: FailureResponse.ForForbidden(
-                            traceId: context.FrontendRequest.TraceId,
+                            traceId: requestData.FrontendRequest.TraceId,
                             errors:
                             [
                                 $"Could not find authorization filters implementation for the following strategy: '{authorizationStrategy}'.",
@@ -57,20 +57,20 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 }
 
                 authorizationStrategyEvaluators.Add(
-                    authFiltersProvider.GetFilters(context.FrontendRequest.ClientAuthorizations)
+                    authFiltersProvider.GetFilters(requestData.FrontendRequest.ClientAuthorizations)
                 );
             }
 
-            context.AuthorizationStrategyEvaluators = [.. authorizationStrategyEvaluators];
+            requestData.AuthorizationStrategyEvaluators = [.. authorizationStrategyEvaluators];
 
             await next();
         }
         catch (AuthorizationException ex)
         {
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: (int)HttpStatusCode.Forbidden,
                 Body: FailureResponse.ForForbidden(
-                    traceId: context.FrontendRequest.TraceId,
+                    traceId: requestData.FrontendRequest.TraceId,
                     errors: [ex.Message]
                 ),
                 Headers: [],
@@ -82,14 +82,14 @@ internal class ProvideAuthorizationFiltersMiddleware(
             _logger.LogError(
                 ex,
                 "Error while authorizing the request - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
                 Body: new JsonObject
                 {
                     ["message"] = $"Error while authorizing the request.{ex.Message}",
-                    ["traceId"] = context.FrontendRequest.TraceId.Value,
+                    ["traceId"] = requestData.FrontendRequest.TraceId.Value,
                 },
                 Headers: []
             );

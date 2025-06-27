@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Provides information from loaded ApiSchema.json documents
 /// </summary>
-internal class ApiSchemaDocuments(ApiSchemaNodes _apiSchemaNodes, ILogger _logger)
+internal class ApiSchemaDocuments(ApiSchemaDocumentNodes _apiSchemaNodes, ILogger _logger)
 {
     /// <summary>
     /// Gets the core ProjectSchema node in the document.

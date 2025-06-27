@@ -30,6 +30,14 @@ public static class WebApplicationBuilderExtensions
     public static void AddServices(this WebApplicationBuilder webAppBuilder)
     {
         var logger = ConfigureLogging();
+
+        // Add custom mapping for ENABLE_MANAGEMENT_ENDPOINTS environment variable
+        var enableManagementEndpoints = Environment.GetEnvironmentVariable("ENABLE_MANAGEMENT_ENDPOINTS");
+        if (!string.IsNullOrEmpty(enableManagementEndpoints))
+        {
+            webAppBuilder.Configuration["AppSettings:EnableManagementEndpoints"] = enableManagementEndpoints;
+        }
+
         webAppBuilder.Configuration.AddEnvironmentVariables();
         webAppBuilder
             .Services.AddDmsDefaultConfiguration(

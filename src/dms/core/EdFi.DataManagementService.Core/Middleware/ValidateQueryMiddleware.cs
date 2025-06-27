@@ -20,20 +20,20 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
     private static readonly string[] _disallowedQueryFields = ["limit", "offset", "totalCount"];
 
     /// <summary>
-    /// Finds and sets PaginationParameters on the context by parsing the client request.
+    /// Finds and sets PaginationParameters on the requestData by parsing the client request.
     /// Returns any errors found for those parameters.
     /// </summary>
-    private static List<string> SetPaginationParametersOn(PipelineContext context, int maxPageSize)
+    private static List<string> SetPaginationParametersOn(RequestData requestData, int maxPageSize)
     {
         int? offset = null;
         int? limit = null;
         bool totalCount = false;
         List<string> errors = [];
 
-        if (context.FrontendRequest.QueryParameters.ContainsKey("offset"))
+        if (requestData.FrontendRequest.QueryParameters.ContainsKey("offset"))
         {
             if (
-                !int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int offsetVal)
+                !int.TryParse(requestData.FrontendRequest.QueryParameters["offset"], out int offsetVal)
                 || offsetVal < 0
             )
             {
@@ -41,16 +41,19 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             }
             else
             {
-                offset = int.TryParse(context.FrontendRequest.QueryParameters["offset"], out int offsetResult)
+                offset = int.TryParse(
+                    requestData.FrontendRequest.QueryParameters["offset"],
+                    out int offsetResult
+                )
                     ? offsetResult
                     : offset;
             }
         }
 
-        if (context.FrontendRequest.QueryParameters.ContainsKey("limit"))
+        if (requestData.FrontendRequest.QueryParameters.ContainsKey("limit"))
         {
             if (
-                !int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int limitVal)
+                !int.TryParse(requestData.FrontendRequest.QueryParameters["limit"], out int limitVal)
                 || limitVal < 0
                 || limitVal > maxPageSize
             )
@@ -59,22 +62,25 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             }
             else
             {
-                limit = int.TryParse(context.FrontendRequest.QueryParameters["limit"], out int limitResult)
+                limit = int.TryParse(
+                    requestData.FrontendRequest.QueryParameters["limit"],
+                    out int limitResult
+                )
                     ? limitResult
                     : limit;
             }
         }
 
-        if (context.FrontendRequest.QueryParameters.ContainsKey("totalCount"))
+        if (requestData.FrontendRequest.QueryParameters.ContainsKey("totalCount"))
         {
-            if (!bool.TryParse(context.FrontendRequest.QueryParameters["totalCount"], out totalCount))
+            if (!bool.TryParse(requestData.FrontendRequest.QueryParameters["totalCount"], out totalCount))
             {
                 errors.Add("TotalCount must be a boolean value.");
             }
             else
             {
                 totalCount = bool.TryParse(
-                    context.FrontendRequest.QueryParameters["totalCount"],
+                    requestData.FrontendRequest.QueryParameters["totalCount"],
                     out bool totalValue
                 )
                     ? totalValue
@@ -84,7 +90,7 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
 
         if (errors.Count == 0)
         {
-            context.PaginationParameters = new PaginationParameters(limit, offset, totalCount);
+            requestData.PaginationParameters = new PaginationParameters(limit, offset, totalCount);
         }
         return errors;
     }
@@ -136,20 +142,20 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
         );
     }
 
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ValidateQueryMiddleware - {TraceId}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
-        List<string> errors = SetPaginationParametersOn(context, _maximumPageSize);
+        List<string> errors = SetPaginationParametersOn(requestData, _maximumPageSize);
 
         if (errors.Count > 0)
         {
             JsonNode failureResponse = FailureResponse.ForBadRequest(
                 "The request could not be processed. See 'errors' for details.",
-                context.FrontendRequest.TraceId,
+                requestData.FrontendRequest.TraceId,
                 [],
                 errors.ToArray()
             );
@@ -157,18 +163,18 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
-                context.PathComponents.EndpointName,
-                context.FrontendRequest.TraceId.Value
+                requestData.PathComponents.EndpointName,
+                requestData.FrontendRequest.TraceId.Value
             );
 
-            context.FrontendResponse = new FrontendResponse(StatusCode: 400, Body: failureResponse, []);
+            requestData.FrontendResponse = new FrontendResponse(StatusCode: 400, Body: failureResponse, []);
             return;
         }
 
         IEnumerable<KeyValuePair<string, string>> nonPaginationQueryTerms =
-            context.FrontendRequest.QueryParameters.ExceptBy(_disallowedQueryFields, (term) => term.Key);
+            requestData.FrontendRequest.QueryParameters.ExceptBy(_disallowedQueryFields, (term) => term.Key);
 
-        QueryField[] possibleQueryFields = context.ResourceSchema.QueryFields.ToArray();
+        QueryField[] possibleQueryFields = requestData.ResourceSchema.QueryFields.ToArray();
 
         List<QueryElement> queryElements = [];
 
@@ -182,12 +188,16 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             {
                 JsonNode failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
-                    context.FrontendRequest.TraceId,
+                    requestData.FrontendRequest.TraceId,
                     [],
                     [$@"The query field '{clientQueryTerm.Key}' is not valid for this resource."]
                 );
 
-                context.FrontendResponse = new FrontendResponse(StatusCode: 400, Body: failureResponse, []);
+                requestData.FrontendResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    Body: failureResponse,
+                    []
+                );
                 return;
             }
 
@@ -286,14 +296,14 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
         {
             _logger.LogDebug(
                 "Query parameter format error - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
 
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: ForDataValidation(
                     "Data validation failed. See 'validationErrors' for details.",
-                    traceId: context.FrontendRequest.TraceId,
+                    traceId: requestData.FrontendRequest.TraceId,
                     validationErrors,
                     []
                 ),
@@ -303,7 +313,7 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
         }
         else
         {
-            context.QueryElements = queryElements.ToArray();
+            requestData.QueryElements = queryElements.ToArray();
 
             await next();
         }

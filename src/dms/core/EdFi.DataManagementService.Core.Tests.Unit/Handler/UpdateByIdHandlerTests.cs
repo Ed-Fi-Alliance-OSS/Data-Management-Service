@@ -23,6 +23,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
 [TestFixture]
+[Parallelizable]
 public class UpdateByIdHandlerTests
 {
     private static readonly JsonNode _apiSchemaRootNode =
@@ -32,10 +33,24 @@ public class UpdateByIdHandlerTests
 
     internal class Provider : IApiSchemaProvider
     {
-        public ApiSchemaNodes GetApiSchemaNodes()
+        public ApiSchemaDocumentNodes GetApiSchemaNodes()
         {
             return new(_apiSchemaRootNode, []);
         }
+
+        public Guid ReloadId => Guid.Empty;
+
+        public bool IsSchemaValid => true;
+
+        public List<ApiSchemaFailure> ApiSchemaFailures => [];
+
+        public Task<ApiSchemaLoadStatus> ReloadApiSchemaAsync() =>
+            Task.FromResult(new ApiSchemaLoadStatus(true, []));
+
+        public Task<ApiSchemaLoadStatus> LoadApiSchemaFromAsync(
+            JsonNode coreSchema,
+            JsonNode[] extensionSchemas
+        ) => Task.FromResult(new ApiSchemaLoadStatus(true, []));
     }
 
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
@@ -50,6 +65,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Success : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -60,24 +76,25 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(context, NullNext);
+            await updateByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(204);
-            context.FrontendResponse.Body.Should().BeNull();
+            requestData.FrontendResponse.StatusCode.Should().Be(204);
+            requestData.FrontendResponse.Body.Should().BeNull();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Not_Exists : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -88,20 +105,20 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(context, NullNext);
+            await updateByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(404);
-            context
+            requestData.FrontendResponse.StatusCode.Should().Be(404);
+            requestData
                 .FrontendResponse.Body?.AsJsonString()
                 .Should()
                 .Be(
@@ -113,6 +130,7 @@ public class UpdateByIdHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_S_Repository_That_Returns_Failure_Reference : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -125,24 +143,25 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(context, NullNext);
+            await updateByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body?.ToJsonString().Should().Contain(Repository.ResponseBody);
+            requestData.FrontendResponse.StatusCode.Should().Be(409);
+            requestData.FrontendResponse.Body?.ToJsonString().Should().Contain(Repository.ResponseBody);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Identity_Conflict : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -160,26 +179,27 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(context, NullNext);
+            await updateByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
-            context.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
-            context.FrontendResponse.Headers.Should().BeEmpty();
-            context.FrontendResponse.LocationHeaderPath.Should().BeNull();
+            requestData.FrontendResponse.StatusCode.Should().Be(409);
+            requestData.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
+            requestData.FrontendResponse.Headers.Should().BeEmpty();
+            requestData.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Write_Conflict : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -190,23 +210,24 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(context, NullNext);
+            await updateByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(409);
+            requestData.FrontendResponse.StatusCode.Should().Be(409);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Immutable_Identity : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -221,23 +242,24 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(context, NullNext);
+            await updateByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(400);
+            requestData.FrontendResponse.StatusCode.Should().Be(400);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : UpdateByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -251,19 +273,19 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly PipelineContext context = No.PipelineContext(_traceId);
+        private readonly RequestData requestData = No.RequestData(_traceId);
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(context, NullNext);
+            await updateByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(500);
+            requestData.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = $$"""
 {
@@ -272,15 +294,15 @@ public class UpdateByIdHandlerTests
 }
 """;
 
-            context.FrontendResponse.Body.Should().NotBeNull();
+            requestData.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(context.FrontendResponse.Body, JsonNode.Parse(expected))
+                .DeepEquals(requestData.FrontendResponse.Body, JsonNode.Parse(expected))
                 .Should()
                 .BeTrue(
                     $"""
 expected: {expected}
 
-actual: {context.FrontendResponse.Body}
+actual: {requestData.FrontendResponse.Body}
 """
                 );
         }

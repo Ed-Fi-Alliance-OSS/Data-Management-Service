@@ -5,31 +5,33 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
+using No = EdFi.DataManagementService.Core.Model.No;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ApiSchemaValidationMiddlewareTests
 {
     internal static IPipelineStep ProvideMiddleware(IApiSchemaProvider provider)
     {
-        var apiValidator = new ApiSchemaValidator(
-            new JsonSchemaForApiSchemaProvider(NullLogger<JsonSchemaForApiSchemaProvider>.Instance)
-        );
-        return new ApiSchemaValidationMiddleware(provider, apiValidator, NullLogger.Instance);
+        return new ApiSchemaValidationMiddleware(provider, NullLogger.Instance);
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Api_Schema_With_Validation_Errors : ApiSchemaValidationMiddlewareTests
     {
-        private readonly PipelineContext _context = No.PipelineContext();
+        private readonly RequestData _context = No.RequestData();
 
         public class Provider : IApiSchemaProvider
         {
@@ -37,10 +39,25 @@ public class ApiSchemaValidationMiddlewareTests
                 "{ \"projectSchemas\": { \"ed-fi\": {\"abstractResources\":{},\"caseInsensitiveEndpointNameMapping\":{},\"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} } }"
             )!;
 
-            public ApiSchemaNodes GetApiSchemaNodes()
+            public ApiSchemaDocumentNodes GetApiSchemaNodes()
             {
                 return new(_apiSchemaRootNode, []);
             }
+
+            public Guid ReloadId => Guid.Empty;
+
+            public bool IsSchemaValid => false; // Simulating invalid schema
+
+            public List<ApiSchemaFailure> ApiSchemaFailures =>
+                [new ApiSchemaFailure("Validation", "Invalid schema", new JsonPath("$.projectSchemas"))];
+
+            public Task<ApiSchemaLoadStatus> ReloadApiSchemaAsync() =>
+                Task.FromResult(new ApiSchemaLoadStatus(true, []));
+
+            public Task<ApiSchemaLoadStatus> LoadApiSchemaFromAsync(
+                JsonNode coreSchema,
+                JsonNode[] extensionSchemas
+            ) => Task.FromResult(new ApiSchemaLoadStatus(true, []));
         }
 
         [SetUp]
@@ -65,6 +82,71 @@ public class ApiSchemaValidationMiddlewareTests
         public void It_returns_empty_body()
         {
             _context?.FrontendResponse.Body?.AsValue().ToString().Should().Be(string.Empty);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class HotReloadScenarios : ApiSchemaValidationMiddlewareTests
+    {
+        private IApiSchemaProvider _mockProvider = null!;
+        private ApiSchemaValidationMiddleware _middleware = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _mockProvider = A.Fake<IApiSchemaProvider>();
+            _middleware = new ApiSchemaValidationMiddleware(_mockProvider, NullLogger.Instance);
+        }
+
+        [Test]
+        public async Task Process_WhenSchemaIsValid_CallsNext()
+        {
+            // Arrange
+            var requestData = No.RequestData();
+            var nextWasCalled = false;
+
+            A.CallTo(() => _mockProvider.IsSchemaValid).Returns(true);
+
+            // Act
+            await _middleware.Execute(
+                requestData,
+                () =>
+                {
+                    nextWasCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+
+            // Assert
+            nextWasCalled.Should().BeTrue();
+            requestData.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public async Task Process_WhenSchemaIsInvalid_Returns500()
+        {
+            // Arrange
+            var requestData = No.RequestData();
+            var nextWasCalled = false;
+
+            A.CallTo(() => _mockProvider.IsSchemaValid).Returns(false);
+
+            // Act
+            await _middleware.Execute(
+                requestData,
+                () =>
+                {
+                    nextWasCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+
+            // Assert
+            nextWasCalled.Should().BeFalse();
+            requestData.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            requestData.FrontendResponse.StatusCode.Should().Be(500);
+            requestData.FrontendResponse.Body?.AsValue().ToString().Should().Be(string.Empty);
         }
     }
 }

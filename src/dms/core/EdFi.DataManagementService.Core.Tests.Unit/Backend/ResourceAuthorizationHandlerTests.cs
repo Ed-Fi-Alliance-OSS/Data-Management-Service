@@ -16,6 +16,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Backend;
 
 [TestFixture]
+[Parallelizable]
 public class ResourceAuthorizationHandlerTests
 {
     private readonly IAuthorizationServiceFactory _authorizationServiceFactory =
@@ -136,6 +137,7 @@ public class ResourceAuthorizationHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_EdFi_Doc_With_No_Authorization_Evaluators() : ResourceAuthorizationHandlerTests
     {
         private ResourceAuthorizationResult? _resourceAuthorizationResult;
@@ -172,6 +174,7 @@ public class ResourceAuthorizationHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_EdFi_Doc_With_Matching_ClientAuthorization_EdOrg : ResourceAuthorizationHandlerTests
     {
         private ResourceAuthorizationResult? _resourceAuthorizationResult;
@@ -236,6 +239,7 @@ public class ResourceAuthorizationHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_EdFi_Doc_With_No_Matching_ClientAuthorization_EdOrg
         : ResourceAuthorizationHandlerTests
     {

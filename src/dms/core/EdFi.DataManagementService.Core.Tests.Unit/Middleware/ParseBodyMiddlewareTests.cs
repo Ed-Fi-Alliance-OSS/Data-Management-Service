@@ -16,6 +16,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ParseBodyMiddlewareTests
 {
     internal static IPipelineStep Middleware()
@@ -24,9 +25,10 @@ public class ParseBodyMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Post_Request_With_Null_Body : ParseBodyMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -71,9 +73,10 @@ public class ParseBodyMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Post_Request_With_Empty_Body : ParseBodyMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -118,9 +121,10 @@ public class ParseBodyMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Post_Request_With_Invalid_Json : ParseBodyMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()

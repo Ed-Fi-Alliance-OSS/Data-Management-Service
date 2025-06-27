@@ -20,18 +20,18 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
     private const string TestForDuplicateObjectKeyWorkaround = "x";
     private const string Pattern = @"Key: (.*?) \((.*?)\)\.(.*?)$";
 
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         logger.LogDebug(
             "Entering DuplicatePropertiesMiddleware - {TraceId}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
-        if (context.FrontendRequest.Body != null)
+        if (requestData.FrontendRequest.Body != null)
         {
             try
             {
-                JsonNode? node = JsonNode.Parse(context.FrontendRequest.Body);
+                JsonNode? node = JsonNode.Parse(requestData.FrontendRequest.Body);
 
                 if (node is JsonObject jsonObject)
                 {
@@ -71,13 +71,17 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                     { $"{propertyName}", new[] { "An item with the same key has already been added." } },
                 };
 
-                logger.LogDebug(ae, "Duplicate key found - {TraceId}", context.FrontendRequest.TraceId.Value);
+                logger.LogDebug(
+                    ae,
+                    "Duplicate key found - {TraceId}",
+                    requestData.FrontendRequest.TraceId.Value
+                );
 
-                context.FrontendResponse = new FrontendResponse(
+                requestData.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
                     Body: ForDataValidation(
                         "Data validation failed. See 'validationErrors' for details.",
-                        traceId: context.FrontendRequest.TraceId,
+                        traceId: requestData.FrontendRequest.TraceId,
                         validationErrors,
                         []
                     ),
@@ -90,7 +94,7 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                 logger.LogDebug(
                     e,
                     "Unable to evaluate the request body - {TraceId}",
-                    context.FrontendRequest.TraceId.Value
+                    requestData.FrontendRequest.TraceId.Value
                 );
                 return;
             }

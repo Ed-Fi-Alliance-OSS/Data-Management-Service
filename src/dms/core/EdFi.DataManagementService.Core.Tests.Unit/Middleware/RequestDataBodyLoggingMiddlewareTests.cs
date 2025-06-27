@@ -18,12 +18,13 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[NonParallelizable]
 public class RequestDataBodyLoggingMiddlewareTests
 {
-    private PipelineContext _context = No.PipelineContext();
+    private RequestData _context = No.RequestData();
     private ILogger<RequestDataBodyLoggingMiddleware>? _logger;
     private string _capturedLogMessage = string.Empty;
-    private const string LogFilePath = "logs/test_logs.txt";
+    private string _logFilePath = string.Empty;
 
     internal static IPipelineStep Middleware(
         ILogger<RequestDataBodyLoggingMiddleware> logger,
@@ -34,25 +35,27 @@ public class RequestDataBodyLoggingMiddlewareTests
     }
 
     [TestFixture]
+    [NonParallelizable]
     public class Given_A_LogLevel_Debug_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
-            string? logDirectory = Path.GetDirectoryName(LogFilePath);
+            _logFilePath = Path.Combine("logs", $"test_logs_{Guid.NewGuid()}.txt");
+            string? logDirectory = Path.GetDirectoryName(_logFilePath);
             if (logDirectory != null)
             {
                 Directory.CreateDirectory(logDirectory);
             }
 
-            if (File.Exists(LogFilePath))
+            if (File.Exists(_logFilePath))
             {
-                File.Delete(LogFilePath);
+                File.Delete(_logFilePath);
             }
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
-                .WriteTo.File(LogFilePath)
+                .WriteTo.File(_logFilePath)
                 .CreateLogger();
 
             _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
@@ -77,7 +80,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             await Log.CloseAndFlushAsync();
 
-            _capturedLogMessage = await File.ReadAllTextAsync("logs/test_logs.txt");
+            _capturedLogMessage = await File.ReadAllTextAsync(_logFilePath);
         }
 
         [Test]
@@ -85,28 +88,39 @@ public class RequestDataBodyLoggingMiddlewareTests
         {
             _capturedLogMessage.Should().Contain("{\"schoolId\":\"*\",\"nameOfInstitution\":\"*\"}");
         }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (File.Exists(_logFilePath))
+            {
+                File.Delete(_logFilePath);
+            }
+        }
     }
 
     [TestFixture]
+    [NonParallelizable]
     public class Given_A_LogLevel_Debug_And_MaskRequestBody_False : RequestDataBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
-            string? logDirectory = Path.GetDirectoryName(LogFilePath);
+            _logFilePath = Path.Combine("logs", $"test_logs_{Guid.NewGuid()}.txt");
+            string? logDirectory = Path.GetDirectoryName(_logFilePath);
             if (logDirectory != null)
             {
                 Directory.CreateDirectory(logDirectory);
             }
 
-            if (File.Exists(LogFilePath))
+            if (File.Exists(_logFilePath))
             {
-                File.Delete(LogFilePath);
+                File.Delete(_logFilePath);
             }
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
-                .WriteTo.File(LogFilePath)
+                .WriteTo.File(_logFilePath)
                 .CreateLogger();
 
             _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
@@ -131,7 +145,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             await Log.CloseAndFlushAsync();
 
-            _capturedLogMessage = await File.ReadAllTextAsync("logs/test_logs.txt");
+            _capturedLogMessage = await File.ReadAllTextAsync(_logFilePath);
         }
 
         [Test]
@@ -141,28 +155,39 @@ public class RequestDataBodyLoggingMiddlewareTests
                 .Should()
                 .Contain("{\"schoolId\":\"12345\",\"nameOfInstitution\":\"School Test\"}");
         }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (File.Exists(_logFilePath))
+            {
+                File.Delete(_logFilePath);
+            }
+        }
     }
 
     [TestFixture]
+    [NonParallelizable]
     public class Given_A_LogLevel_Verbose_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
-            string? logDirectory = Path.GetDirectoryName(LogFilePath);
+            _logFilePath = Path.Combine("logs", $"test_logs_{Guid.NewGuid()}.txt");
+            string? logDirectory = Path.GetDirectoryName(_logFilePath);
             if (logDirectory != null)
             {
                 Directory.CreateDirectory(logDirectory);
             }
 
-            if (File.Exists(LogFilePath))
+            if (File.Exists(_logFilePath))
             {
-                File.Delete(LogFilePath);
+                File.Delete(_logFilePath);
             }
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Verbose()
-                .WriteTo.File(LogFilePath)
+                .WriteTo.File(_logFilePath)
                 .CreateLogger();
 
             _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
@@ -187,7 +212,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             await Log.CloseAndFlushAsync();
 
-            _capturedLogMessage = await File.ReadAllTextAsync("logs/test_logs.txt");
+            _capturedLogMessage = await File.ReadAllTextAsync(_logFilePath);
         }
 
         [Test]
@@ -195,28 +220,39 @@ public class RequestDataBodyLoggingMiddlewareTests
         {
             _capturedLogMessage.Should().Contain("{\"schoolId\":\"*\",\"nameOfInstitution\":\"*\"}");
         }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (File.Exists(_logFilePath))
+            {
+                File.Delete(_logFilePath);
+            }
+        }
     }
 
     [TestFixture]
+    [NonParallelizable]
     public class Given_A_LogLevel_Information_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
         {
-            string? logDirectory = Path.GetDirectoryName(LogFilePath);
+            _logFilePath = Path.Combine("logs", $"test_logs_{Guid.NewGuid()}.txt");
+            string? logDirectory = Path.GetDirectoryName(_logFilePath);
             if (logDirectory != null)
             {
                 Directory.CreateDirectory(logDirectory);
             }
 
-            if (File.Exists(LogFilePath))
+            if (File.Exists(_logFilePath))
             {
-                File.Delete(LogFilePath);
+                File.Delete(_logFilePath);
             }
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Information()
-                .WriteTo.File(LogFilePath)
+                .WriteTo.File(_logFilePath)
                 .CreateLogger();
 
             _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
@@ -241,13 +277,22 @@ public class RequestDataBodyLoggingMiddlewareTests
 
             await Log.CloseAndFlushAsync();
 
-            _capturedLogMessage = await File.ReadAllTextAsync("logs/test_logs.txt");
+            _capturedLogMessage = await File.ReadAllTextAsync(_logFilePath);
         }
 
         [Test]
         public void It_has_an_empty_log()
         {
             _capturedLogMessage.Should().BeEmpty();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (File.Exists(_logFilePath))
+            {
+                File.Delete(_logFilePath);
+            }
         }
     }
 }

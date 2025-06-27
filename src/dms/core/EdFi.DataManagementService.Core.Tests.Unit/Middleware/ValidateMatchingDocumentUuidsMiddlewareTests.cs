@@ -43,9 +43,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             );
         }
 
-        internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
+        internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
         {
-            PipelineContext _context = new(frontendRequest, method)
+            RequestData _context = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 PathComponents = new(
@@ -65,9 +65,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_A_Matching_Id_In_Body_And_Url : ValidateMatchingDocumentUuidsMiddlewareTests
         {
-            private PipelineContext _context = No.PipelineContext();
+            private RequestData _context = No.RequestData();
             private readonly string id = Guid.NewGuid().ToString();
 
             [SetUp]
@@ -120,9 +121,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_A_Different_Id_In_Body_And_Url : ValidateMatchingDocumentUuidsMiddlewareTests
         {
-            private PipelineContext _context = No.PipelineContext();
+            private RequestData _context = No.RequestData();
             private readonly string id = Guid.NewGuid().ToString();
             private readonly string differentId = Guid.NewGuid().ToString();
 
@@ -185,9 +187,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_A_Invalid_Guid_In_Body : ValidateMatchingDocumentUuidsMiddlewareTests
         {
-            private PipelineContext _context = No.PipelineContext();
+            private RequestData _context = No.RequestData();
             private readonly string id = Guid.NewGuid().ToString();
 
             [SetUp]
@@ -249,9 +252,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_An_Empty_Id_In_Body : ValidateMatchingDocumentUuidsMiddlewareTests
         {
-            private PipelineContext _context = No.PipelineContext();
+            private RequestData _context = No.RequestData();
             private readonly string id = Guid.NewGuid().ToString();
 
             [SetUp]
