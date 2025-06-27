@@ -5,7 +5,7 @@
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16-bullseye
     container_name: dms-postgresql
     volumes:
       - dms-postgresql:/var/lib/postgresql/data
