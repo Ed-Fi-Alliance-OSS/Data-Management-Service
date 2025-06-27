@@ -363,7 +363,7 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
               And the response body is
                   """
                      {
-                      "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentContactAssociation' item.",
+                      "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items.",
                       "type": "urn:ed-fi:api:security:authorization:",
                       "title": "Authorization Denied",
                       "status": 403,

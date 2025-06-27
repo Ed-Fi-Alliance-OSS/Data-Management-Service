@@ -154,7 +154,7 @@ public static class RelationshipsBasedAuthorizationHelper
         {
             return new AuthorizationResult.NotAuthorized(
                 [propertyName],
-                HintText("StudentSchoolAssociation")
+                "Hint: You may need to create a corresponding 'StudentSchoolAssociation' item."
             );
         }
 
@@ -184,7 +184,7 @@ public static class RelationshipsBasedAuthorizationHelper
         {
             return new AuthorizationResult.NotAuthorized(
                 [propertyName],
-                HintText("StudentContactAssociation")
+                "Hint: You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items."
             );
         }
 
@@ -209,14 +209,12 @@ public static class RelationshipsBasedAuthorizationHelper
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult.NotAuthorized([propertyName], HintText("StaffSchoolAssociation"));
+            return new AuthorizationResult.NotAuthorized(
+                [propertyName],
+                "Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items."
+            );
         }
         return new AuthorizationResult.Authorized();
-    }
-
-    private static string HintText(string resourceName)
-    {
-        return $"Hint: You may need to create a corresponding '{resourceName}' item.";
     }
 }
 

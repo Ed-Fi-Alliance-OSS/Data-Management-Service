@@ -314,7 +314,9 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 notAuthorized!
                     .Hints[0]
                     .Should()
-                    .Be("Hint: You may need to create a corresponding 'StudentContactAssociation' item.");
+                    .Be(
+                        "Hint: You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items."
+                    );
                 notAuthorized!.ErrorMessages.Should().HaveCount(1);
                 notAuthorized!
                     .ErrorMessages[0]
@@ -416,7 +418,9 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
                 notAuthorized!
                     .Hints[0]
                     .Should()
-                    .Be("Hint: You may need to create a corresponding 'StudentContactAssociation' item.");
+                    .Be(
+                        "Hint: You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items."
+                    );
                 notAuthorized!.ErrorMessages.Should().HaveCount(1);
                 notAuthorized!
                     .ErrorMessages[0]

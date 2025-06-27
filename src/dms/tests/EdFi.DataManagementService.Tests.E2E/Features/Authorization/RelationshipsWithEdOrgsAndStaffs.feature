@@ -281,7 +281,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                     {
-                      "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StaffSchoolAssociation' item.",
+                      "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
                       "type": "urn:ed-fi:api:security:authorization:",
                       "title": "Authorization Denied",
                       "status": 403,
@@ -596,7 +596,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                     {
-                      "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StaffSchoolAssociation' item.",
+                      "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
                       "type": "urn:ed-fi:api:security:authorization:",
                       "title": "Authorization Denied",
                       "status": 403,
