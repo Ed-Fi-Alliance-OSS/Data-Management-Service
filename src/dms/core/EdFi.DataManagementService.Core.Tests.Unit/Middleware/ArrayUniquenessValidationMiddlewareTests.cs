@@ -965,4 +965,113 @@ public class ArrayUniquenessValidationMiddlewareTests
             _context.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
+
+    [TestFixture]
+    public class Given_Document_Has_TopLevel_Date_With_Same_Name_As_Array_Date
+        : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create schema with array uniqueness constraint on effectiveDate in events array
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Event")
+                .WithStartDocumentPathsMapping()
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraintSimple(["$.events[*].effectiveDate"])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                    "eventTitle": "Annual Conference",
+                    "effectiveDate": "2024-01-01",
+                    "events": [
+                        {
+                            "eventName": "Opening Session",
+                            "effectiveDate": "2024-01-01"
+                        },
+                        {
+                            "eventName": "Closing Session",
+                            "effectiveDate": "2024-01-02"
+                        }
+                    ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "events");
+        }
+
+        [Test]
+        public void It_continues_to_next_middleware()
+        {
+            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    [TestFixture]
+    public class Given_Document_Has_TopLevel_Date_With_Same_Name_As_Array_Date_Which_Has_Duplicates
+        : ArrayUniquenessValidationMiddlewareTests
+    {
+        private PipelineContext _context = No.PipelineContext();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create schema with array uniqueness constraint on effectiveDate in events array
+            var apiSchema = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Event")
+                .WithStartDocumentPathsMapping()
+                .WithEndDocumentPathsMapping()
+                .WithArrayUniquenessConstraintSimple(["$.events[*].effectiveDate"])
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            string jsonBody = """
+                {
+                    "eventTitle": "Annual Conference",
+                    "effectiveDate": "2024-01-01",
+                    "events": [
+                        {
+                            "eventName": "Opening Session",
+                            "effectiveDate": "2024-01-01"
+                        },
+                        {
+                            "eventName": "Closing Session",
+                            "effectiveDate": "2024-01-01"
+                        }
+                    ]
+                }
+                """;
+
+            _context = await CreateContextAndExecute(apiSchema, jsonBody, "events");
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _context.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_validation_error_with_duplicate_dates()
+        {
+            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+
+            _context
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Contain(
+                    """
+                    "validationErrors":{"$.events":["The 2nd item of the events has the same identifying values as another item earlier in the list."]}
+                    """
+                );
+        }
+    }
 }
