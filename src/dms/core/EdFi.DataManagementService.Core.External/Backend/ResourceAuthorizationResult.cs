@@ -13,5 +13,8 @@ public record ResourceAuthorizationResult
 {
     public record Authorized() : ResourceAuthorizationResult();
 
-    public record NotAuthorized(string[] ErrorMessages) : ResourceAuthorizationResult();
+    public record NotAuthorized(string[] ErrorMessages) : ResourceAuthorizationResult()
+    {
+        public record WithHint(string[] ErrorMessages, string[] Hints) : NotAuthorized(ErrorMessages);
+    }
 }

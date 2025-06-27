@@ -64,6 +64,13 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
 
             if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
             {
+                if (notAuthorized is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorizedWithHint)
+                {
+                    return new GetResult.GetFailureNotAuthorized(
+                        notAuthorizedWithHint.ErrorMessages,
+                        notAuthorizedWithHint.Hints
+                    );
+                }
                 return new GetResult.GetFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 

@@ -29,6 +29,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
     {
         var missingProperties = new List<string>();
         var notAuthorizedProperties = new List<string>();
+        var hints = new List<string>();
 
         if (
             RelationshipsBasedAuthorizationHelper.HasSecurable(
@@ -43,13 +44,14 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                 authorizationFilters,
                 operationType
             );
-            if (edOrgResult.Type == AuthorizationResultType.MissingProperty)
+            switch (edOrgResult)
             {
-                missingProperties.AddRange(edOrgResult.PropertyNames);
-            }
-            else if (edOrgResult.Type == AuthorizationResultType.NotAuthorized)
-            {
-                notAuthorizedProperties.AddRange(edOrgResult.PropertyNames);
+                case AuthorizationResult.MissingProperty missingProperty:
+                    missingProperties.AddRange(missingProperty.PropertyNames);
+                    break;
+                case AuthorizationResult.NotAuthorized notAuthorized:
+                    notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
+                    break;
             }
         }
 
@@ -66,13 +68,15 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                 securityElements,
                 authorizationFilters
             );
-            if (studentResult.Type == AuthorizationResultType.MissingProperty)
+            switch (studentResult)
             {
-                missingProperties.AddRange(studentResult.PropertyNames);
-            }
-            else if (studentResult.Type == AuthorizationResultType.NotAuthorized)
-            {
-                notAuthorizedProperties.AddRange(studentResult.PropertyNames);
+                case AuthorizationResult.MissingProperty missingProperty:
+                    missingProperties.AddRange(missingProperty.PropertyNames);
+                    break;
+                case AuthorizationResult.NotAuthorized notAuthorized:
+                    notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
+                    hints.Add(notAuthorized.Hint);
+                    break;
             }
         }
 
@@ -88,13 +92,15 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                 securityElements,
                 authorizationFilters
             );
-            if (staffResult.Type == AuthorizationResultType.MissingProperty)
+            switch (staffResult)
             {
-                missingProperties.AddRange(staffResult.PropertyNames);
-            }
-            else if (staffResult.Type == AuthorizationResultType.NotAuthorized)
-            {
-                notAuthorizedProperties.AddRange(staffResult.PropertyNames);
+                case AuthorizationResult.MissingProperty missingProperty:
+                    missingProperties.AddRange(missingProperty.PropertyNames);
+                    break;
+                case AuthorizationResult.NotAuthorized notAuthorized:
+                    notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
+                    hints.Add(notAuthorized.Hint);
+                    break;
             }
         }
 
@@ -110,23 +116,32 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                 securityElements,
                 authorizationFilters
             );
-            if (contactResult.Type == AuthorizationResultType.MissingProperty)
+            switch (contactResult)
             {
-                missingProperties.AddRange(contactResult.PropertyNames);
-            }
-            else if (contactResult.Type == AuthorizationResultType.NotAuthorized)
-            {
-                notAuthorizedProperties.AddRange(contactResult.PropertyNames);
+                case AuthorizationResult.MissingProperty missingProperty:
+                    missingProperties.AddRange(missingProperty.PropertyNames);
+                    break;
+                case AuthorizationResult.NotAuthorized notAuthorized:
+                    notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
+                    hints.Add(notAuthorized.Hint);
+                    break;
             }
         }
 
         if (missingProperties.Count != 0 || notAuthorizedProperties.Count != 0)
         {
-            var errorMessage = RelationshipsBasedAuthorizationHelper.BuildErrorMessage(
+            string errorMessage = RelationshipsBasedAuthorizationHelper.BuildErrorMessage(
                 authorizationFilters,
                 missingProperties,
                 notAuthorizedProperties
             );
+            if (hints.Count != 0)
+            {
+                return new ResourceAuthorizationResult.NotAuthorized.WithHint(
+                    [errorMessage],
+                    hints.ToArray()
+                );
+            }
             return new ResourceAuthorizationResult.NotAuthorized([errorMessage]);
         }
 

@@ -60,7 +60,8 @@ internal class GetByIdHandler(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(
                     traceId: context.FrontendRequest.TraceId,
-                    errors: notAuthorized.ErrorMessages
+                    errors: notAuthorized.ErrorMessages,
+                    hints: notAuthorized.Hints
                 ),
                 Headers: []
             ),
