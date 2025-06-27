@@ -15,9 +15,6 @@ using CmsHierarchy.Model;
 // Example usage: dotnet run --no-launch-profile --command ParseXml --input input.xml --outputFormat Json
 // Example usage: dotnet run --no-launch-profile --command Transform --input input1.json;input2.json --outputFormat Json
 
-// Example usage: dotnet run --no-launch-profile --command TransformExtensionResourceClaims --input input1.json;input2.json --outputFormat Json
-// Example usage: dotnet run --no-launch-profile --command TransformExtensionResourceClaims --input input1.json;input2.json --outputFormat ToFile
-
 if (args.Length < 4)
 {
     Console.WriteLine(
