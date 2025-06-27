@@ -9,7 +9,6 @@ function Get-SchemaPackagesFromEnv {
         [string]$EnvFilePath
     )
 
-    # Initialize
     $schemaJson = ""
     $isReadingSchema = $false
 
@@ -68,15 +67,11 @@ function AddExtensionSecurityMetadata {
         "E2E-NoFurtherAuthRequiredClaimSet.json",
         "E2E-RelationshipsWithEdOrgsOnlyClaimSet.json"
     )
-    # Add extension claim files if corresponding packages exist
-    $schemaPackages | ForEach-Object {
-        switch -Wildcard ($_.name) {
-            "*Sample*"    { $inputFileList += "SampleExtensionResourceClaims.json" }
-            "*Homograph*" { $inputFileList += "HomographExtensionResourceClaims.json" }
-        }
-    }
 
-    # Join into a single string with semicolons
+    $schemaPackages |
+            Where-Object { $_.extensionName -and $_.extensionName.Trim() -ne "" } |
+            ForEach-Object { $inputFileList += "$($_.extensionName)ExtensionResourceClaims.json" }
+
     $inputFileListString = $inputFileList -join ";"
     Write-Host "Input file list: $inputFileListString"
 
