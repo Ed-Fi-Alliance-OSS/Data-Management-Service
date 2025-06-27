@@ -113,6 +113,8 @@ public class ApiSchemaBuilder
             ["abstractResources"] = abstractResources ?? new JsonObject(),
             ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
             ["description"] = $"{projectName} description",
+            ["educationOrganizationHierarchy"] = new JsonObject(),
+            ["educationOrganizationTypes"] = new JsonArray(),
             ["isExtensionProject"] = !_isCoreProject,
             ["projectName"] = projectName,
             ["projectVersion"] = projectVersion,
@@ -153,6 +155,7 @@ public class ApiSchemaBuilder
             ["allowIdentityUpdates"] = allowIdentityUpdates,
             ["booleanJsonPaths"] = new JsonArray(),
             ["dateTimeJsonPaths"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),
             ["equalityConstraints"] = new JsonArray(),
             ["identityJsonPaths"] = new JsonArray(),
@@ -164,7 +167,14 @@ public class ApiSchemaBuilder
             ["numericJsonPaths"] = new JsonArray(),
             ["resourceName"] = resourceName,
             ["queryFieldMapping"] = new JsonObject(),
-            ["securableElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
+            ["securableElements"] = new JsonObject
+            {
+                ["Namespace"] = new JsonArray(),
+                ["EducationOrganization"] = new JsonArray(),
+                ["Student"] = new JsonArray(),
+                ["Contact"] = new JsonArray(),
+                ["Staff"] = new JsonArray(),
+            },
             ["authorizationPathways"] = new JsonArray(),
             ["arrayUniquenessConstraints"] = new JsonArray(),
         };

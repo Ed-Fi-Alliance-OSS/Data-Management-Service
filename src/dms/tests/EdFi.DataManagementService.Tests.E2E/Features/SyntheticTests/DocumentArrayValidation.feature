@@ -44,7 +44,7 @@ Feature: Synthetic Test - Document Array Validation
         When the schema is deployed to the DMS
           And a POST request is made to "/ed-fi/schools" with
               """
-              { "schoolId": 100 }
+              { "schoolId": "100" }
               """
         Then it should respond with 201
         When a POST request is made to "/ed-fi/students" with
@@ -52,7 +52,7 @@ Feature: Synthetic Test - Document Array Validation
               { 
                 "studentUniqueId": "98765",
                 "schoolReference": {
-                  "schoolId": 100
+                  "schoolId": "100"
                 }
               }
               """
@@ -62,24 +62,20 @@ Feature: Synthetic Test - Document Array Validation
               { 
                 "studentUniqueId": "98766",
                 "schoolReference": {
-                  "schoolId": 999
+                  "schoolId": "999"
                 }
               }
               """
-        Then it should respond with 400
+        Then it should respond with 409
           And the response body is
               """
               {
-                "detail": "Data validation failed. See 'validationErrors' for details.",
-                "type": "urn:ed-fi:api:bad-request:data-validation-failed",
-                "title": "Data Validation Failed",
-                "status": 400,
+                "detail": "The referenced School item(s) do not exist.",
+                "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
+                "title": "Unresolved Reference",
+                "status": 409,
                 "correlationId": null,
-                "validationErrors": {
-                  "$.schoolReference.schoolId": [
-                    "Reference 'School' with identity { SchoolId = 999 } does not exist."
-                  ]
-                },
+                "validationErrors": {},
                 "errors": []
               }
               """

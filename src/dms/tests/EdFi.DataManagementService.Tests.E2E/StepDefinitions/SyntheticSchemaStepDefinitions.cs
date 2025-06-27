@@ -7,29 +7,26 @@ using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Tests.E2E.Builders;
 using EdFi.DataManagementService.Tests.E2E.Management;
+using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;
 
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions;
 
 [Binding]
-public class SyntheticSchemaStepDefinitions
+public class SyntheticSchemaStepDefinitions(
+    ScenarioContext scenarioContext,
+    PlaywrightContext playwrightContext,
+    TestLogger logger
+)
 {
-    private readonly ScenarioContext _scenarioContext;
-    private readonly PlaywrightContext _playwrightContext;
-    private readonly TestLogger _logger;
+    private readonly ScenarioContext _scenarioContext = scenarioContext;
+    private readonly PlaywrightContext _playwrightContext = playwrightContext;
+    private readonly TestLogger _logger = logger;
     private ApiSchemaBuilder? _currentSchemaBuilder;
 
-    public SyntheticSchemaStepDefinitions(
-        ScenarioContext scenarioContext,
-        PlaywrightContext playwrightContext,
-        TestLogger logger
-    )
-    {
-        _scenarioContext = scenarioContext;
-        _playwrightContext = playwrightContext;
-        _logger = logger;
-    }
+    // Cached JsonSerializerOptions for performance
+    private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     [Given(@"a synthetic (?:core|extension) schema with project ""(.*)""")]
     public void GivenASyntheticSchemaWithProject(string projectName)
@@ -154,6 +151,7 @@ public class SyntheticSchemaStepDefinitions
         var uploadRequest = _currentSchemaBuilder.GenerateUploadRequest();
 
         _logger.log.Information("Uploading synthetic API schemas to DMS");
+        _logger.log.Information("Core schema: {Schema}", uploadRequest.CoreSchema);
 
         // Call the upload endpoint
         var apiContext = _playwrightContext.ApiRequestContext!;
@@ -170,36 +168,185 @@ public class SyntheticSchemaStepDefinitions
             }
         );
 
-        if (!response.Ok)
-        {
-            var responseBody = await response.TextAsync();
-            throw new Exception($"Failed to upload schema. Status: {response.Status}, Body: {responseBody}");
-        }
-
         var responseText = await response.TextAsync();
-        var uploadResponse = JsonSerializer.Deserialize<UploadSchemaResponse>(
-            responseText,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        _logger.log.Information(
+            "Upload response status: {Status}, Body: {Body}",
+            response.Status,
+            responseText
         );
 
-        if (uploadResponse == null || !uploadResponse.Success)
+        if (!response.Ok)
         {
-            throw new Exception($"Schema upload failed: {uploadResponse?.ErrorMessage ?? "Unknown error"}");
+            throw new Exception($"Failed to upload schema. Status: {response.Status}, Body: {responseText}");
+        }
+
+        // Parse the response as a simple JSON object since the API returns a different format
+        var responseJson = JsonSerializer.Deserialize<JsonElement>(responseText, _jsonOptions);
+
+        // Check if there's an error field
+        if (responseJson.TryGetProperty("error", out var errorElement))
+        {
+            var errorMessage = errorElement.GetString() ?? "Unknown error";
+
+            // Check for detailed failures
+            if (
+                responseJson.TryGetProperty("failures", out var failuresElement)
+                && failuresElement.ValueKind == JsonValueKind.Array
+            )
+            {
+                var failures = new List<string>();
+                foreach (var failure in failuresElement.EnumerateArray())
+                {
+                    if (
+                        failure.TryGetProperty("type", out var typeElem)
+                        && failure.TryGetProperty("message", out var msgElem)
+                    )
+                    {
+                        failures.Add($"{typeElem.GetString()}: {msgElem.GetString()}");
+                    }
+                }
+                if (failures.Count > 0)
+                {
+                    errorMessage = string.Join("; ", failures);
+                }
+            }
+
+            throw new Exception($"Schema upload failed: {errorMessage}");
+        }
+
+        // Extract success response fields
+        var reloadId = responseJson.TryGetProperty("reloadId", out var reloadIdElem)
+            ? reloadIdElem.GetString()
+            : null;
+        var schemasProcessed = responseJson.TryGetProperty("schemasProcessed", out var schemasElem)
+            ? schemasElem.GetInt32()
+            : 0;
+
+        if (string.IsNullOrEmpty(reloadId))
+        {
+            _logger.log.Warning("Schema upload succeeded but ReloadId was not provided");
         }
 
         _logger.log.Information(
             "Schema upload completed successfully. Processed {Count} schemas with reload ID {ReloadId}",
-            uploadResponse.SchemasProcessed,
-            uploadResponse.ReloadId
+            schemasProcessed,
+            reloadId ?? "N/A"
         );
 
-        // Small delay to ensure schema is fully loaded
-        await Task.Delay(500);
+        // Increased delay to ensure schema is fully loaded
+        await Task.Delay(1000);
     }
 
     [Given(@"the schema is deployed")]
     public async Task GivenTheSchemaIsDeployed()
     {
         await WhenTheSchemaIsDeployedToTheDMS();
+    }
+
+    [When(@"the schema upload fails")]
+    public async Task WhenTheSchemaUploadFails()
+    {
+        _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
+
+        // End the current project
+        _currentSchemaBuilder.WithEndProject();
+
+        // Generate upload request
+        var uploadRequest = _currentSchemaBuilder.GenerateUploadRequest();
+
+        _logger.log.Information("Uploading synthetic API schemas to DMS (expecting failure)");
+
+        // Call the upload endpoint
+        var apiContext = _playwrightContext.ApiRequestContext!;
+        var uploadUrl = $"{_playwrightContext.ApiUrl.TrimEnd('/')}/management/upload-api-schema";
+
+        var response = await apiContext.PostAsync(
+            uploadUrl,
+            new APIRequestContextOptions
+            {
+                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+                Data = JsonSerializer.Serialize(uploadRequest),
+            }
+        );
+
+        // Store the response for validation
+        _scenarioContext["schemaUploadResponse"] = response;
+        _scenarioContext["schemaUploadResponseText"] = await response.TextAsync();
+    }
+
+    [Then(@"the schema upload response should be")]
+    public void ThenTheSchemaUploadResponseShouldBe(string expectedResponse)
+    {
+        var responseText = _scenarioContext.Get<string>("schemaUploadResponseText");
+
+        var actualResponse = JsonSerializer.Deserialize<UploadSchemaResponse>(responseText, _jsonOptions);
+
+        var expectedResponseObj = JsonSerializer.Deserialize<UploadSchemaResponse>(
+            expectedResponse,
+            _jsonOptions
+        );
+
+        actualResponse.Should().BeEquivalentTo(expectedResponseObj);
+    }
+
+    [Then(@"the schema upload response should indicate success")]
+    public void ThenTheSchemaUploadResponseShouldIndicateSuccess()
+    {
+        var responseText = _scenarioContext.Get<string>("schemaUploadResponseText");
+
+        var response = JsonSerializer.Deserialize<UploadSchemaResponse>(responseText, _jsonOptions);
+
+        response.Should().NotBeNull();
+        response!.Success.Should().BeTrue("Schema upload should have succeeded");
+        response.SchemasProcessed.Should().BeGreaterThan(0);
+        response.ReloadId.Should().NotBeNull();
+    }
+
+    [Then(@"the schema upload response should indicate failure with message ""(.*)""")]
+    public void ThenTheSchemaUploadResponseShouldIndicateFailureWithMessage(string expectedMessage)
+    {
+        var responseText = _scenarioContext.Get<string>("schemaUploadResponseText");
+
+        var response = JsonSerializer.Deserialize<UploadSchemaResponse>(responseText, _jsonOptions);
+
+        response.Should().NotBeNull();
+        response!.Success.Should().BeFalse("Schema upload should have failed");
+        response.ErrorMessage.Should().Contain(expectedMessage);
+    }
+
+    [Then(@"the schema upload response should contain failures")]
+    public void ThenTheSchemaUploadResponseShouldContainFailures(Table table)
+    {
+        var responseText = _scenarioContext.Get<string>("schemaUploadResponseText");
+
+        var response = JsonSerializer.Deserialize<UploadSchemaResponse>(responseText, _jsonOptions);
+
+        response.Should().NotBeNull();
+        response!.Success.Should().BeFalse();
+        response.Failures.Should().NotBeNull();
+        response.Failures!.Count.Should().Be(table.RowCount);
+
+        for (int i = 0; i < table.RowCount; i++)
+        {
+            var expectedFailure = table.Rows[i];
+            var actualFailure = response.Failures[i];
+
+            if (expectedFailure.ContainsKey("FailureType"))
+            {
+                actualFailure.FailureType.Should().Be(expectedFailure["FailureType"]);
+            }
+
+            if (expectedFailure.ContainsKey("Message"))
+            {
+                actualFailure.Message.Should().Contain(expectedFailure["Message"]);
+            }
+        }
+    }
+
+    [Then(@"the schema upload response status should be (\d+)")]
+    public void ThenTheSchemaUploadResponseStatusShouldBe(int expectedStatus)
+    {
+        var response = _scenarioContext.Get<IAPIResponse>("schemaUploadResponse");
+        response.Status.Should().Be(expectedStatus);
     }
 }

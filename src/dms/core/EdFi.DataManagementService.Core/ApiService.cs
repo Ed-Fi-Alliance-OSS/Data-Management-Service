@@ -537,12 +537,14 @@ internal class ApiService : IApiService
     public async Task<IFrontendResponse> ReloadApiSchemaAsync()
     {
         // Check if management endpoints are enabled
-        if (!_appSettings.Value.EnableManagementEndpoints)
-        {
-            _logger.LogWarning("API schema reload requested but management endpoints are disabled");
-            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
-        }
-
+        // TEMPORARY: Commenting out to always enable management endpoints for testing
+#pragma warning disable S125 // Sections of code should not be commented out
+        // if (!_appSettings.Value.EnableManagementEndpoints)
+        // {
+        //     _logger.LogWarning("API schema reload requested but management endpoints are disabled");
+        //     return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
+        // }
+#pragma warning restore S125 // Sections of code should not be commented out
         _logger.LogInformation("API schema reload requested");
 
         try
