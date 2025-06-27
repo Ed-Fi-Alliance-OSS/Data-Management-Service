@@ -583,10 +583,64 @@ internal class ApiService : IApiService
     }
 
     /// <summary>
-    /// Uploads and reloads API schemas from the provided content
+    /// Uploads ApiSchemas from the provided content
     /// </summary>
-    public async Task<UploadSchemaResponse> UploadAndReloadApiSchemaAsync(UploadSchemaRequest request)
+    public async Task<IFrontendResponse> UploadApiSchemaAsync(UploadSchemaRequest request)
     {
-        return await _apiSchemaUploadService.UploadApiSchemaAsync(request);
+        UploadSchemaResponse uploadResponse = await _apiSchemaUploadService.UploadApiSchemaAsync(request);
+
+        // Hide if disabled
+        if (uploadResponse.IsManagementEndpointsDisabled)
+        {
+            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
+        }
+
+        if (uploadResponse.Success)
+        {
+            return new FrontendResponse(
+                StatusCode: 200,
+                Body: JsonNode.Parse(
+                    $$"""
+                    {
+                        "message": "Schema uploaded successfully",
+                        "reloadId": "{{uploadResponse.ReloadId}}",
+                        "schemasProcessed": {{uploadResponse.SchemasProcessed}}
+                    }
+                    """
+                ),
+                Headers: []
+            );
+        }
+
+        var errorBody = new JsonObject { ["error"] = uploadResponse.ErrorMessage };
+
+        // Add detailed failure information if available
+        if (uploadResponse.Failures != null && uploadResponse.Failures.Count > 0)
+        {
+            var failuresArray = new JsonArray();
+            foreach (var failure in uploadResponse.Failures)
+            {
+                var failureObj = new JsonObject
+                {
+                    ["type"] = failure.FailureType,
+                    ["message"] = failure.Message,
+                };
+
+                if (failure.FailurePath != null)
+                {
+                    failureObj["path"] = JsonValue.Create(failure.FailurePath.Value);
+                }
+
+                if (failure.Exception != null)
+                {
+                    failureObj["exception"] = failure.Exception.Message;
+                }
+
+                failuresArray.Add(failureObj);
+            }
+            errorBody["failures"] = failuresArray;
+        }
+
+        return new FrontendResponse(StatusCode: 400, Body: errorBody, Headers: []);
     }
 }

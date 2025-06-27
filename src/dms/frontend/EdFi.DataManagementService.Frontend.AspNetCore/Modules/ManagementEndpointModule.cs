@@ -17,17 +17,17 @@ public class ManagementEndpointModule : IEndpointModule
     {
         var managementEndpoints = endpoints.MapGroup("/management");
 
-        // Reload API schema endpoint
+        // Reload ApiSchema endpoint
         managementEndpoints
-            .MapPost("/reload-schema", ReloadApiSchema)
+            .MapPost("/reload-api-schema", ReloadApiSchema)
             .WithName("ReloadApiSchema")
-            .WithSummary("Reloads the API schema from the configured source");
+            .WithSummary("Reloads the ApiSchema from the configured source");
 
-        // Upload and reload API schema endpoint
+        // Upload ApiSchema endpoint
         managementEndpoints
-            .MapPost("/upload-and-reload-schema", UploadAndReloadApiSchema)
-            .WithName("UploadAndReloadApiSchema")
-            .WithSummary("Uploads and reloads API schemas from request body")
+            .MapPost("/upload-api-schema", UploadApiSchema)
+            .WithName("UploadApiSchema")
+            .WithSummary("Uploads ApiSchema from request body")
             .Accepts<UploadSchemaRequest>("application/json")
             .Produces<UploadSchemaResponse>(200)
             .Produces(400)
@@ -53,32 +53,23 @@ public class ManagementEndpointModule : IEndpointModule
         };
     }
 
-    internal static async Task<IResult> UploadAndReloadApiSchema(
+    internal static async Task<IResult> UploadApiSchema(
         UploadSchemaRequest request,
         IApiService apiService,
         ILogger<ManagementEndpointModule> logger
     )
     {
-        logger.LogInformation("Schema upload and reload requested via management endpoint");
+        logger.LogInformation("Schema upload requested via management endpoint");
 
-        var response = await apiService.UploadAndReloadApiSchemaAsync(request);
+        var response = await apiService.UploadApiSchemaAsync(request);
 
-        if (response.Success)
+        return response.StatusCode switch
         {
-            return Results.Ok(response);
-        }
-
-        // Handle different error scenarios using explicit flags
-        if (response.IsManagementEndpointsDisabled)
-        {
-            return Results.NotFound();
-        }
-
-        if (response.IsValidationError)
-        {
-            return Results.BadRequest(response);
-        }
-
-        return Results.Json(response, statusCode: 500);
+            200 => Results.Json(response.Body, statusCode: 200),
+            400 => Results.Json(response.Body, statusCode: 400),
+            404 => Results.NotFound(),
+            500 => Results.Json(response.Body, statusCode: 500),
+            _ => Results.StatusCode(response.StatusCode),
+        };
     }
 }

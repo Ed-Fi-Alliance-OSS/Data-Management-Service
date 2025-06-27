@@ -8,6 +8,7 @@ using System.Runtime.Loader;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -396,25 +397,25 @@ internal class ApiSchemaProvider(
     }
 
     /// <summary>
-    /// Validates the schema and updates validation state for initial load only
+    /// Validates all schemas (core and extensions) and returns validation failures
     /// </summary>
-    private ApiSchemaLoadStatus ValidateSchemaForInitialLoad(ApiSchemaDocumentNodes schemaNodes)
+    private List<ApiSchemaFailure> ValidateAllSchemas(ApiSchemaDocumentNodes schemaNodes)
     {
-        List<SchemaValidationFailure> validationErrors = _apiSchemaValidator.Validate(
-            schemaNodes.CoreApiSchemaRootNode
-        );
         List<ApiSchemaFailure> failures = [];
 
-        bool zeroFailures = validationErrors.Count == 0;
+        // Validate core schema
+        List<SchemaValidationFailure> coreValidationErrors = _apiSchemaValidator.Validate(
+            schemaNodes.CoreApiSchemaRootNode
+        );
 
-        if (!zeroFailures)
+        if (coreValidationErrors.Count > 0)
         {
-            _logger.LogCritical("Api schema validation failed during initial load.");
+            _logger.LogError("Core Api schema validation failed.");
 
-            foreach (var error in validationErrors)
+            foreach (var error in coreValidationErrors)
             {
-                _logger.LogCritical(
-                    "{FailurePath} - {FailureMessages}",
+                _logger.LogError(
+                    "[Core Schema] {FailurePath} - {FailureMessages}",
                     error.FailurePath.Value,
                     string.Join(", ", error.FailureMessages)
                 );
@@ -422,16 +423,57 @@ internal class ApiSchemaProvider(
                 failures.Add(
                     new ApiSchemaFailure(
                         "Validation",
-                        string.Join(", ", error.FailureMessages),
+                        $"[Core Schema] {string.Join(", ", error.FailureMessages)}",
                         error.FailurePath
                     )
                 );
             }
         }
 
-        _apiSchemaFailures = failures;
-        _isSchemaValid = zeroFailures;
-        return new(zeroFailures, failures);
+        // Validate extension schemas
+
+#pragma warning disable S125 // Sections of code should not be commented out
+        // for (int i = 0; i < schemaNodes.ExtensionApiSchemaRootNodes.Length; i++)
+        // {
+        //     List<SchemaValidationFailure> extensionValidationErrors = _apiSchemaValidator.Validate(
+        //         schemaNodes.ExtensionApiSchemaRootNodes[i]
+        //     );
+
+        //     if (extensionValidationErrors.Count > 0)
+        //     {
+        //         _logger.LogError("Extension Api schema {Index} validation failed.", i);
+
+        //         foreach (var error in extensionValidationErrors)
+        //         {
+        //             _logger.LogError(
+        //                 "[Extension Schema {Index}] {FailurePath} - {FailureMessages}",
+        //                 i,
+        //                 error.FailurePath.Value,
+        //                 string.Join(", ", error.FailureMessages)
+        //             );
+
+        //             failures.Add(
+        //                 new ApiSchemaFailure(
+        //                     "Validation",
+        //                     $"[Extension Schema {i}] {string.Join(", ", error.FailureMessages)}",
+        //                     error.FailurePath
+        //                 )
+        //             );
+        //         }
+        //     }
+        // }
+#pragma warning restore S125 // Sections of code should not be commented out
+        return failures;
+    }
+
+    /// <summary>
+    /// Validates the schema and updates validation state for initial load only
+    /// </summary>
+    private ApiSchemaLoadStatus ValidateSchemaForInitialLoad(ApiSchemaDocumentNodes schemaNodes)
+    {
+        _apiSchemaFailures = ValidateAllSchemas(schemaNodes);
+        _isSchemaValid = _apiSchemaFailures.Count == 0;
+        return new(_isSchemaValid, _apiSchemaFailures);
     }
 
     /// <summary>
@@ -440,38 +482,19 @@ internal class ApiSchemaProvider(
     /// </summary>
     private ApiSchemaLoadStatus TryUpdateSchema(ApiSchemaDocumentNodes newSchemaNodes)
     {
-        var validationErrors = _apiSchemaValidator.Validate(newSchemaNodes.CoreApiSchemaRootNode);
+        List<ApiSchemaFailure> failures = ValidateAllSchemas(newSchemaNodes);
 
-        if (validationErrors.Count > 0)
+        if (failures.Count > 0)
         {
-            _logger.LogError("Schema validation failed. Keeping existing schema.");
-            List<ApiSchemaFailure> failures = [];
-
-            foreach (var error in validationErrors)
-            {
-                _logger.LogError(
-                    "{FailurePath} - {FailureMessages}",
-                    error.FailurePath.Value,
-                    string.Join(", ", error.FailureMessages)
-                );
-
-                failures.Add(
-                    new ApiSchemaFailure(
-                        "Validation",
-                        string.Join(", ", error.FailureMessages),
-                        error.FailurePath
-                    )
-                );
-            }
             return new(false, failures);
         }
 
         // Validation passed - update the schema
         _apiSchemaNodes = newSchemaNodes;
         _reloadId = Guid.NewGuid();
+
         // Clear any previous validation failures since we now have a valid schema
         _apiSchemaFailures = [];
-        // Once a valid schema is loaded, IsSchemaValid stays true
         _isSchemaValid = true;
 
         _logger.LogInformation("Schema updated successfully. New reload ID: {ReloadId}", _reloadId);

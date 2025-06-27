@@ -63,11 +63,10 @@ public interface IApiService
     /// <summary>
     /// DMS entry point to reload the API schema from the configured source
     /// </summary>
-    /// <returns>Frontend response with appropriate status code</returns>
     public Task<IFrontendResponse> ReloadApiSchemaAsync();
 
     /// <summary>
-    /// DMS entry point to upload and reload API schemas from the provided content
+    /// DMS entry point to upload API schemas from the provided content
     /// </summary>
-    public Task<UploadSchemaResponse> UploadAndReloadApiSchemaAsync(UploadSchemaRequest request);
+    public Task<IFrontendResponse> UploadApiSchemaAsync(UploadSchemaRequest request);
 }

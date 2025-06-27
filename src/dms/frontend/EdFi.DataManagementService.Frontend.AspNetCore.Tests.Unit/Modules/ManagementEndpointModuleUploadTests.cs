@@ -3,12 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
@@ -34,23 +35,32 @@ public class ManagementEndpointModuleUploadTests
     {
         // Arrange
         var request = new UploadSchemaRequest(CoreSchema: """{"test": "schema"}""", ExtensionSchemas: null);
-        var successResponse = new UploadSchemaResponse(
-            Success: true,
-            ReloadId: Guid.NewGuid(),
-            SchemasProcessed: 1
-        );
+        var reloadId = Guid.NewGuid();
+        var successResponse = A.Fake<IFrontendResponse>();
+        A.CallTo(() => successResponse.StatusCode).Returns(200);
+        A.CallTo(() => successResponse.Body)
+            .Returns(
+                JsonNode.Parse(
+                    $$$"""
+                    {
+                        "message": "Schema uploaded successfully",
+                        "reloadId": "{{{reloadId}}}",
+                        "schemasProcessed": 1
+                    }
+                    """
+                )
+            );
 
-        A.CallTo(() => _apiService.UploadAndReloadApiSchemaAsync(request))
-            .Returns(Task.FromResult(successResponse));
+        A.CallTo(() => _apiService.UploadApiSchemaAsync(request)).Returns(Task.FromResult(successResponse));
 
         // Act
-        var result = await ManagementEndpointModule.UploadAndReloadApiSchema(request, _apiService, _logger);
+        var result = await ManagementEndpointModule.UploadApiSchema(request, _apiService, _logger);
 
         // Assert
-        result.Should().BeOfType<Ok<UploadSchemaResponse>>();
-        var okResult = (Ok<UploadSchemaResponse>)result;
-        okResult.StatusCode.Should().Be(200);
-        okResult.Value.Should().Be(successResponse);
+        result.Should().BeOfType<JsonHttpResult<JsonNode?>>();
+        var jsonResult = (JsonHttpResult<JsonNode?>)result;
+        jsonResult.StatusCode.Should().Be(200);
+        jsonResult.Value.Should().BeEquivalentTo(successResponse.Body);
     }
 
     [Test]
@@ -58,23 +68,20 @@ public class ManagementEndpointModuleUploadTests
     {
         // Arrange
         var request = new UploadSchemaRequest(CoreSchema: "", ExtensionSchemas: null);
-        var errorResponse = new UploadSchemaResponse(
-            Success: false,
-            ErrorMessage: "Invalid core schema",
-            IsValidationError: true
-        );
+        var errorResponse = A.Fake<IFrontendResponse>();
+        A.CallTo(() => errorResponse.StatusCode).Returns(400);
+        A.CallTo(() => errorResponse.Body).Returns(JsonNode.Parse("""{"error": "Invalid core schema"}"""));
 
-        A.CallTo(() => _apiService.UploadAndReloadApiSchemaAsync(request))
-            .Returns(Task.FromResult(errorResponse));
+        A.CallTo(() => _apiService.UploadApiSchemaAsync(request)).Returns(Task.FromResult(errorResponse));
 
         // Act
-        var result = await ManagementEndpointModule.UploadAndReloadApiSchema(request, _apiService, _logger);
+        var result = await ManagementEndpointModule.UploadApiSchema(request, _apiService, _logger);
 
         // Assert
-        result.Should().BeOfType<BadRequest<UploadSchemaResponse>>();
-        var badRequestResult = (BadRequest<UploadSchemaResponse>)result;
-        badRequestResult.StatusCode.Should().Be(400);
-        badRequestResult.Value.Should().Be(errorResponse);
+        result.Should().BeOfType<JsonHttpResult<JsonNode?>>();
+        var jsonResult = (JsonHttpResult<JsonNode?>)result;
+        jsonResult.StatusCode.Should().Be(400);
+        jsonResult.Value.Should().BeEquivalentTo(errorResponse.Body);
     }
 
     [Test]
@@ -82,17 +89,14 @@ public class ManagementEndpointModuleUploadTests
     {
         // Arrange
         var request = new UploadSchemaRequest(CoreSchema: """{"test": "schema"}""", ExtensionSchemas: null);
-        var errorResponse = new UploadSchemaResponse(
-            Success: false,
-            ErrorMessage: "Management endpoints are disabled",
-            IsManagementEndpointsDisabled: true
-        );
+        var errorResponse = A.Fake<IFrontendResponse>();
+        A.CallTo(() => errorResponse.StatusCode).Returns(404);
+        A.CallTo(() => errorResponse.Body).Returns((JsonNode?)null);
 
-        A.CallTo(() => _apiService.UploadAndReloadApiSchemaAsync(request))
-            .Returns(Task.FromResult(errorResponse));
+        A.CallTo(() => _apiService.UploadApiSchemaAsync(request)).Returns(Task.FromResult(errorResponse));
 
         // Act
-        var result = await ManagementEndpointModule.UploadAndReloadApiSchema(request, _apiService, _logger);
+        var result = await ManagementEndpointModule.UploadApiSchema(request, _apiService, _logger);
 
         // Assert
         result.Should().BeOfType<NotFound>();
@@ -105,19 +109,20 @@ public class ManagementEndpointModuleUploadTests
     {
         // Arrange
         var request = new UploadSchemaRequest(CoreSchema: """{"test": "schema"}""", ExtensionSchemas: null);
-        var errorResponse = new UploadSchemaResponse(Success: false, ErrorMessage: "Internal error");
+        var errorResponse = A.Fake<IFrontendResponse>();
+        A.CallTo(() => errorResponse.StatusCode).Returns(500);
+        A.CallTo(() => errorResponse.Body).Returns(JsonNode.Parse("""{"error": "Internal error"}"""));
 
-        A.CallTo(() => _apiService.UploadAndReloadApiSchemaAsync(request))
-            .Returns(Task.FromResult(errorResponse));
+        A.CallTo(() => _apiService.UploadApiSchemaAsync(request)).Returns(Task.FromResult(errorResponse));
 
         // Act
-        var result = await ManagementEndpointModule.UploadAndReloadApiSchema(request, _apiService, _logger);
+        var result = await ManagementEndpointModule.UploadApiSchema(request, _apiService, _logger);
 
         // Assert
-        result.Should().BeOfType<JsonHttpResult<UploadSchemaResponse>>();
-        var jsonResult = (JsonHttpResult<UploadSchemaResponse>)result;
+        result.Should().BeOfType<JsonHttpResult<JsonNode?>>();
+        var jsonResult = (JsonHttpResult<JsonNode?>)result;
         jsonResult.StatusCode.Should().Be(500);
-        jsonResult.Value.Should().Be(errorResponse);
+        jsonResult.Value.Should().BeEquivalentTo(errorResponse.Body);
     }
 
     [Test]
@@ -125,13 +130,15 @@ public class ManagementEndpointModuleUploadTests
     {
         // Arrange
         var request = new UploadSchemaRequest(CoreSchema: """{"test": "schema"}""", ExtensionSchemas: null);
-        var successResponse = new UploadSchemaResponse(Success: true);
+        var successResponse = A.Fake<IFrontendResponse>();
+        A.CallTo(() => successResponse.StatusCode).Returns(200);
+        A.CallTo(() => successResponse.Body)
+            .Returns(JsonNode.Parse("""{"message": "Schema uploaded successfully"}"""));
 
-        A.CallTo(() => _apiService.UploadAndReloadApiSchemaAsync(request))
-            .Returns(Task.FromResult(successResponse));
+        A.CallTo(() => _apiService.UploadApiSchemaAsync(request)).Returns(Task.FromResult(successResponse));
 
         // Act
-        await ManagementEndpointModule.UploadAndReloadApiSchema(request, _apiService, _logger);
+        await ManagementEndpointModule.UploadApiSchema(request, _apiService, _logger);
 
         // Assert
         A.CallTo(_logger)
@@ -140,7 +147,7 @@ public class ManagementEndpointModuleUploadTests
                 && call.GetArgument<LogLevel>(0) == LogLevel.Information
                 && call.GetArgument<object>(2)!
                     .ToString()!
-                    .Contains("Schema upload and reload requested via management endpoint")
+                    .Contains("Schema upload requested via management endpoint")
             )
             .MustHaveHappenedOnceExactly();
     }
@@ -150,18 +157,18 @@ public class ManagementEndpointModuleUploadTests
     {
         // Arrange
         var request = new UploadSchemaRequest(CoreSchema: """{"test": "schema"}""", ExtensionSchemas: null);
-        var errorResponse = new UploadSchemaResponse(Success: false, ErrorMessage: "Service unavailable");
+        var errorResponse = A.Fake<IFrontendResponse>();
+        A.CallTo(() => errorResponse.StatusCode).Returns(503);
+        A.CallTo(() => errorResponse.Body).Returns(JsonNode.Parse("""{"error": "Service unavailable"}"""));
 
-        A.CallTo(() => _apiService.UploadAndReloadApiSchemaAsync(request))
-            .Returns(Task.FromResult(errorResponse));
+        A.CallTo(() => _apiService.UploadApiSchemaAsync(request)).Returns(Task.FromResult(errorResponse));
 
         // Act
-        var result = await ManagementEndpointModule.UploadAndReloadApiSchema(request, _apiService, _logger);
+        var result = await ManagementEndpointModule.UploadApiSchema(request, _apiService, _logger);
 
         // Assert
-        result.Should().BeOfType<JsonHttpResult<UploadSchemaResponse>>();
-        var jsonResult = (JsonHttpResult<UploadSchemaResponse>)result;
-        jsonResult.StatusCode.Should().Be(500);
-        jsonResult.Value.Should().Be(errorResponse);
+        result.Should().BeOfType<StatusCodeHttpResult>();
+        var statusResult = (StatusCodeHttpResult)result;
+        statusResult.StatusCode.Should().Be(503);
     }
 }

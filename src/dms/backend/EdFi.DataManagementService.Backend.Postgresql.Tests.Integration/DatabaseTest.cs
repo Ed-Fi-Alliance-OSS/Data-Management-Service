@@ -162,19 +162,19 @@ public abstract class DatabaseTest : DatabaseTestBase
 
         public static Guid SchemaVersion => Guid.Empty;
 
-        public Task<(bool Success, List<ApiSchemaFailure> Failures)> ReloadApiSchemaAsync()
+        public Task<ApiSchemaLoadStatus> ReloadApiSchemaAsync()
         {
             // Not needed for tests - just return success
-            return Task.FromResult<(bool Success, List<ApiSchemaFailure> Failures)>((true, []));
+            return Task.FromResult<ApiSchemaLoadStatus>(new(true, []));
         }
 
-        public Task<(bool Success, List<ApiSchemaFailure> Failures)> LoadApiSchemaFromAsync(
+        public Task<ApiSchemaLoadStatus> LoadApiSchemaFromAsync(
             JsonNode coreSchema,
             JsonNode[] extensionSchemas
         )
         {
             // Not needed for tests - just return success
-            return Task.FromResult<(bool Success, List<ApiSchemaFailure> Failures)>((true, []));
+            return Task.FromResult<ApiSchemaLoadStatus>(new(true, []));
         }
 
         public Guid ReloadId => Guid.Empty;

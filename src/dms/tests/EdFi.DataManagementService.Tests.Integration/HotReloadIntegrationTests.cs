@@ -113,7 +113,7 @@ public class HotReloadIntegrationTests
         await WriteSchemaToDirectory(updatedSchema);
 
         // Act 3 - Trigger hot reload
-        var reloadResponse = await _client.PostAsync("/management/reload-schema", null);
+        var reloadResponse = await _client.PostAsync("/management/reload-api-schema", null);
         reloadResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // Act 4 - Verify updated schema is reflected
@@ -159,7 +159,7 @@ public class HotReloadIntegrationTests
         }
 
         // Trigger reload in the middle
-        tasks.Add(_client.PostAsync("/management/reload-schema", null));
+        tasks.Add(_client.PostAsync("/management/reload-api-schema", null));
 
         // More requests after reload
         for (int i = 0; i < 20; i++)
@@ -177,11 +177,11 @@ public class HotReloadIntegrationTests
         // Assert - All requests should complete without errors
         responses.Should().HaveCount(41); // 40 POST requests + 1 reload
         responses
-            .Where(r => r.RequestMessage?.RequestUri?.ToString().Contains("reload-schema") ?? false)
+            .Where(r => r.RequestMessage?.RequestUri?.ToString().Contains("reload-api-schema") ?? false)
             .Should()
             .OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
         responses
-            .Where(r => !(r.RequestMessage?.RequestUri?.ToString().Contains("reload-schema") ?? false))
+            .Where(r => !(r.RequestMessage?.RequestUri?.ToString().Contains("reload-api-schema") ?? false))
             .Should()
             .OnlyContain(r =>
                 r.StatusCode == HttpStatusCode.Created || r.StatusCode == HttpStatusCode.BadRequest
@@ -231,7 +231,7 @@ public class HotReloadIntegrationTests
         {
             await WriteSchemaToDirectory(schema);
 
-            var reloadResponse = await _client.PostAsync("/management/reload-schema", null);
+            var reloadResponse = await _client.PostAsync("/management/reload-api-schema", null);
             reloadResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             // Get OpenAPI spec to verify schema version
@@ -269,7 +269,7 @@ public class HotReloadIntegrationTests
         await File.WriteAllTextAsync(invalidSchemaPath, "{ invalid json");
 
         // Try to reload
-        var reloadResponse = await _client.PostAsync("/management/reload-schema", null);
+        var reloadResponse = await _client.PostAsync("/management/reload-api-schema", null);
         reloadResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         // Assert - Original schema should still work
@@ -301,7 +301,7 @@ public class HotReloadIntegrationTests
         await File.WriteAllTextAsync(schemaPath, incompleteSchemaJson!.ToJsonString());
 
         // Act - Try to reload
-        var reloadResponse = await _client.PostAsync("/management/reload-schema", null);
+        var reloadResponse = await _client.PostAsync("/management/reload-api-schema", null);
 
         // Assert - Should handle gracefully
         reloadResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);

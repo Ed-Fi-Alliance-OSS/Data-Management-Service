@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
@@ -37,11 +38,11 @@ public interface IApiSchemaProvider
     /// Reloads the API schema from the configured source
     /// </summary>
     /// <returns>Success status and any failures that occurred</returns>
-    Task<ApiSchemaLoadStatus> ReloadApiSchemaAsync();
+    public Task<ApiSchemaLoadStatus> ReloadApiSchemaAsync();
 
     /// <summary>
     /// Loads API schemas from the provided JSON nodes
     /// </summary>
     /// <returns>Success status and any failures that occurred</returns>
-    Task<ApiSchemaLoadStatus> LoadApiSchemaFromAsync(JsonNode coreSchema, JsonNode[] extensionSchemas);
+    public Task<ApiSchemaLoadStatus> LoadApiSchemaFromAsync(JsonNode coreSchema, JsonNode[] extensionSchemas);
 }

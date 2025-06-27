@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 internal interface IUploadApiSchemaService
 {
     /// <summary>
-    /// Uploads and reloads API schemas from the provided request
+    /// Upload API schemas from the provided request
     /// </summary>
     Task<UploadSchemaResponse> UploadApiSchemaAsync(UploadSchemaRequest request);
 }
@@ -32,7 +32,7 @@ internal class UploadApiSchemaService(
 ) : IUploadApiSchemaService
 {
     /// <summary>
-    /// Uploads and reloads API schemas from the provided request
+    /// Upload API schemas from the provided request
     /// </summary>
     public async Task<UploadSchemaResponse> UploadApiSchemaAsync(UploadSchemaRequest request)
     {
@@ -82,7 +82,7 @@ internal class UploadApiSchemaService(
                 );
             }
 
-            List<JsonNode> extensionSchemaNodes = new();
+            List<JsonNode> extensionSchemaNodes = [];
             if (request.ExtensionSchemas != null)
             {
                 for (int i = 0; i < request.ExtensionSchemas.Length; i++)
@@ -138,7 +138,8 @@ internal class UploadApiSchemaService(
                     Success: false,
                     ErrorMessage: errorMessage,
                     SchemasProcessed: 0,
-                    IsValidationError: isValidationError
+                    IsValidationError: isValidationError,
+                    Failures: failures
                 );
             }
         }

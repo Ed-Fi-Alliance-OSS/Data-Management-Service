@@ -157,7 +157,7 @@ public class SyntheticSchemaStepDefinitions
 
         // Call the upload endpoint
         var apiContext = _playwrightContext.ApiRequestContext!;
-        var uploadUrl = $"{_playwrightContext.ApiUrl.TrimEnd('/')}/management/upload-and-reload-schema";
+        var uploadUrl = $"{_playwrightContext.ApiUrl.TrimEnd('/')}/management/upload-api-schema";
 
         _logger.log.Information($"Calling schema upload endpoint at {uploadUrl}");
 

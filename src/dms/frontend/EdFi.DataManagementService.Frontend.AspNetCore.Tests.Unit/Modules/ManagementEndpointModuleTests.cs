@@ -94,7 +94,7 @@ public class ManagementEndpointModuleTests
             using var client = factory.CreateClient();
 
             // Act
-            var response = await client.PostAsync("/management/reload-schema", null);
+            var response = await client.PostAsync("/management/reload-api-schema", null);
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -135,7 +135,7 @@ public class ManagementEndpointModuleTests
             using var client = factory.CreateClient();
 
             // Act
-            var response = await client.PostAsync("/management/reload-schema", null);
+            var response = await client.PostAsync("/management/reload-api-schema", null);
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -319,7 +319,7 @@ public class ManagementEndpointModuleTests
             using var client = factory.CreateClient();
 
             // Act
-            var response = await client.PostAsync("/management/reload-schema", null);
+            var response = await client.PostAsync("/management/reload-api-schema", null);
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -376,7 +376,7 @@ public class ManagementEndpointModuleTests
             using var client = factory.CreateClient();
 
             // Act
-            var response = await client.PostAsync("/management/reload-schema", null);
+            var response = await client.PostAsync("/management/reload-api-schema", null);
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);

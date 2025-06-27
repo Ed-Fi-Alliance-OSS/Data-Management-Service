@@ -373,6 +373,8 @@ public class VersionedLazyTests
                             currentVersion = Guid.NewGuid();
                         }
                     }
+                    // Add a small delay to ensure readers can see the final version
+                    await Task.Delay(10);
                     await cts.CancelAsync();
                 })
             );
