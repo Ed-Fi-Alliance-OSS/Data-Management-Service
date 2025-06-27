@@ -40,17 +40,15 @@ fi
 if [ "$USE_API_SCHEMA_PATH" = true ]; then
     echo "Using Api Schema Path."
 
-    echo "Downloading Package ${CORE_PACKAGE}..."
-    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${CORE_PACKAGE} -d ${API_SCHEMA_PATH} -v ${CORE_PACKAGE_VERSION}
+    echo "$SCHEMA_PACKAGES" | jq -c '.[]' | while read -r item
+    do
+        version=$(echo "$item" | jq -r '.version')
+        feedUrl=$(echo "$item" | jq -r '.feedUrl')
+        name=$(echo "$item" | jq -r '.name')
 
-    echo "Downloading Package ${TPDM_PACKAGE}..."
-    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${TPDM_PACKAGE} -d ${API_SCHEMA_PATH} -v ${TPDM_PACKAGE_VERSION}
-
-    echo "Downloading Package ${SAMPLE_PACKAGE}..."
-    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${SAMPLE_PACKAGE} -d ${API_SCHEMA_PATH} -v ${SAMPLE_PACKAGE_VERSION}
-
-    echo "Downloading Package ${HOMOGRAPH_PACKAGE}..."
-    dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p ${HOMOGRAPH_PACKAGE} -d ${API_SCHEMA_PATH} -v ${HOMOGRAPH_PACKAGE_VERSION}
+        echo "Downloading Package $name..."
+        dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p $name -d ${API_SCHEMA_PATH} -v $version -f $feedUrl
+    done
 fi
 
 echo "Running EdFi.DataManagementService.Frontend.AspNetCore..."

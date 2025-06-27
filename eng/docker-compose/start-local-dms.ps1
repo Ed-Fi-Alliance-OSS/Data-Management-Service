@@ -39,8 +39,22 @@ param (
 
     # Load seed data using database template package
     [Switch]
-    $LoadSeedData
+    $LoadSeedData,
+
+    # Add extension security metadata
+    [Switch]
+    $AddExtensionSecurityMetadata
 )
+
+
+if($AddExtensionSecurityMetadata)
+{
+    Import-Module ./setup-extension-security-metadata.psm1 -Force
+    AddExtensionSecurityMetadata -EnvironmentFile $EnvironmentFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to set up extension security metadata, with exit code $LASTEXITCODE."
+    }
+}
 
 $files = @(
     "-f",
