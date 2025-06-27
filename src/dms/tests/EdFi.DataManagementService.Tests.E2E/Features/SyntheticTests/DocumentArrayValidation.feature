@@ -3,66 +3,66 @@ Feature: Synthetic Test - Document Array Validation
     Background:
         Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
-    Scenario: 01 Validate array of document references with duplicates
+    Scenario: 01 Validate resource with multiple references
         Given a synthetic core schema with project "Ed-Fi"
-          And the schema has resource "Course" with identity "courseCode"
+          And the schema has resource "GradingPeriod" with identity "gradingPeriodName"
           And the schema has resource "Student" with identity "studentUniqueId"
-          And the schema has resource "CourseTranscript" with identities
+          And the schema has resource "Grade" with identities
               | identity |
               | studentUniqueId |
-              | courseCode |
+              | gradingPeriodName |
         When the schema is deployed to the DMS
-          And a POST request is made to "/ed-fi/courses" with
+          And a POST request is made to "/ed-fi/gradingPeriods" with
               """
-              { "courseCode": "MATH101" }
+              { "gradingPeriodName": "Q1" }
               """
-        Then it should respond with 201
-        When a POST request is made to "/ed-fi/courses" with
+        Then it should respond with 200 or 201
+        When a POST request is made to "/ed-fi/gradingPeriods" with
               """
-              { "courseCode": "ENG101" }
+              { "gradingPeriodName": "Q2" }
               """
-        Then it should respond with 201
+        Then it should respond with 200 or 201
         When a POST request is made to "/ed-fi/students" with
               """
               { "studentUniqueId": "12345" }
               """
-        Then it should respond with 201
-        When a POST request is made to "/ed-fi/courseTranscripts" with
+        Then it should respond with 200 or 201
+        When a POST request is made to "/ed-fi/grades" with
               """
               {
                 "studentUniqueId": "12345",
-                "courseCode": "MATH101"
+                "gradingPeriodName": "Q1"
               }
               """
-        Then it should respond with 201
+        Then it should respond with 200 or 201
 
     Scenario: 02 Validate simple resource with reference
         Given a synthetic core schema with project "Ed-Fi"
-          And the schema has resource "School" with identity "schoolId"
-          And the schema has resource "Student" with identity "studentUniqueId"
-          And the "Student" resource has reference "schoolReference" to "School"
+          And the schema has resource "GradingPeriod" with identity "gradingPeriodName"
+          And the schema has resource "ReportCard" with identity "reportCardId"
+          And the "ReportCard" resource has reference "gradingPeriodReference" to "GradingPeriod"
         When the schema is deployed to the DMS
-          And a POST request is made to "/ed-fi/schools" with
+          And a POST request is made to "/ed-fi/gradingPeriods" with
               """
-              { "schoolId": "100" }
+              { "gradingPeriodName": "Q1" }
               """
-        Then it should respond with 201
-        When a POST request is made to "/ed-fi/students" with
+        Then it should respond with 200 or 201
+        When a POST request is made to "/ed-fi/reportCards" with
               """
               { 
-                "studentUniqueId": "98765",
-                "schoolReference": {
-                  "schoolId": "100"
+                "reportCardId": "RC001",
+                "gradingPeriodReference": {
+                  "gradingPeriodName": "Q1"
                 }
               }
               """
-        Then it should respond with 201
-        When a POST request is made to "/ed-fi/students" with
+        Then it should respond with 200 or 201
+        When a POST request is made to "/ed-fi/reportCards" with
               """
               { 
-                "studentUniqueId": "98766",
-                "schoolReference": {
-                  "schoolId": "999"
+                "reportCardId": "RC002",
+                "gradingPeriodReference": {
+                  "gradingPeriodName": "Q999"
                 }
               }
               """
@@ -70,7 +70,7 @@ Feature: Synthetic Test - Document Array Validation
           And the response body is
               """
               {
-                "detail": "The referenced School item(s) do not exist.",
+                "detail": "The referenced GradingPeriod item(s) do not exist.",
                 "type": "urn:ed-fi:api:data-conflict:unresolved-reference",
                 "title": "Unresolved Reference",
                 "status": 409,

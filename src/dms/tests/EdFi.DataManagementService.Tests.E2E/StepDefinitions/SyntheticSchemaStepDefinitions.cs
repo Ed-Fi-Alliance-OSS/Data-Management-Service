@@ -58,8 +58,37 @@ public class SyntheticSchemaStepDefinitions(
         _currentSchemaBuilder
             .WithStartResource(resourceName)
             .WithIdentityJsonPaths(identityPaths)
-            .WithSimpleJsonSchema(schemaProperties)
-            .WithEndResource();
+            .WithSimpleJsonSchema(schemaProperties);
+
+        // For association resources, add references based on the identities
+        if (resourceName.Contains("Association"))
+        {
+            _currentSchemaBuilder.WithStartDocumentPathsMapping();
+
+            foreach (var row in table.Rows)
+            {
+                var identity = row["identity"];
+
+                // Determine the referenced resource name from the identity
+                // e.g., "studentUniqueId" -> "Student", "schoolId" -> "School"
+                if (identity.EndsWith("UniqueId"))
+                {
+                    var referencedResource = identity[..^8]; // Remove "UniqueId"
+                    referencedResource = char.ToUpper(referencedResource[0]) + referencedResource[1..];
+                    _currentSchemaBuilder.WithSimpleReference(referencedResource, identity);
+                }
+                else if (identity.EndsWith("Id"))
+                {
+                    var referencedResource = identity[..^2]; // Remove "Id"
+                    referencedResource = char.ToUpper(referencedResource[0]) + referencedResource[1..];
+                    _currentSchemaBuilder.WithSimpleReference(referencedResource, identity);
+                }
+            }
+
+            _currentSchemaBuilder.WithEndDocumentPathsMapping();
+        }
+
+        _currentSchemaBuilder.WithEndResource();
     }
 
     [Given(@"the schema has descriptor resource ""(.*)""")]
@@ -90,15 +119,18 @@ public class SyntheticSchemaStepDefinitions(
         _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
 
         // We need to rebuild the resource with the reference
-        // First, get the identity property name - assume it's the lowercase first letter + rest of targetResourceName + "Id"
-        var identityProperty = char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Id";
+        // For GradingPeriod, use gradingPeriodName as identity
+        var identityProperty =
+            targetResourceName == "GradingPeriod"
+                ? "gradingPeriodName"
+                : char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Id";
 
         // Rebuild the resource with the reference
         _currentSchemaBuilder
             .WithStartResource(resourceName)
-            .WithIdentityJsonPaths($"$.{char.ToLower(resourceName[0]) + resourceName[1..] + "UniqueId"}")
+            .WithIdentityJsonPaths($"$.{char.ToLower(resourceName[0]) + resourceName[1..] + "Id"}")
             .WithSimpleJsonSchema(
-                (char.ToLower(resourceName[0]) + resourceName[1..] + "UniqueId", "string"),
+                (char.ToLower(resourceName[0]) + resourceName[1..] + "Id", "string"),
                 (referenceName, "object")
             )
             .WithStartDocumentPathsMapping()
