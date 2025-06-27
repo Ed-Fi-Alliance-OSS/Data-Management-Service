@@ -77,3 +77,21 @@ dotnet run --no-launch-profile --command Transform --input input1.json;input2.js
   in `dmscs.claimshierarchy` table [Claims Hierarchy Script](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0011_Insert_ClaimsHierarchy.sql)
 * Add new ClaimSet details to VALUES [Insert
   ClaimSets](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql/Deploy/Scripts/0010_Insert_Claimset.sql)
+
+## Steps for Adding Extension-Specific Security Metadata to Hierarchy JSON
+
+### Define Your Extension Resource Claims
+
+  Create or update your extension’s resource claims in a JSON file (e.g., SampleExtensionResourceClaims.json).
+
+### Transform Claims into Authorization Hierarchy
+
+  Follow the [Steps for Adding the ClaimSet as Claims to Hierarchy
+  JSON](#steps-for-adding-the-claimset-as-claims-to-hierarchy-json) to transform
+  the files in to authorization hierarchy.
+  
+> [!NOTE]
+> By default, all E2E*.json files (such as E2E-ExtensionsClaimSet.json) must be
+  included along with your extension claims file (e.g.,
+  SampleExtensionResourceClaims.json) as input when running the application.
+  These files are required to support the execution of end-to-end (E2E) tests.

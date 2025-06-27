@@ -106,7 +106,8 @@ Search engine type. Valid values are `OpenSearch`, `ElasticSearch`. Default: `Op
 ./start-local-dms.ps1 -SearchEngine "ElasticSearch"
 ```
 
-You can launch Swagger UI as part of your local environment to explore DMS endpoints from your browser.
+You can launch Swagger UI as part of your local environment to explore DMS
+endpoints from your browser.
 
 ```pwsh
 # To enable Swagger UI
@@ -125,6 +126,27 @@ image from source code.
 ./start-local-dms.ps1 -r
 ```
 
+You can automatically include extension-specific metadata in the authorization
+hierarchy to enable authorization for your extension resources.
+
+> [!NOTE]
+> **Update the SCHEMA_PACKAGES Environment Variable:**
+> In your .env file, add or update the SCHEMA_PACKAGES variable to include your
+extension package.
+
+```env
+ SCHEMA_PACKAGES='[{
+    "version": "1.0.221",
+    "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
+    "name": "EdFi.Sample.ApiSchema",
+    "extensionName": "Sample"
+  }]'
+```
+
+```pwsh
+./start-local-dms.ps1 -AddExtensionSecurityMetadata
+```
+
 ## Default URLs
 
 * The DMS API: [http://localhost:8080](http://localhost:8080)
@@ -133,11 +155,16 @@ image from source code.
 * Swagger UI: [http://localhost:8082](http://localhost:8082)
 
 ## Accessing Swagger UI
-Open your browser and go to http://localhost:8082
-Use the dropdown menu to select either the Resources or Descriptors spec.
-Swagger UI is configured to consume the DMS endpoints published on the host (localhost and the port defined in DMS_HTTP_PORTS).
-[!NOTE]
-> The user that is configured to use swagger must have the Web Origins configuration in Keycloak to allow CORS. To do this you must search for your Client in keycloak and add Web Origins (Example: Web origins: http://localhost:8082).
+
+Open your browser and go to <http://localhost:8082> Use the dropdown menu to
+select either the Resources or Descriptors spec. Swagger UI is configured to
+consume the DMS endpoints published on the host (localhost and the port defined
+in DMS_HTTP_PORTS).
+>[!NOTE]
+> The user that is configured to use swagger must have the Web Origins
+> configuration in Keycloak to allow CORS. To do this you must search for your
+> Client in keycloak and add Web Origins (Example: Web origins:
+> <http://localhost:8082>).
 
 ## Tips
 
