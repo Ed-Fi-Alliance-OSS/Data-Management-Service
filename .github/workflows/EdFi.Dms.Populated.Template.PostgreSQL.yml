@@ -25,6 +25,11 @@ jobs:
         shell: pwsh
 
     steps:
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        with:
+          detached: true
+
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -46,6 +51,7 @@ jobs:
       - name: Start DMS Docker
         run: |
           $env:USE_API_SCHEMA_PATH="false"
+          $env:LOG_LEVEL="WARNING"
           ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -enableConfig
         working-directory: eng/docker-compose/
 
@@ -66,12 +72,26 @@ jobs:
                   -PackageVersion $packageVersion
         working-directory: eng/DatabaseTemplates/
 
+      - name: Export Docker Logs
+        if: success() || failure()
+        run: |
+          $logDir = "${{ github.workspace }}/logs"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          docker ps --format "{{.Names}}" | ForEach-Object {
+              $container = $_
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath
+          }
+        shell: pwsh
+
       - name: Upload Logs
-        if: failure()
+        if: success() || failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: Bulkload-logs
-          path: ${{ github.workspace }}/eng/DatabaseTemplates/.packages/**/logfile.txt
+          name: ${{matrix.queryhandler}}-test-logs
+          path: |
+            ${{ github.workspace }}/logs
           retention-days: 10
 
       - name: Upload Populated Template Package as Artifact
