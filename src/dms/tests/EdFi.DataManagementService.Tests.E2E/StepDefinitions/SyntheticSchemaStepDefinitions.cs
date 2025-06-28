@@ -119,7 +119,7 @@ public class SyntheticSchemaStepDefinitions(
         _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
 
         // We need to rebuild the resource with the reference
-        // For GradingPeriod, use gradingPeriodName as identity
+        // TODO: For now with GradingPeriod, use gradingPeriodName as identity
         var identityProperty =
             targetResourceName == "GradingPeriod"
                 ? "gradingPeriodName"
