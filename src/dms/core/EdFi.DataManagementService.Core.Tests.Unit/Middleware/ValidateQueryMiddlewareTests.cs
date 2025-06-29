@@ -188,7 +188,7 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewPipelineContext(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
         {
             RequestData docRefContext = new(frontendRequest, method)
             {
@@ -245,7 +245,7 @@ public class ValidateQueryMiddlewareTests
                 )
             );
 
-            _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
+            _context = NewRequestData(frontendRequest, RequestMethod.GET);
 
             await Middleware().Execute(_context, NullNext);
         }
@@ -337,7 +337,7 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewPipelineContext(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
         {
             RequestData docRefContext = new(frontendRequest, method)
             {
@@ -394,7 +394,7 @@ public class ValidateQueryMiddlewareTests
                 )
             );
 
-            _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
+            _context = NewRequestData(frontendRequest, RequestMethod.GET);
 
             await Middleware().Execute(_context, NullNext);
         }
@@ -427,7 +427,7 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewPipelineContext(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
         {
             RequestData docRefContext = new(frontendRequest, method)
             {
@@ -476,7 +476,7 @@ public class ValidateQueryMiddlewareTests
                 )
             );
 
-            _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
+            _context = NewRequestData(frontendRequest, RequestMethod.GET);
 
             await Middleware().Execute(_context, NullNext);
         }
@@ -510,7 +510,7 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewPipelineContext(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
         {
             RequestData docRefContext = new(frontendRequest, method)
             {
@@ -562,7 +562,7 @@ public class ValidateQueryMiddlewareTests
                 )
             );
 
-            _context = NewPipelineContext(frontendRequest, RequestMethod.GET);
+            _context = NewRequestData(frontendRequest, RequestMethod.GET);
 
             await Middleware().Execute(_context, NullNext);
         }

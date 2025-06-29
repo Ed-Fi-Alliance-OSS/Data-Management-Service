@@ -12,7 +12,6 @@ namespace EdFi.DataManagementService.Core.External.Model;
 /// <param name="ErrorMessage">Error message if upload failed</param>
 /// <param name="SchemasProcessed">Number of schemas processed (core + extensions)</param>
 /// <param name="ReloadId">Unique identifier for this reload operation</param>
-/// <param name="IsManagementEndpointsDisabled">Indicates if the failure was due to management endpoints being disabled</param>
 /// <param name="IsValidationError">Indicates if the failure was due to validation errors (invalid JSON, missing required fields, etc.)</param>
 /// <param name="Failures">List of all API schema failures that occurred during the upload</param>
 public record UploadSchemaResponse(
@@ -20,7 +19,6 @@ public record UploadSchemaResponse(
     string? ErrorMessage = null,
     int SchemasProcessed = 0,
     Guid? ReloadId = null,
-    bool IsManagementEndpointsDisabled = false,
     bool IsValidationError = false,
     List<ApiSchemaFailure>? Failures = null
 );

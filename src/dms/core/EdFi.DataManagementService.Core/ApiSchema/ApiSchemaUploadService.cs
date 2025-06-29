@@ -28,9 +28,7 @@ internal interface IUploadApiSchemaService
 internal class UploadApiSchemaService(
     IApiSchemaProvider apiSchemaProvider,
     ILogger<UploadApiSchemaService> logger,
-#pragma warning disable CS9113 // Parameter is unread.
     IOptions<AppSettings> appSettings
-#pragma warning restore CS9113 // Parameter is unread.
 ) : IUploadApiSchemaService
 {
     /// <summary>
@@ -39,19 +37,16 @@ internal class UploadApiSchemaService(
     public async Task<UploadSchemaResponse> UploadApiSchemaAsync(UploadSchemaRequest request)
     {
         // Check if management endpoints are enabled
-        // TEMPORARY: Commenting out to always enable management endpoints for testing
-#pragma warning disable S125 // Sections of code should not be commented out
-        // if (!appSettings.Value.EnableManagementEndpoints)
-        // {
-        //     logger.LogWarning("ApiSchema upload requested but management endpoints are disabled");
-        //     return new UploadSchemaResponse(
-        //         Success: false,
-        //         ErrorMessage: "Management endpoints are disabled",
-        //         SchemasProcessed: 0,
-        //         IsManagementEndpointsDisabled: true
-        //     );
-        // }
-#pragma warning restore S125 // Sections of code should not be commented out
+        if (!appSettings.Value.EnableManagementEndpoints)
+        {
+            logger.LogWarning("ApiSchema upload requested but management endpoints are disabled");
+            return new UploadSchemaResponse(
+                Success: false,
+                ErrorMessage: "Management endpoints are disabled",
+                SchemasProcessed: 0
+            );
+        }
+
         try
         {
             logger.LogInformation("Processing ApiSchema upload request");

@@ -71,7 +71,7 @@ internal class ApiSchemaProvider(
     /// Finds and reads all *.ApiSchema.json files in the given directory path.
     /// Returns the parsed files as JsonNodes
     /// </summary>
-    private (List<JsonNode>? Nodes, List<ApiSchemaFailure> Failures) ReadApiSchemaFiles(string directoryPath)
+    public (List<JsonNode>? Nodes, List<ApiSchemaFailure> Failures) ReadApiSchemaFiles(string directoryPath)
     {
         List<JsonNode> fileContents = [];
         List<ApiSchemaFailure> failures = [];
@@ -463,6 +463,7 @@ internal class ApiSchemaProvider(
         //     }
         // }
 #pragma warning restore S125 // Sections of code should not be commented out
+
         return failures;
     }
 

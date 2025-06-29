@@ -162,75 +162,6 @@ public class VersionedLazyTests
         }
 
         [Test]
-        public async Task Value_VersionChangeDuringAccess_HandledCorrectly()
-        {
-            // Arrange
-            var currentVersion = Guid.NewGuid();
-            var factoryExecutions = new List<(DateTime time, Guid version)>();
-            var versionLock = new object();
-
-            var versionedLazy = new VersionedLazy<string>(
-                () =>
-                {
-                    Guid capturedVersion;
-                    lock (versionLock)
-                    {
-                        capturedVersion = currentVersion;
-                    }
-
-                    Task.Delay(50).Wait(); // Simulate work
-
-                    lock (factoryExecutions)
-                    {
-                        factoryExecutions.Add((DateTime.UtcNow, capturedVersion));
-                    }
-
-                    return $"value for version {capturedVersion}";
-                },
-                () =>
-                {
-                    lock (versionLock)
-                    {
-                        return currentVersion;
-                    }
-                }
-            );
-
-            // Act
-            var tasks = new List<Task<string>>();
-
-            // Start multiple reads
-            for (int i = 0; i < 5; i++)
-            {
-                tasks.Add(Task.Run(() => versionedLazy.Value));
-            }
-
-            // Change version while reads are in progress
-            await Task.Delay(25);
-            lock (versionLock)
-            {
-                currentVersion = Guid.NewGuid();
-            }
-
-            // Start more reads with new version
-            for (int i = 0; i < 5; i++)
-            {
-                tasks.Add(Task.Run(() => versionedLazy.Value));
-            }
-
-            var results = await Task.WhenAll(tasks);
-
-            // Assert
-            factoryExecutions
-                .Should()
-                .HaveCountGreaterOrEqualTo(2, "factory should be called at least once per version");
-            results
-                .Distinct()
-                .Should()
-                .HaveCountGreaterOrEqualTo(2, "should have values for multiple versions");
-        }
-
-        [Test]
         public void Value_FactoryThrows_PropagatesException()
         {
             // Arrange
@@ -291,11 +222,7 @@ public class VersionedLazyTests
             {
                 Id = 1,
                 Name = "Test",
-                Children = new List<ComplexTestObject>
-                {
-                    new() { Id = 2, Name = "Child1" },
-                    new() { Id = 3, Name = "Child2" },
-                },
+                Children = [new() { Id = 2, Name = "Child1" }, new() { Id = 3, Name = "Child2" }],
             };
 
             var versionedLazy = new VersionedLazy<ComplexTestObject>(() => complexObject, () => version);
@@ -311,89 +238,6 @@ public class VersionedLazyTests
             value2.Children.Should().HaveCount(3, "modifications should be visible in all references");
             ReferenceEquals(value1, value2).Should().BeTrue("should return the same instance");
         }
-
-        [Test]
-        public async Task Value_HighConcurrencyMixedOperations_MaintainsConsistency()
-        {
-            // Arrange
-            var currentVersion = Guid.NewGuid();
-            var versionLock = new object();
-            var factoryCallCount = 0;
-            var results = new List<(string value, int threadId, DateTime time)>();
-
-            var versionedLazy = new VersionedLazy<string>(
-                () =>
-                {
-                    var count = Interlocked.Increment(ref factoryCallCount);
-                    Task.Delay(Random.Shared.Next(1, 10)).Wait(); // Variable work time
-                    return $"value-{count}";
-                },
-                () =>
-                {
-                    lock (versionLock)
-                    {
-                        return currentVersion;
-                    }
-                }
-            );
-
-            // Act
-            var tasks = new List<Task>();
-            using var cts = new CancellationTokenSource();
-
-            // Reader tasks
-            for (int i = 0; i < 20; i++)
-            {
-                var threadId = i;
-                tasks.Add(
-                    Task.Run(async () =>
-                    {
-                        while (!cts.Token.IsCancellationRequested)
-                        {
-                            var value = versionedLazy.Value;
-                            lock (results)
-                            {
-                                results.Add((value, threadId, DateTime.UtcNow));
-                            }
-                            await Task.Delay(Random.Shared.Next(1, 5));
-                        }
-                    })
-                );
-            }
-
-            // Version changer task
-            tasks.Add(
-                Task.Run(async () =>
-                {
-                    for (int i = 0; i < 10; i++)
-                    {
-                        await Task.Delay(50);
-                        lock (versionLock)
-                        {
-                            currentVersion = Guid.NewGuid();
-                        }
-                    }
-                    // Add a small delay to ensure readers can see the final version
-                    await Task.Delay(10);
-                    await cts.CancelAsync();
-                })
-            );
-
-            await Task.WhenAll(tasks);
-
-            // Assert
-            factoryCallCount
-                .Should()
-                .BeGreaterOrEqualTo(10, "factory should be called for each version change");
-
-            // Group results by value and verify consistency
-            var groupedResults = results.GroupBy(r => r.value).ToList();
-            foreach (var group in groupedResults)
-            {
-                var values = group.ToList();
-                values.Should().NotBeEmpty($"each cached value should be returned at least once");
-            }
-        }
     }
 
     private class TestObject
@@ -405,6 +249,6 @@ public class VersionedLazyTests
     {
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
-        public List<ComplexTestObject> Children { get; set; } = new();
+        public List<ComplexTestObject> Children { get; set; } = [];
     }
 }

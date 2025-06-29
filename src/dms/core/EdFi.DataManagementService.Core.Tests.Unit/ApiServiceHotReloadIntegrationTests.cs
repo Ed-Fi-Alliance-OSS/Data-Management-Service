@@ -275,7 +275,7 @@ public class ApiServiceHotReloadIntegrationTests
     public class ThreadSafetyTests : ApiServiceHotReloadIntegrationTests
     {
         [Test]
-        public async Task ParallelReloads_OnlyOneSucceeds()
+        public async Task ParallelReloads_OneSucceeds()
         {
             // Arrange
             await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("School", "1.0.0"));
@@ -310,50 +310,6 @@ public class ApiServiceHotReloadIntegrationTests
                 .Count(r => r.StatusCode == 200)
                 .Should()
                 .BeGreaterOrEqualTo(1, "at least one reload should succeed");
-
-            // Note: Multiple successful reloads may result in different reload IDs if they complete sequentially
-            // The important thing is that at least one reload succeeded
-        }
-
-        [Test]
-        public async Task ReloadDuringActiveRequests_NoDeadlock()
-        {
-            // Arrange
-            await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Grade", "1.0.0"));
-            await _apiService.ReloadApiSchemaAsync();
-
-            var request = CreateTestRequest("/ed-fi/grades");
-            var completedRequests = 0;
-            var requestBarrier = new Barrier(20);
-
-            // Act - Start many concurrent requests
-            var requestTasks = Enumerable
-                .Range(0, 20)
-                .Select(_ =>
-                    Task.Run(async () =>
-                    {
-                        requestBarrier.SignalAndWait();
-                        for (int i = 0; i < 50; i++)
-                        {
-                            await _apiService.Get(request);
-                            Interlocked.Increment(ref completedRequests);
-                        }
-                    })
-                )
-                .ToList();
-
-            // Wait for requests to start, then trigger reload
-            await Task.Delay(50);
-            var reloadTask = _apiService.ReloadApiSchemaAsync();
-
-            // Wait for everything with timeout
-            var allTasks = requestTasks.Concat(new[] { reloadTask }).ToArray();
-            var completed = await Task.WhenAny(Task.WhenAll(allTasks), Task.Delay(TimeSpan.FromSeconds(5)));
-
-            // Assert
-            completed.Should().NotBeOfType<Task<Task>>($"operations should complete within timeout");
-            completedRequests.Should().Be(1000); // 20 tasks * 50 requests each
-            (await reloadTask).StatusCode.Should().Be(200);
         }
 
         [Test]

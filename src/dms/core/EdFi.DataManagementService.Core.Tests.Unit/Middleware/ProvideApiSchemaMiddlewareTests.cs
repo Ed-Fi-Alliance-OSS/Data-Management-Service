@@ -186,13 +186,13 @@ public class ProvideApiSchemaMiddlewareTests
         public async Task Copies_paths_to_core()
         {
             // Act
-            var fakePipelineContext = A.Fake<RequestData>();
-            await _provideApiSchemaMiddleware!.Execute(fakePipelineContext, NullNext);
+            var fakeRequestData = A.Fake<RequestData>();
+            await _provideApiSchemaMiddleware!.Execute(fakeRequestData, NullNext);
 
             // Assert
-            fakePipelineContext.ApiSchemaDocuments.Should().NotBeNull();
+            fakeRequestData.ApiSchemaDocuments.Should().NotBeNull();
 
-            var coreSchoolResource = fakePipelineContext
+            var coreSchoolResource = fakeRequestData
                 .ApiSchemaDocuments.GetCoreProjectSchema()
                 .FindResourceSchemaNodeByResourceName(new ResourceName("School"));
 

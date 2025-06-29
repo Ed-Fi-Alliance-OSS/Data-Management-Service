@@ -8,25 +8,21 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// <summary>
 /// A lazy-loading cache that automatically invalidates when a version changes.
 /// </summary>
-internal class VersionedLazy<T>
+/// <remarks>
+/// Initializes a new instance of the VersionedLazy class.
+/// </remarks>
+/// <param name="valueFactory">The delegate to invoke to produce the lazily initialized value when it is needed.</param>
+/// <param name="versionProvider">The delegate to invoke to get the current version.</param>
+internal class VersionedLazy<T>(Func<T> valueFactory, Func<Guid> versionProvider)
 {
-    private readonly Func<T> _valueFactory;
-    private readonly Func<Guid> _versionProvider;
+    private readonly Func<T> _valueFactory =
+        valueFactory ?? throw new ArgumentNullException(nameof(valueFactory));
+    private readonly Func<Guid> _versionProvider =
+        versionProvider ?? throw new ArgumentNullException(nameof(versionProvider));
     private readonly object _lock = new();
     private T? _cachedValue;
     private Guid _cachedVersion;
     private bool _hasValue;
-
-    /// <summary>
-    /// Initializes a new instance of the VersionedLazy class.
-    /// </summary>
-    /// <param name="valueFactory">The delegate to invoke to produce the lazily initialized value when it is needed.</param>
-    /// <param name="versionProvider">The delegate to invoke to get the current version.</param>
-    public VersionedLazy(Func<T> valueFactory, Func<Guid> versionProvider)
-    {
-        _valueFactory = valueFactory ?? throw new ArgumentNullException(nameof(valueFactory));
-        _versionProvider = versionProvider ?? throw new ArgumentNullException(nameof(versionProvider));
-    }
 
     /// <summary>
     /// Gets the lazily initialized value of the current VersionedLazy instance.
@@ -38,7 +34,7 @@ internal class VersionedLazy<T>
         {
             lock (_lock)
             {
-                var currentVersion = _versionProvider();
+                Guid currentVersion = _versionProvider();
 
                 // If we don't have a value yet or the version has changed, recompute
                 if (!_hasValue || _cachedVersion != currentVersion)

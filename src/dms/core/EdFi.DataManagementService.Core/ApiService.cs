@@ -366,9 +366,9 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest)
     {
-        RequestData pipelineContext = new(frontendRequest, RequestMethod.POST);
-        await _upsertSteps.Value.Run(pipelineContext);
-        return pipelineContext.FrontendResponse;
+        RequestData requestData = new(frontendRequest, RequestMethod.POST);
+        await _upsertSteps.Value.Run(requestData);
+        return requestData.FrontendResponse;
     }
 
     /// <summary>
@@ -376,7 +376,7 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
-        RequestData pipelineContext = new(frontendRequest, RequestMethod.GET);
+        RequestData requestData = new(frontendRequest, RequestMethod.GET);
 
         Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
 
@@ -389,13 +389,13 @@ internal class ApiService : IApiService
 
         if (documentUuid != string.Empty)
         {
-            await _getByIdSteps.Value.Run(pipelineContext);
+            await _getByIdSteps.Value.Run(requestData);
         }
         else
         {
-            await _querySteps.Value.Run(pipelineContext);
+            await _querySteps.Value.Run(requestData);
         }
-        return pipelineContext.FrontendResponse;
+        return requestData.FrontendResponse;
     }
 
     /// <summary>
@@ -403,9 +403,9 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest)
     {
-        RequestData pipelineContext = new(frontendRequest, RequestMethod.PUT);
-        await _updateSteps.Value.Run(pipelineContext);
-        return pipelineContext.FrontendResponse;
+        RequestData requestData = new(frontendRequest, RequestMethod.PUT);
+        await _updateSteps.Value.Run(requestData);
+        return requestData.FrontendResponse;
     }
 
     /// <summary>
@@ -413,9 +413,9 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest)
     {
-        RequestData pipelineContext = new(frontendRequest, RequestMethod.DELETE);
-        await _deleteByIdSteps.Value.Run(pipelineContext);
-        return pipelineContext.FrontendResponse;
+        RequestData requestData = new(frontendRequest, RequestMethod.DELETE);
+        await _deleteByIdSteps.Value.Run(requestData);
+        return requestData.FrontendResponse;
     }
 
     /// <summary>
@@ -537,14 +537,11 @@ internal class ApiService : IApiService
     public async Task<IFrontendResponse> ReloadApiSchemaAsync()
     {
         // Check if management endpoints are enabled
-        // TEMPORARY: Commenting out to always enable management endpoints for testing
-#pragma warning disable S125 // Sections of code should not be commented out
-        // if (!_appSettings.Value.EnableManagementEndpoints)
-        // {
-        //     _logger.LogWarning("API schema reload requested but management endpoints are disabled");
-        //     return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
-        // }
-#pragma warning restore S125 // Sections of code should not be commented out
+        if (!_appSettings.Value.EnableManagementEndpoints)
+        {
+            _logger.LogWarning("API schema reload requested but management endpoints are disabled");
+            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
+        }
         _logger.LogInformation("API schema reload requested");
 
         try
@@ -589,13 +586,14 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> UploadApiSchemaAsync(UploadSchemaRequest request)
     {
-        UploadSchemaResponse uploadResponse = await _apiSchemaUploadService.UploadApiSchemaAsync(request);
-
-        // Hide if disabled
-        if (uploadResponse.IsManagementEndpointsDisabled)
+        // Check if management endpoints are enabled
+        if (!_appSettings.Value.EnableManagementEndpoints)
         {
+            _logger.LogWarning("API schema upload requested but management endpoints are disabled");
             return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
         }
+
+        UploadSchemaResponse uploadResponse = await _apiSchemaUploadService.UploadApiSchemaAsync(request);
 
         if (uploadResponse.Success)
         {

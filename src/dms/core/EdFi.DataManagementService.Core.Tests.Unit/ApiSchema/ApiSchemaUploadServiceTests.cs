@@ -54,7 +54,6 @@ public class ApiSchemaUploadServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Be("Management endpoints are disabled");
         result.SchemasProcessed.Should().Be(0);
-        result.IsManagementEndpointsDisabled.Should().BeTrue();
         result.IsValidationError.Should().BeFalse();
     }
 
@@ -71,7 +70,6 @@ public class ApiSchemaUploadServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Be("Core ApiSchema is required");
         result.SchemasProcessed.Should().Be(0);
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeTrue();
     }
 
@@ -88,7 +86,6 @@ public class ApiSchemaUploadServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Be("Core ApiSchema is required");
         result.SchemasProcessed.Should().Be(0);
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeTrue();
     }
 
@@ -105,7 +102,6 @@ public class ApiSchemaUploadServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Be("Invalid core ApiSchema JSON");
         result.SchemasProcessed.Should().Be(0);
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeTrue();
     }
 
@@ -125,7 +121,6 @@ public class ApiSchemaUploadServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Be("Invalid extension ApiSchema JSON at index 0");
         result.SchemasProcessed.Should().Be(0);
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeTrue();
     }
 
@@ -149,7 +144,6 @@ public class ApiSchemaUploadServiceTests
         result.ReloadId.Should().Be(reloadId);
         result.SchemasProcessed.Should().Be(1);
         result.ErrorMessage.Should().BeNull();
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeFalse();
     }
 
@@ -174,7 +168,6 @@ public class ApiSchemaUploadServiceTests
         // Assert
         result.Success.Should().BeTrue();
         result.SchemasProcessed.Should().Be(3); // 1 core + 2 extensions
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeFalse();
     }
 
@@ -194,7 +187,6 @@ public class ApiSchemaUploadServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Be("Failed to upload ApiSchema");
         result.SchemasProcessed.Should().Be(0);
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeFalse();
     }
 
@@ -214,7 +206,6 @@ public class ApiSchemaUploadServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Be("Internal error during ApiSchema upload");
         result.SchemasProcessed.Should().Be(0);
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeFalse();
     }
 
@@ -270,7 +261,6 @@ public class ApiSchemaUploadServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Be("Schema is missing required property");
         result.SchemasProcessed.Should().Be(0);
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeTrue();
     }
 
@@ -294,7 +284,6 @@ public class ApiSchemaUploadServiceTests
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Be("Invalid configuration detected");
         result.SchemasProcessed.Should().Be(0);
-        result.IsManagementEndpointsDisabled.Should().BeFalse();
         result.IsValidationError.Should().BeFalse();
     }
 

@@ -988,7 +988,7 @@ public class ArrayUniquenessValidationMiddlewareTests
     public class Given_Document_Has_TopLevel_Date_With_Same_Name_As_Array_Date
         : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -1021,7 +1021,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "events");
+            _context = await CreateRequestDataAndExecute(apiSchema, jsonBody, "events");
         }
 
         [Test]
@@ -1035,7 +1035,7 @@ public class ArrayUniquenessValidationMiddlewareTests
     public class Given_Document_Has_TopLevel_Date_With_Same_Name_As_Array_Date_Which_Has_Duplicates
         : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -1068,7 +1068,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "events");
+            _context = await CreateRequestDataAndExecute(apiSchema, jsonBody, "events");
         }
 
         [Test]

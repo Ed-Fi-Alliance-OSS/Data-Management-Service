@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -355,5 +357,291 @@ public class ApiSchemaProviderTests
         };
 
         return schema.ToJsonString();
+    }
+
+    [TestFixture]
+    [NonParallelizable]
+    public class ReadApiSchemaFilesTests : ApiSchemaProviderTests
+    {
+        [Test]
+        public void ReadApiSchemaFiles_ValidDirectory_ReturnsJsonNodes()
+        {
+            // Arrange
+            var validJson = @"{ ""test"": ""value"" }";
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.json"), validJson);
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.Extension.json"), validJson);
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().NotBeNull();
+            nodes.Should().HaveCount(2);
+            failures.Should().BeEmpty();
+            nodes![0]["test"]?.GetValue<string>().Should().Be("value");
+            nodes[1]["test"]?.GetValue<string>().Should().Be("value");
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_EmptyDirectory_ReturnsEmptyList()
+        {
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().NotBeNull();
+            nodes.Should().BeEmpty();
+            failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_NonExistentDirectory_ReturnsFailure()
+        {
+            // Arrange
+            var nonExistentPath = Path.Combine(_testDirectory, "nonexistent");
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(nonExistentPath);
+
+            // Assert
+            nodes.Should().BeNull();
+            failures.Should().HaveCount(1);
+            failures[0].FailureType.Should().Be("FileSystem");
+            failures[0].Message.Should().Contain("Directory not found");
+            failures[0].Message.Should().Contain(nonExistentPath);
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_InvalidJsonFile_ReturnsParseError()
+        {
+            // Arrange
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.Invalid.json"), "{ invalid json");
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().BeNull();
+            failures.Should().HaveCount(1);
+            failures[0].FailureType.Should().Be("ParseError");
+            failures[0].Message.Should().Contain("Unable to parse ApiSchema file");
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_MixedValidAndInvalidFiles_ReturnsAllFailures()
+        {
+            // Arrange
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.Valid.json"), @"{ ""valid"": true }");
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.Invalid1.json"), "{ invalid");
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.Invalid2.json"), "not json at all");
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().BeNull();
+            failures.Should().HaveCount(2);
+            failures.TrueForAll(f => f.FailureType == "ParseError");
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_NullContentInFile_ReturnsParseError()
+        {
+            // Arrange
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.Null.json"), "null");
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().BeNull();
+            failures.Should().HaveCount(1);
+            failures[0].FailureType.Should().Be("ParseError");
+            failures[0].Message.Should().Contain("parsed to null");
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_SubdirectoriesIncluded_FindsAllFiles()
+        {
+            // Arrange
+            var subDir = Path.Combine(_testDirectory, "subdir");
+            Directory.CreateDirectory(subDir);
+            File.WriteAllText(
+                Path.Combine(_testDirectory, "ApiSchema.Root.json"),
+                @"{ ""location"": ""root"" }"
+            );
+            File.WriteAllText(Path.Combine(subDir, "ApiSchema.Sub.json"), @"{ ""location"": ""subdir"" }");
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().NotBeNull();
+            nodes.Should().HaveCount(2);
+            failures.Should().BeEmpty();
+            nodes!.Select(n => n["location"]?.GetValue<string>()).Should().BeEquivalentTo("root", "subdir");
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_FilePatternFiltering_OnlyApiSchemaFiles()
+        {
+            // Arrange
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.json"), @"{ ""isApiSchema"": true }");
+            File.WriteAllText(
+                Path.Combine(_testDirectory, "ApiSchemaTest.json"),
+                @"{ ""isApiSchema"": true }"
+            );
+            File.WriteAllText(
+                Path.Combine(_testDirectory, "NotApiSchema.json"),
+                @"{ ""isApiSchema"": false }"
+            );
+            File.WriteAllText(Path.Combine(_testDirectory, "random.txt"), "not json");
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().NotBeNull();
+            nodes.Should().HaveCount(2);
+            failures.Should().BeEmpty();
+            nodes!.TrueForAll(n => n["isApiSchema"]?.GetValue<bool>() == true);
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_EmptyJsonFile_ParsesSuccessfully()
+        {
+            // Arrange
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.Empty.json"), "{}");
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().NotBeNull();
+            nodes.Should().HaveCount(1);
+            failures.Should().BeEmpty();
+            nodes![0].AsObject().Should().BeEmpty();
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_LargeJsonFile_ParsesSuccessfully()
+        {
+            // Arrange
+            var largeObject = new JsonObject();
+            for (int i = 0; i < 1000; i++)
+            {
+                largeObject[$"property{i}"] = $"value{i}";
+            }
+            File.WriteAllText(
+                Path.Combine(_testDirectory, "ApiSchema.Large.json"),
+                largeObject.ToJsonString()
+            );
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().NotBeNull();
+            nodes.Should().HaveCount(1);
+            failures.Should().BeEmpty();
+            nodes![0].AsObject().Count.Should().Be(1000);
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_FileAccessDenied_ReturnsAccessDeniedFailure()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                // Arrange
+                var restrictedFile = Path.Combine(_testDirectory, "ApiSchema.Restricted.json");
+                File.WriteAllText(restrictedFile, @"{ ""restricted"": true }");
+
+                // Make file unreadable
+                File.SetUnixFileMode(restrictedFile, UnixFileMode.None);
+
+                // Act
+                var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+                // Assert
+                nodes.Should().BeNull();
+                failures.Should().HaveCount(1);
+                failures[0].FailureType.Should().Be("AccessDenied");
+                failures[0].Message.Should().Contain("Access denied");
+
+                // Cleanup
+                File.SetUnixFileMode(restrictedFile, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_DirectoryAccessDenied_ReturnsAccessDeniedFailure()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                // Arrange
+                var restrictedDir = Path.Combine(_testDirectory, "restricted");
+                Directory.CreateDirectory(restrictedDir);
+                File.WriteAllText(Path.Combine(restrictedDir, "ApiSchema.json"), @"{ ""test"": true }");
+
+                // Make directory unreadable
+                File.SetUnixFileMode(restrictedDir, UnixFileMode.None);
+
+                // Act
+                var (nodes, failures) = _loader.ReadApiSchemaFiles(restrictedDir);
+
+                // Assert
+                nodes.Should().BeNull();
+                failures.Should().HaveCount(1);
+                failures[0].FailureType.Should().Be("AccessDenied");
+                failures[0].Message.Should().Contain("Access denied to directory");
+
+                // Cleanup
+                File.SetUnixFileMode(
+                    restrictedDir,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                );
+            }
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_SpecialCharactersInFileName_HandlesCorrectly()
+        {
+            // Arrange
+            var specialFiles = new[]
+            {
+                "ApiSchema.Test-Extension.json",
+                "ApiSchema_Test_2.json",
+                "ApiSchema.Test.V2.json",
+            };
+
+            foreach (var fileName in specialFiles)
+            {
+                File.WriteAllText(Path.Combine(_testDirectory, fileName), $@"{{ ""file"": ""{fileName}"" }}");
+            }
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().NotBeNull();
+            nodes.Should().HaveCount(3);
+            failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void ReadApiSchemaFiles_FailureIncludesException_WhenAvailable()
+        {
+            // Arrange
+            File.WriteAllText(Path.Combine(_testDirectory, "ApiSchema.Bad.json"), "{ unclosed");
+
+            // Act
+            var (nodes, failures) = _loader.ReadApiSchemaFiles(_testDirectory);
+
+            // Assert
+            nodes.Should().BeNull();
+            failures.Should().HaveCount(1);
+            failures[0].Exception.Should().NotBeNull();
+            failures[0].Exception.Should().BeAssignableTo<JsonException>();
+        }
     }
 }
