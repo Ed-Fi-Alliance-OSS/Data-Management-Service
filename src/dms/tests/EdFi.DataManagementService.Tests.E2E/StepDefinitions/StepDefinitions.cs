@@ -327,18 +327,8 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             if (apiResponse.Headers.TryGetValue("location", out string? value))
             {
                 _location = value;
-#pragma warning disable S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
-                return _location.Split('/').Last();
-#pragma warning restore S6608 // Prefer indexing instead of "Enumerable" methods on types implementing "IList"
-            }
-            if (apiResponse.Status == 400)
-            {
-                // This is here to help step through debugging when there is an
-                // unexpected error while doing background setup, in which case
-                // it is difficult to ever see the error details.
-#pragma warning disable S1481 // Unused local variables should be removed
-                var errorOnPostOrPutRequest = _apiResponse.TextAsync().Result;
-#pragma warning restore S1481 // Unused local variables should be removed
+                var segments = _location.Split('/');
+                return segments[^1];
             }
 
             return string.Empty;

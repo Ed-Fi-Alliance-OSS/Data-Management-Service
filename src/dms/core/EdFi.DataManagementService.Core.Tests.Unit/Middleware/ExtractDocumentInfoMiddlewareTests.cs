@@ -17,6 +17,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ExtractDocumentInfoMiddlewareTests
 {
     internal static IPipelineStep BuildMiddleware()
@@ -25,10 +26,11 @@ public class ExtractDocumentInfoMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_school_that_is_a_subclass_with_no_outbound_references
         : ExtractDocumentInfoMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -53,7 +55,7 @@ public class ExtractDocumentInfoMiddlewareTests
 
             string body = """{"schoolId": "123"}""";
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -74,25 +76,25 @@ public class ExtractDocumentInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_no_document_references()
         {
-            context.DocumentInfo.DocumentReferences.Should().HaveCount(0);
+            requestData.DocumentInfo.DocumentReferences.Should().HaveCount(0);
         }
 
         [Test]
         public void It_has_no_descriptor_references()
         {
-            context.DocumentInfo.DescriptorReferences.Should().HaveCount(0);
+            requestData.DocumentInfo.DescriptorReferences.Should().HaveCount(0);
         }
 
         [Test]
         public void It_has_built_the_document_identity()
         {
-            var identityElements = context.DocumentInfo.DocumentIdentity.DocumentIdentityElements;
+            var identityElements = requestData.DocumentInfo.DocumentIdentity.DocumentIdentityElements;
             identityElements.Should().HaveCount(1);
             identityElements[0].IdentityJsonPath.Value.Should().Be("$.schoolId");
             identityElements[0].IdentityValue.Should().Be("123");
@@ -100,7 +102,7 @@ public class ExtractDocumentInfoMiddlewareTests
 
         public void It_has_derived_the_superclass_identity()
         {
-            var superclassIdentityElements = context
+            var superclassIdentityElements = requestData
                 .DocumentInfo
                 .SuperclassIdentity!
                 .DocumentIdentity
@@ -113,7 +115,7 @@ public class ExtractDocumentInfoMiddlewareTests
         [Test]
         public void It_has_derived_the_superclass_resource_info()
         {
-            var superclassResourceInfo = context.DocumentInfo.SuperclassIdentity!.ResourceInfo;
+            var superclassResourceInfo = requestData.DocumentInfo.SuperclassIdentity!.ResourceInfo;
 
             superclassResourceInfo.IsDescriptor.Should().Be(false);
             superclassResourceInfo.ProjectName.Value.Should().Be("Ed-Fi");

@@ -12,16 +12,16 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 internal class CoerceDateTimesMiddleware(ILogger logger) : IPipelineStep
 {
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         logger.LogDebug(
             "Entering CoerceDateTimesMiddleware - {TraceId}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
-        foreach (string path in context.ResourceSchema.DateTimeJsonPaths.Select(path => path.Value))
+        foreach (string path in requestData.ResourceSchema.DateTimeJsonPaths.Select(path => path.Value))
         {
-            IEnumerable<JsonNode?> jsonNodes = context.ParsedBody.SelectNodesFromArrayPath(path, logger);
+            IEnumerable<JsonNode?> jsonNodes = requestData.ParsedBody.SelectNodesFromArrayPath(path, logger);
             foreach (JsonNode? jsonNode in jsonNodes)
             {
                 jsonNode?.TryCoerceDateToDateTime();

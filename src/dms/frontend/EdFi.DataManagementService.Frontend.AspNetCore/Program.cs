@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
 
 // Disable reload to work around .NET file watcher bug on Linux. See:
@@ -17,6 +18,18 @@ Environment.SetEnvironmentVariable("DOTNET_hostBuilder:reloadConfigOnChange", "f
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 builder.AddServices();
+
+// Configure request size limits for schema upload
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.ValueLengthLimit = 10 * 1024 * 1024; // 10MB
+    options.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10MB
+});
+
+builder.Services.Configure<KestrelServerOptions>(options =>
+{
+    options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
+});
 
 // Add CORS policy to allow Swagger UI to access the API
 string swaggerUiOrigin =

@@ -12,9 +12,11 @@ using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Model;
 
 [TestFixture]
+[Parallelizable]
 public class DocumentIdentityTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_A_School_Identity_Which_Is_A_Subclass_Of_Education_Organization : DocumentIdentityTests
     {
         internal DocumentIdentity? superclassIdentity;
@@ -41,6 +43,7 @@ public class DocumentIdentityTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_The_Identity_Of_A_Resource_With_A_Single_Identity_Element : DocumentIdentityTests
     {
         internal ReferentialId referentialId;
@@ -63,6 +66,7 @@ public class DocumentIdentityTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_The_Identity_Of_A_Resource_With_Multiple_Identity_Elements : DocumentIdentityTests
     {
         internal ReferentialId referentialId;

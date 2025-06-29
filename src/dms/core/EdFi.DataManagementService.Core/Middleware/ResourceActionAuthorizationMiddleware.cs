@@ -23,16 +23,16 @@ internal class ResourceActionAuthorizationMiddleware(
     ILogger _logger
 ) : IPipelineStep
 {
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         try
         {
             _logger.LogDebug(
                 "Entering ResourceAuthorizationMiddleware - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
 
-            string claimSetName = context.FrontendRequest.ClientAuthorizations.ClaimSetName;
+            string claimSetName = requestData.FrontendRequest.ClientAuthorizations.ClaimSetName;
             _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
 
             _logger.LogInformation("Retrieving claim set list");
@@ -47,14 +47,14 @@ internal class ResourceActionAuthorizationMiddleware(
                 _logger.LogInformation(
                     "ResourceActionAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
                     claimSetName,
-                    context.FrontendRequest.TraceId.Value
+                    requestData.FrontendRequest.TraceId.Value
                 );
                 RespondAuthorizationError();
                 return;
             }
 
             Debug.Assert(
-                context.PathComponents != null,
+                requestData.PathComponents != null,
                 "ResourceActionAuthorizationMiddleware: There should be PathComponents"
             );
 
@@ -65,11 +65,11 @@ internal class ResourceActionAuthorizationMiddleware(
                 return;
             }
 
-            string resourceClaimName = context.ResourceSchema.ResourceName.Value;
+            string resourceClaimName = requestData.ResourceSchema.ResourceName.Value;
 
             // Create resource claim URI
             string resourceClaimUri =
-                $"{Conventions.EdFiOdsResourceClaimBaseUri}/{context.PathComponents.ProjectNamespace.Value}/{resourceClaimName}";
+                $"{Conventions.EdFiOdsResourceClaimBaseUri}/{requestData.PathComponents.ProjectNamespace.Value}/{resourceClaimName}";
 
             ResourceClaim[] matchingClaims = claimSet
                 .ResourceClaims.Where(r =>
@@ -82,13 +82,13 @@ internal class ResourceActionAuthorizationMiddleware(
                 _logger.LogDebug(
                     "ResourceActionAuthorizationMiddleware: No ResourceClaim matching Endpoint {Endpoint} - {TraceId}",
                     resourceClaimName,
-                    context.FrontendRequest.TraceId.Value
+                    requestData.FrontendRequest.TraceId.Value
                 );
                 RespondAuthorizationError();
                 return;
             }
 
-            string actionName = ActionResolver.Resolve(context.Method).ToString();
+            string actionName = ActionResolver.Resolve(requestData.Method).ToString();
 
             ResourceClaim? authorizedAction = matchingClaims.SingleOrDefault(x =>
                 string.Equals(x.Action, actionName, StringComparison.InvariantCultureIgnoreCase)
@@ -98,14 +98,14 @@ internal class ResourceActionAuthorizationMiddleware(
             {
                 _logger.LogDebug(
                     "ResourceAuthorizationMiddleware: Can not perform {RequestMethod} on the resource {ResourceName} - {TraceId}",
-                    context.Method.ToString(),
+                    requestData.Method.ToString(),
                     resourceClaimName,
-                    context.FrontendRequest.TraceId.Value
+                    requestData.FrontendRequest.TraceId.Value
                 );
-                context.FrontendResponse = new FrontendResponse(
+                requestData.FrontendResponse = new FrontendResponse(
                     StatusCode: (int)HttpStatusCode.Forbidden,
                     Body: FailureResponse.ForForbidden(
-                        traceId: context.FrontendRequest.TraceId,
+                        traceId: requestData.FrontendRequest.TraceId,
                         errors:
                         [
                             $"The API client's assigned claim set (currently '{claimSetName}') must grant permission of the '{actionName}' action on one of the following resource claims: {resourceClaimName}",
@@ -124,10 +124,10 @@ internal class ResourceActionAuthorizationMiddleware(
 
             if (resourceActionAuthStrategies.Count == 0)
             {
-                context.FrontendResponse = new FrontendResponse(
+                requestData.FrontendResponse = new FrontendResponse(
                     StatusCode: (int)HttpStatusCode.Forbidden,
                     Body: FailureResponse.ForForbidden(
-                        traceId: context.FrontendRequest.TraceId,
+                        traceId: requestData.FrontendRequest.TraceId,
                         errors:
                         [
                             $"No authorization strategies were defined for the requested action '{actionName}' against resource ['{resourceClaimName}'] matched by the caller's claim '{claimSetName}'.",
@@ -139,15 +139,18 @@ internal class ResourceActionAuthorizationMiddleware(
                 return;
             }
 
-            context.ResourceActionAuthStrategies = resourceActionAuthStrategies;
+            requestData.ResourceActionAuthStrategies = resourceActionAuthStrategies;
 
             await next();
 
             void RespondAuthorizationError()
             {
-                context.FrontendResponse = new FrontendResponse(
+                requestData.FrontendResponse = new FrontendResponse(
                     StatusCode: 403,
-                    Body: FailureResponse.ForForbidden(traceId: context.FrontendRequest.TraceId, errors: []),
+                    Body: FailureResponse.ForForbidden(
+                        traceId: requestData.FrontendRequest.TraceId,
+                        errors: []
+                    ),
                     Headers: [],
                     ContentType: "application/problem+json"
                 );
@@ -158,14 +161,14 @@ internal class ResourceActionAuthorizationMiddleware(
             _logger.LogError(
                 ex,
                 "Error while authorizing the request - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
                 Body: new JsonObject
                 {
                     ["message"] = "Error while authorizing the request.",
-                    ["traceId"] = context.FrontendRequest.TraceId.Value,
+                    ["traceId"] = requestData.FrontendRequest.TraceId.Value,
                 },
                 Headers: []
             );

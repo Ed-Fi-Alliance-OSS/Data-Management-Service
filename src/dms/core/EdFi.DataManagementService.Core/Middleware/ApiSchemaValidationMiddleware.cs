@@ -6,45 +6,47 @@
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class ApiSchemaValidationMiddleware(
-    IApiSchemaProvider _apiSchemaProvider,
-    IApiSchemaValidator _apiSchemaValidator,
-    ILogger _logger
-) : IPipelineStep
+/// <summary>
+/// Middleware that validates the ApiSchema. Acts as a fail-fast mechanism to ensure
+/// the system doesn't operate with invalid or corrupted schema definitions.
+/// </summary>
+internal class ApiSchemaValidationMiddleware : IPipelineStep
 {
-    private readonly Lazy<List<SchemaValidationFailure>> _schemaValidationFailures = new(() =>
+    private readonly IApiSchemaProvider _apiSchemaProvider;
+    private readonly ILogger _logger;
+
+    /// <summary>
+    /// Initializes the middleware with schema provider. The middleware now only checks
+    /// the validation state from the provider instead of performing validation itself.
+    /// </summary>
+    public ApiSchemaValidationMiddleware(IApiSchemaProvider apiSchemaProvider, ILogger logger)
     {
-        var validationErrors = _apiSchemaValidator
-            .Validate(_apiSchemaProvider.GetApiSchemaNodes().CoreApiSchemaRootNode)
-            .Value;
-        if (validationErrors.Any())
-        {
-            _logger.LogCritical("Api schema validation failed.");
-            foreach (var error in validationErrors)
-            {
-                _logger.LogCritical(error.FailurePath.Value, error.FailureMessages);
-            }
-        }
-        return validationErrors;
-    });
+        _apiSchemaProvider = apiSchemaProvider;
+        _logger = logger;
+    }
 
-    public List<SchemaValidationFailure> SchemaValidationFailures => _schemaValidationFailures.Value;
-
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    /// <summary>
+    /// Prevents any operations from proceeding when ApiSchema is invalid.
+    /// </summary>
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ApiSchemaValidationMiddleware- {TraceId}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
-        if (SchemaValidationFailures.Any())
+        if (!_apiSchemaProvider.IsSchemaValid)
         {
-            context.FrontendResponse = new FrontendResponse(StatusCode: 500, Body: string.Empty, Headers: []);
+            _logger.LogError("API schema is invalid. Request cannot be processed.");
+            requestData.FrontendResponse = new FrontendResponse(
+                StatusCode: 500,
+                Body: string.Empty,
+                Headers: []
+            );
         }
         else
         {

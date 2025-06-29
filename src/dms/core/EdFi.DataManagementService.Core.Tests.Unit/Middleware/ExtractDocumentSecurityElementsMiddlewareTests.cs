@@ -17,6 +17,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ExtractDocumentSecurityElementsMiddlewareTests
 {
     internal static IPipelineStep BuildMiddleware()
@@ -25,10 +26,11 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_an_assessment_resource_that_has_a_namespace
         : ExtractDocumentSecurityElementsMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -52,7 +54,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
 
             string body = """{"assessmentIdentifier": "123", "namespace": "abc"}""";
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -73,22 +75,23 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_extracted_the_namespace()
         {
-            context.DocumentSecurityElements.Namespace.Should().HaveCount(1);
-            context.DocumentSecurityElements.Namespace[0].Should().Be("abc");
+            requestData.DocumentSecurityElements.Namespace.Should().HaveCount(1);
+            requestData.DocumentSecurityElements.Namespace[0].Should().Be("abc");
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_an_academicWeeks_resource_that_has_a_educationOrganization
         : ExtractDocumentSecurityElementsMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -118,7 +121,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 }
                 """;
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -139,22 +142,23 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_extracted_the_educationOrganization()
         {
-            context.DocumentSecurityElements.EducationOrganization.Should().HaveCount(1);
-            context.DocumentSecurityElements.EducationOrganization[0].Id.Value.Should().Be(12345);
+            requestData.DocumentSecurityElements.EducationOrganization.Should().HaveCount(1);
+            requestData.DocumentSecurityElements.EducationOrganization[0].Id.Value.Should().Be(12345);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_StudentContactAssociations_resource_that_has_studentUniqueId_and_ContactUniqueId
         : ExtractDocumentSecurityElementsMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -187,7 +191,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 }
                 """;
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -208,16 +212,16 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_extracted_studentUniqueId_and_contactUniqueId()
         {
-            context.DocumentSecurityElements.Student.Should().HaveCount(1);
-            context.DocumentSecurityElements.Student[0].Value.Should().Be("12345");
-            context.DocumentSecurityElements.Contact.Should().HaveCount(1);
-            context.DocumentSecurityElements.Contact[0].Value.Should().Be("7878");
+            requestData.DocumentSecurityElements.Student.Should().HaveCount(1);
+            requestData.DocumentSecurityElements.Student[0].Value.Should().Be("12345");
+            requestData.DocumentSecurityElements.Contact.Should().HaveCount(1);
+            requestData.DocumentSecurityElements.Contact[0].Value.Should().Be("7878");
         }
     }
 }

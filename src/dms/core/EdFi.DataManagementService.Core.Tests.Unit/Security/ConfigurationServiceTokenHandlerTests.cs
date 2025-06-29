@@ -17,6 +17,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 public class ConfigurationServiceTokenHandlerTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_Valid_Credentials : ConfigurationServiceTokenHandlerTests
     {
         private ConfigurationServiceTokenHandler? _configServiceTokenHandler;
@@ -61,6 +62,7 @@ public class ConfigurationServiceTokenHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Cache_Has_Valid_Token : ConfigurationServiceTokenHandlerTests
     {
         private ConfigurationServiceTokenHandler? _configServiceTokenHandler;
@@ -108,6 +110,7 @@ public class ConfigurationServiceTokenHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Api_Throws_Error : ConfigurationServiceTokenHandlerTests
     {
         private ConfigurationServiceTokenHandler? _configServiceTokenHandler;

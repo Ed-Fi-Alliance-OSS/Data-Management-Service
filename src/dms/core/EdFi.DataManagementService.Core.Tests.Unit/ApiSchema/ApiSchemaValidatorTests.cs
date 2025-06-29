@@ -18,17 +18,17 @@ public class ApiSchemaValidatorTests
     [SetUp]
     public void Setup()
     {
-        var logger = NullLogger<JsonSchemaForApiSchemaProvider>.Instance;
-        _validator = new ApiSchemaValidator(new JsonSchemaForApiSchemaProvider(logger));
+        _validator = new ApiSchemaValidator(NullLogger<ApiSchemaValidator>.Instance);
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Empty_Schema : ApiSchemaValidatorTests
     {
         [Test]
         public void It_has_validation_errors()
         {
-            var response = _validator!.Validate(new JsonObject()).Value;
+            var response = _validator!.Validate(new JsonObject());
             response.Should().NotBeNull();
             response.Count.Should().Be(1);
             response[0].Should().NotBeNull();
@@ -41,6 +41,7 @@ public class ApiSchemaValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_ProjectSchema_With_Missing_Required_Properties : ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
@@ -51,7 +52,7 @@ public class ApiSchemaValidatorTests
         [Test]
         public void It_has_validation_errors()
         {
-            var response = _validator!.Validate(_apiSchemaRootNode).Value;
+            var response = _validator!.Validate(_apiSchemaRootNode);
             response.Should().NotBeNull();
             response.Count.Should().Be(1);
             response[0].Should().NotBeNull();
@@ -64,6 +65,7 @@ public class ApiSchemaValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Invalid_Identity_Json_Path_On_AbstractResource : ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
@@ -97,7 +99,7 @@ public class ApiSchemaValidatorTests
         [Test]
         public void It_has_validation_errors()
         {
-            var response = _validator!.Validate(_apiSchemaRootNode).Value;
+            var response = _validator!.Validate(_apiSchemaRootNode);
             response.Should().NotBeNull();
             response.Count.Should().Be(1);
             response[0].Should().NotBeNull();
@@ -112,6 +114,7 @@ public class ApiSchemaValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_ResourceSchema_With_Missing_Required_Properties : ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
@@ -148,7 +151,7 @@ public class ApiSchemaValidatorTests
         [Test]
         public void It_has_validation_errors()
         {
-            var response = _validator!.Validate(_apiSchemaRootNode).Value;
+            var response = _validator!.Validate(_apiSchemaRootNode);
             response.Should().NotBeNull();
             response.Count.Should().Be(1);
             response[0].Should().NotBeNull();
@@ -163,6 +166,7 @@ public class ApiSchemaValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_ResourceSchema_With_Invalid_DocumentPathsMapping : ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
@@ -204,7 +208,7 @@ public class ApiSchemaValidatorTests
         [Test]
         public void It_has_validation_errors()
         {
-            var response = _validator!.Validate(_apiSchemaRootNode).Value;
+            var response = _validator!.Validate(_apiSchemaRootNode);
             response.Should().NotBeNull();
             response.Count.Should().Be(1);
             response[0].Should().NotBeNull();
@@ -219,6 +223,7 @@ public class ApiSchemaValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Valid_Api_Schema : ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
@@ -262,7 +267,7 @@ public class ApiSchemaValidatorTests
         [Test]
         public void It_has_no_validation_errors()
         {
-            _validator!.Validate(_apiSchemaRootNode).Value.Count.Should().Be(0);
+            _validator!.Validate(_apiSchemaRootNode).Count.Should().Be(0);
         }
     }
 }

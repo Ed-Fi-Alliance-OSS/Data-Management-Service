@@ -14,35 +14,35 @@ internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskReque
     private const string MessageBody =
         "Incoming {Method} request to {Path} with body structure: {Body} - {TraceId}";
 
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
-        if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrEmpty(context.FrontendRequest.Body))
+        if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrEmpty(requestData.FrontendRequest.Body))
         {
             _logger.LogDebug(
                 "Entering RequestDataBodyLoggingMiddleware - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
 
-            string body = UtilityService.MinifyRegex().Replace(context.FrontendRequest.Body, "$1");
+            string body = UtilityService.MinifyRegex().Replace(requestData.FrontendRequest.Body, "$1");
 
             if (!_maskRequestBodyInLogs)
             {
                 _logger.LogDebug(
                     MessageBody,
-                    context.Method,
-                    context.FrontendRequest.Path,
+                    requestData.Method,
+                    requestData.FrontendRequest.Path,
                     body,
-                    context.FrontendRequest.TraceId.Value
+                    requestData.FrontendRequest.TraceId.Value
                 );
             }
             else
             {
                 _logger.LogDebug(
                     MessageBody,
-                    context.Method,
-                    context.FrontendRequest.Path,
+                    requestData.Method,
+                    requestData.FrontendRequest.Path,
                     MaskRequestBody(body, _logger),
-                    context.FrontendRequest.TraceId.Value
+                    requestData.FrontendRequest.TraceId.Value
                 );
             }
         }

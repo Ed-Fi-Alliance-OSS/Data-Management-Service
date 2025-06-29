@@ -15,6 +15,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
+[Parallelizable]
 public class ExtractDocumentReferencesTests
 {
     internal static ApiSchemaDocuments BuildApiSchemaDocuments()
@@ -56,6 +57,7 @@ public class ExtractDocumentReferencesTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Document_References_With_One_As_Scalar_And_Another_As_Collection
         : ExtractDocumentReferencesTests
     {
@@ -186,6 +188,7 @@ public class ExtractDocumentReferencesTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Document_References_With_Missing_Optional_Course_Offering_Reference_In_Body
         : ExtractDocumentReferencesTests
     {
@@ -278,6 +281,7 @@ public class ExtractDocumentReferencesTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Document_References_With_Only_Single_Reference_In_Collection_In_Body
         : ExtractDocumentReferencesTests
     {
@@ -347,6 +351,7 @@ public class ExtractDocumentReferencesTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Document_References_With_Empty_Reference_Collection_In_Body
         : ExtractDocumentReferencesTests
     {
@@ -381,6 +386,7 @@ public class ExtractDocumentReferencesTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Document_References_With_Missing_Optional_Class_Period_Reference_Collection_In_Body
         : ExtractDocumentReferencesTests
     {
@@ -457,6 +463,7 @@ public class ExtractDocumentReferencesTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Document_References_With_No_References_In_Body
         : ExtractDocumentReferencesTests
     {

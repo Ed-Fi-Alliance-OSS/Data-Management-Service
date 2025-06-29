@@ -12,9 +12,11 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Model;
 
 [TestFixture]
+[Parallelizable]
 public class DescriptorDocumentTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Descriptor_Document : DescriptorDocumentTests
     {
         internal DescriptorDocument? descriptorDocument;

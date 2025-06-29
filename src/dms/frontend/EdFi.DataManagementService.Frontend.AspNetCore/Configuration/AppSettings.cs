@@ -35,7 +35,9 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
             && !options.Datastore.Equals("mssql", StringComparison.CurrentCultureIgnoreCase)
         )
         {
-            return ValidateOptionsResult.Fail("AppSettings value Datastore must be one of: postgresql, mssql");
+            return ValidateOptionsResult.Fail(
+                "AppSettings value Datastore must be one of: postgresql, mssql"
+            );
         }
 
         if (string.IsNullOrWhiteSpace(options.QueryHandler))

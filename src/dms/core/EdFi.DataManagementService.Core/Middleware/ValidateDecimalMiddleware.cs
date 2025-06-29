@@ -16,16 +16,16 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ValidateDecimalMiddleware(ILogger _logger, IDecimalValidator _decimalValidator) : IPipelineStep
 {
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ValidateDecimalMiddleware - {TraceId}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
         Dictionary<string, string[]> validationErrors = _decimalValidator.Validate(
-            context.ParsedBody,
-            context.ResourceSchema.DecimalPropertyValidationInfos
+            requestData.ParsedBody,
+            requestData.ResourceSchema.DecimalPropertyValidationInfos
         );
 
         if (validationErrors.Count == 0)
@@ -36,7 +36,7 @@ internal class ValidateDecimalMiddleware(ILogger _logger, IDecimalValidator _dec
         {
             var failureResponse = FailureResponse.ForDataValidation(
                 "Data validation failed. See 'validationErrors' for details.",
-                context.FrontendRequest.TraceId,
+                requestData.FrontendRequest.TraceId,
                 validationErrors,
                 []
             );
@@ -44,11 +44,11 @@ internal class ValidateDecimalMiddleware(ILogger _logger, IDecimalValidator _dec
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
-                context.PathComponents.EndpointName,
-                context.FrontendRequest.TraceId.Value
+                requestData.PathComponents.EndpointName,
+                requestData.FrontendRequest.TraceId.Value
             );
 
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: failureResponse,
                 Headers: []

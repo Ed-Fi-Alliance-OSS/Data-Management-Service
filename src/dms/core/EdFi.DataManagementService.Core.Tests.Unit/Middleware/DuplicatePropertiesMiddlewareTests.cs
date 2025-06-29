@@ -16,6 +16,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class DuplicatePropertiesMiddlewareTest
 {
     internal static IPipelineStep Middleware()
@@ -24,10 +25,11 @@ public class DuplicatePropertiesMiddlewareTest
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level
         : DuplicatePropertiesMiddlewareTest
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -89,10 +91,11 @@ public class DuplicatePropertiesMiddlewareTest
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_A_Collection_As_Duplicated_Property_On_First_Level
         : DuplicatePropertiesMiddlewareTest
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -163,10 +166,11 @@ public class DuplicatePropertiesMiddlewareTest
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Duplicate_Property_Inside_Of_A_Collection
         : DuplicatePropertiesMiddlewareTest
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -229,10 +233,11 @@ public class DuplicatePropertiesMiddlewareTest
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Same_Value_Inside_An_Array_Of_Properties
         : DuplicatePropertiesMiddlewareTest
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -297,10 +302,11 @@ public class DuplicatePropertiesMiddlewareTest
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties
         : DuplicatePropertiesMiddlewareTest
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -367,10 +373,11 @@ public class DuplicatePropertiesMiddlewareTest
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level_Using_Put
         : DuplicatePropertiesMiddlewareTest
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
         private readonly string id = Guid.NewGuid().ToString();
 
         [SetUp]
@@ -426,10 +433,11 @@ public class DuplicatePropertiesMiddlewareTest
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties_Using_Put
         : DuplicatePropertiesMiddlewareTest
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
         private readonly string id = Guid.NewGuid().ToString();
 
         [SetUp]

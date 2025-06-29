@@ -18,14 +18,14 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _documentValidator)
     : IPipelineStep
 {
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ValidateDocumentMiddleware- {TraceId}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
-        var (errors, validationErrors) = _documentValidator.Validate(context);
+        var (errors, validationErrors) = _documentValidator.Validate(requestData);
 
         if (errors.Length == 0 && validationErrors.Count == 0)
         {
@@ -39,7 +39,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
             {
                 failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
-                    context.FrontendRequest.TraceId,
+                    requestData.FrontendRequest.TraceId,
                     validationErrors,
                     errors
                 );
@@ -48,7 +48,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
             {
                 failureResponse = FailureResponse.ForDataValidation(
                     "Data validation failed. See 'validationErrors' for details.",
-                    context.FrontendRequest.TraceId,
+                    requestData.FrontendRequest.TraceId,
                     validationErrors,
                     errors
                 );
@@ -57,11 +57,11 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
-                context.PathComponents.EndpointName,
-                context.FrontendRequest.TraceId.Value
+                requestData.PathComponents.EndpointName,
+                requestData.FrontendRequest.TraceId.Value
             );
 
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: failureResponse,
                 Headers: []

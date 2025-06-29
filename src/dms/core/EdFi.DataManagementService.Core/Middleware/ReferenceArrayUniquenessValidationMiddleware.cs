@@ -16,27 +16,27 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineStep
 {
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         logger.LogDebug(
             "Entering ReferenceUniquenessValidationMiddleware - {TraceId}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
-        (string errorKey, string message)? validationError = ValidateUniqueReferences(context);
+        (string errorKey, string message)? validationError = ValidateUniqueReferences(requestData);
         if (validationError.HasValue)
         {
             var (errorKey, message) = validationError.Value;
             Dictionary<string, string[]> validationErrors = new() { [errorKey] = [message] };
 
-            context.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
+            requestData.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
                 validationErrors,
-                context.FrontendRequest.TraceId
+                requestData.FrontendRequest.TraceId
             );
 
             logger.LogDebug(
                 "Duplicate reference detected - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
             return;
         }
@@ -48,9 +48,9 @@ internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IP
     /// Validates all document reference arrays have unique ReferentialIds
     /// </summary>
     /// <returns>A validation error tuple if duplicates are found, null otherwise</returns>
-    private static (string errorKey, string message)? ValidateUniqueReferences(PipelineContext context)
+    private static (string errorKey, string message)? ValidateUniqueReferences(RequestData requestData)
     {
-        foreach (var referenceArray in context.DocumentInfo.DocumentReferenceArrays)
+        foreach (var referenceArray in requestData.DocumentInfo.DocumentReferenceArrays)
         {
             if (referenceArray.DocumentReferences.Length > 1)
             {

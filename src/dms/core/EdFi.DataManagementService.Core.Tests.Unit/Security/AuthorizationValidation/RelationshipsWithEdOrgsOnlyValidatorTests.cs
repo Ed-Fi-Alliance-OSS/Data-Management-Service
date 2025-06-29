@@ -18,6 +18,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
     private readonly IAuthorizationRepository _authorizationRepository = A.Fake<IAuthorizationRepository>();
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Request_Has_No_EducationOrganizations : RelationshipsWithEdOrgsOnlyValidatorTests
     {
         private ResourceAuthorizationResult? _expectedResult;
@@ -53,6 +54,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Matching_EducationOrganizations_Between_Request_And_Claim
         : RelationshipsWithEdOrgsOnlyValidatorTests
     {
@@ -92,6 +94,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Non_Matching_EducationOrganization_Between_Get_Request_And_Claim
         : RelationshipsWithEdOrgsOnlyValidatorTests
     {
@@ -140,6 +143,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Non_Matching_EducationOrganizations_Between_Upsert_Request_And_Claim
         : RelationshipsWithEdOrgsOnlyValidatorTests
     {
@@ -193,6 +197,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_EducationOrganizations_Have_Child_Relationship_With_EdOrgId_From_Claim
         : RelationshipsWithEdOrgsOnlyValidatorTests
     {
@@ -232,6 +237,7 @@ public class RelationshipsWithEdOrgsOnlyValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_With_Multiple_EducationOrganizationHierarchies
         : RelationshipsWithEdOrgsOnlyValidatorTests
     {

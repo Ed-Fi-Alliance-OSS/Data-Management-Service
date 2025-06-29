@@ -14,6 +14,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security.AuthorizationFilte
 public class RelationshipsWithEdOrgsOnlyFiltersProviderTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_Claim_Has_EducationOrganizations
     {
         private AuthorizationStrategyEvaluator? _expectedResult;
@@ -45,6 +46,7 @@ public class RelationshipsWithEdOrgsOnlyFiltersProviderTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Claim_Has_No_EducationOrganizations
     {
         [Test]

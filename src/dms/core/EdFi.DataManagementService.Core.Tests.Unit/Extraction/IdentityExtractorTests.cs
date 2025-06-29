@@ -15,9 +15,11 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
+[Parallelizable]
 public class ExtractDocumentIdentityTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_An_Identity_Composed_Of_Several_References : ExtractDocumentIdentityTests
     {
         internal DocumentIdentity? documentIdentity;
@@ -106,6 +108,7 @@ public class ExtractDocumentIdentityTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_An_Identity_That_Includes_A_Descriptor_Reference
         : ExtractDocumentIdentityTests
     {
@@ -160,6 +163,7 @@ public class ExtractDocumentIdentityTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_An_Identity_That_Includes_A_School_Year_Reference
         : ExtractDocumentIdentityTests
     {

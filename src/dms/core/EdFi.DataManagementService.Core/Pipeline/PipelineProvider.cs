@@ -17,22 +17,22 @@ internal class PipelineProvider(List<IPipelineStep> _steps)
 {
     /// <summary>
     /// Runs the step at the given index, if there is one. (If not, we are at the end.)
-    /// Passes the context to the step, along with a "next" function that will
+    /// Passes the requestData to the step, along with a "next" function that will
     /// run the next step in the list.
     /// </summary>
-    private async Task RunInternal(int stepIndex, PipelineContext context)
+    private async Task RunInternal(int stepIndex, RequestData requestData)
     {
         if (_steps.Count > stepIndex)
         {
-            await _steps[stepIndex].Execute(context, () => RunInternal(stepIndex + 1, context));
+            await _steps[stepIndex].Execute(requestData, () => RunInternal(stepIndex + 1, requestData));
         }
     }
 
     /// <summary>
     /// Start the pipeline with the first step
     /// </summary>
-    public async Task Run(PipelineContext context)
+    public async Task Run(RequestData requestData)
     {
-        await RunInternal(0, context);
+        await RunInternal(0, requestData);
     }
 }

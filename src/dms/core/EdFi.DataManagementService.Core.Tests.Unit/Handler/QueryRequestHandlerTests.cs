@@ -21,6 +21,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
 [TestFixture]
+[Parallelizable]
 public class QueryRequestHandlerTests
 {
     internal static IPipelineStep Handler(IQueryHandler queryHandler)
@@ -29,6 +30,7 @@ public class QueryRequestHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Success : QueryRequestHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -41,7 +43,7 @@ public class QueryRequestHandlerTests
             }
         }
 
-        private readonly PipelineContext _context = No.PipelineContext();
+        private readonly RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -62,6 +64,7 @@ public class QueryRequestHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Invalid_Query : QueryRequestHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -72,7 +75,7 @@ public class QueryRequestHandlerTests
             }
         }
 
-        private readonly PipelineContext _context = No.PipelineContext();
+        private readonly RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -90,6 +93,7 @@ public class QueryRequestHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : QueryRequestHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -103,7 +107,7 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly PipelineContext _context = No.PipelineContext(_traceId);
+        private readonly RequestData _context = No.RequestData(_traceId);
 
         [SetUp]
         public async Task Setup()

@@ -17,6 +17,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit;
 public class OAuthManagerTests
 {
     [TestFixture]
+    [Parallelizable]
     public class When_Getting_An_Access_Token
     {
         protected readonly IHttpClientWrapper _httpClient = A.Fake<IHttpClientWrapper>();
@@ -81,6 +82,7 @@ public class OAuthManagerTests
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_The_Request_Contains_Valid_Request_With_Lower_Basic : When_Getting_An_Access_Token
         {
             private const string AuthHeader = "basic abc:123";
@@ -154,6 +156,7 @@ public class OAuthManagerTests
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_The_Request_Contains_Valid_Request_With_Upper_Basic : When_Getting_An_Access_Token
         {
             private const string AuthHeader = "Basic abc:123";
@@ -185,6 +188,7 @@ public class OAuthManagerTests
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_the_Request_Has_A_Blank_Authorization_Header : When_Getting_An_Access_Token
         {
             [SetUp]
@@ -219,6 +223,7 @@ public class OAuthManagerTests
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_the_Client_Credentials_Are_Invalid : When_Getting_An_Access_Token
         {
             private const string AuthHeader = "basic abc:123";
@@ -280,6 +285,7 @@ public class OAuthManagerTests
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_An_Error_Occurred_Without_Exception : When_Getting_An_Access_Token
         {
             private const string AuthHeader = "basic abc:123";
@@ -321,6 +327,7 @@ public class OAuthManagerTests
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_An_An_Exception_Occurs : When_Getting_An_Access_Token
         {
             private const string ExceptionMessage = "this is a problem";
@@ -365,6 +372,7 @@ public class OAuthManagerTests
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_An_Invalid_Grant_Type : When_Getting_An_Access_Token
         {
             [SetUp]

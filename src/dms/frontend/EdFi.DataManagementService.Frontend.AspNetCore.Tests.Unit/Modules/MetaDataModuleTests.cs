@@ -18,6 +18,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 [TestFixture]
+[NonParallelizable]
 public class MetadataModuleTests
 {
     [TestFixture]

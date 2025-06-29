@@ -20,29 +20,32 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
     /// <summary>
     /// Builds a DocumentInfo using the various extractors on a document body
     /// </summary>
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ExtractDocumentInfoMiddleware - {TraceId}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
-        Trace.Assert(context.ParsedBody != null, "Body was null, pipeline config invalid");
+        Trace.Assert(requestData.ParsedBody != null, "Body was null, pipeline config invalid");
 
-        var (documentIdentity, superclassIdentity) = context.ResourceSchema.ExtractIdentities(
-            context.ParsedBody,
+        var (documentIdentity, superclassIdentity) = requestData.ResourceSchema.ExtractIdentities(
+            requestData.ParsedBody,
             _logger
         );
 
         (DocumentReference[] documentReferences, DocumentReferenceArray[] documentReferenceArrays) =
-            context.ResourceSchema.ExtractReferences(context.ParsedBody, _logger);
+            requestData.ResourceSchema.ExtractReferences(requestData.ParsedBody, _logger);
 
-        context.DocumentInfo = new(
+        requestData.DocumentInfo = new(
             DocumentReferences: documentReferences,
             DocumentReferenceArrays: documentReferenceArrays,
-            DescriptorReferences: context.ResourceSchema.ExtractDescriptors(context.ParsedBody, _logger),
+            DescriptorReferences: requestData.ResourceSchema.ExtractDescriptors(
+                requestData.ParsedBody,
+                _logger
+            ),
             DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdFrom(context.ResourceInfo, documentIdentity),
+            ReferentialId: ReferentialIdFrom(requestData.ResourceInfo, documentIdentity),
             SuperclassIdentity: superclassIdentity
         );
 

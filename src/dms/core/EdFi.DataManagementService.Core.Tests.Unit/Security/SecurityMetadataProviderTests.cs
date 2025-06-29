@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 public class SecurityMetadataProviderTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_Valid_Request : SecurityMetadataProviderTests
     {
         private SecurityMetadataProvider? _metadataProvider;
@@ -131,6 +132,7 @@ public class SecurityMetadataProviderTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Error_Response_From_Api : ConfigurationServiceTokenHandlerTests
     {
         private SecurityMetadataProvider? _metadataProvider;

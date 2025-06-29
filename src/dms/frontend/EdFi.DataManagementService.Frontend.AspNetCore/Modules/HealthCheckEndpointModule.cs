@@ -26,8 +26,8 @@ public class HealthCheckEndpointModule : IEndpointModule
             {
                 Name = entry.Key,
                 Status = entry.Value.Status.ToString(),
-                entry.Value.Description
-            })
+                entry.Value.Description,
+            }),
         };
 
         await httpContext.Response.WriteAsSerializedJsonAsync(healthResponse);

@@ -16,6 +16,8 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 
+[TestFixture]
+[Parallelizable]
 public class ContentProviderTests
 {
     private ILogger<ContentProvider>? _logger;

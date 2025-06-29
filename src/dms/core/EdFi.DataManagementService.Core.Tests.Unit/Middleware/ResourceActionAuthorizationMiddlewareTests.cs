@@ -24,9 +24,10 @@ using static EdFi.DataManagementService.Core.UtilityService;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ResourceActionAuthorizationMiddlewareTests
 {
-    private PipelineContext _context = No.PipelineContext();
+    private RequestData _context = No.RequestData();
 
     internal static IPipelineStep Middleware()
     {
@@ -85,6 +86,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenMatchingResourceActionClaim : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]
@@ -99,7 +101,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            _context = new RequestData(frontEndRequest, RequestMethod.POST)
             {
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
@@ -125,6 +127,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_No_Matching_ClaimSet : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]
@@ -139,7 +142,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "NO-MATCH", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            _context = new RequestData(frontEndRequest, RequestMethod.POST)
             {
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
@@ -170,6 +173,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenNoMatchingResourceActionClaim : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]
@@ -184,7 +188,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            _context = new RequestData(frontEndRequest, RequestMethod.POST)
             {
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
@@ -215,6 +219,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenMatchingResourceActionClaimAction : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]
@@ -229,7 +234,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            _context = new RequestData(frontEndRequest, RequestMethod.POST)
             {
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
@@ -254,6 +259,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenNoMatchingResourceActionClaimAction : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]
@@ -268,7 +274,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.PUT)
+            _context = new RequestData(frontEndRequest, RequestMethod.PUT)
             {
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
@@ -313,6 +319,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenNoResourceActionClaimActions : ResourceActionAuthorizationMiddlewareTests
     {
         [SetUp]
@@ -337,7 +344,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.PUT)
+            _context = new RequestData(frontEndRequest, RequestMethod.PUT)
             {
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
@@ -368,6 +375,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenMatchingResourceActionClaimActionAuthStrategy
         : ResourceActionAuthorizationMiddlewareTests
     {
@@ -383,7 +391,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            _context = new RequestData(frontEndRequest, RequestMethod.POST)
             {
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
@@ -408,6 +416,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenNoMatchingResourceActionClaimActionAuthStrategy
         : ResourceActionAuthorizationMiddlewareTests
     {
@@ -423,7 +432,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
             );
 
-            _context = new PipelineContext(frontEndRequest, RequestMethod.POST)
+            _context = new RequestData(frontEndRequest, RequestMethod.POST)
             {
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),

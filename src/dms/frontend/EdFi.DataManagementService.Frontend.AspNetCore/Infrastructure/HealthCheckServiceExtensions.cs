@@ -31,9 +31,12 @@ public class ApplicationHealthCheck(ILogger<ApplicationHealthCheck> logger) : IH
 public class DbHealthCheck(string connectionString, string providerName, ILogger<DbHealthCheck> logger)
     : IHealthCheck
 {
-    private readonly ILogger<DbHealthCheck> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly string _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-    private readonly string _providerName = providerName ?? throw new ArgumentNullException(nameof(providerName));
+    private readonly ILogger<DbHealthCheck> _logger =
+        logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly string _connectionString =
+        connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+    private readonly string _providerName =
+        providerName ?? throw new ArgumentNullException(nameof(providerName));
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,

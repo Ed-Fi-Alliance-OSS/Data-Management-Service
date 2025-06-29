@@ -22,6 +22,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
 [TestFixture]
+[Parallelizable]
 public class DeleteByIdHandlerTests
 {
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
@@ -52,6 +53,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Success : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -62,7 +64,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext _context = No.PipelineContext();
+        private readonly RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -86,6 +88,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Not_Exists : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -96,7 +99,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext _context = No.PipelineContext();
+        private readonly RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -121,6 +124,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Reference : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -133,7 +137,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext _context = No.PipelineContext();
+        private readonly RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -161,6 +165,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Write_Conflict : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -171,7 +176,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext _context = No.PipelineContext();
+        private readonly RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -194,6 +199,7 @@ public class DeleteByIdHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : DeleteByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -207,7 +213,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly PipelineContext _context = No.PipelineContext(_traceId);
+        private readonly RequestData _context = No.RequestData(_traceId);
 
         [SetUp]
         public async Task Setup()

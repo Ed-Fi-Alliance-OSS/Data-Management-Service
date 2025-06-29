@@ -143,11 +143,11 @@ internal static class No
     ];
 
     /// <summary>
-    /// A constructor of a PipelineContext initialized with null objects
+    /// A constructor of a RequestData initialized with null objects
     /// </summary>
-    public static PipelineContext PipelineContext(string traceId = "")
+    public static RequestData RequestData(string traceId = "")
     {
-        return new PipelineContext(CreateFrontendRequest(traceId), RequestMethod.GET);
+        return new RequestData(CreateFrontendRequest(traceId), RequestMethod.GET);
     }
 
     /// <summary>

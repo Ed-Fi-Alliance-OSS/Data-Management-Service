@@ -16,10 +16,12 @@ public class TokenEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/oauth/token", HandleFormData)
+        endpoints
+            .MapPost("/oauth/token", HandleFormData)
             .Accepts<TokenRequest>(contentType: "application/x-www-form-urlencoded")
             .DisableAntiforgery();
-        endpoints.MapPost("/oauth/token", HandleJsonData)
+        endpoints
+            .MapPost("/oauth/token", HandleJsonData)
             .Accepts<TokenRequest>(contentType: "application/json")
             .DisableAntiforgery();
     }
@@ -37,23 +39,25 @@ public class TokenEndpointModule : IEndpointModule
     }
 
     internal static async Task HandleJsonData(
-       HttpContext httpContext,
-       TokenRequest tokenRequest,
-       IOptions<AppSettings> appSettings,
-       IOAuthManager oAuthManager,
-       ILogger<TokenEndpointModule> logger,
-       IHttpClientFactory httpClientFactory
-   )
-    {
-        await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
-    }
-
-    private static async Task GenerateToken(HttpContext httpContext,
+        HttpContext httpContext,
         TokenRequest tokenRequest,
         IOptions<AppSettings> appSettings,
         IOAuthManager oAuthManager,
         ILogger<TokenEndpointModule> logger,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory
+    )
+    {
+        await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
+    }
+
+    private static async Task GenerateToken(
+        HttpContext httpContext,
+        TokenRequest tokenRequest,
+        IOptions<AppSettings> appSettings,
+        IOAuthManager oAuthManager,
+        ILogger<TokenEndpointModule> logger,
+        IHttpClientFactory httpClientFactory
+    )
     {
         var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
         logger.LogInformation(

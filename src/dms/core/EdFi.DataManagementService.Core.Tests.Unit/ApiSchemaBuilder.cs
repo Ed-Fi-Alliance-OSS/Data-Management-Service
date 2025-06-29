@@ -67,11 +67,11 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Returns all the projects as <see cref="ApiSchemaNodes"/>.
+    /// Returns all the projects as <see cref="ApiSchemaDocumentNodes"/>.
     /// </summary>
-    internal ApiSchemaNodes AsApiSchemaNodes()
+    internal ApiSchemaDocumentNodes AsApiSchemaNodes()
     {
-        return new ApiSchemaNodes(
+        return new ApiSchemaDocumentNodes(
             ToApiSchemaRootNode(_coreProjectNode!),
             _extensionProjectNodes.Select(ToApiSchemaRootNode).ToArray()
         );

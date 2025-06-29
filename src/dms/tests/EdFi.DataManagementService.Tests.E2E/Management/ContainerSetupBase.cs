@@ -25,6 +25,17 @@ public abstract class ContainerSetupBase
     private const ushort DbPortInternal = 5432;
     private const string DatabaseName = "edfi_datamanagementservice";
 
+    private static string SchemaDirectoryPath = Path.Combine(Path.GetTempPath(), "dms-e2e-schemas");
+
+    public static string GetSchemaDirectory()
+    {
+        if (!Directory.Exists(SchemaDirectoryPath))
+        {
+            Directory.CreateDirectory(SchemaDirectoryPath);
+        }
+        return SchemaDirectoryPath;
+    }
+
     protected static string InternalConnectionString
     {
         get
@@ -58,6 +69,7 @@ public abstract class ContainerSetupBase
             .WithEnvironment("MINIMUM_THROUGHPUT", "2")
             .WithEnvironment("BREAK_DURATION_SECONDS", "30")
             .WithEnvironment("OPENSEARCH_URL", openSearchURl)
+            .WithEnvironment("ENABLE_MANAGEMENT_ENDPOINTS", "true")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(HttpPort)))
             .WithNetwork(network)
             .WithLogger(loggerFactory!.CreateLogger("apiContainer"))
@@ -108,7 +120,10 @@ public abstract class ContainerSetupBase
         }
         async Task DeleteDataWithCondition(string tableName, string resourcename)
         {
-            var deleteCmd = new NpgsqlCommand($"DELETE FROM {tableName} WHERE resourcename != {resourcename};", conn);
+            var deleteCmd = new NpgsqlCommand(
+                $"DELETE FROM {tableName} WHERE resourcename != {resourcename};",
+                conn
+            );
             await deleteCmd.ExecuteNonQueryAsync();
         }
     }

@@ -215,17 +215,31 @@ function RunTests {
         $target = $_.FullName
 
         if ($Filter.Equals("*.Tests.Unit")) {
-            Invoke-Execute {
-                # Execution with coverlet to generate code coverage analysis
-                coverlet $($_) `
-                    --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
-                    --threshold $thresholdCoverage `
-                    --threshold-type line `
-                    --threshold-type branch `
-                    --threshold-stat total `
-                    --format json `
-                    --format cobertura `
-                    --merge-with "coverage.json"
+            # For unit tests, we need to collect coverage but not check thresholds yet
+            $isLastTest = $_ -eq $testAssemblies[-1]
+            
+            if ($isLastTest) {
+                # Last test: generate final reports and check thresholds
+                Invoke-Execute {
+                    coverlet $($_) `
+                        --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
+                        --threshold $thresholdCoverage `
+                        --threshold-type line `
+                        --threshold-type branch `
+                        --threshold-stat total `
+                        --format json `
+                        --format cobertura `
+                        --merge-with "coverage.json"
+                }
+            }
+            else {
+                # Not the last test: just collect coverage without threshold check
+                Invoke-Execute {
+                    coverlet $($_) `
+                        --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
+                        --format json `
+                        --merge-with "coverage.json"
+                }
             }
         }
         else {

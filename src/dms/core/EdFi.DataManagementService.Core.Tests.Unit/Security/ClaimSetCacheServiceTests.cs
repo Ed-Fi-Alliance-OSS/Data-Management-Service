@@ -16,6 +16,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 public class ClaimSetCacheServiceTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_Service_Receives_Expected_Data : ClaimSetCacheServiceTests
     {
         private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();
@@ -52,6 +53,7 @@ public class ClaimSetCacheServiceTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Cache_Has_Claims : ClaimSetCacheServiceTests
     {
         private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();
@@ -88,6 +90,7 @@ public class ClaimSetCacheServiceTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Backend_Throws_Error : ConfigurationServiceTokenHandlerTests
     {
         private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();

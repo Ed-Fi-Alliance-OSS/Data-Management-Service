@@ -16,6 +16,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ProvideAuthorizationPathwayMiddlewareTests
 {
     // SUT
@@ -23,7 +24,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         NullLogger<ProvideApiSchemaMiddleware>.Instance
     );
 
-    private readonly PipelineContext _context = No.PipelineContext();
+    private readonly RequestData _context = No.RequestData();
 
     private readonly ApiSchemaDocuments _studentSchoolAssociationApiSchma = new ApiSchemaBuilder()
         .WithStartProject()
@@ -50,6 +51,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         .ToApiSchemaDocuments();
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StudentSchoolAssociation_Post : ProvideAuthorizationPathwayMiddlewareTests
     {
         [SetUp]
@@ -96,6 +98,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StudentSchoolAssociation_Get : ProvideAuthorizationPathwayMiddlewareTests
     {
         [SetUp]
@@ -130,6 +133,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Resource_With_No_Authorization_Pathway : ProvideAuthorizationPathwayMiddlewareTests
     {
         [SetUp]
@@ -162,6 +166,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Resource_With_Unrecognized_AuthorizationPathways
         : ProvideAuthorizationPathwayMiddlewareTests
     {
@@ -207,6 +212,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StudentSchoolAssociation_Post_With_No_StudentId
         : ProvideAuthorizationPathwayMiddlewareTests
     {
@@ -244,6 +250,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StudentSchoolAssociation_Post_With_No_SchoolId
         : ProvideAuthorizationPathwayMiddlewareTests
     {
@@ -276,6 +283,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StudentContactAssociation_Post : ProvideAuthorizationPathwayMiddlewareTests
     {
         [SetUp]
@@ -324,6 +332,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StudentContactAssociation_Get : ProvideAuthorizationPathwayMiddlewareTests
     {
         [SetUp]
@@ -360,6 +369,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StudentContactAssociation_Post_With_No_StudentId
         : ProvideAuthorizationPathwayMiddlewareTests
     {
@@ -399,6 +409,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StudentContactAssociation_Post_With_No_ContactUniqueId
         : ProvideAuthorizationPathwayMiddlewareTests
     {
@@ -433,6 +444,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StaffEducationOrganizationAssociation_Post
         : ProvideAuthorizationPathwayMiddlewareTests
     {
@@ -482,6 +494,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StaffEducationOrganizationAssociation_Get
         : ProvideAuthorizationPathwayMiddlewareTests
     {
@@ -519,6 +532,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StaffEducationOrganizationAssociation_Post_With_No_StaffId
         : ProvideAuthorizationPathwayMiddlewareTests
     {
@@ -558,6 +572,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_StaffEducationOrganizationAssociation_Post_With_No_EducationOrganizationId
         : ProvideAuthorizationPathwayMiddlewareTests
     {

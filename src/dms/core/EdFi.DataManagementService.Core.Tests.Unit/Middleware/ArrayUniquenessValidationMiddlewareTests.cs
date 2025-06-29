@@ -18,6 +18,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ArrayUniquenessValidationMiddlewareTests
 {
     internal static ArrayUniquenessValidationMiddleware Middleware()
@@ -25,7 +26,7 @@ public class ArrayUniquenessValidationMiddlewareTests
         return new ArrayUniquenessValidationMiddleware(NullLogger.Instance);
     }
 
-    internal static async Task<PipelineContext> CreateContextAndExecute(
+    internal static async Task<RequestData> CreateRequestDataAndExecute(
         ApiSchemaDocuments apiSchema,
         string jsonBody,
         string endpointName
@@ -45,7 +46,7 @@ public class ArrayUniquenessValidationMiddlewareTests
             )
         );
 
-        PipelineContext context = new(frontEndRequest, RequestMethod.POST)
+        RequestData requestData = new(frontEndRequest, RequestMethod.POST)
         {
             ApiSchemaDocuments = apiSchema,
             PathComponents = new(
@@ -54,28 +55,30 @@ public class ArrayUniquenessValidationMiddlewareTests
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        context.ProjectSchema = context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+        requestData.ProjectSchema = requestData.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
             new("ed-fi")
         )!;
-        context.ResourceSchema = new ResourceSchema(
-            context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName)) ?? new JsonObject()
+        requestData.ResourceSchema = new ResourceSchema(
+            requestData.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
+                ?? new JsonObject()
         );
 
-        var body = JsonNode.Parse(context.FrontendRequest.Body!);
+        var body = JsonNode.Parse(requestData.FrontendRequest.Body!);
         if (body != null)
         {
-            context.ParsedBody = body;
+            requestData.ParsedBody = body;
         }
 
-        await Middleware().Execute(context, NullNext);
-        return context;
+        await Middleware().Execute(requestData, NullNext);
+        return requestData;
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Document_With_No_Array_Uniqueness_Constraints
         : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -96,20 +99,25 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(noArrayUniquenessDocument, jsonBody, "simpleresources");
+            _requestData = await CreateRequestDataAndExecute(
+                noArrayUniquenessDocument,
+                jsonBody,
+                "simpleresources"
+            );
         }
 
         [Test]
         public void It_continues_to_next_middleware()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestData.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Has_No_Duplicates : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -149,20 +157,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "schools");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "schools");
         }
 
         [Test]
         public void It_continues_to_next_middleware()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestData.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Has_Duplicate_Descriptors : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -205,21 +214,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "schools");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "schools");
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestData.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_validation_error_with_duplicated_descriptor()
         {
-            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+            _requestData.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
 
-            _context
+            _requestData
                 .FrontendResponse.Body!.ToJsonString()
                 .Should()
                 .Contain(
@@ -231,9 +240,10 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Has_Multiple_Element_Duplication : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -276,21 +286,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "assessments");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "assessments");
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestData.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_validation_error_with_duplicate_items()
         {
-            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+            _requestData.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
 
-            _context
+            _requestData
                 .FrontendResponse.Body!.ToJsonString()
                 .Should()
                 .Contain(
@@ -302,10 +312,11 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Has_Multiple_Element_Only_Partial_Duplication
         : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -348,20 +359,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "assessments");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "assessments");
         }
 
         [Test]
         public void It_continues_to_next_middleware()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestData.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Has_Two_Levels_And_No_Duplicates : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -415,20 +427,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "requiredimmunizations");
         }
 
         [Test]
         public void It_continues_to_next_middleware()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestData.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Has_1st_Level_Duplicates : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -482,21 +495,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "requiredimmunizations");
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestData.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_validation_error_with_duplicate_items()
         {
-            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+            _requestData.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
 
-            _context
+            _requestData
                 .FrontendResponse.Body!.ToJsonString()
                 .Should()
                 .Contain(
@@ -508,9 +521,10 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Has_2nd_Level_Duplicates : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -567,21 +581,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "requiredimmunizations");
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestData.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_validation_error_with_duplicate_items()
         {
-            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+            _requestData.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
 
-            _context
+            _requestData
                 .FrontendResponse.Body!.ToJsonString()
                 .Should()
                 .Contain(
@@ -593,9 +607,10 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Document_Has_Two_Levels_Of_Duplicates : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -652,21 +667,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "requiredimmunizations");
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestData.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_validation_error_with_duplicate_items()
         {
-            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+            _requestData.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
 
-            var responseBody = _context.FrontendResponse.Body!.ToJsonString();
+            var responseBody = _requestData.FrontendResponse.Body!.ToJsonString();
 
             responseBody
                 .Should()
@@ -685,10 +700,11 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Document_Has_Two_Levels_Of_Duplicates_For_Multiple_Constraints
         : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -781,21 +797,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "requiredimmunizations");
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestData.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_validation_error_with_duplicate_items()
         {
-            _context.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
+            _requestData.FrontendResponse.Body!.ToJsonString().Should().Contain("Data Validation Failed");
 
-            var responseBody = _context.FrontendResponse.Body!.ToJsonString();
+            var responseBody = _requestData.FrontendResponse.Body!.ToJsonString();
 
             responseBody
                 .Should()
@@ -828,10 +844,11 @@ public class ArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Document_Has_Duplicate_Dates_But_In_Different_RequiredImmunizations
         : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -885,20 +902,21 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "requiredimmunizations");
+            _requestData = await CreateRequestDataAndExecute(apiSchema, jsonBody, "requiredimmunizations");
         }
 
         [Test]
         public void It_continues_to_next_middleware()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestData.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Addresses_Differing_Only_In_AddressType : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -952,7 +970,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(
+            _requestData = await CreateRequestDataAndExecute(
                 apiSchema,
                 jsonBody,
                 "studenteducationorganizationassociations"
@@ -962,7 +980,7 @@ public class ArrayUniquenessValidationMiddlewareTests
         [Test]
         public void It_continues_to_next_middleware()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestData.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -970,7 +988,7 @@ public class ArrayUniquenessValidationMiddlewareTests
     public class Given_Document_Has_TopLevel_Date_With_Same_Name_As_Array_Date
         : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -1003,7 +1021,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "events");
+            _context = await CreateRequestDataAndExecute(apiSchema, jsonBody, "events");
         }
 
         [Test]
@@ -1017,7 +1035,7 @@ public class ArrayUniquenessValidationMiddlewareTests
     public class Given_Document_Has_TopLevel_Date_With_Same_Name_As_Array_Date_Which_Has_Duplicates
         : ArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -1050,7 +1068,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(apiSchema, jsonBody, "events");
+            _context = await CreateRequestDataAndExecute(apiSchema, jsonBody, "events");
         }
 
         [Test]

@@ -15,6 +15,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
 [TestFixture]
+[NonParallelizable]
 public class RateLimitTests
 {
     [Test]

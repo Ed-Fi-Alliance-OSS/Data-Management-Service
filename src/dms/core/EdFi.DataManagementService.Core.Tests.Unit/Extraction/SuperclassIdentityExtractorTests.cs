@@ -15,9 +15,11 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
+[Parallelizable]
 public class DeriveSuperclassIdentityFromTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_A_School_Which_Is_A_Subclass_Of_Education_Organization
         : DeriveSuperclassIdentityFromTests
     {
@@ -75,6 +77,7 @@ public class DeriveSuperclassIdentityFromTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Section_Which_Is_Not_A_Subclass : DeriveSuperclassIdentityFromTests
     {
         internal SuperclassIdentity? superclassIdentity;

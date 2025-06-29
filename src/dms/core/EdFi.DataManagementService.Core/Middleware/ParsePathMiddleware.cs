@@ -16,7 +16,7 @@ internal record PathInfo(string ProjectNamespace, string EndpointName, string? D
 
 /// <summary>
 /// Parses and validates the path from the frontend is well-formed. Adds PathComponents
-/// to the context if it is.
+/// to the requestData if it is.
 /// </summary>
 internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
 {
@@ -50,23 +50,26 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         return UtilityService.Uuid4Regex().IsMatch(documentUuidString.ToLower());
     }
 
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
-        _logger.LogDebug("Entering ParsePathMiddleware - {TraceId}", context.FrontendRequest.TraceId.Value);
+        _logger.LogDebug(
+            "Entering ParsePathMiddleware - {TraceId}",
+            requestData.FrontendRequest.TraceId.Value
+        );
 
-        PathInfo? pathInfo = PathInfoFrom(context.FrontendRequest.Path);
+        PathInfo? pathInfo = PathInfoFrom(requestData.FrontendRequest.Path);
 
         if (pathInfo == null)
         {
             _logger.LogDebug(
                 "ParsePathMiddleware: Not a valid path - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
                 Body: FailureResponse.ForNotFound(
                     "The specified data could not be found.",
-                    context.FrontendRequest.TraceId
+                    requestData.FrontendRequest.TraceId
                 ),
                 Headers: [],
                 ContentType: "application/problem+json"
@@ -78,14 +81,14 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         {
             _logger.LogDebug(
                 "ParsePathMiddleware: Not a valid document UUID - {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
 
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: FailureResponse.ForDataValidation(
                     detail: "Data validation failed. See 'validationErrors' for details.",
-                    traceId: context.FrontendRequest.TraceId,
+                    traceId: requestData.FrontendRequest.TraceId,
                     validationErrors: new Dictionary<string, string[]>
                     {
                         { "$.id", new[] { $"The value '{pathInfo.DocumentUuid}' is not valid." } },
@@ -98,21 +101,21 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         }
 
         // Verify method allowed with/without documentUuid
-        if (context.Method == RequestMethod.DELETE && pathInfo.DocumentUuid == null)
+        if (requestData.Method == RequestMethod.DELETE && pathInfo.DocumentUuid == null)
         {
             RespondMissingDocumentUuid(
                 "Resource collections cannot be deleted. To delete a specific item, use DELETE and include the 'id' in the route."
             );
             return;
         }
-        if (context.Method == RequestMethod.PUT && pathInfo.DocumentUuid == null)
+        if (requestData.Method == RequestMethod.PUT && pathInfo.DocumentUuid == null)
         {
             RespondMissingDocumentUuid(
                 "Resource collections cannot be replaced. To 'upsert' an item in the collection, use POST. To update a specific item, use PUT and include the 'id' in the route."
             );
             return;
         }
-        if (context.Method == RequestMethod.POST && pathInfo.DocumentUuid != null)
+        if (requestData.Method == RequestMethod.POST && pathInfo.DocumentUuid != null)
         {
             RespondMissingDocumentUuid(
                 "Resource items can only be updated using PUT. To 'upsert' an item in the resource collection using POST, remove the 'id' from the route."
@@ -123,7 +126,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         DocumentUuid documentUuid =
             pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
 
-        context.PathComponents = new(
+        requestData.PathComponents = new(
             ProjectNamespace: new(pathInfo.ProjectNamespace),
             EndpointName: new(pathInfo.EndpointName),
             DocumentUuid: documentUuid
@@ -136,12 +139,15 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         {
             _logger.LogDebug(
                 "ParsePathMiddleware: Missing document UUID on request method {Method} - {TraceId}",
-                context.Method,
-                context.FrontendRequest.TraceId.Value
+                requestData.Method,
+                requestData.FrontendRequest.TraceId.Value
             );
-            context.FrontendResponse = new FrontendResponse(
+            requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 405,
-                Body: FailureResponse.ForMethodNotAllowed([error], traceId: context.FrontendRequest.TraceId),
+                Body: FailureResponse.ForMethodNotAllowed(
+                    [error],
+                    traceId: requestData.FrontendRequest.TraceId
+                ),
                 Headers: [],
                 ContentType: "application/json; charset=utf-8"
             );

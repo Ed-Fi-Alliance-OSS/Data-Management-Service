@@ -14,6 +14,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security.AuthorizationFilte
 public class NamespaceBasedFiltersTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_Claim_Has_NamespacePrefixes
     {
         private AuthorizationStrategyEvaluator? _expectedResult;
@@ -44,6 +45,7 @@ public class NamespaceBasedFiltersTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Claim_Has_No_NamespacePrefixes
     {
         [Test]

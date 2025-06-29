@@ -20,6 +20,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 [TestFixture]
+[NonParallelizable]
 public class TokenEndpointModuleTests
 {
     public static HttpRequestMessage ProxyRequest(string requestContent, string contentType)
@@ -50,15 +51,14 @@ public class TokenEndpointModuleTests
                 Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json"),
             };
 
-            A.CallTo(
-                    () =>
-                        oAuthManager.GetAccessTokenAsync(
-                            A<IHttpClientWrapper>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<TraceId>.Ignored
-                        )
+            A.CallTo(() =>
+                    oAuthManager.GetAccessTokenAsync(
+                        A<IHttpClientWrapper>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<TraceId>.Ignored
+                    )
                 )
                 .Returns(_fake_response_200);
 
@@ -125,15 +125,14 @@ public class TokenEndpointModuleTests
                 Content = new StringContent(_fake_responseJson.ToString(), Encoding.UTF8, "application/json"),
             };
 
-            A.CallTo(
-                    () =>
-                        oAuthManager.GetAccessTokenAsync(
-                            A<IHttpClientWrapper>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<TraceId>.Ignored
-                        )
+            A.CallTo(() =>
+                    oAuthManager.GetAccessTokenAsync(
+                        A<IHttpClientWrapper>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<TraceId>.Ignored
+                    )
                 )
                 .Returns(_fake_response_200);
 

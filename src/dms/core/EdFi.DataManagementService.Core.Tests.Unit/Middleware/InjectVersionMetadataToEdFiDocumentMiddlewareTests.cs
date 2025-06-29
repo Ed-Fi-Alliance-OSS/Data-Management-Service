@@ -20,6 +20,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
 {
     // Middleware to test
@@ -29,9 +30,10 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Valid_Request_Body : InjectVersionMetadataToEdFiDocumentMiddlewareTests
     {
-        private readonly PipelineContext _context = No.PipelineContext();
+        private readonly RequestData _context = No.RequestData();
         private readonly string _pattern = @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$";
         private readonly string _lastModifiedDatePropertyName = "_lastModifiedDate";
 

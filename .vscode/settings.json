@@ -119,6 +119,7 @@
     "openapi",
     "opensearch",
     "Overpost",
+    "Parallelizable",
     "parentdocumentid",
     "parentdocumentpartitionkey",
     "pluralizer",

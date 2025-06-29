@@ -12,6 +12,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Content;
 
 [TestFixture]
+[Parallelizable]
 public class AssemblyProviderTests
 {
     [Test]
@@ -30,4 +31,3 @@ public class AssemblyProviderTests
         Assert.That(result, Is.EqualTo(expected));
     }
 }
-

@@ -18,6 +18,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ProvideAuthorizationSecurableInfoMiddlewareTests
 {
     internal static IPipelineStep BuildMiddleware()
@@ -26,9 +27,10 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_document_with_a_StudentUniqueId : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -51,7 +53,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"studentUniqueId": "12345"}""";
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -72,13 +74,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_StudentUniqueId_as_securable_key()
         {
-            context
+            requestData
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StudentUniqueId);
@@ -86,10 +88,11 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_document_without_StudentAuthorizationSecurablePaths
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -112,7 +115,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"studentUniqueId": "12345"}""";
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -133,21 +136,22 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_does_not_have_securable_key()
         {
-            context.AuthorizationSecurableInfo.Should().BeEmpty();
+            requestData.AuthorizationSecurableInfo.Should().BeEmpty();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_document_with_ContactReference_and_StudentUniqueId
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -186,7 +190,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 }
                 """;
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -207,18 +211,18 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_StudentUniqueId_as_securable_key()
         {
-            context.AuthorizationSecurableInfo.Length.Should().Be(2);
-            context
+            requestData.AuthorizationSecurableInfo.Length.Should().Be(2);
+            requestData
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StudentUniqueId);
-            context
+            requestData
                 .AuthorizationSecurableInfo[1]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.ContactUniqueId);
@@ -226,9 +230,10 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_document_with_a_ContactUniqueId : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -251,7 +256,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"contactUniqueId": "12345"}""";
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -272,13 +277,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_ContactUniqueId_as_securable_key()
         {
-            context
+            requestData
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.ContactUniqueId);
@@ -286,10 +291,11 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_document_without_ContactAuthorizationSecurablePaths
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -312,7 +318,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"contactUniqueId": "12345"}""";
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -333,20 +339,21 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_does_not_have_securable_key()
         {
-            context.AuthorizationSecurableInfo.Should().BeEmpty();
+            requestData.AuthorizationSecurableInfo.Should().BeEmpty();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_document_with_a_StaffUniqueId : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -369,7 +376,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"staffUniqueId": "S12345"}""";
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -390,13 +397,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_StaffUniqueId_as_securable_key()
         {
-            context
+            requestData
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StaffUniqueId);
@@ -404,10 +411,11 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_document_without_StaffAuthorizationSecurablePaths
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -430,7 +438,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"staffUniqueId": "S12345"}""";
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -451,21 +459,22 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_does_not_have_securable_key()
         {
-            context.AuthorizationSecurableInfo.Should().BeEmpty();
+            requestData.AuthorizationSecurableInfo.Should().BeEmpty();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_document_with_StaffReference_and_StudentUniqueId
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private PipelineContext context = No.PipelineContext();
+        private RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -503,7 +512,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 }
                 """;
 
-            context = new(
+            requestData = new(
                 new(
                     Body: body,
                     Headers: [],
@@ -524,18 +533,18 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(context, NullNext);
+            await BuildMiddleware().Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_StudentUniqueId_and_StaffUniqueId_as_securable_keys()
         {
-            context.AuthorizationSecurableInfo.Length.Should().Be(2);
-            context
+            requestData.AuthorizationSecurableInfo.Length.Should().Be(2);
+            requestData
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StudentUniqueId);
-            context
+            requestData
                 .AuthorizationSecurableInfo[1]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StaffUniqueId);

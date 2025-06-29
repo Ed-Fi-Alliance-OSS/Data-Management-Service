@@ -51,7 +51,6 @@ public interface IContentProvider
 /// <summary>
 /// Loads and parses the file content.
 /// </summary>
-
 public class ContentProvider(
     ILogger<ContentProvider> _logger,
     IOptions<AppSettings> appSettings,
@@ -219,7 +218,7 @@ public class ApiSchemaAssemblyLoader : IAssemblyLoader
 {
     public Assembly Load(string path)
     {
-        var context = new ApiSchemaAssemblyLoadContext();
-        return context.LoadFromAssemblyPath(path);
+        var requestData = new ApiSchemaAssemblyLoadContext();
+        return requestData.LoadFromAssemblyPath(path);
     }
 }

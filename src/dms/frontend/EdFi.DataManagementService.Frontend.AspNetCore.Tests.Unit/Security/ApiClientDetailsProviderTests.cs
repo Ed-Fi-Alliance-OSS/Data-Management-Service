@@ -11,6 +11,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Security;
 
 [TestFixture]
+[Parallelizable]
 public class ApiClientDetailsProviderTests
 {
     [Test]

@@ -12,9 +12,9 @@ using EdFi.DataManagementService.Core.Model;
 namespace EdFi.DataManagementService.Core.Pipeline;
 
 /// <summary>
-/// The full context of the request, enriched by pipeline steps and the final handler
+/// Data container for API request processing, enriched by pipeline steps and handlers
 /// </summary>
-internal class PipelineContext(FrontendRequest _frontendRequest, RequestMethod _method)
+internal class RequestData(FrontendRequest _frontendRequest, RequestMethod _method)
 {
     /// <summary>
     /// An API request sent from the frontend to be processed

@@ -18,6 +18,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 {
     [TestFixture]
+    [Parallelizable]
     public class ValidateDecimalMiddlewareTests
     {
         internal static IPipelineStep Middleware()
@@ -42,9 +43,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 .ToApiSchemaDocuments();
         }
 
-        internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
+        internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
         {
-            PipelineContext _context = new(frontendRequest, method)
+            RequestData _context = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 PathComponents = new(
@@ -63,9 +64,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
+        [Parallelizable]
         public class Given_A_Valid_Body : ValidateDecimalMiddlewareTests
         {
-            private PipelineContext _context = No.PipelineContext();
+            private RequestData _context = No.RequestData();
 
             [SetUp]
             public async Task Setup()
@@ -109,7 +111,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 
         public class Given_An_Invalid_Decimal : ValidateDecimalMiddlewareTests
         {
-            private PipelineContext _context = No.PipelineContext();
+            private RequestData _context = No.RequestData();
 
             [SetUp]
             public async Task Setup()
