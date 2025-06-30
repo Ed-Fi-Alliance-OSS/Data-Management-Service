@@ -438,7 +438,7 @@ public partial class SqlAction() : ISqlAction
         }
 
         await reader.ReadAsync();
-        return reader.GetInt16(reader.GetOrdinal("Total"));
+        return reader.GetInt32(reader.GetOrdinal("Total"));
     }
 
     /// <summary>
