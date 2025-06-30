@@ -367,6 +367,47 @@ internal static class JsonHelpers
     }
 
     /// <summary>
+    /// Helper to replace slash-formatted dates (e.g., 5/1/2009) with ISO-8601 formatted dates (e.g., 2009-05-01)
+    /// Only processes strings that appear to be slash-formatted dates and converts them to ISO-8601 format.
+    /// Does not handle parsing failures as these will be dealt with in validation.
+    /// </summary>
+    public static void TryCoerceSlashDateToIso8601(this JsonNode jsonNode)
+    {
+        var jsonValue = jsonNode.AsValue();
+        if (jsonValue.GetValueKind() == JsonValueKind.String)
+        {
+            string stringValue = jsonValue.GetValue<string>();
+
+            // Check if the string contains slashes and looks like a date format
+            if (
+                stringValue.Contains('/')
+                && !stringValue.Contains('T')
+                && DateTime.TryParseExact(
+                    stringValue,
+                    new[]
+                    {
+                        "M/d/yyyy",
+                        "MM/dd/yyyy",
+                        "M/d/yy",
+                        "MM/dd/yy",
+                        "d/M/yyyy",
+                        "dd/MM/yyyy",
+                        "d/M/yy",
+                        "dd/MM/yy",
+                    },
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out DateTime dateTime
+                )
+            )
+            {
+                // Convert to ISO-8601 date format (yyyy-MM-dd)
+                jsonNode.ReplaceWith(dateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+            }
+        }
+    }
+
+    /// <summary>
     /// Helper to extract a list of JsonNodes as the values of all the properties of a JsonNode
     /// </summary>
     public static List<JsonNode> SelectNodesFromPropertyValues(this JsonNode jsonNode)

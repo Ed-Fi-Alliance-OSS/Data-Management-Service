@@ -291,6 +291,27 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
+    /// Adds a dateJsonPaths section to a resource
+    /// </summary>
+    public ApiSchemaBuilder WithDateJsonPaths(string[] dateJsonPaths)
+    {
+        if (_currentProjectNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+        if (_currentResourceNode == null)
+        {
+            throw new InvalidOperationException();
+        }
+
+        _currentResourceNode["dateJsonPaths"] = new JsonArray(
+            dateJsonPaths.Select(x => JsonValue.Create(x)).ToArray()
+        );
+
+        return this;
+    }
+
+    /// <summary>
     /// Adds a NamespaceSecurityElements section to a resource
     /// </summary>
     public ApiSchemaBuilder WithNamespaceSecurityElements(string[] jsonPaths)
