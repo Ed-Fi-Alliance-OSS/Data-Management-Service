@@ -21,6 +21,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Handler;
 
 [TestFixture]
+[Parallelizable]
 public class GetByIdHandlerTests
 {
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
@@ -34,6 +35,7 @@ public class GetByIdHandlerTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Success : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -48,24 +50,25 @@ public class GetByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep getByIdHandler = Handler(new Repository());
-            await getByIdHandler.Execute(context, NullNext);
+            await getByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(200);
-            context.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
+            requestData.FrontendResponse.StatusCode.Should().Be(200);
+            requestData.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Failure_Not_Exists : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -76,24 +79,25 @@ public class GetByIdHandlerTests
             }
         }
 
-        private readonly PipelineContext context = No.PipelineContext();
+        private readonly RequestData requestData = No.RequestData();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep getByIdHandler = Handler(new Repository());
-            await getByIdHandler.Execute(context, NullNext);
+            await getByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(404);
-            context.FrontendResponse.Body.Should().BeNull();
+            requestData.FrontendResponse.StatusCode.Should().Be(404);
+            requestData.FrontendResponse.Body.Should().BeNull();
         }
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : GetByIdHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -107,19 +111,19 @@ public class GetByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly PipelineContext context = No.PipelineContext(_traceId);
+        private readonly RequestData requestData = No.RequestData(_traceId);
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep getByIdHandler = Handler(new Repository());
-            await getByIdHandler.Execute(context, NullNext);
+            await getByIdHandler.Execute(requestData, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            context.FrontendResponse.StatusCode.Should().Be(500);
+            requestData.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = $$"""
 {
@@ -128,15 +132,15 @@ public class GetByIdHandlerTests
 }
 """;
 
-            context.FrontendResponse.Body.Should().NotBeNull();
+            requestData.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(context.FrontendResponse.Body, JsonNode.Parse(expected))
+                .DeepEquals(requestData.FrontendResponse.Body, JsonNode.Parse(expected))
                 .Should()
                 .BeTrue(
                     $"""
 expected: {expected}
 
-actual: {context.FrontendResponse.Body}
+actual: {requestData.FrontendResponse.Body}
 """
                 );
         }

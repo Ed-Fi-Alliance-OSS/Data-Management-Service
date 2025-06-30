@@ -12,9 +12,11 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.ApiSchema.Helpers.Tests;
 
 [TestFixture]
+[Parallelizable]
 public class JsonHelperExtensionsTests
 {
     [TestFixture]
+    [Parallelizable]
     public class When_selecting_a_JSON_node_using_JsonPath
     {
         private static JsonNode? SelectNodeFromPath(JsonNode jsonNode, string jsonPath)
@@ -185,6 +187,7 @@ public class JsonHelperExtensionsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class When_selecting_nodes_from_array_path
     {
         private static IEnumerable<JsonNode?> SelectNodesFromArrayPath(JsonNode jsonNode, string jsonPath)
@@ -286,6 +289,7 @@ public class JsonHelperExtensionsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class When_selecting_paths_and_coercing_to_string
     {
         private static IEnumerable<string> SelectNodesFromArrayPathCoerceToStrings(
@@ -392,6 +396,7 @@ public class JsonHelperExtensionsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class When_selecting_node_from_path_as_generic
     {
         private static T? SelectNodeFromPathAs<T>(JsonNode jsonNode, string jsonPathString)
@@ -500,6 +505,7 @@ public class JsonHelperExtensionsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class When_selecting_a_required_node_from_path_as_string
     {
         private static string SelectRequiredNodeFromPathCoerceToString(
@@ -593,6 +599,7 @@ public class JsonHelperExtensionsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class When_selecting_a_required_node_from_path_as_generic
     {
         private static T SelectRequiredNodeFromPathAs<T>(JsonNode jsonNode, string jsonPathString)
@@ -638,6 +645,7 @@ public class JsonHelperExtensionsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class When_getting_a_required_node
     {
         [Test]

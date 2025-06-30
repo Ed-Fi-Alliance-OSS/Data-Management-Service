@@ -18,6 +18,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ReferenceArrayUniquenessValidationMiddlewareTests
 {
     internal static ApiSchemaDocuments BellScheduleApiSchema()
@@ -41,7 +42,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         return result;
     }
 
-    internal static async Task<PipelineContext> CreateContextAndExecute(
+    internal static async Task<RequestData> CreateContextAndExecute(
         ApiSchemaDocuments apiSchema,
         string jsonBody,
         string endpointName,
@@ -62,7 +63,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
             )
         );
 
-        PipelineContext context = new(frontEndRequest, method)
+        RequestData requestData = new(frontEndRequest, method)
         {
             ApiSchemaDocuments = apiSchema,
             PathComponents = new(
@@ -71,23 +72,24 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        context.ProjectSchema = context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+        requestData.ProjectSchema = requestData.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
             new("ed-fi")
         )!;
-        context.ResourceSchema = new ResourceSchema(
-            context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName)) ?? new JsonObject()
+        requestData.ResourceSchema = new ResourceSchema(
+            requestData.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
+                ?? new JsonObject()
         );
 
-        var body = JsonNode.Parse(context.FrontendRequest.Body!);
+        var body = JsonNode.Parse(requestData.FrontendRequest.Body!);
         if (body != null)
         {
-            context.ParsedBody = body;
+            requestData.ParsedBody = body;
         }
 
-        await BuildResourceInfo().Execute(context, NullNext);
-        await ExtractDocument().Execute(context, NullNext);
-        await Middleware().Execute(context, NullNext);
-        return context;
+        await BuildResourceInfo().Execute(requestData, NullNext);
+        await ExtractDocument().Execute(requestData, NullNext);
+        await Middleware().Execute(requestData, NullNext);
+        return requestData;
     }
 
     internal static BuildResourceInfoMiddleware BuildResourceInfo()
@@ -106,9 +108,10 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Document_With_Duplicate_References : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -170,9 +173,10 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Document_With_Unique_References : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -219,9 +223,10 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Document_With_Single_Reference : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -262,9 +267,10 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Document_With_No_Reference_Arrays : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()

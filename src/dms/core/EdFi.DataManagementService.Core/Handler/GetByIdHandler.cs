@@ -26,22 +26,22 @@ internal class GetByIdHandler(
     IAuthorizationServiceFactory authorizationServiceFactory
 ) : IPipelineStep
 {
-    public async Task Execute(PipelineContext context, Func<Task> next)
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
-        _logger.LogDebug("Entering GetByIdHandler - {TraceId}", context.FrontendRequest.TraceId.Value);
+        _logger.LogDebug("Entering GetByIdHandler - {TraceId}", requestData.FrontendRequest.TraceId.Value);
 
         var getResult = await _resiliencePipeline.ExecuteAsync(async t =>
             await _documentStoreRepository.GetDocumentById(
                 new GetRequest(
-                    DocumentUuid: context.PathComponents.DocumentUuid,
-                    ResourceInfo: context.ResourceInfo,
+                    DocumentUuid: requestData.PathComponents.DocumentUuid,
+                    ResourceInfo: requestData.ResourceInfo,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                        context.AuthorizationStrategyEvaluators,
-                        context.AuthorizationSecurableInfo,
+                        requestData.AuthorizationStrategyEvaluators,
+                        requestData.AuthorizationSecurableInfo,
                         authorizationServiceFactory,
                         _logger
                     ),
-                    TraceId: context.FrontendRequest.TraceId
+                    TraceId: requestData.FrontendRequest.TraceId
                 )
             )
         );
@@ -49,17 +49,17 @@ internal class GetByIdHandler(
         _logger.LogDebug(
             "Document store GetDocumentById returned {GetResult}- {TraceId}",
             getResult.GetType().FullName,
-            context.FrontendRequest.TraceId
+            requestData.FrontendRequest.TraceId
         );
 
-        context.FrontendResponse = getResult switch
+        requestData.FrontendResponse = getResult switch
         {
             GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             GetFailureNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(
-                    traceId: context.FrontendRequest.TraceId,
+                    traceId: requestData.FrontendRequest.TraceId,
                     errors: notAuthorized.ErrorMessages,
                     hints: notAuthorized.Hints
                 ),
@@ -67,12 +67,12 @@ internal class GetByIdHandler(
             ),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, context.FrontendRequest.TraceId),
+                Body: ToJsonError(failure.FailureMessage, requestData.FrontendRequest.TraceId),
                 Headers: []
             ),
             _ => new(
                 StatusCode: 500,
-                Body: ToJsonError("Unknown GetResult", context.FrontendRequest.TraceId),
+                Body: ToJsonError("Unknown GetResult", requestData.FrontendRequest.TraceId),
                 Headers: []
             ),
         };

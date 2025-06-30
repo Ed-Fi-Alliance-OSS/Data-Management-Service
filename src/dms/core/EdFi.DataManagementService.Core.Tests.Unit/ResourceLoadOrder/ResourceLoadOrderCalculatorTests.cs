@@ -19,9 +19,10 @@ public class ResourceLoadOrderCalculatorTests
     private ResourceLoadOrderCalculator? _resourceLoadCalculator;
 
     [TestFixture]
+    [Parallelizable]
     public class GivenAnApiSchemaWithReferenceToAbstractResource : ResourceLoadOrderCalculatorTests
     {
-        private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
+        private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject(
                 abstractResources: new JsonObject { ["EducationOrganization"] = JsonValue.Create(new { }) }
             )
@@ -106,9 +107,10 @@ public class ResourceLoadOrderCalculatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenAnApiSchemaWithAuthorizationConcerns : ResourceLoadOrderCalculatorTests
     {
-        private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
+        private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("Student")
             .WithEndResource()
@@ -233,9 +235,10 @@ public class ResourceLoadOrderCalculatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenAnApiSchemaWithExtension : ResourceLoadOrderCalculatorTests
     {
-        private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
+        private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("Person")
             .WithEndResource()
@@ -297,9 +300,10 @@ public class ResourceLoadOrderCalculatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenAnApiSchemaWithBreakableCycle : ResourceLoadOrderCalculatorTests
     {
-        private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
+        private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("one")
             .WithStartDocumentPathsMapping()
@@ -362,9 +366,10 @@ public class ResourceLoadOrderCalculatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenAnApiSchemaWithUnbreakableCycle : ResourceLoadOrderCalculatorTests
     {
-        private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
+        private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("one")
             .WithStartDocumentPathsMapping()
@@ -414,9 +419,10 @@ public class ResourceLoadOrderCalculatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class GivenAnApiSchemaWithSchoolYearType : ResourceLoadOrderCalculatorTests
     {
-        private readonly ApiSchemaNodes _apiSchemaNodes = new ApiSchemaBuilder()
+        private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("SchoolYearType", isSchoolYearEnumeration: true)
             .WithEndResource()

@@ -6,45 +6,35 @@
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
-using EdFi.DataManagementService.Core.Response;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class ApiSchemaValidationMiddleware(
-    IApiSchemaProvider _apiSchemaProvider,
-    IApiSchemaValidator _apiSchemaValidator,
-    ILogger _logger
-) : IPipelineStep
+/// <summary>
+/// Middleware that validates the ApiSchema. Acts as a fail-fast mechanism to ensure
+/// the system doesn't operate with invalid or corrupted schema definitions.
+/// </summary>
+internal class ApiSchemaValidationMiddleware(IApiSchemaProvider apiSchemaProvider, ILogger logger)
+    : IPipelineStep
 {
-    private readonly Lazy<List<SchemaValidationFailure>> _schemaValidationFailures = new(() =>
+    /// <summary>
+    /// Prevents any operations from proceeding when ApiSchema is invalid.
+    /// </summary>
+    public async Task Execute(RequestData requestData, Func<Task> next)
     {
-        var validationErrors = _apiSchemaValidator
-            .Validate(_apiSchemaProvider.GetApiSchemaNodes().CoreApiSchemaRootNode)
-            .Value;
-        if (validationErrors.Any())
-        {
-            _logger.LogCritical("Api schema validation failed.");
-            foreach (var error in validationErrors)
-            {
-                _logger.LogCritical(error.FailurePath.Value, error.FailureMessages);
-            }
-        }
-        return validationErrors;
-    });
-
-    public List<SchemaValidationFailure> SchemaValidationFailures => _schemaValidationFailures.Value;
-
-    public async Task Execute(PipelineContext context, Func<Task> next)
-    {
-        _logger.LogDebug(
+        logger.LogDebug(
             "Entering ApiSchemaValidationMiddleware- {TraceId}",
-            context.FrontendRequest.TraceId.Value
+            requestData.FrontendRequest.TraceId.Value
         );
 
-        if (SchemaValidationFailures.Any())
+        if (!apiSchemaProvider.IsSchemaValid)
         {
-            context.FrontendResponse = new FrontendResponse(StatusCode: 500, Body: string.Empty, Headers: []);
+            logger.LogError("API schema is invalid. Request cannot be processed.");
+            requestData.FrontendResponse = new FrontendResponse(
+                StatusCode: 500,
+                Body: string.Empty,
+                Headers: []
+            );
         }
         else
         {

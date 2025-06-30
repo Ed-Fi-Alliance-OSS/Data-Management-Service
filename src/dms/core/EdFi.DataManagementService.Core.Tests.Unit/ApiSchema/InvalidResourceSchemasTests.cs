@@ -23,14 +23,11 @@ using Polly;
 namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 
 /// <summary>
-/// APISchemaFileTests contain tests to cover all errors that may arise from the "ResourceSchema.cs" file due to invalid resource schemas.
-/// Within the "InvalidResourceSchemas.json" file, we have curated a collection of resource schemas representing various invalid use cases.
-/// On the frontend layer, there is no observable difference. The "CoreExceptionLoggingMiddleware" is to catch specific errors and consistently
-/// throw an "Internal server error." However, the specific error will be logged.Through these various tests,
-/// we are ensuring that invalid resource schemas are appropriately captured and throws error.
+/// Tests error handling for invalid resource schemas.
 /// </summary>
 [TestFixture]
-public class APISchemaFileTests
+[NonParallelizable]
+public class InvalidResourceSchemasTests
 {
     [TestFixture]
     public class Given_An_ApiSchema_File_With_Invalid_ResourceSchemas
@@ -38,12 +35,10 @@ public class APISchemaFileTests
         internal static ApiService BuildCoreFacade(IApiSchemaProvider apiSchemaProvider)
         {
             var serviceProvider = new ServiceCollection().BuildServiceProvider();
+            var apiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
 
             return new ApiService(
                 apiSchemaProvider,
-                new ApiSchemaValidator(
-                    new JsonSchemaForApiSchemaProvider(NullLogger<JsonSchemaForApiSchemaProvider>.Instance)
-                ),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new NoClaimsClaimSetCacheService(NullLogger.Instance),
                 new DocumentValidator(),
@@ -60,7 +55,8 @@ public class APISchemaFileTests
                     [],
                     [],
                     NullLogger<ResourceLoadOrderCalculator>.Instance
-                )
+                ),
+                apiSchemaUploadService
             );
         }
 
@@ -72,7 +68,7 @@ public class APISchemaFileTests
             var schemaContent = JsonNode.Parse(File.ReadAllText("ApiSchema/InvalidResourceSchemas.json"));
             apiSchemaProvider = A.Fake<IApiSchemaProvider>();
             A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes())
-                .Returns(new ApiSchemaNodes(schemaContent!, []));
+                .Returns(new ApiSchemaDocumentNodes(schemaContent!, []));
         }
 
         [TestFixture]

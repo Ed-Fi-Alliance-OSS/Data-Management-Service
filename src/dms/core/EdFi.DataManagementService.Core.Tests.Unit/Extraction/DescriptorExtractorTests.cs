@@ -15,6 +15,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
+[Parallelizable]
 public class DescriptorExtractorTests
 {
     internal static ApiSchemaDocuments BuildApiSchemaDocuments()
@@ -39,6 +40,7 @@ public class DescriptorExtractorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Descriptor_References_With_One_As_Scalar_And_Another_As_Collection
         : DescriptorExtractorTests
     {
@@ -127,6 +129,7 @@ public class DescriptorExtractorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Descriptor_References_As_Collection_With_Index : DescriptorExtractorTests
     {
         internal DescriptorReference[] descriptorReferences = [];
@@ -190,6 +193,7 @@ public class DescriptorExtractorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Descriptor_References_With_Missing_Optional_Scalar_Descriptor_In_Body
         : DescriptorExtractorTests
     {
@@ -260,6 +264,7 @@ public class DescriptorExtractorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Descriptor_References_With_Only_Single_Reference_In_Collection_In_Body
         : DescriptorExtractorTests
     {
@@ -311,6 +316,7 @@ public class DescriptorExtractorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Descriptor_References_With_Empty_Reference_Collection_In_Body
         : DescriptorExtractorTests
     {
@@ -344,6 +350,7 @@ public class DescriptorExtractorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Descriptor_References_With_Missing_Optional_Class_Period_Reference_Collection_In_Body
         : DescriptorExtractorTests
     {
@@ -392,6 +399,7 @@ public class DescriptorExtractorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Extracting_Descriptor_References_With_No_References_In_Body : DescriptorExtractorTests
     {
         internal DescriptorReference[] descriptorReferences = [];

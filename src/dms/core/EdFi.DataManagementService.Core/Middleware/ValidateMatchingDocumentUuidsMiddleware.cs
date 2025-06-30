@@ -17,14 +17,14 @@ namespace EdFi.DataManagementService.Core.Middleware
         IMatchingDocumentUuidsValidator _validator
     ) : IPipelineStep
     {
-        public async Task Execute(PipelineContext context, Func<Task> next)
+        public async Task Execute(RequestData requestData, Func<Task> next)
         {
             _logger.LogDebug(
                 "Entering ValidateMatchingDocumentUuidsMiddleware- {TraceId}",
-                context.FrontendRequest.TraceId.Value
+                requestData.FrontendRequest.TraceId.Value
             );
 
-            var isValid = _validator.Validate(context);
+            var isValid = _validator.Validate(requestData);
 
             if (isValid)
             {
@@ -34,7 +34,7 @@ namespace EdFi.DataManagementService.Core.Middleware
             {
                 JsonNode failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
-                    context.FrontendRequest.TraceId,
+                    requestData.FrontendRequest.TraceId,
                     [],
                     ["Request body id must match the id in the url."]
                 );
@@ -42,11 +42,11 @@ namespace EdFi.DataManagementService.Core.Middleware
                 _logger.LogDebug(
                     "'{Status}'.'{EndpointName}' - {TraceId}",
                     "400",
-                    context.PathComponents.EndpointName,
-                    context.FrontendRequest.TraceId.Value
+                    requestData.PathComponents.EndpointName,
+                    requestData.FrontendRequest.TraceId.Value
                 );
 
-                context.FrontendResponse = new FrontendResponse(
+                requestData.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
                     Body: failureResponse,
                     Headers: []

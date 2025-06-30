@@ -16,6 +16,7 @@ using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Extraction;
 
 [TestFixture]
+[Parallelizable]
 public class ExtractSecurityElementsTests
 {
     internal static ApiSchemaDocuments BuildApiSchemaDocuments()
@@ -37,6 +38,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_an_assessment_resource_that_has_a_namespace : ExtractSecurityElementsTests
     {
         private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
@@ -79,6 +81,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_an_assessment_resource_that_does_not_have_a_namespace : ExtractSecurityElementsTests
     {
         private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
@@ -120,6 +123,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_resource_that_has_a_namespace_not_as_a_security_element
         : ExtractSecurityElementsTests
     {
@@ -162,6 +166,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_an_academicWeek_resource_that_has_educationOrganization : ExtractSecurityElementsTests
     {
         private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
@@ -209,6 +214,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_an_academicWeek_resource_that_does_not_have_educationOrganization
         : ExtractSecurityElementsTests
     {
@@ -254,6 +260,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_resource_that_has_educationOrganization_not_as_a_security_element
         : ExtractSecurityElementsTests
     {
@@ -301,6 +308,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_courseTranscript_resource_that_has_studentId : ExtractSecurityElementsTests
     {
         private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
@@ -345,6 +353,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_courseTranscript_resource_that_does_not_have_studentId : ExtractSecurityElementsTests
     {
         private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
@@ -385,6 +394,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_resource_that_has_studentId_not_as_a_security_element : ExtractSecurityElementsTests
     {
         private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
@@ -428,6 +438,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_StudentContactAssociations_resource_that_has_studentUniqueId_and_ContactUniqueId
         : ExtractSecurityElementsTests
     {
@@ -481,6 +492,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_Contact_resource_that_does_not_have_contactUniqueId : ExtractSecurityElementsTests
     {
         private DocumentSecurityElements documentSecurityElements = No.DocumentSecurityElements;
@@ -521,6 +533,7 @@ public class ExtractSecurityElementsTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_a_resource_that_has_contactUniqueId_not_as_a_security_element
         : ExtractSecurityElementsTests
     {

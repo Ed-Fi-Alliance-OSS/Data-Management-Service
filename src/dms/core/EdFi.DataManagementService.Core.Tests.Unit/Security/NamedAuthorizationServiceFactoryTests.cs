@@ -19,6 +19,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 public class NamedAuthorizationServiceFactoryTests
 {
     [TestFixture]
+    [Parallelizable]
     public class Given_Matching_AuthorizationStrategy_Handler
     {
         private NamedAuthorizationServiceFactory? handlerProvider;
@@ -111,6 +112,7 @@ public class NamedAuthorizationServiceFactoryTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Not_Matching_AuthorizationStrategy_Handler
     {
         private NamedAuthorizationServiceFactory? handlerProvider;
@@ -136,6 +138,7 @@ public class NamedAuthorizationServiceFactoryTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Matching_AuthorizationFilters_Handler
     {
         private NamedAuthorizationServiceFactory? handlerProvider;
@@ -203,6 +206,7 @@ public class NamedAuthorizationServiceFactoryTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Not_Matching_AuthorizationFilters_Handler
     {
         private NamedAuthorizationServiceFactory? handlerProvider;

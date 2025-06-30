@@ -28,33 +28,134 @@ namespace EdFi.DataManagementService.Core;
 /// <summary>
 /// The DMS API service.
 /// </summary>
-internal class ApiService(
-    IApiSchemaProvider _apiSchemaProvider,
-    IApiSchemaValidator _apiSchemaValidator,
-    IDocumentStoreRepository _documentStoreRepository,
-    IClaimSetCacheService _claimSetCacheService,
-    IDocumentValidator _documentValidator,
-    IQueryHandler _queryHandler,
-    IMatchingDocumentUuidsValidator _matchingDocumentUuidsValidator,
-    IEqualityConstraintValidator _equalityConstraintValidator,
-    IDecimalValidator _decimalValidator,
-    ILogger<ApiService> _logger,
-    IOptions<AppSettings> _appSettings,
-    IAuthorizationServiceFactory _authorizationServiceFactory,
-    [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline _resiliencePipeline,
-    ResourceLoadOrderCalculator _resourceLoadCalculator
-) : IApiService
+internal class ApiService : IApiService
 {
+    private readonly IApiSchemaProvider _apiSchemaProvider;
+    private readonly IDocumentStoreRepository _documentStoreRepository;
+    private readonly IClaimSetCacheService _claimSetCacheService;
+    private readonly IDocumentValidator _documentValidator;
+    private readonly IQueryHandler _queryHandler;
+    private readonly IMatchingDocumentUuidsValidator _matchingDocumentUuidsValidator;
+    private readonly IEqualityConstraintValidator _equalityConstraintValidator;
+    private readonly IDecimalValidator _decimalValidator;
+    private readonly ILogger<ApiService> _logger;
+    private readonly IOptions<AppSettings> _appSettings;
+    private readonly IAuthorizationServiceFactory _authorizationServiceFactory;
+    private readonly ResiliencePipeline _resiliencePipeline;
+    private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
+    private readonly IUploadApiSchemaService _apiSchemaUploadService;
+
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
     /// </summary>
-    private readonly Lazy<PipelineProvider> _upsertSteps = new(() =>
+    private readonly VersionedLazy<PipelineProvider> _upsertSteps;
+
+    /// <summary>
+    /// The pipeline steps to satisfy a get by id request
+    /// </summary>
+    private readonly VersionedLazy<PipelineProvider> _getByIdSteps;
+
+    /// <summary>
+    /// The pipeline steps to satisfy a query request
+    /// </summary>
+    private readonly VersionedLazy<PipelineProvider> _querySteps;
+
+    /// <summary>
+    /// The pipeline steps to satisfy an update request
+    /// </summary>
+    private readonly VersionedLazy<PipelineProvider> _updateSteps;
+
+    /// <summary>
+    /// The pipeline steps to satisfy a delete by id request
+    /// </summary>
+    private readonly VersionedLazy<PipelineProvider> _deleteByIdSteps;
+
+    /// <summary>
+    /// The OpenAPI specification derived from core and extension ApiSchemas
+    /// </summary>
+    private readonly VersionedLazy<JsonNode> _resourceOpenApiSpecification;
+
+    /// <summary>
+    /// The OpenAPI specification derived from core and extension ApiSchemas
+    /// </summary>
+    private readonly VersionedLazy<JsonNode> _descriptorOpenApiSpecification;
+
+    public ApiService(
+        IApiSchemaProvider apiSchemaProvider,
+        IDocumentStoreRepository documentStoreRepository,
+        IClaimSetCacheService claimSetCacheService,
+        IDocumentValidator documentValidator,
+        IQueryHandler queryHandler,
+        IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
+        IEqualityConstraintValidator equalityConstraintValidator,
+        IDecimalValidator decimalValidator,
+        ILogger<ApiService> logger,
+        IOptions<AppSettings> appSettings,
+        IAuthorizationServiceFactory authorizationServiceFactory,
+        [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline resiliencePipeline,
+        ResourceLoadOrderCalculator resourceLoadCalculator,
+        IUploadApiSchemaService apiSchemaUploadService
+    )
+    {
+        _apiSchemaProvider = apiSchemaProvider;
+        _documentStoreRepository = documentStoreRepository;
+        _claimSetCacheService = claimSetCacheService;
+        _documentValidator = documentValidator;
+        _queryHandler = queryHandler;
+        _matchingDocumentUuidsValidator = matchingDocumentUuidsValidator;
+        _equalityConstraintValidator = equalityConstraintValidator;
+        _decimalValidator = decimalValidator;
+        _logger = logger;
+        _appSettings = appSettings;
+        _authorizationServiceFactory = authorizationServiceFactory;
+        _resiliencePipeline = resiliencePipeline;
+        _resourceLoadCalculator = resourceLoadCalculator;
+        _apiSchemaUploadService = apiSchemaUploadService;
+
+        // Initialize VersionedLazy instances with schema version provider
+        _upsertSteps = new VersionedLazy<PipelineProvider>(
+            CreateUpsertPipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _getByIdSteps = new VersionedLazy<PipelineProvider>(
+            CreateGetByIdPipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _querySteps = new VersionedLazy<PipelineProvider>(
+            CreateQueryPipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _updateSteps = new VersionedLazy<PipelineProvider>(
+            CreateUpdatePipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _deleteByIdSteps = new VersionedLazy<PipelineProvider>(
+            CreateDeleteByIdPipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _resourceOpenApiSpecification = new VersionedLazy<JsonNode>(
+            CreateResourceOpenApiSpecification,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _descriptorOpenApiSpecification = new VersionedLazy<JsonNode>(
+            CreateDescriptorOpenApiSpecification,
+            () => _apiSchemaProvider.ReloadId
+        );
+    }
+
+    private PipelineProvider CreateUpsertPipeline()
     {
         var steps = new List<IPipelineStep>();
         steps.AddRange(
             [
                 new CoreExceptionLoggingMiddleware(_logger),
-                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
@@ -106,16 +207,14 @@ internal class ApiService(
         );
 
         return new PipelineProvider(steps);
-    });
+    }
 
-    /// <summary>
-    /// The pipeline steps to satisfy a get by id request
-    /// </summary>
-    private readonly Lazy<PipelineProvider> _getByIdSteps = new(() =>
-        new(
+    private PipelineProvider CreateGetByIdPipeline()
+    {
+        return new(
             [
                 new CoreExceptionLoggingMiddleware(_logger),
-                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
@@ -133,17 +232,15 @@ internal class ApiService(
                     _authorizationServiceFactory
                 ),
             ]
-        )
-    );
+        );
+    }
 
-    /// <summary>
-    /// The pipeline steps to satisfy a query request
-    /// </summary>
-    private readonly Lazy<PipelineProvider> _querySteps = new(() =>
-        new(
+    private PipelineProvider CreateQueryPipeline()
+    {
+        return new(
             [
                 new CoreExceptionLoggingMiddleware(_logger),
-                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
@@ -157,19 +254,16 @@ internal class ApiService(
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
             ]
-        )
-    );
+        );
+    }
 
-    /// <summary>
-    /// The pipeline steps to satisfy an update request
-    /// </summary>
-    private readonly Lazy<PipelineProvider> _updateSteps = new(() =>
+    private PipelineProvider CreateUpdatePipeline()
     {
         var steps = new List<IPipelineStep>();
         steps.AddRange(
             [
                 new CoreExceptionLoggingMiddleware(_logger),
-                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
@@ -220,16 +314,14 @@ internal class ApiService(
             ]
         );
         return new PipelineProvider(steps);
-    });
+    }
 
-    /// <summary>
-    /// The pipeline steps to satisfy a delete by id request
-    /// </summary>
-    private readonly Lazy<PipelineProvider> _deleteByIdSteps = new(() =>
-        new(
+    private PipelineProvider CreateDeleteByIdPipeline()
+    {
+        return new(
             [
                 new CoreExceptionLoggingMiddleware(_logger),
-                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _apiSchemaValidator, _logger),
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
@@ -248,17 +340,35 @@ internal class ApiService(
                     _authorizationServiceFactory
                 ),
             ]
-        )
-    );
+        );
+    }
+
+    private JsonNode CreateResourceOpenApiSpecification()
+    {
+        OpenApiDocument openApiDocument = new(_logger);
+        return openApiDocument.CreateDocument(
+            _apiSchemaProvider.GetApiSchemaNodes(),
+            OpenApiDocument.DocumentSection.Resource
+        );
+    }
+
+    private JsonNode CreateDescriptorOpenApiSpecification()
+    {
+        OpenApiDocument descriptorOpenApiDocument = new(_logger);
+        return descriptorOpenApiDocument.CreateDocument(
+            _apiSchemaProvider.GetApiSchemaNodes(),
+            OpenApiDocument.DocumentSection.Descriptor
+        );
+    }
 
     /// <summary>
     /// DMS entry point for API upsert requests
     /// </summary>
     public async Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest)
     {
-        PipelineContext pipelineContext = new(frontendRequest, RequestMethod.POST);
-        await _upsertSteps.Value.Run(pipelineContext);
-        return pipelineContext.FrontendResponse;
+        RequestData requestData = new(frontendRequest, RequestMethod.POST);
+        await _upsertSteps.Value.Run(requestData);
+        return requestData.FrontendResponse;
     }
 
     /// <summary>
@@ -266,7 +376,7 @@ internal class ApiService(
     /// </summary>
     public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
-        PipelineContext pipelineContext = new(frontendRequest, RequestMethod.GET);
+        RequestData requestData = new(frontendRequest, RequestMethod.GET);
 
         Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
 
@@ -279,13 +389,13 @@ internal class ApiService(
 
         if (documentUuid != string.Empty)
         {
-            await _getByIdSteps.Value.Run(pipelineContext);
+            await _getByIdSteps.Value.Run(requestData);
         }
         else
         {
-            await _querySteps.Value.Run(pipelineContext);
+            await _querySteps.Value.Run(requestData);
         }
-        return pipelineContext.FrontendResponse;
+        return requestData.FrontendResponse;
     }
 
     /// <summary>
@@ -293,9 +403,9 @@ internal class ApiService(
     /// </summary>
     public async Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest)
     {
-        PipelineContext pipelineContext = new(frontendRequest, RequestMethod.PUT);
-        await _updateSteps.Value.Run(pipelineContext);
-        return pipelineContext.FrontendResponse;
+        RequestData requestData = new(frontendRequest, RequestMethod.PUT);
+        await _updateSteps.Value.Run(requestData);
+        return requestData.FrontendResponse;
     }
 
     /// <summary>
@@ -303,9 +413,9 @@ internal class ApiService(
     /// </summary>
     public async Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest)
     {
-        PipelineContext pipelineContext = new(frontendRequest, RequestMethod.DELETE);
-        await _deleteByIdSteps.Value.Run(pipelineContext);
-        return pipelineContext.FrontendResponse;
+        RequestData requestData = new(frontendRequest, RequestMethod.DELETE);
+        await _deleteByIdSteps.Value.Run(requestData);
+        return requestData.FrontendResponse;
     }
 
     /// <summary>
@@ -351,30 +461,6 @@ internal class ApiService(
                 .ToArray<JsonNode?>()
         );
     }
-
-    /// <summary>
-    /// The OpenAPI specification derived from core and extension ApiSchemas
-    /// </summary>
-    private readonly Lazy<JsonNode> _resourceOpenApiSpecification = new(() =>
-    {
-        OpenApiDocument openApiDocument = new(_logger);
-        return openApiDocument.CreateDocument(
-            _apiSchemaProvider.GetApiSchemaNodes(),
-            OpenApiDocument.DocumentSection.Resource
-        );
-    });
-
-    /// <summary>
-    /// The OpenAPI specification derived from core and extension ApiSchemas
-    /// </summary>
-    private readonly Lazy<JsonNode> _descriptorOpenApiSpecification = new(() =>
-    {
-        OpenApiDocument descriptorOpenApiDocument = new(_logger);
-        return descriptorOpenApiDocument.CreateDocument(
-            _apiSchemaProvider.GetApiSchemaNodes(),
-            OpenApiDocument.DocumentSection.Descriptor
-        );
-    });
 
     /// <summary>
     /// DMS entry point to get the OpenAPI specification for resources, derived from core and extension ApiSchemas.
@@ -443,5 +529,118 @@ internal class ApiService(
         securitySchemes[schemeName] = oauth2Scheme;
 
         specification["security"] = new JsonArray { new JsonObject { [schemeName] = new JsonArray() } };
+    }
+
+    /// <summary>
+    /// Reloads the API schema from the configured source
+    /// </summary>
+    public async Task<IFrontendResponse> ReloadApiSchemaAsync()
+    {
+        // Check if management endpoints are enabled
+        if (!_appSettings.Value.EnableManagementEndpoints)
+        {
+            _logger.LogWarning("API schema reload requested but management endpoints are disabled");
+            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
+        }
+        _logger.LogInformation("API schema reload requested");
+
+        try
+        {
+            var (success, _) = await _apiSchemaProvider.ReloadApiSchemaAsync();
+
+            if (success)
+            {
+                _logger.LogInformation(
+                    "API schema reload completed successfully. All caches will be refreshed on next access."
+                );
+
+                return new FrontendResponse(
+                    StatusCode: 200,
+                    Body: JsonNode.Parse("""{"message": "Schema reloaded successfully"}"""),
+                    Headers: []
+                );
+            }
+            else
+            {
+                _logger.LogError("API schema reload failed");
+                return new FrontendResponse(
+                    StatusCode: 500,
+                    Body: JsonNode.Parse("""{"error": "Schema reload failed"}"""),
+                    Headers: []
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception occurred during API schema reload");
+            return new FrontendResponse(
+                StatusCode: 500,
+                Body: JsonNode.Parse($"{{ \"error\": \"Error during schema reload: {ex.Message}\" }}"),
+                Headers: []
+            );
+        }
+    }
+
+    /// <summary>
+    /// Uploads ApiSchemas from the provided content
+    /// </summary>
+    public async Task<IFrontendResponse> UploadApiSchemaAsync(UploadSchemaRequest request)
+    {
+        // Check if management endpoints are enabled
+        if (!_appSettings.Value.EnableManagementEndpoints)
+        {
+            _logger.LogWarning("API schema upload requested but management endpoints are disabled");
+            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
+        }
+
+        UploadSchemaResponse uploadResponse = await _apiSchemaUploadService.UploadApiSchemaAsync(request);
+
+        if (uploadResponse.Success)
+        {
+            return new FrontendResponse(
+                StatusCode: 200,
+                Body: JsonNode.Parse(
+                    $$"""
+                    {
+                        "message": "Schema uploaded successfully",
+                        "reloadId": "{{uploadResponse.ReloadId}}",
+                        "schemasProcessed": {{uploadResponse.SchemasProcessed}}
+                    }
+                    """
+                ),
+                Headers: []
+            );
+        }
+
+        var errorBody = new JsonObject { ["error"] = uploadResponse.ErrorMessage };
+
+        // Add detailed failure information if available
+        if (uploadResponse.Failures != null && uploadResponse.Failures.Count > 0)
+        {
+            var failuresArray = new JsonArray();
+            foreach (var failure in uploadResponse.Failures)
+            {
+                var failureObj = new JsonObject
+                {
+                    ["type"] = failure.FailureType,
+                    ["message"] = failure.Message,
+                };
+
+                if (failure.FailurePath != null)
+                {
+                    failureObj["path"] = JsonValue.Create(failure.FailurePath.Value);
+                }
+
+                if (failure.Exception != null)
+                {
+                    failureObj["exception"] = failure.Exception.Message;
+                }
+
+                failuresArray.Add(failureObj);
+            }
+            errorBody["failures"] = failuresArray;
+        }
+
+        return new FrontendResponse(StatusCode: 400, Body: errorBody, Headers: []);
     }
 }

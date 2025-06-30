@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// <summary>
 /// Core and extension ApiSchemas as JsonNodes
 /// </summary>
-public record ApiSchemaNodes(
+public record ApiSchemaDocumentNodes(
     /// <summary>
     /// Core ApiSchema as parsed JSON.
     /// </summary>

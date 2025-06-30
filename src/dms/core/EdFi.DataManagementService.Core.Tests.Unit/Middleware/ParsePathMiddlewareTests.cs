@@ -18,6 +18,7 @@ using static EdFi.DataManagementService.Core.UtilityService;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
+[Parallelizable]
 public class ParsePathMiddlewareTests
 {
     internal static IPipelineStep Middleware()
@@ -26,9 +27,10 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Empty_Path : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -64,9 +66,10 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Invalid_Path : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -102,9 +105,10 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Valid_Path_Without_ResourceId : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -143,9 +147,10 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Valid_Path_With_Valid_ResourceId : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
         private readonly string documentUuid = "7825fba8-0b3d-4fc9-ae72-5ad8194d3ce2";
 
         [SetUp]
@@ -186,9 +191,10 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Valid_Path_With_Invalid_ResourceId : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -234,9 +240,10 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Post_With_ResourceId : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -280,9 +287,10 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Put_With_Missing_ResourceId : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -326,9 +334,10 @@ public class ParsePathMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Delete_With_Missing_ResourceId : ParsePathMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()

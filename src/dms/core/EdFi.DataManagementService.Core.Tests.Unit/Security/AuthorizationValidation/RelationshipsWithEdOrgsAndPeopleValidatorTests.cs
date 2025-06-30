@@ -14,6 +14,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Core.Tests.Unit.Security.AuthorizationValidation;
 
 [TestFixture]
+[Parallelizable]
 public class RelationshipsWithEdOrgsAndPeopleValidatorTests
 {
     private readonly IAuthorizationRepository _authorizationRepository;
@@ -28,6 +29,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     // Student authorization tests
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Request_Has_No_Student_Info : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
         private ResourceAuthorizationResult? _expectedResult;
@@ -67,6 +69,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_With_Student_Reference_Has_No_Associated_EdOrgs
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -126,6 +129,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_With_Student_Reference_Has_Matching_EdOrg
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -168,6 +172,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_With_Student_Reference_Has_No_Matching_EdOrg
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -229,6 +234,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
 
     // Contact authorization tests
     [TestFixture]
+    [Parallelizable]
     public class Given_Request_Has_No_Contact_Info : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
         private ResourceAuthorizationResult? _expectedResult;
@@ -268,6 +274,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_With_Contact_Reference_Has_No_Associated_EdOrgs
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -329,6 +336,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_With_Contact_Reference_Has_Matching_EdOrg
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -371,6 +379,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_With_Contact_Reference_Has_No_Matching_EdOrg
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -433,6 +442,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_Is_Not_Student_Or_Contact_Securable
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -471,6 +481,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_Is_Student_And_Contact_Securable
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -518,6 +529,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_Is_Student_And_Contact_Securable_Missing_Student_Info
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -575,6 +587,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_Is_Student_And_Contact_Securable_Missing_Contact_Info
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -632,6 +645,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_Is_Student_And_EdOrg_Securable_Wrong_EdOrg_Info
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {
@@ -697,6 +711,7 @@ public class RelationshipsWithEdOrgsAndPeopleValidatorTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_Resource_Is_Student_And_EdOrg_Securable
         : RelationshipsWithEdOrgsAndPeopleValidatorTests
     {

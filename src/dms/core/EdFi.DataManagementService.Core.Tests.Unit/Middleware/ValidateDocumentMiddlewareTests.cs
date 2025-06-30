@@ -94,9 +94,9 @@ public class ValidateDocumentMiddlewareTests
         return new ValidateDocumentMiddleware(NullLogger.Instance, documentValidator);
     }
 
-    internal PipelineContext Context(FrontendRequest frontendRequest, RequestMethod method)
+    internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
     {
-        PipelineContext _context = new(frontendRequest, method)
+        RequestData _context = new(frontendRequest, method)
         {
             ApiSchemaDocuments = SchemaDocuments(),
             PathComponents = new(
@@ -125,9 +125,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Request_With_Overposted_Property : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -160,9 +161,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Request_With_Overposted_Nested_Property : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -195,9 +197,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Request_With_Overposted_Object_Property : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -275,9 +278,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Request_With_Null_Property : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -310,9 +314,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Request_With_Null_Nested_Property : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -345,9 +350,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Request_With_No_Required_Property : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -392,9 +398,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Request_With_Wrong_Type_Property_Value : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -442,9 +449,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_A_Update_Request_With_No_Id_Property : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -489,10 +497,11 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Insert_Request_With_Required_String_Property_Value_Contains_Only_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -540,10 +549,11 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Insert_Request_With_Required_String_Property_Value_Is_Null
         : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -591,10 +601,11 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Insert_Request_With_Required_String_Property_Value_Contains_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -627,10 +638,11 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Insert_Request_With_Identity_String_Property_Value_Contains_Only_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -678,10 +690,11 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Insert_Request_With_Identity_String_Property_Value_Contains_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -729,9 +742,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Insert_Request_With_Empty_Identity_String_Property : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -779,10 +793,11 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Insert_Request_With_Optional_String_Property_Value_Contains_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()
@@ -815,9 +830,10 @@ public class ValidateDocumentMiddlewareTests
     }
 
     [TestFixture]
+    [Parallelizable]
     public class Given_An_Insert_Request_With_Empty_NonRequired_Collection : ValidateDocumentMiddlewareTests
     {
-        private PipelineContext _context = No.PipelineContext();
+        private RequestData _context = No.RequestData();
 
         [SetUp]
         public async Task Setup()

@@ -17,6 +17,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
         private readonly ILogger _logger = NullLogger.Instance;
 
         [TestFixture]
+        [Parallelizable]
         public class WhenEvaluatingAGraphWithNoCyclicalDependencies : BidirectionalGraphExtensionsTests
         {
             private BidirectionalGraph<string, IEdge<string>>? _graph;
@@ -56,6 +57,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
         }
 
         [TestFixture]
+        [Parallelizable]
         public class WhenAGraphHasACyclicalDependency : BidirectionalGraphExtensionsTests
         {
             private BidirectionalGraph<string, IEdge<string>>? _graph;
@@ -165,6 +167,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
         }
 
         [TestFixture]
+        [Parallelizable]
         public class WhenAGraphHasTwoCyclesAndASelfReferencingAssociation : BidirectionalGraphExtensionsTests
         {
             private BidirectionalGraph<string, IEdge<string>>? _graph;
@@ -244,6 +247,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
         }
 
         [TestFixture]
+        [Parallelizable]
         public class WhenEvaluatingAGraphWithSelfReferencingVertices : BidirectionalGraphExtensionsTests
         {
             private BidirectionalGraph<string, IEdge<string>>? _graph;

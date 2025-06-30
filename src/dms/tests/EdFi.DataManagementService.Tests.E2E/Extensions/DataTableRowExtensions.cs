@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
             var options = new JsonSerializerOptions
             {
                 Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                WriteIndented = true
+                WriteIndented = true,
             };
 
             var rowDict = new Dictionary<string, object?>();
@@ -74,7 +74,8 @@ namespace EdFi.DataManagementService.Tests.E2E.Extensions
             if (value.StartsWith('[') && value.EndsWith(']') || value.StartsWith('{') && value.EndsWith('}'))
             {
                 using var document =
-                    JsonDocument.Parse(value) ?? throw new InvalidOperationException($"Error while parsing {value}");
+                    JsonDocument.Parse(value)
+                    ?? throw new InvalidOperationException($"Error while parsing {value}");
 
                 return document.RootElement.Clone();
             }
