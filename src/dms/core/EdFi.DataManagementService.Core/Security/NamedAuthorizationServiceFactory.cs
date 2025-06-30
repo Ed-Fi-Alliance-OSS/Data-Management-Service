@@ -17,19 +17,14 @@ public interface IAuthorizationServiceFactory
         where T : class;
 }
 
-public class NamedAuthorizationServiceFactory : IAuthorizationServiceFactory
+public class NamedAuthorizationServiceFactory(IServiceProvider serviceProvider) : IAuthorizationServiceFactory
 {
-    private readonly Dictionary<(Type, string), Type> _authorizationValidatorTypes = [];
-    private readonly IServiceProvider _serviceProvider;
-
-    public NamedAuthorizationServiceFactory(IServiceProvider serviceProvider)
-    {
-        _serviceProvider = serviceProvider;
+    private readonly Dictionary<(Type, string), Type> _authorizationValidatorTypes =
         RegisterAuthorizationValidators();
-    }
 
-    private void RegisterAuthorizationValidators()
+    private static Dictionary<(Type, string), Type> RegisterAuthorizationValidators()
     {
+        var authorizationValidatorTypes = new Dictionary<(Type, string), Type>();
         var types = Assembly.GetExecutingAssembly().GetTypes();
 
         foreach (var type in types)
@@ -40,10 +35,12 @@ public class NamedAuthorizationServiceFactory : IAuthorizationServiceFactory
                 var interfaces = type.GetInterfaces();
                 foreach (var typeInterface in interfaces)
                 {
-                    _authorizationValidatorTypes[(typeInterface, attribute.Name)] = type;
+                    authorizationValidatorTypes[(typeInterface, attribute.Name)] = type;
                 }
             }
         }
+
+        return authorizationValidatorTypes;
     }
 
     public T? GetByName<T>(string authorizationStrategyName)
@@ -54,6 +51,6 @@ public class NamedAuthorizationServiceFactory : IAuthorizationServiceFactory
         {
             return null;
         }
-        return _serviceProvider.GetRequiredService(type) as T;
+        return serviceProvider.GetRequiredService(type) as T;
     }
 }

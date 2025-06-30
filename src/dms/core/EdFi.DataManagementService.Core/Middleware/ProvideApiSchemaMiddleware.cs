@@ -18,34 +18,21 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// resources to create a unified schema representation that supports both standard and
 /// extended Ed-Fi data models.
 /// </summary>
-internal class ProvideApiSchemaMiddleware : IPipelineStep
+internal class ProvideApiSchemaMiddleware(IApiSchemaProvider apiSchemaProvider, ILogger logger)
+    : IPipelineStep
 {
-    private readonly IApiSchemaProvider _apiSchemaProvider;
-    private readonly ILogger _logger;
-
     // Lazy-loaded merged schema documents that refresh when schema is reloaded
-    private readonly VersionedLazy<ApiSchemaDocuments> _apiSchemaDocuments;
-
-    /// <summary>
-    /// Initializes the middleware with schema services. Sets up lazy-loaded schema document
-    /// processing that merges core and extension schemas and automatically refreshes when
-    /// the API schema is reloaded.
-    /// </summary>
-    public ProvideApiSchemaMiddleware(IApiSchemaProvider apiSchemaProvider, ILogger logger)
-    {
-        _apiSchemaProvider = apiSchemaProvider;
-        _logger = logger;
-
-        _apiSchemaDocuments = new VersionedLazy<ApiSchemaDocuments>(
+    private readonly VersionedLazy<ApiSchemaDocuments> _apiSchemaDocuments =
+        new VersionedLazy<ApiSchemaDocuments>(
             () =>
             {
-                var apiSchemaNodes = _apiSchemaProvider.GetApiSchemaNodes();
+                var apiSchemaNodes = apiSchemaProvider.GetApiSchemaNodes();
 
                 // Clone to not mutate the original schema
                 var coreApiSchema = apiSchemaNodes.CoreApiSchemaRootNode.DeepClone();
 
                 List<JsonNode> coreResources = coreApiSchema
-                    .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
+                    .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", logger)
                     .SelectNodesFromPropertyValues();
 
                 string[] nodeKeys =
@@ -62,7 +49,7 @@ internal class ProvideApiSchemaMiddleware : IPipelineStep
                 foreach (JsonNode extension in apiSchemaNodes.ExtensionApiSchemaRootNodes)
                 {
                     List<JsonNode> extensionResources = extension
-                        .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", _logger)
+                        .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", logger)
                         .SelectNodesFromPropertyValues();
 
                     // Iterates over a list of node keys and calls
@@ -70,7 +57,7 @@ internal class ProvideApiSchemaMiddleware : IPipelineStep
                     // data from extensionResources to coreResources
                     foreach (var nodeKey in nodeKeys)
                     {
-                        CopyResourceExtensionNodeToCore(extensionResources, coreResources, nodeKey, _logger);
+                        CopyResourceExtensionNodeToCore(extensionResources, coreResources, nodeKey, logger);
                     }
                 }
 
@@ -79,12 +66,11 @@ internal class ProvideApiSchemaMiddleware : IPipelineStep
                     {
                         CoreApiSchemaRootNode = coreApiSchema,
                     },
-                    _logger
+                    logger
                 );
             },
-            () => _apiSchemaProvider.ReloadId
+            () => apiSchemaProvider.ReloadId
         );
-    }
 
     /// <summary>
     /// Provides the merged API schema documents to the requestData.
@@ -93,7 +79,7 @@ internal class ProvideApiSchemaMiddleware : IPipelineStep
     /// </summary>
     public async Task Execute(RequestData requestData, Func<Task> next)
     {
-        _logger.LogDebug(
+        logger.LogDebug(
             "Entering ProvideApiSchemaMiddleware- {TraceId}",
             requestData.FrontendRequest.TraceId.Value
         );
@@ -119,7 +105,7 @@ internal class ProvideApiSchemaMiddleware : IPipelineStep
         List<JsonNode> extensionResources,
         List<JsonNode> coreResources,
         string nodeKey,
-        ILogger _logger
+        ILogger logger
     )
     {
         Dictionary<string, JsonNode> coreResourceByName = coreResources.ToDictionary(coreResource =>
@@ -145,7 +131,7 @@ internal class ProvideApiSchemaMiddleware : IPipelineStep
             switch (nodeValueKind)
             {
                 case JsonValueKind.Object:
-                    MergeExtensionObjectIntoCore(_logger, sourceExtensionNode, targetCoreNode);
+                    MergeExtensionObjectIntoCore(logger, sourceExtensionNode, targetCoreNode);
                     break;
                 case JsonValueKind.Array:
                     var targetArray = targetCoreNode.AsArray();
@@ -166,7 +152,7 @@ internal class ProvideApiSchemaMiddleware : IPipelineStep
     /// Merges JSON object properties from an extension schema into a core schema object.
     /// </summary>
     private static void MergeExtensionObjectIntoCore(
-        ILogger _logger,
+        ILogger logger,
         JsonNode sourceExtensionNode,
         JsonNode targetCoreNode
     )
@@ -181,7 +167,7 @@ internal class ProvideApiSchemaMiddleware : IPipelineStep
                 && !string.Equals(sourceObject.Key, "_ext", StringComparison.InvariantCultureIgnoreCase)
             )
             {
-                _logger.LogWarning(
+                logger.LogWarning(
                     "Duplicate Key exists for Sample Extension related with Common extension EdFi.Address. Key:{Key}",
                     sourceObject.Key
                 );

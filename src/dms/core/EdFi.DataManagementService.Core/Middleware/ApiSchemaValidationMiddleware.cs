@@ -14,34 +14,22 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// Middleware that validates the ApiSchema. Acts as a fail-fast mechanism to ensure
 /// the system doesn't operate with invalid or corrupted schema definitions.
 /// </summary>
-internal class ApiSchemaValidationMiddleware : IPipelineStep
+internal class ApiSchemaValidationMiddleware(IApiSchemaProvider apiSchemaProvider, ILogger logger)
+    : IPipelineStep
 {
-    private readonly IApiSchemaProvider _apiSchemaProvider;
-    private readonly ILogger _logger;
-
-    /// <summary>
-    /// Initializes the middleware with schema provider. The middleware now only checks
-    /// the validation state from the provider instead of performing validation itself.
-    /// </summary>
-    public ApiSchemaValidationMiddleware(IApiSchemaProvider apiSchemaProvider, ILogger logger)
-    {
-        _apiSchemaProvider = apiSchemaProvider;
-        _logger = logger;
-    }
-
     /// <summary>
     /// Prevents any operations from proceeding when ApiSchema is invalid.
     /// </summary>
     public async Task Execute(RequestData requestData, Func<Task> next)
     {
-        _logger.LogDebug(
+        logger.LogDebug(
             "Entering ApiSchemaValidationMiddleware- {TraceId}",
             requestData.FrontendRequest.TraceId.Value
         );
 
-        if (!_apiSchemaProvider.IsSchemaValid)
+        if (!apiSchemaProvider.IsSchemaValid)
         {
-            _logger.LogError("API schema is invalid. Request cannot be processed.");
+            logger.LogError("API schema is invalid. Request cannot be processed.");
             requestData.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
                 Body: string.Empty,
