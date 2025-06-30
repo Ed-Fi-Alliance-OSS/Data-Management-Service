@@ -15,7 +15,6 @@ using FluentAssertions;
 using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
 {
@@ -52,7 +51,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                                             "eventDate",
                                             new JsonSchemaBuilder()
                                                 .Type(SchemaValueType.String)
-                                                .Format("date")
+                                                .Format("date-time")
                                         )
                                     )
                                     .Required("eventDate")
@@ -428,6 +427,186 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     NullLogger.Instance
                 );
                 eventDate!.GetValue<string>().Should().Be("not-a-date");
+            }
+        }
+
+        [TestFixture]
+        [Parallelizable]
+        public class Given_A_Request_With_Slash_Formatted_DateTimes : CoerceDateFormatMiddlewareTests
+        {
+            private RequestData _context = No.RequestData();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                string requestBody = """
+                    {
+                        "weekIdentifier": "WeekDateTime1",
+                        "beginDate": "5/1/2009",
+                        "endDate": "5/7/2009",
+                        "events": [
+                            {
+                                "eventDate": "5/3/2009 10:30:00 AM"
+                            },
+                            {
+                                "eventDate": "5/5/2009 2:45:30 PM"
+                            }
+                        ]
+                    }
+                    """;
+
+                var frontEndRequest = new FrontendRequest(
+                    "ed-fi/academicWeeks",
+                    Body: requestBody,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                );
+
+                _context = new(frontEndRequest, RequestMethod.POST)
+                {
+                    ApiSchemaDocuments = SchemaDocuments(),
+                    ParsedBody = JsonNode.Parse(requestBody)!,
+                    PathComponents = new(
+                        ProjectNamespace: new("ed-fi"),
+                        EndpointName: new("academicWeeks"),
+                        DocumentUuid: No.DocumentUuid
+                    ),
+                };
+
+                _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+                    new("ed-fi")
+                )!;
+                _context.ResourceSchema = new ResourceSchema(
+                    _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                        ?? new JsonObject()
+                );
+
+                await Middleware().Execute(_context, _next);
+            }
+
+            [Test]
+            public void Should_Convert_DateTime_Date_Portion_To_Dash_Format()
+            {
+                // Verify datetime dates were converted, preserving time portions
+                var firstEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                    "$.events[0].eventDate",
+                    NullLogger.Instance
+                );
+                firstEventDate!.GetValue<string>().Should().Be("2009-05-03 10:30:00 AM");
+
+                var secondEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                    "$.events[1].eventDate",
+                    NullLogger.Instance
+                );
+                secondEventDate!.GetValue<string>().Should().Be("2009-05-05 2:45:30 PM");
+            }
+
+            [Test]
+            public void Should_Still_Convert_Date_Only_Fields()
+            {
+                // Verify date-only fields still work
+                var beginDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                    "$.beginDate",
+                    NullLogger.Instance
+                );
+                beginDate!.GetValue<string>().Should().Be("2009-05-01");
+            }
+        }
+
+        [TestFixture]
+        [Parallelizable]
+        public class Given_A_Request_With_Mixed_DateTime_Formats : CoerceDateFormatMiddlewareTests
+        {
+            private RequestData _context = No.RequestData();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                string requestBody = """
+                    {
+                        "weekIdentifier": "WeekDateTime2",
+                        "beginDate": "5/1/2009",
+                        "endDate": "2009-05-07",
+                        "events": [
+                            {
+                                "eventDate": "2009-05-03T14:30:00Z"
+                            },
+                            {
+                                "eventDate": "5/5/2009 11:15 AM"
+                            },
+                            {
+                                "eventDate": "05/06/09 23:59:59"
+                            }
+                        ]
+                    }
+                    """;
+
+                var frontEndRequest = new FrontendRequest(
+                    "ed-fi/academicWeeks",
+                    Body: requestBody,
+                    Headers: [],
+                    QueryParameters: [],
+                    TraceId: new TraceId("traceId"),
+                    ClientAuthorizations: new ClientAuthorizations(
+                        TokenId: "",
+                        ClaimSetName: "",
+                        EducationOrganizationIds: [],
+                        NamespacePrefixes: []
+                    )
+                );
+
+                _context = new(frontEndRequest, RequestMethod.POST)
+                {
+                    ApiSchemaDocuments = SchemaDocuments(),
+                    ParsedBody = JsonNode.Parse(requestBody)!,
+                    PathComponents = new(
+                        ProjectNamespace: new("ed-fi"),
+                        EndpointName: new("academicWeeks"),
+                        DocumentUuid: No.DocumentUuid
+                    ),
+                };
+
+                _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+                    new("ed-fi")
+                )!;
+                _context.ResourceSchema = new ResourceSchema(
+                    _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                        ?? new JsonObject()
+                );
+
+                await Middleware().Execute(_context, _next);
+            }
+
+            [Test]
+            public void Should_Convert_Only_Slash_Formatted_DateTime_Portions()
+            {
+                // ISO datetime should remain unchanged
+                var firstEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                    "$.events[0].eventDate",
+                    NullLogger.Instance
+                );
+                firstEventDate!.GetValue<string>().Should().Be("2009-05-03T14:30:00Z");
+
+                // Slash datetime should have date portion converted
+                var secondEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                    "$.events[1].eventDate",
+                    NullLogger.Instance
+                );
+                secondEventDate!.GetValue<string>().Should().Be("2009-05-05 11:15 AM");
+
+                // Different slash format with time
+                var thirdEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                    "$.events[2].eventDate",
+                    NullLogger.Instance
+                );
+                thirdEventDate!.GetValue<string>().Should().Be("2009-05-06 23:59:59");
             }
         }
     }
