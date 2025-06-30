@@ -95,13 +95,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
                 _context = Context(frontEndRequest, RequestMethod.PUT);
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
@@ -152,13 +146,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
                 _context = Context(frontEndRequest, RequestMethod.PUT);
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
@@ -217,13 +205,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
                 _context = Context(frontEndRequest, RequestMethod.PUT);
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;
@@ -282,13 +264,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
                 _context = Context(frontEndRequest, RequestMethod.PUT);
                 _context.ParsedBody = JsonNode.Parse(jsonData)!;

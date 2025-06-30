@@ -44,6 +44,7 @@ internal class ApiService : IApiService
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
     private readonly IUploadApiSchemaService _apiSchemaUploadService;
+    private readonly IServiceProvider _serviceProvider;
 
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -94,7 +95,8 @@ internal class ApiService : IApiService
         IAuthorizationServiceFactory authorizationServiceFactory,
         [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline resiliencePipeline,
         ResourceLoadOrderCalculator resourceLoadCalculator,
-        IUploadApiSchemaService apiSchemaUploadService
+        IUploadApiSchemaService apiSchemaUploadService,
+        IServiceProvider serviceProvider
     )
     {
         _apiSchemaProvider = apiSchemaProvider;
@@ -111,6 +113,7 @@ internal class ApiService : IApiService
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
         _apiSchemaUploadService = apiSchemaUploadService;
+        _serviceProvider = serviceProvider;
 
         // Initialize VersionedLazy instances with schema version provider
         _upsertSteps = new VersionedLazy<PipelineProvider>(
@@ -162,6 +165,7 @@ internal class ApiService : IApiService
                 new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
+                _serviceProvider.GetRequiredService<DecodeJwtToClientAuthorizationsMiddleware>(),
                 new RejectResourceIdentifierMiddleware(_logger),
                 new CoerceDateFormatMiddleware(_logger),
                 new CoerceDateTimesMiddleware(_logger),
@@ -219,6 +223,7 @@ internal class ApiService : IApiService
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
+                _serviceProvider.GetRequiredService<DecodeJwtToClientAuthorizationsMiddleware>(),
                 new BuildResourceInfoMiddleware(
                     _logger,
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
@@ -245,6 +250,7 @@ internal class ApiService : IApiService
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
+                _serviceProvider.GetRequiredService<DecodeJwtToClientAuthorizationsMiddleware>(),
                 new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                 new BuildResourceInfoMiddleware(
                     _logger,
@@ -271,6 +277,7 @@ internal class ApiService : IApiService
                 new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
+                _serviceProvider.GetRequiredService<DecodeJwtToClientAuthorizationsMiddleware>(),
                 new CoerceDateFormatMiddleware(_logger),
                 new CoerceDateTimesMiddleware(_logger),
             ]
@@ -327,6 +334,7 @@ internal class ApiService : IApiService
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
+                _serviceProvider.GetRequiredService<DecodeJwtToClientAuthorizationsMiddleware>(),
                 new BuildResourceInfoMiddleware(
                     _logger,
                     _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()

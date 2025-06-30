@@ -5,6 +5,7 @@
 
 using CommandLine;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Configuration;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor;
 using Microsoft.Extensions.Configuration;
@@ -74,6 +75,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                     IConfiguration config = host.Services.GetRequiredService<IConfiguration>();
 
                     var apiService = host.Services.GetRequiredService<IApiService>();
+                    var tokenHandler = host.Services.GetRequiredService<IConfigurationServiceTokenHandler>();
                     var configurationServiceSettings = config
                         .GetSection("ConfigurationServiceSettings")
                         .Get<ConfigurationServiceSettings>();
@@ -87,6 +89,8 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                     await SchoolYearProcessor.ProcessSchoolYearTypesAsync(
                         logger,
                         apiService,
+                        tokenHandler,
+                        configurationServiceSettings,
                         options.StartYear,
                         options.EndYear,
                         options.CurrentSchoolYear

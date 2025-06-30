@@ -97,8 +97,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
             _context = new RequestData(frontEndRequest, RequestMethod.POST)
@@ -107,6 +106,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
+                ),
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClaimSetName: "SIS-Vendor",
+                    EducationOrganizationIds: [new EducationOrganizationId(123456)],
+                    NamespacePrefixes: [new NamespacePrefix("uri://ed-fi.org")]
                 ),
             };
             _context.ProjectSchema = ApiSchemaDocument("School")
@@ -138,8 +143,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "NO-MATCH", [], [])
+                TraceId: new TraceId("traceId")
             );
 
             _context = new RequestData(frontEndRequest, RequestMethod.POST)
@@ -148,6 +152,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
+                ),
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClaimSetName: "NonExistentClaimSet",
+                    EducationOrganizationIds: [new EducationOrganizationId(123456)],
+                    NamespacePrefixes: [new NamespacePrefix("uri://ed-fi.org")]
                 ),
             };
             _context.ProjectSchema = ApiSchemaDocument("School")
@@ -184,8 +194,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
             _context = new RequestData(frontEndRequest, RequestMethod.POST)
@@ -194,6 +203,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("stateDescriptor"),
                     new DocumentUuid()
+                ),
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClaimSetName: "SIS-Vendor",
+                    EducationOrganizationIds: [new EducationOrganizationId(123456)],
+                    NamespacePrefixes: [new NamespacePrefix("uri://ed-fi.org")]
                 ),
             };
             _context.ProjectSchema = ApiSchemaDocument("StateDescriptor")
@@ -230,8 +245,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
             _context = new RequestData(frontEndRequest, RequestMethod.POST)
@@ -240,6 +254,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
+                ),
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClaimSetName: "SIS-Vendor",
+                    EducationOrganizationIds: [new EducationOrganizationId(123456)],
+                    NamespacePrefixes: [new NamespacePrefix("uri://ed-fi.org")]
                 ),
             };
             _context.ProjectSchema = ApiSchemaDocument("School")
@@ -270,8 +290,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
             _context = new RequestData(frontEndRequest, RequestMethod.PUT)
@@ -280,6 +299,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
+                ),
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClaimSetName: "SIS-Vendor",
+                    EducationOrganizationIds: [new EducationOrganizationId(123456)],
+                    NamespacePrefixes: [new NamespacePrefix("uri://ed-fi.org")]
                 ),
             };
             _context.ProjectSchema = ApiSchemaDocument("School")
@@ -340,8 +365,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
             _context = new RequestData(frontEndRequest, RequestMethod.PUT)
@@ -350,6 +374,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("stateDescriptor"),
                     new DocumentUuid()
+                ),
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClaimSetName: "SIS-Vendor",
+                    EducationOrganizationIds: [new EducationOrganizationId(123456)],
+                    NamespacePrefixes: [new NamespacePrefix("uri://ed-fi.org")]
                 ),
             };
             _context.ProjectSchema = ApiSchemaDocument("School")
@@ -387,8 +417,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
             _context = new RequestData(frontEndRequest, RequestMethod.POST)
@@ -397,6 +426,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
+                ),
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClaimSetName: "SIS-Vendor",
+                    EducationOrganizationIds: [new EducationOrganizationId(123456)],
+                    NamespacePrefixes: [new NamespacePrefix("uri://ed-fi.org")]
                 ),
             };
             _context.ProjectSchema = ApiSchemaDocument("School")
@@ -428,8 +463,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
             _context = new RequestData(frontEndRequest, RequestMethod.POST)
@@ -438,6 +472,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
+                ),
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClaimSetName: "SIS-Vendor",
+                    EducationOrganizationIds: [new EducationOrganizationId(123456)],
+                    NamespacePrefixes: [new NamespacePrefix("uri://ed-fi.org")]
                 ),
             };
             _context.ProjectSchema = ApiSchemaDocument("School")
@@ -476,6 +516,62 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .Contain(
                     "\"errors\":[\"No authorization strategies were defined for the requested action 'Create' against resource ['School'] matched by the caller's claim 'SIS-Vendor'.\"]"
                 );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class GivenNoClientAuthorizations : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            FrontendRequest frontEndRequest = new(
+                Path: "ed-fi/schools",
+                Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("traceId")
+            );
+
+            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            {
+                PathComponents = new PathComponents(
+                    new ProjectNamespace("ed-fi"),
+                    new EndpointName("schools"),
+                    new DocumentUuid()
+                ),
+                ClientAuthorizations = null,
+            };
+            _context.ProjectSchema = ApiSchemaDocument("School")
+                .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            _context.ResourceSchema = new ResourceSchema(
+                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                    ?? new JsonObject()
+            );
+            await Middleware().Execute(_context, NullNext);
+        }
+
+        [Test]
+        public void It_has_a_response()
+        {
+            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_has_forbidden_response()
+        {
+            _context?.FrontendResponse.StatusCode.Should().Be(403);
+        }
+
+        [Test]
+        public void It_returns_message_body_with_authorization_failure()
+        {
+            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
+
+            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+
+            response.Should().Contain("errors").And.Contain("Authorization");
         }
     }
 }

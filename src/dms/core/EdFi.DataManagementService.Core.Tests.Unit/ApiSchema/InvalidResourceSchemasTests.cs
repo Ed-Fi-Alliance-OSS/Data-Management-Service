@@ -9,12 +9,14 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -34,7 +36,26 @@ public class InvalidResourceSchemasTests
     {
         internal static ApiService BuildCoreFacade(IApiSchemaProvider apiSchemaProvider)
         {
-            var serviceProvider = new ServiceCollection().BuildServiceProvider();
+            var services = new ServiceCollection();
+
+            // Register required services for JWT middleware
+            services.AddSingleton(A.Fake<IApiClientDetailsProvider>());
+            services.AddSingleton(A.Fake<IJwtTokenValidator>());
+            services.AddSingleton(A.Fake<ILogger<DecodeJwtToClientAuthorizationsMiddleware>>());
+            services.AddSingleton(
+                Options.Create(
+                    new IdentitySettings
+                    {
+                        Authority = "https://test-authority",
+                        Audience = "test-audience",
+                        RoleClaimType = "role",
+                        ClientRole = "client",
+                    }
+                )
+            );
+            services.AddTransient<DecodeJwtToClientAuthorizationsMiddleware>();
+
+            var serviceProvider = services.BuildServiceProvider();
             var apiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
 
             return new ApiService(
@@ -56,7 +77,8 @@ public class InvalidResourceSchemasTests
                     [],
                     NullLogger<ResourceLoadOrderCalculator>.Instance
                 ),
-                apiSchemaUploadService
+                apiSchemaUploadService,
+                serviceProvider
             );
         }
 
@@ -86,13 +108,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -113,13 +129,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -140,13 +150,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -172,13 +176,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -199,13 +197,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -226,13 +218,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -253,13 +239,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -280,13 +260,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -307,13 +281,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -334,13 +302,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -361,13 +323,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -388,13 +344,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act
@@ -415,13 +365,7 @@ public class InvalidResourceSchemasTests
                     null,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 // Act

@@ -59,13 +59,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/students",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -121,13 +115,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/students",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -196,13 +184,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/StudentContactAssociations",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -262,13 +244,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/contacts",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -324,13 +300,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/Contacts",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -382,13 +352,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/staffs",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -444,13 +408,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/staffs",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -518,13 +476,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/StudentStaffAssociations",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )

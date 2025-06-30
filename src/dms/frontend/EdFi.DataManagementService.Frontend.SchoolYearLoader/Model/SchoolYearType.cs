@@ -18,5 +18,4 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Model
         [JsonPropertyName("currentSchoolYear")]
         public bool currentSchoolYear { get; set; }
     }
-
 }

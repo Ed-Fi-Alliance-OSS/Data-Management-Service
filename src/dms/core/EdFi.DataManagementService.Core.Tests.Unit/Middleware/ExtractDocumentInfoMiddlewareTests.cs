@@ -61,13 +61,7 @@ public class ExtractDocumentInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/schools",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )

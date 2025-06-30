@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-
 using CommandLine;
 using EdFi.DataManagementService.ApiSchemaDownloader;
 using EdFi.DataManagementService.ApiSchemaDownloader.Services;
@@ -61,7 +60,6 @@ try
         );
         Console.WriteLine($"Package downloaded to: {packagePath}");
         logger.LogInformation("Package downloaded to: {PackagePath}", packagePath);
-
 
         // Extract the API schema
         downloader.ExtractApiSchemaJsonFromAssembly(packageId, packagePath, options.ApiSchemaFolder);

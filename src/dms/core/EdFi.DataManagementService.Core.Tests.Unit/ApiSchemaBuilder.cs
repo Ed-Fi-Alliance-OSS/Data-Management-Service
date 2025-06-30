@@ -115,6 +115,8 @@ public class ApiSchemaBuilder
             ["abstractResources"] = abstractResources ?? new JsonObject(),
             ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
             ["description"] = $"{projectName} description",
+            ["educationOrganizationTypes"] = new JsonArray { "School" },
+            ["educationOrganizationHierarchy"] = new JsonObject(),
             ["isExtensionProject"] = !_isCoreProject,
             ["projectName"] = projectName,
             ["projectVersion"] = projectVersion,

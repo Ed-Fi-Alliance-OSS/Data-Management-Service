@@ -54,13 +54,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
             Body: jsonBody,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId(""),
-            new ClientAuthorizations(
-                TokenId: "",
-                ClaimSetName: "",
-                EducationOrganizationIds: [],
-                NamespacePrefixes: []
-            )
+            TraceId: new TraceId("")
         );
 
         RequestData requestData = new(frontEndRequest, method)

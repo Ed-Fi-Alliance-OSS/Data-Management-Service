@@ -102,13 +102,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -207,13 +201,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -291,13 +279,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -375,13 +357,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -460,13 +436,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -553,13 +523,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)

@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
@@ -196,5 +197,29 @@ public static class DmsCoreServiceExtensions
                 )
                 .Build();
         }
+    }
+
+    /// <summary>
+    /// Adds JWT authentication services to the DI container
+    /// </summary>
+    public static IServiceCollection AddDmsJwtAuthentication(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        // Configure IdentitySettings
+        services.Configure<IdentitySettings>(configuration.GetSection("IdentitySettings"));
+
+        // Register JWT validation services
+        services.AddHttpClient<IJwtTokenValidator, JwtTokenValidator>();
+        services.AddSingleton<IJwtTokenValidator, JwtTokenValidator>();
+
+        // Register middleware
+        services.AddTransient<DecodeJwtToClientAuthorizationsMiddleware>();
+
+        // Note: IApiClientDetailsProvider should be registered by the frontend
+        // as it may have frontend-specific implementations
+
+        return services;
     }
 }

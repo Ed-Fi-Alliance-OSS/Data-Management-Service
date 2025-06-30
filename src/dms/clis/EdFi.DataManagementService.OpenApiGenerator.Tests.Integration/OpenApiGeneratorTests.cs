@@ -172,8 +172,8 @@ public class OpenApiGeneratorTests
             File.WriteAllText(extensionSchemaPath, "{ \"info\": { \"title\": \"Test API\" } }");
 
             // Act
-            var ex = Assert.Throws<InvalidOperationException>(
-                () => _generator.Generate(coreSchemaPath, extensionSchemaPath)
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                _generator.Generate(coreSchemaPath, extensionSchemaPath)
             );
 
             // Assert

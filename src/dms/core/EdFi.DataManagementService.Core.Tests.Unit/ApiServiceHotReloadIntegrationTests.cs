@@ -9,12 +9,14 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -62,7 +64,26 @@ public class ApiServiceHotReloadIntegrationTests
         );
 
         // Create ApiService with minimal fakes for other dependencies
-        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var services = new ServiceCollection();
+
+        // Register required services for JWT middleware
+        services.AddSingleton(A.Fake<IApiClientDetailsProvider>());
+        services.AddSingleton(A.Fake<IJwtTokenValidator>());
+        services.AddSingleton(A.Fake<ILogger<DecodeJwtToClientAuthorizationsMiddleware>>());
+        services.AddSingleton(
+            Options.Create(
+                new IdentitySettings
+                {
+                    Authority = "https://test-authority",
+                    Audience = "test-audience",
+                    RoleClaimType = "role",
+                    ClientRole = "client",
+                }
+            )
+        );
+        services.AddTransient<DecodeJwtToClientAuthorizationsMiddleware>();
+
+        var serviceProvider = services.BuildServiceProvider();
         var documentStoreRepository = A.Fake<IDocumentStoreRepository>();
         var claimSetCacheService = new NoClaimsClaimSetCacheService(NullLogger.Instance);
         var documentValidator = new DocumentValidator();
@@ -94,7 +115,8 @@ public class ApiServiceHotReloadIntegrationTests
             authorizationServiceFactory,
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
-            apiSchemaUploadService
+            apiSchemaUploadService,
+            serviceProvider
         );
     }
 
@@ -347,7 +369,8 @@ public class ApiServiceHotReloadIntegrationTests
                     [],
                     NullLogger<ResourceLoadOrderCalculator>.Instance
                 ),
-                apiSchemaUploadService
+                apiSchemaUploadService,
+                TestHelpers.CreateServiceProviderWithJwtMiddleware()
             );
 
             await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Student", "5.0.0"));
@@ -373,13 +396,7 @@ public class ApiServiceHotReloadIntegrationTests
             Body: body,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("test-trace-id"),
-            ClientAuthorizations: new ClientAuthorizations(
-                TokenId: "test-token",
-                ClaimSetName: "test-claim-set",
-                EducationOrganizationIds: [],
-                NamespacePrefixes: []
-            )
+            TraceId: new TraceId("test-trace-id")
         );
     }
 
@@ -475,5 +492,32 @@ public class ApiServiceHotReloadIntegrationTests
             ["jsonSchemaForInsert"] = new JsonObject(),
             ["equalityConstraints"] = new JsonArray(),
         };
+    }
+}
+
+file static class TestHelpers
+{
+    public static IServiceProvider CreateServiceProviderWithJwtMiddleware()
+    {
+        var services = new ServiceCollection();
+
+        // Register required services for JWT middleware
+        services.AddSingleton(A.Fake<IApiClientDetailsProvider>());
+        services.AddSingleton(A.Fake<IJwtTokenValidator>());
+        services.AddSingleton(A.Fake<ILogger<DecodeJwtToClientAuthorizationsMiddleware>>());
+        services.AddSingleton(
+            Options.Create(
+                new IdentitySettings
+                {
+                    Authority = "https://test-authority",
+                    Audience = "test-audience",
+                    RoleClaimType = "role",
+                    ClientRole = "client",
+                }
+            )
+        );
+        services.AddTransient<DecodeJwtToClientAuthorizationsMiddleware>();
+
+        return services.BuildServiceProvider();
     }
 }

@@ -116,4 +116,10 @@ internal class RequestData(FrontendRequest _frontendRequest, RequestMethod _meth
     /// </summary>
     public AuthorizationSecurableInfo[] AuthorizationSecurableInfo { get; set; } =
         No.AuthorizationSecurableInfo;
+
+    /// <summary>
+    /// Client authorization details extracted from JWT token.
+    /// Populated by DecodeJwtToClientAuthorizationsMiddleware.
+    /// </summary>
+    public ClientAuthorizations? ClientAuthorizations { get; set; }
 }

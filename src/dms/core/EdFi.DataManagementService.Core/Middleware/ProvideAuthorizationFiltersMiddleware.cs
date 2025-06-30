@@ -32,6 +32,24 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 requestData.FrontendRequest.TraceId.Value
             );
 
+            if (requestData.ClientAuthorizations == null)
+            {
+                _logger.LogError(
+                    "No client authorization information found - {TraceId}",
+                    requestData.FrontendRequest.TraceId.Value
+                );
+                requestData.FrontendResponse = new FrontendResponse(
+                    StatusCode: (int)HttpStatusCode.Forbidden,
+                    Body: FailureResponse.ForForbidden(
+                        traceId: requestData.FrontendRequest.TraceId,
+                        errors: ["No client authorization information found."]
+                    ),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                );
+                return;
+            }
+
             List<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators = [];
             foreach (string authorizationStrategy in requestData.ResourceActionAuthStrategies)
             {
@@ -57,7 +75,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 }
 
                 authorizationStrategyEvaluators.Add(
-                    authFiltersProvider.GetFilters(requestData.FrontendRequest.ClientAuthorizations)
+                    authFiltersProvider.GetFilters(requestData.ClientAuthorizations)
                 );
             }
 

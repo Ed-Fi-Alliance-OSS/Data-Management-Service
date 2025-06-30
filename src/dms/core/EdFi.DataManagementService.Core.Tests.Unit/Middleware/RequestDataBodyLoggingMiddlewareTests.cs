@@ -65,13 +65,7 @@ public class RequestDataBodyLoggingMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
 
             _context = new(frontEndRequest, RequestMethod.POST);
@@ -130,13 +124,7 @@ public class RequestDataBodyLoggingMiddlewareTests
                 Body: """{"schoolId":"12345","nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
 
             _context = new(frontEndRequest, RequestMethod.POST);
@@ -197,13 +185,7 @@ public class RequestDataBodyLoggingMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
 
             _context = new(frontEndRequest, RequestMethod.POST);
@@ -262,13 +244,7 @@ public class RequestDataBodyLoggingMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
 
             _context = new(frontEndRequest, RequestMethod.POST);

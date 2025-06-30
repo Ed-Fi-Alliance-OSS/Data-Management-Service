@@ -7,6 +7,8 @@ using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.SchoolYearLoader.Configuration;
 using EdFi.DataManagementService.Frontend.SchoolYearLoader.Model;
 using Microsoft.Extensions.Logging;
 
@@ -17,11 +19,27 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
         public static async Task ProcessSchoolYearTypesAsync(
             ILogger _logger,
             IApiService apiService,
+            IConfigurationServiceTokenHandler tokenHandler,
+            ConfigurationServiceSettings configSettings,
             int startYear,
             int endYear,
             int currentSchoolYear
         )
         {
+            // Get JWT token for system operations
+            _logger.LogInformation("Retrieving authentication token for school year loading");
+            var accessToken = await tokenHandler.GetTokenAsync(
+                configSettings.ClientId,
+                configSettings.ClientSecret,
+                configSettings.Scope
+            );
+
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                _logger.LogError("Failed to retrieve authentication token");
+                throw new InvalidOperationException("Failed to retrieve authentication token");
+            }
+
             var schoolYearTypes = Enumerable
                 .Range(startYear, endYear - startYear + 1)
                 .Select(year => new SchoolYearType
@@ -39,18 +57,14 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
                     new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }
                 );
 
+                var headers = new Dictionary<string, string> { { "Authorization", $"Bearer {accessToken}" } };
+
                 var request = new FrontendRequest(
-                    new("/ed-fi/schoolYearTypes/"),
-                    payload,
-                    Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "BootstrapDescriptorsandEdOrgs",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    Path: "/ed-fi/schoolYearTypes/",
+                    Body: payload,
+                    Headers: headers,
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 var response = await apiService.Upsert(request);

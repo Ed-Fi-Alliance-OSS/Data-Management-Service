@@ -32,7 +32,17 @@ internal class ResourceActionAuthorizationMiddleware(
                 requestData.FrontendRequest.TraceId.Value
             );
 
-            string claimSetName = requestData.FrontendRequest.ClientAuthorizations.ClaimSetName;
+            if (requestData.ClientAuthorizations == null)
+            {
+                _logger.LogInformation(
+                    "No client authorization information found - {TraceId}",
+                    requestData.FrontendRequest.TraceId.Value
+                );
+                RespondAuthorizationError();
+                return;
+            }
+
+            string claimSetName = requestData.ClientAuthorizations.ClaimSetName;
             _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
 
             _logger.LogInformation("Retrieving claim set list");

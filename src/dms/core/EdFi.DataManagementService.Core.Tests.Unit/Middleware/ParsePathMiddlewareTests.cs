@@ -40,13 +40,7 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -79,13 +73,7 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "badpath",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -118,13 +106,7 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -161,13 +143,7 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: $"/ed-fi/endpointName/{documentUuid}",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
@@ -204,13 +180,7 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName/invalidId",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -253,13 +223,7 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: $"/ed-fi/endpointName/{Guid.NewGuid()}",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -300,13 +264,7 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
@@ -347,13 +305,7 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.DELETE);
             await Middleware().Execute(_context, NullNext);

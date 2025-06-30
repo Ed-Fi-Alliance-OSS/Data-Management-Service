@@ -71,9 +71,6 @@ if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
 
 app.UseCors("AllowSwaggerUI");
 
-app.UseAuthentication();
-app.UseAuthorization();
-
 app.MapRouteEndpoints();
 
 app.MapHealthChecks("/health");

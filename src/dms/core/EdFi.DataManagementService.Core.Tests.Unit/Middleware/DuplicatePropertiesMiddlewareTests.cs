@@ -56,13 +56,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -126,13 +120,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -198,13 +186,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -268,13 +250,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -338,13 +314,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -398,13 +368,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
@@ -471,13 +435,7 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);

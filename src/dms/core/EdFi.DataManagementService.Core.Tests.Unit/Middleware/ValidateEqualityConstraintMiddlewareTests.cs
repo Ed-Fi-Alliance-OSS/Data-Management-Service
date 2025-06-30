@@ -113,13 +113,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, Next());
@@ -173,13 +167,7 @@ public class ValidateEqualityConstraintMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = Context(frontEndRequest, RequestMethod.POST);
 

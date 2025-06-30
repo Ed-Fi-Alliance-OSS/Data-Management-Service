@@ -38,13 +38,7 @@ public class ParseBodyMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -86,13 +80,7 @@ public class ParseBodyMiddlewareTests
                 Body: "",
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -134,13 +122,7 @@ public class ParseBodyMiddlewareTests
                 Body: """{ "id":"value" "name":"firstname"}""",
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);

@@ -4,15 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Security.Claims;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,7 +22,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class CoreEndpointModuleTests
 {
     [TestFixture]
-    public class When_authorization_enabled_and_given_a_valid_client_token
+    public class When_calling_api_endpoints
     {
         private HttpResponseMessage? _response;
 
@@ -45,19 +42,6 @@ public class CoreEndpointModuleTests
                     {
                         collection.AddTransient((x) => apiService);
                         collection.AddTransient((x) => claimSetCacheService);
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
-                            )
-                        );
                     }
                 );
             });
@@ -76,60 +60,8 @@ public class CoreEndpointModuleTests
         [Test]
         public void Then_it_responds_with_status_OK()
         {
+            // The response from the mocked IApiService is returned
             _response!.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-    }
-
-    [TestFixture]
-    public class When_authorization_enabled_and_given_a_invalid_client_token
-    {
-        private HttpResponseMessage? _response;
-
-        [SetUp]
-        public async Task SetUp()
-        {
-            // Arrange
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
-            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(
-                    (collection) =>
-                    {
-                        collection
-                            .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                            .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                                AuthenticationConstants.AuthenticationSchema,
-                                options => { }
-                            );
-
-                        collection.AddAuthorization(options =>
-                            options.AddPolicy(
-                                SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")
-                            )
-                        );
-                        collection.AddTransient((x) => claimSetCacheService);
-                    }
-                );
-            });
-            using var client = factory.CreateClient();
-
-            // Act
-            _response = await client.GetAsync("/data/ed-fi/students");
-        }
-
-        [TearDown]
-        public void TearDownAttribute()
-        {
-            _response?.Dispose();
-        }
-
-        [Test]
-        public void Then_it_responds_with_status_forbidden()
-        {
-            _response!.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         }
     }
 }

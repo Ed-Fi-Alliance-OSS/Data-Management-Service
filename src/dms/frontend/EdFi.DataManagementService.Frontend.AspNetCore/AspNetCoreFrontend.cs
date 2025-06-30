@@ -91,20 +91,12 @@ public static class AspNetCoreFrontend
         IOptions<AppSettings> options
     )
     {
-        var apiClientDetails = HttpRequest.HttpContext?.Items["ApiClientDetails"] as ClientAuthorizations;
         return new(
             Body: await ExtractJsonBodyFrom(HttpRequest),
             Headers: ExtractHeadersFrom(HttpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
-            TraceId: ExtractTraceIdFrom(HttpRequest, options),
-            ClientAuthorizations: apiClientDetails
-                ?? new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+            TraceId: ExtractTraceIdFrom(HttpRequest, options)
         );
     }
 

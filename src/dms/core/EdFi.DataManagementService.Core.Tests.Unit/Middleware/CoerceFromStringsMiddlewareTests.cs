@@ -127,13 +127,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    new TraceId("traceId"),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("traceId")
                 );
                 _context = Context(frontEndRequest, RequestMethod.POST);
                 await Middleware().Execute(_context, Next());
