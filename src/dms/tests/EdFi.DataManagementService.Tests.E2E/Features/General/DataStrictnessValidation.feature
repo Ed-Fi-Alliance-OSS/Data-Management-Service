@@ -417,7 +417,7 @@ Feature: Data strictness
                       "administrationDate": "2021/09/28"
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 200
               And the record can be retrieved with a GET request
                   """
                   {
