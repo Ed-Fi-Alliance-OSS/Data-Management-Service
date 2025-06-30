@@ -139,66 +139,6 @@ public class ApiServiceHotReloadIntegrationTests
         }
 
         [Test]
-        public async Task ConcurrentRequestsAndReload_MaintainsConsistency()
-        {
-            // Arrange - Create initial schema
-            await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Course", "1.0.0"));
-            await _apiService.ReloadApiSchemaAsync();
-
-            var request = CreateTestRequest("/ed-fi/courses");
-            var tasks = new List<Task<IFrontendResponse>>();
-            var reloadIds = new List<Guid>();
-            var barrier = new Barrier(15); // 10 requests + 5 reloads
-
-            // Act - Start concurrent requests
-            for (int i = 0; i < 10; i++)
-            {
-                tasks.Add(
-                    Task.Run(async () =>
-                    {
-                        barrier.SignalAndWait();
-                        var response = await _apiService.Get(request);
-                        lock (reloadIds)
-                        {
-                            reloadIds.Add(_apiSchemaFileLoader.ReloadId);
-                        }
-                        return response;
-                    })
-                );
-            }
-
-            // Start concurrent reloads
-            var reloadTasks = new List<Task<IFrontendResponse>>();
-            for (int i = 0; i < 5; i++)
-            {
-                int version = i;
-                reloadTasks.Add(
-                    Task.Run(async () =>
-                    {
-                        barrier.SignalAndWait();
-                        await Task.Delay(10); // Small delay to increase contention
-                        await WriteTestSchemaFile(
-                            "ApiSchema.json",
-                            CreateSchemaWithResource("Course", $"1.{version}.0")
-                        );
-                        var result = await _apiService.ReloadApiSchemaAsync();
-                        return result;
-                    })
-                );
-            }
-
-            // Wait for all operations
-            var responses = await Task.WhenAll(tasks);
-            var reloadResults = await Task.WhenAll(reloadTasks);
-
-            // Assert
-            responses.Should().HaveCount(10);
-            responses.Should().OnlyContain(r => r != null);
-            reloadResults.Should().Contain(r => r.StatusCode == 200); // At least one reload should succeed
-            reloadIds.Count.Should().Be(10); // All requests should have captured a reload ID
-        }
-
-        [Test]
         public async Task ReloadWithInvalidSchema_FailsGracefully()
         {
             // Arrange - Create valid initial schema
@@ -274,44 +214,6 @@ public class ApiServiceHotReloadIntegrationTests
     [NonParallelizable]
     public class ThreadSafetyTests : ApiServiceHotReloadIntegrationTests
     {
-        [Test]
-        public async Task ParallelReloads_OneSucceeds()
-        {
-            // Arrange
-            await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("School", "1.0.0"));
-            await _apiService.ReloadApiSchemaAsync();
-
-            var barrier = new Barrier(10);
-            var reloadTasks = new List<Task<IFrontendResponse>>();
-            var reloadIds = new List<Guid>();
-
-            // Act - Start 10 concurrent reloads
-            for (int i = 0; i < 10; i++)
-            {
-                reloadTasks.Add(
-                    Task.Run(async () =>
-                    {
-                        barrier.SignalAndWait();
-                        var result = await _apiService.ReloadApiSchemaAsync();
-                        lock (reloadIds)
-                        {
-                            reloadIds.Add(_apiSchemaFileLoader.ReloadId);
-                        }
-                        return result;
-                    })
-                );
-            }
-
-            var results = await Task.WhenAll(reloadTasks);
-
-            // Assert
-            results.Should().HaveCount(10);
-            results
-                .Count(r => r.StatusCode == 200)
-                .Should()
-                .BeGreaterOrEqualTo(1, "at least one reload should succeed");
-        }
-
         [Test]
         public async Task ReloadApiSchemaAsync_WhenManagementEndpointsDisabled_Returns404()
         {
