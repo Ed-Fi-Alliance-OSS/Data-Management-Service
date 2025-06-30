@@ -42,7 +42,7 @@ public class QueryTests : DatabaseTest
             _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0, false);
+            PaginationParameters paginationParameters = new(25, 0, false, MaximumPageSize: 500);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 _defaultResourceName,
@@ -105,7 +105,7 @@ public class QueryTests : DatabaseTest
             }
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0, true);
+            PaginationParameters paginationParameters = new(25, 0, true, MaximumPageSize: 500);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 _defaultResourceName,
@@ -167,7 +167,7 @@ public class QueryTests : DatabaseTest
                 );
 
             Dictionary<string, string>? searchParameters = [];
-            PaginationParameters paginationParameters = new(25, 0, false);
+            PaginationParameters paginationParameters = new(25, 0, false, MaximumPageSize: 500);
 
             IQueryRequest queryRequest = CreateQueryRequest(
                 "ResourceName1",
