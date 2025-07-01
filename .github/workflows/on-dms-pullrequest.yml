@@ -286,6 +286,12 @@ jobs:
           definition-file: specs/resources-spec.json
           default-timeout: 45000 # 45 secconds
 
+      - name: Download Resources Spec
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: descriptors-spec
+          path: specs
+
       - name: Validate Descriptors Spec
         uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
         with:
