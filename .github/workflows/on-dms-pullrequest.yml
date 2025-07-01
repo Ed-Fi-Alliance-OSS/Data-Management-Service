@@ -312,7 +312,7 @@ jobs:
   event_file:
     name: Upload Event File
     runs-on: ubuntu-latest
-    needs: [run-unit-tests, run-e2e-tests, run-integration-tests]
+    needs: [run-unit-tests, run-e2e-tests, run-integration-tests, validate-resources-spec, validate-discovery-spec]
     if: always()
     steps:
     - name: Upload
