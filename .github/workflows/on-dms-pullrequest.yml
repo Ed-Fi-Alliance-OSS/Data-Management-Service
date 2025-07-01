@@ -10,22 +10,11 @@ on:
     # Running on push to main to support CodeQL on C#
     branches:
       - main
-    paths:
-      - "src/dms/**/*.cs"
-      - "src/dms/**/*.csproj"
-      - "src/dms/**/*.sql"
-      - "src/**/Directory.Packages.props"
-      - "src/dms/**/*.feature"
+
   pull_request:
     branches:
       - main
-    paths:
-      - "src/dms/**/*.cs"
-      - "src/dms/**/*.csproj"
-      - "src/dms/**/*.sql"
-      - ".github/**/*dms*.yml"
-      - "src/**/Directory.Packages.props"
-      - "src/dms/**/*.feature"
+
   workflow_dispatch:
 
 concurrency:
@@ -137,7 +126,6 @@ jobs:
 
   run-e2e-tests:
     name: Run ${{matrix.queryhandler}} E2E Tests
-    needs: run-unit-tests
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -164,7 +152,7 @@ jobs:
         run: |
           if ("${{ matrix.queryhandler }}" -eq "postgresql") {
             $env:DMS_QUERYHANDLER="postgresql"
-            # TODO: We're starting up OpenSearch's Docker container to keep both scenarios 
+            # TODO: We're starting up OpenSearch's Docker container to keep both scenarios
             # as similar as possible so that we can compare their performance.
           }
 
@@ -203,7 +191,6 @@ jobs:
 
   validate-open-api-spec:
     name: Validate OpenAPI Specification
-    needs: run-unit-tests
     runs-on: ubuntu-latest
     defaults:
       run:
