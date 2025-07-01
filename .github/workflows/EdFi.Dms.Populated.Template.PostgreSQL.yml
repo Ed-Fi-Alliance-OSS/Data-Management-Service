@@ -66,12 +66,25 @@ jobs:
                   -PackageVersion $packageVersion
         working-directory: eng/DatabaseTemplates/
 
+      - name: Export Docker Logs
+        if: failure()
+        run: |
+          $logDir = "${{ github.workspace }}/logs"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          docker ps --format "{{.Names}}" | ForEach-Object {
+              $container = $_
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath
+          }
+        shell: pwsh  
+
       - name: Upload Logs
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: Bulkload-logs
-          path: ${{ github.workspace }}/eng/DatabaseTemplates/.packages/**/logfile.txt
+          name: Logs
+          path: ${{ github.workspace }}/logs
           retention-days: 10
 
       - name: Upload Populated Template Package as Artifact
