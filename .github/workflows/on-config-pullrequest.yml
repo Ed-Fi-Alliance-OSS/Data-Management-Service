@@ -10,20 +10,11 @@ on:
     # Running on push to main to support CodeQL on C#
     branches:
       - main
-    paths:
-      - "src/config/**/*.cs"
-      - "src/config/**/*.csproj"
-      - "src/config/**/*.sql"
-      - "src/**/Directory.Packages.props"
+
   pull_request:
     branches:
       - main
-    paths:
-      - "src/config/**/*.cs"
-      - "src/config/**/*.csproj"
-      - "src/config/**/*.sql"
-      - ".github/**/*config*.yml"
-      - "src/**/Directory.Packages.props"
+
   workflow_dispatch:
 
 concurrency:
@@ -131,7 +122,6 @@ jobs:
 
   run-e2e-tests:
     name: Run E2E Tests
-    needs: run-unit-tests
     runs-on: ubuntu-latest
     defaults:
       run:
