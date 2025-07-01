@@ -419,11 +419,13 @@ public static partial class QueryOpenSearch
             query.Add("track_total_hits", true);
         }
 
-        // Add in PaginationParameters if any
-        if (queryRequest.PaginationParameters.Limit != null)
-        {
-            query.Add(new("size", queryRequest.PaginationParameters.Limit));
-        }
+        // Add in PaginationParameters
+        query.Add(
+            new(
+                "size",
+                queryRequest.PaginationParameters.Limit ?? queryRequest.PaginationParameters.MaximumPageSize
+            )
+        );
 
         if (queryRequest.PaginationParameters.Offset != null)
         {

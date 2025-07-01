@@ -41,12 +41,7 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             }
             else
             {
-                offset = int.TryParse(
-                    requestData.FrontendRequest.QueryParameters["offset"],
-                    out int offsetResult
-                )
-                    ? offsetResult
-                    : offset;
+                offset = offsetVal;
             }
         }
 
@@ -62,12 +57,7 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             }
             else
             {
-                limit = int.TryParse(
-                    requestData.FrontendRequest.QueryParameters["limit"],
-                    out int limitResult
-                )
-                    ? limitResult
-                    : limit;
+                limit = limitVal;
             }
         }
 
@@ -90,7 +80,12 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
 
         if (errors.Count == 0)
         {
-            requestData.PaginationParameters = new PaginationParameters(limit, offset, totalCount);
+            requestData.PaginationParameters = new PaginationParameters(
+                limit,
+                offset,
+                totalCount,
+                maxPageSize
+            );
         }
         return errors;
     }
