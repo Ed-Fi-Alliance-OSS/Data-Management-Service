@@ -101,13 +101,13 @@ function AddExtensionSecurityMetadata {
 
     # Define the new INSERT SQL
     $insertStatement = @(
-        "INSERT INTO dmscs.claimshierarchy(",
+        "`nINSERT INTO dmscs.claimshierarchy(",
         "`t hierarchy)",
         "`tVALUES ('$escapedJson'::jsonb);"
     ) -join "`n"
 
     # Combine comments and new insert
-    $finalContent = $commentLines + "" + $insertStatement
+    $finalContent = ($commentLines -join "`n") + "`n" + $insertStatement
 
     # Write the updated file
     Set-Content -Path $resolvedPath -Value $finalContent -Encoding UTF8

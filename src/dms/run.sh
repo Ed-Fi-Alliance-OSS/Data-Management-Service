@@ -47,7 +47,7 @@ if [ "$USE_API_SCHEMA_PATH" = true ]; then
         name=$(echo "$item" | jq -r '.name')
 
         echo "Downloading Package $name..."
-        dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p $name -d ${API_SCHEMA_PATH} -v $version -f $feedUrl
+        dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p "$name" -d "${API_SCHEMA_PATH}" -v "$version" -f "$feedUrl"
     done
 fi
 

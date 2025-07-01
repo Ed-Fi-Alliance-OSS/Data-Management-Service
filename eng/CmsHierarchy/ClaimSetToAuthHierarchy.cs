@@ -54,12 +54,13 @@ public class ClaimSetToAuthHierarchy
                             ClaimSets = resourceClaim.ClaimSets,
                             DefaultAuthorization = new DefaultAuthorization
                             {
-                                Actions = [.. resourceClaim
+                                Actions = resourceClaim
                                     .DefaultAuthorizationStrategiesForCRUD.Select(x => new Model.Action
                                     {
-                                        Name = x.ActionName,
+                                        Name = x!.ActionName,
                                         AuthorizationStrategies = x.AuthorizationStrategies?.ToList() ?? [],
-                                    })],
+                                    })
+                                    .ToList(),
                             },
                         }
                     );
@@ -87,9 +88,7 @@ public class ClaimSetToAuthHierarchy
                                     {
                                         Name = actionAuthStrategy.ActionName!,
                                         AuthorizationStrategyOverrides =
-                                        [
-                                            .. actionAuthStrategy.AuthorizationStrategies!,
-                                        ],
+                                            actionAuthStrategy.AuthorizationStrategies!.ToList(),
                                     }
                                 );
                             }
