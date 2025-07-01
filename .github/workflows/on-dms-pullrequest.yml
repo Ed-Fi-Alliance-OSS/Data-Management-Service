@@ -213,8 +213,8 @@ jobs:
           path-replace-backslashes: 'true'
           reporter: dotnet-trx
 
-  validate-open-api-spec:
-    name: Validate OpenAPI Specification
+  build-and-start-dms:
+    name: Build and Start DMS, Download OpenAPI Specs
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -232,7 +232,7 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Setup dotnet
-        uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
+        uses: actions/setup-dotnet@v4.2
         with:
           dotnet-version: '8.0.x'
 
@@ -251,6 +251,35 @@ jobs:
           Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/descriptors-spec.json" -OutFile "specs/descriptors-spec.json"
           Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/discovery-spec.json" -OutFile "specs/discovery-spec.json"
 
+      - name: Upload Resources Spec
+        uses: actions/upload-artifact@v4.5
+        with:
+          name: resources-spec
+          path: specs/resources-spec.json
+
+      - name: Upload Descriptors Spec
+        uses: actions/upload-artifact@v4.5
+        with:
+          name: descriptors-spec
+          path: specs/descriptors-spec.json
+
+      - name: Upload Discovery Spec
+        uses: actions/upload-artifact@v4.5
+        with:
+          name: discovery-spec
+          path: specs/discovery-spec.json
+
+  validate-resources-spec:
+    name: Validate Resources Spec
+    runs-on: ubuntu-latest
+    needs: build-and-start-dms
+    steps:
+      - name: Download Resources Spec
+        uses: actions/download-artifact@v4.5
+        with:
+          name: resources-spec
+          path: specs
+
       - name: Validate Resources Spec
         uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
         with:
@@ -261,13 +290,24 @@ jobs:
         uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
         with:
           definition-file: specs/descriptors-spec.json
-          default-timeout: 45000 # 45 secconds
+          default-timeout: 45000
+
+  validate-discovery-spec:
+    name: Validate Discovery Spec
+    runs-on: ubuntu-latest
+    needs: build-and-start-dms
+    steps:
+      - name: Download Discovery Spec
+        uses: actions/download-artifact@v4.5
+        with:
+          name: discovery-spec
+          path: specs
 
       - name: Validate Discovery Spec
         uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
         with:
           definition-file: specs/discovery-spec.json
-          default-timeout: 45000 # 45 secconds
+          default-timeout: 45000 # 45 seconds
 
   event_file:
     name: Upload Event File
