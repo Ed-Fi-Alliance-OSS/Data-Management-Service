@@ -7,7 +7,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef62
 
 LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
-RUN apk --no-cache add gettext=~0 postgresql16-client=~16 jq
+RUN apk --no-cache add gettext=~0 postgresql16-client=~16 jq=~1.7
 
 FROM runtimebase AS setup
 
