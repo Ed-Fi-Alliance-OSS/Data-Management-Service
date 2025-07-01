@@ -99,12 +99,12 @@ function AddExtensionSecurityMetadata {
         $_.TrimStart().StartsWith("--")
     }
 
-# Define the new INSERT SQL
-$insertStatement = @"
-INSERT INTO dmscs.claimshierarchy(
-     hierarchy)
-VALUES ('$escapedJson'::jsonb);
-"@.Trim()
+    # Define the new INSERT SQL
+    $insertStatement = @(
+        "INSERT INTO dmscs.claimshierarchy(",
+        "`t hierarchy)",
+        "`tVALUES ('$escapedJson'::jsonb);"
+    ) -join "`n"
 
     # Combine comments and new insert
     $finalContent = $commentLines + "" + $insertStatement
