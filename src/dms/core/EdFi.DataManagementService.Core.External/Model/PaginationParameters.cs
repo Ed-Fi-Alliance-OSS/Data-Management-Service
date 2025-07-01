@@ -20,5 +20,9 @@ public record PaginationParameters(
     /// <summary>
     /// The pagination totalCount
     /// </summary>
-    bool TotalCount
+    bool TotalCount,
+    /// <summary>
+    /// The configured maximum number of items that should be returned in the results
+    /// </summary>
+    int MaximumPageSize
 );

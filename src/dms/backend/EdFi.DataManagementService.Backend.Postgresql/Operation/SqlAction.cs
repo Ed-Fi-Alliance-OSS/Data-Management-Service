@@ -381,7 +381,14 @@ public partial class SqlAction() : ISqlAction
         );
 
         parameters.Add(new NpgsqlParameter { Value = queryRequest.PaginationParameters.Offset ?? 0 });
-        parameters.Add(new NpgsqlParameter { Value = queryRequest.PaginationParameters.Limit ?? 25 });
+        parameters.Add(
+            new NpgsqlParameter
+            {
+                Value =
+                    queryRequest.PaginationParameters.Limit
+                    ?? queryRequest.PaginationParameters.MaximumPageSize,
+            }
+        );
         command.Parameters.AddRange(parameters.ToArray());
 
         await command.PrepareAsync();
