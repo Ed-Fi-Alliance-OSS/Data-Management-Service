@@ -895,3 +895,46 @@ Feature: Resources "Create" Operation validations
                     "errors": []
                   }
                   """
+
+        Scenario: 34 Post and Put a request with slash-formatted dates that get coerced to ISO-8601 format (Resource)
+             When a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                      "studentUniqueId": "datetest123",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "birthDate": "5/1/2009"
+                  }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "datetest123",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "birthDate": "2009-05-01"
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/students/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "datetest123",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "birthDate": "5/1/2010"
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "studentUniqueId": "datetest123",
+                      "firstName": "John",
+                      "lastSurname": "Doe",
+                      "birthDate": "2010-05-01"
+                  }
+                  """

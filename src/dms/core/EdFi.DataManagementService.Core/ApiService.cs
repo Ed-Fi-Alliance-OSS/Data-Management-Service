@@ -163,6 +163,7 @@ internal class ApiService : IApiService
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new RejectResourceIdentifierMiddleware(_logger),
+                new CoerceDateFormatMiddleware(_logger),
                 new CoerceDateTimesMiddleware(_logger),
             ]
         );
@@ -270,6 +271,7 @@ internal class ApiService : IApiService
                 new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
+                new CoerceDateFormatMiddleware(_logger),
                 new CoerceDateTimesMiddleware(_logger),
             ]
         );

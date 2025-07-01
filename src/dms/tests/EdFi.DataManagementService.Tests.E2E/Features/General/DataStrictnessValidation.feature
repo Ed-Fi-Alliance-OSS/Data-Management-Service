@@ -368,3 +368,71 @@ Feature: Data strictness
                       "administrationDate": "2021-09-28T00:00:00Z"
                   }
                   """
+
+        Scenario: 19 Accept missing time in a POST request with a datetime property with slashes
+            Given a POST request is made to "/ed-fi/assessments" with
+                  """
+                  {
+                      "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml", "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ],
+                      "assessmentTitle": "title"
+                  }
+                  """
+            Given a POST request is made to "/ed-fi/schoolYearTypes" with
+                  """
+                  {
+                    "schoolYear": 2022,
+                    "schoolYearDescription": "2022",
+                    "currentSchoolYear": true
+                  }
+                  """
+            Given a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                    "studentUniqueId": "604906",
+                    "firstName": "first",
+                    "lastSurname": "last",
+                    "birthDate": "2001-01-01"
+                  }
+                  """
+             When a POST request is made to "/ed-fi/studentAssessments" with
+                # Adminstration Date has slashes - THIS IS ACCEPTED BY THE ODS/API
+                  """
+                  {
+                      "assessmentReference": {
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                          "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                      },
+                      "schoolYearTypeReference": {
+                          "schoolYear": 2022
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604906"
+                      },
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8c",
+                      "administrationDate": "2021/09/28"
+                  }
+                  """
+             Then it should respond with 200
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentReference": {
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                          "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                      },
+                      "schoolYearTypeReference": {
+                          "schoolYear": 2022
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604906"
+                      },
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8c",
+                      "administrationDate": "2021-09-28T00:00:00Z"
+                  }
+                  """

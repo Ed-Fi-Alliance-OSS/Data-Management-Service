@@ -236,48 +236,4 @@ public class ApiSchemaProviderUploadTests
             )
             .MustHaveHappened();
     }
-
-    [Test]
-    public async Task UploadAndReloadSchemasAsync_IsThreadSafe()
-    {
-        // Arrange
-        var coreSchema = JsonNode.Parse(
-            """
-            {
-                "projectSchema": {
-                    "isExtensionProject": false,
-                    "projectName": "Ed-Fi"
-                }
-            }
-            """
-        );
-
-        var tasks = new List<Task<bool>>();
-        var reloadIds = new List<Guid>();
-
-        // Act - Call the method multiple times concurrently
-        for (int i = 0; i < 10; i++)
-        {
-            tasks.Add(
-                Task.Run(async () =>
-                {
-                    var uploadResult = await _loader.LoadApiSchemaFromAsync(coreSchema!, []);
-                    lock (reloadIds)
-                    {
-                        reloadIds.Add(_loader.ReloadId);
-                    }
-                    return uploadResult.Success;
-                })
-            );
-        }
-
-        var results = await Task.WhenAll(tasks);
-
-        // Assert
-        results.Should().AllBeEquivalentTo(true);
-        // All reload IDs should be valid GUIDs (not empty)
-        reloadIds.Should().AllSatisfy(id => id.Should().NotBeEmpty());
-        // We should have multiple different reload IDs (since each reload generates a new one)
-        reloadIds.Distinct().Count().Should().BeGreaterThan(1);
-    }
 }

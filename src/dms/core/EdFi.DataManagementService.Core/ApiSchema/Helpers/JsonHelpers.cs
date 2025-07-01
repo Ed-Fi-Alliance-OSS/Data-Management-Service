@@ -367,6 +367,59 @@ internal static class JsonHelpers
     }
 
     /// <summary>
+    /// Helper to replace slash-formatted dates (e.g., 5/1/2009 or 5/1/2009 10:30:00 AM) with dash-formatted dates (e.g., 2009-05-01 or 2009-05-01 10:30:00 AM)
+    /// Handles both date-only and datetime formats. Time portions are preserved as-is while only the date portion is converted.
+    /// Does not handle parsing failures as these will be dealt with in validation.
+    /// </summary>
+    public static void TryCoerceSlashDateToIso8601(this JsonNode jsonNode)
+    {
+        var jsonValue = jsonNode.AsValue();
+        if (jsonValue.GetValueKind() == JsonValueKind.String)
+        {
+            string stringValue = jsonValue.GetValue<string>();
+
+            // Check if the string contains slashes, indicating a slash-formatted date
+            if (stringValue.Contains('/'))
+            {
+                // Split on space to separate potential date and time parts
+                string[] parts = stringValue.Split(' ', 2);
+                string datePart = parts[0];
+                string? timePart = parts.Length > 1 ? parts[1] : null;
+
+                // Try to parse the date portion with various slash formats
+                if (
+                    DateTime.TryParseExact(
+                        datePart,
+                        new[]
+                        {
+                            "M/d/yyyy",
+                            "MM/dd/yyyy",
+                            "M/d/yy",
+                            "MM/dd/yy",
+                            "d/M/yyyy",
+                            "dd/MM/yyyy",
+                            "d/M/yy",
+                            "dd/MM/yy",
+                        },
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.None,
+                        out DateTime dateTime
+                    )
+                )
+                {
+                    // Convert date portion to ISO-8601 dash format
+                    string formattedDate = dateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+                    // Reconstruct with time part if it exists
+                    string result = timePart != null ? $"{formattedDate} {timePart}" : formattedDate;
+
+                    jsonNode.ReplaceWith(result);
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Helper to extract a list of JsonNodes as the values of all the properties of a JsonNode
     /// </summary>
     public static List<JsonNode> SelectNodesFromPropertyValues(this JsonNode jsonNode)
