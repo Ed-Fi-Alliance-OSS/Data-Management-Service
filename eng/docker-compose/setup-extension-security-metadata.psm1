@@ -116,7 +116,4 @@ VALUES ('$escapedJson'::jsonb);
         Write-Error "Failed to load extension resource claims: $_"
         exit 1
     }
-    finally {
-        Pop-Location
-    }
 }
