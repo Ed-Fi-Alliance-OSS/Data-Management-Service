@@ -154,6 +154,7 @@ public class ApiSchemaBuilder
         {
             ["allowIdentityUpdates"] = allowIdentityUpdates,
             ["booleanJsonPaths"] = new JsonArray(),
+            ["dateJsonPaths"] = new JsonArray(),
             ["dateTimeJsonPaths"] = new JsonArray(),
             ["decimalPropertyValidationInfos"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),
