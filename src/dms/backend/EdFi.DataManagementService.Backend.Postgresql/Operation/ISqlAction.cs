@@ -66,6 +66,7 @@ public interface ISqlAction
         JsonElement edfiDoc,
         JsonElement securityElements,
         JsonElement? studentSchoolAuthorizationEdOrgIds,
+        JsonElement? studentEdOrgResponsibilityAuthorizationIds,
         JsonElement? contactStudentSchoolAuthorizationEdOrgIds,
         JsonElement? staffEducationOrganizationAuthorizationEdOrgIds,
         NpgsqlConnection connection,
@@ -169,6 +170,12 @@ public interface ISqlAction
     );
 
     public Task<JsonElement?> GetStudentSchoolAuthorizationEducationOrganizationIds(
+        string studentUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    );
+
+    public Task<JsonElement?> GetStudentEdOrgResponsibilityAuthorizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
