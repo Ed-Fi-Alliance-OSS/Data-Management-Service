@@ -21,6 +21,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  CONFIGURATION: "Release"
+
 permissions: read-all
 
 jobs:
@@ -42,11 +45,11 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -55,8 +58,11 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore
+        run: ./build-dms.ps1 restore -Configuration ${{ env.CONFIGURATION }}
+
       - name: Build
-        run: ./build-dms.ps1 Build -Configuration Release
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
       - name: Install Coverlet Reference
         if: success()
@@ -65,7 +71,7 @@ jobs:
           dotnet tool install --global dotnet-reportgenerator-globaltool
 
       - name: Run Unit Tests
-        run: ./build-dms.ps1 UnitTest -Configuration Release
+        run: ./build-dms.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}
 
       - name: Generate Coverage Report
         if: ${{ hashFiles('coverage.cobertura.xml') != '' }}
@@ -111,11 +117,11 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -124,12 +130,15 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore
+        run: ./build-dms.ps1 restore -Configuration ${{ env.CONFIGURATION }}
+
       - name: Build
-        run: ./build-dms.ps1 Build -Configuration Release
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
       - name: Run Integration Tests
         if: success()
-        run: ./build-dms.ps1 IntegrationTest -Configuration Release
+        run: ./build-dms.ps1 IntegrationTest -Configuration ${{ env.CONFIGURATION }}
 
       - name: Upload Integration Test Results
         uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
@@ -155,11 +164,11 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -168,8 +177,11 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore
+        run: ./build-dms.ps1 restore -Configuration ${{ env.CONFIGURATION }}
+
       - name: Build
-        run: ./build-dms.ps1 Build -Configuration Release
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
       - name: Run ${{matrix.queryhandler}} E2E Tests
         if: success()
@@ -180,7 +192,7 @@ jobs:
             # as similar as possible so that we can compare their performance.
           }
 
-          ./build-dms.ps1 E2ETest -EnableOpenSearch  -Configuration Release
+          ./build-dms.ps1 E2ETest -EnableOpenSearch  -Configuration ${{ env.CONFIGURATION }}
 
       - name: Export Docker Logs
         if: failure()
@@ -223,11 +235,11 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
           restore-keys: |
             ${{ runner.os }}-nuget-
 
@@ -236,8 +248,11 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore
+        run: ./build-dms.ps1 restore -Configuration ${{ env.CONFIGURATION }}
+
       - name: Build
-        run: ./build-dms.ps1 Build -Configuration Release
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
       - name: Start DMS Docker
         run: |

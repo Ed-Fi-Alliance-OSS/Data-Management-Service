@@ -21,6 +21,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  CONFIGURATION: "Release"
+
 permissions: read-all
 
 jobs:
@@ -40,13 +43,24 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       - name: Setup dotnet
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore
+        run: ./build-dms.ps1 restore -Configuration ${{ env.CONFIGURATION }}
+
       - name: Build
-        run: ./build-config.ps1 Build -Configuration Release
+        run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
       - name: Install Coverlet Reference
         if: success()
@@ -55,7 +69,7 @@ jobs:
           dotnet tool install --global dotnet-reportgenerator-globaltool
 
       - name: Run Unit Tests
-        run: ./build-config.ps1 UnitTest -Configuration Release
+        run: ./build-config.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}
 
       - name: Generate Coverage Report
         if: ${{ hashFiles('coverage.cobertura.xml') != '' }}
@@ -99,17 +113,28 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       - name: Setup dotnet
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore
+        run: ./build-dms.ps1 restore -Configuration ${{ env.CONFIGURATION }}
+
       - name: Build
-        run: ./build-config.ps1 Build -Configuration Release
+        run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
       - name: Run Integration Tests
         if: success()
-        run: ./build-config.ps1 IntegrationTest -Configuration Release
+        run: ./build-config.ps1 IntegrationTest -Configuration ${{ env.CONFIGURATION }}
 
       - name: Upload Integration Test Results
         if: always()
@@ -130,17 +155,28 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       - name: Setup dotnet
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
           dotnet-version: '8.0.x'
 
+      - name: Restore
+        run: ./build-dms.ps1 restore -Configuration ${{ env.CONFIGURATION }}
+
       - name: Build
-        run: ./build-config.ps1 Build -Configuration Release
+        run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
       - name: Run End to End Tests
         if: success()
-        run: ./build-config.ps1 E2ETest  -Configuration Release
+        run: ./build-config.ps1 E2ETest  -Configuration ${{ env.CONFIGURATION }}
 
       - name: Upload Logs
         if: failure()
