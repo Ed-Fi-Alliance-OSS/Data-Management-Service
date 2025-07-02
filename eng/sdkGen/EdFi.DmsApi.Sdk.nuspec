@@ -1,9 +1,9 @@
 <?xml version="1.0"?>
 <package>
   <metadata>
-    <id>EdFi.OdsApi.Sdk</id>
+    <id>EdFi.DmsApi.Sdk</id>
     <version>$version$</version>
-    <title>EdFi.OdsApi.Sdk</title>
+    <title>EdFi.DmsApi.Sdk</title>
     <authors>Ed-Fi Alliance</authors>
     <owners>Ed-Fi Alliance</owners>
     <projectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</projectUrl>
@@ -23,6 +23,6 @@
   </metadata>
   <files>
     <file src="readme.txt" target="" />
-    <file src="csharp\src\EdFi.OdsApi.Sdk\bin\Release\net8.0\EdFi.OdsApi.Sdk.dll" target="lib\net8.0" />
+    <file src="csharp\src\EdFi.DmsApi.Sdk\bin\Release\net8.0\EdFi.DmsApi.Sdk.dll" target="lib\net8.0" />
   </files>
 </package>

@@ -43,13 +43,13 @@ jobs:
 
       - name: Generate Test SDK
         run: |
-          ./build-sdk.ps1  BuildAndGenerateSdk -PackageName  "EdFi.OdsApi.TestSdk"
+          ./build-sdk.ps1  BuildAndGenerateSdk -PackageName  "EdFi.DmsApi.TestSdk"
 
       - name: Package Test SDK
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
-          ./build-sdk.ps1 Package -SDKVersion $packageVersion -PackageName  "EdFi.OdsApi.TestSdk"
+          ./build-sdk.ps1 Package -SDKVersion $packageVersion -PackageName  "EdFi.DmsApi.TestSdk"
 
       - name: Upload Test SDK Packages as Artifacts
         if: success()

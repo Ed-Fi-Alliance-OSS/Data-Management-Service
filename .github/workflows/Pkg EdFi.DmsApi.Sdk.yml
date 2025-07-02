@@ -43,13 +43,13 @@ jobs:
 
       - name: Generate Core SDK
         run: |
-          ./build-sdk.ps1 BuildAndGenerateSdk -PackageName "EdFi.OdsApi.Sdk"
+          ./build-sdk.ps1 BuildAndGenerateSdk -PackageName "EdFi.DmsApi.Sdk"
 
       - name: Package Core SDK
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
-          ./build-sdk.ps1 Package -SDKVersion $packageVersion  -PackageName "EdFi.OdsApi.Sdk"
+          ./build-sdk.ps1 Package -SDKVersion $packageVersion  -PackageName "EdFi.DmsApi.Sdk"
 
       - name: Upload Core SDK Packages as Artifacts
         if: success()
