@@ -19,7 +19,7 @@ BEGIN
   RETURN (
     SELECT jsonb_agg(DISTINCT edOrgIds)
         FROM (
-            SELECT jsonb_array_elements(seora.StudentEducationOrganizationResponsibilityAuthorizationEducationOrganizationIds) AS edOrgIds
+            SELECT jsonb_array_elements(seora.StudentEdOrgResponsibilityAuthorizationEdOrgIds) AS edOrgIds
             FROM dms.StudentEducationOrganizationResponsibilityAuthorization seora
             WHERE seora.StudentUniqueId = student_id
         )
@@ -65,10 +65,10 @@ BEGIN
 
     INSERT INTO dms.StudentEducationOrganizationResponsibilityAuthorization (
         StudentUniqueId,
-        HierarchyEducationOrganizationId,
-        StudentEducationOrganizationResponsibilityAuthorizationEducationOrganizationIds,
-        StudentEducationOrganizationResponsibilityAssociationId,
-        StudentEducationOrganizationResponsibilityAssociationPartitionKey
+        HierarchyEdOrgId,
+        StudentEdOrgResponsibilityAuthorizationEdOrgIds,
+        StudentEdOrgResponsibilityAssociationId,
+        StudentEdOrgResponsibilityAssociationPartitionKey
     )
     VALUES (
         student_id,
@@ -142,11 +142,11 @@ BEGIN
     UPDATE dms.StudentEducationOrganizationResponsibilityAuthorization
     SET
         StudentUniqueId = new_student_id,
-        HierarchyEducationOrganizationId = new_education_organization_id,
-        StudentEducationOrganizationResponsibilityAuthorizationEducationOrganizationIds = ancestor_ed_org_ids
+        HierarchyEdOrgId = new_education_organization_id,
+        StudentEdOrgResponsibilityAuthorizationEdOrgIds = ancestor_ed_org_ids
     WHERE
-        StudentEducationOrganizationResponsibilityAssociationId = NEW.Id AND
-        StudentEducationOrganizationResponsibilityAssociationPartitionKey = NEW.DocumentPartitionKey;
+        StudentEdOrgResponsibilityAssociationId = NEW.Id AND
+        StudentEdOrgResponsibilityAssociationPartitionKey = NEW.DocumentPartitionKey;
 
     -- Update all documents for the new student
     PERFORM dms.SetStudentEdOrgResponsibilityIdsToStudentSecurables(dms.GetStudentEdOrgResponsibilityIds(new_student_id), new_student_id);
@@ -156,22 +156,22 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Drop and recreate triggers
-DROP TRIGGER IF EXISTS StudentEducationOrganizationResponsibilityAuthorizationTrigger_Insert ON dms.Document;
-CREATE TRIGGER StudentEducationOrganizationResponsibilityAuthorizationTrigger_Insert
+DROP TRIGGER IF EXISTS StudentEdOrgResponsibilityAssociation_Trigger_Insert ON dms.Document;
+CREATE TRIGGER StudentEdOrgResponsibilityAssociation_Trigger_Insert
 AFTER INSERT ON dms.Document
     FOR EACH ROW
     WHEN (NEW.ProjectName = 'Ed-Fi' AND NEW.ResourceName = 'StudentEducationOrganizationResponsibilityAssociation')
     EXECUTE PROCEDURE dms.StudentEducationOrganizationResponsibilityAuthorizationInsertFunction();
 
-DROP TRIGGER IF EXISTS StudentEducationOrganizationResponsibilityAuthorizationTrigger_Update ON dms.Document;
-CREATE TRIGGER StudentEducationOrganizationResponsibilityAuthorizationTrigger_Update
+DROP TRIGGER IF EXISTS StudentEdOrgResponsibilityAssociation_Trigger_Update ON dms.Document;
+CREATE TRIGGER StudentEdOrgResponsibilityAssociation_Trigger_Update
 AFTER UPDATE OF EdfiDoc ON dms.Document
     FOR EACH ROW
     WHEN (NEW.ProjectName = 'Ed-Fi' AND NEW.ResourceName = 'StudentEducationOrganizationResponsibilityAssociation')
     EXECUTE PROCEDURE dms.StudentEducationOrganizationResponsibilityAuthorizationUpdateFunction();
 
-DROP TRIGGER IF EXISTS StudentEducationOrganizationResponsibilityAuthorizationTrigger_Delete ON dms.Document;
-CREATE TRIGGER StudentEducationOrganizationResponsibilityAuthorizationTrigger_Delete
+DROP TRIGGER IF EXISTS StudentEdOrgResponsibilityAssociation_Trigger_Delete ON dms.Document;
+CREATE TRIGGER StudentEdOrgResponsibilityAssociation_Trigger_Delete
 AFTER DELETE ON dms.Document
     FOR EACH ROW
     WHEN (OLD.ProjectName = 'Ed-Fi' AND OLD.ResourceName = 'StudentEducationOrganizationResponsibilityAssociation')

@@ -1064,7 +1064,7 @@ public partial class SqlAction() : ISqlAction
             $"""
                 SELECT jsonb_agg(DISTINCT value)
                 FROM (
-                    SELECT DISTINCT jsonb_array_elements(StudentEducationOrganizationResponsibilityAuthorizationEducationOrganizationIds) AS value
+                    SELECT DISTINCT jsonb_array_elements(StudentEdOrgResponsibilityAuthorizationEdOrgIds) AS value
                     FROM dms.StudentEducationOrganizationResponsibilityAuthorization
                     WHERE StudentUniqueId = $1
                 ) subquery;
