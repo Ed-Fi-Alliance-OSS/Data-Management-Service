@@ -117,7 +117,7 @@ function DotNetClean {
 }
 
 function Restore {
-    Invoke-Execute { dotnet restore$defaultSolution --verbosity:normal }
+    Invoke-Execute { dotnet restore $defaultSolution --verbosity:normal }
 }
 
 function SetDMSAssemblyInfo {
