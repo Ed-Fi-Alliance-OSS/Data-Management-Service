@@ -217,7 +217,7 @@ function RunTests {
         if ($Filter.Equals("*.Tests.Unit")) {
             # For unit tests, we need to collect coverage but not check thresholds yet
             $isLastTest = $_ -eq $testAssemblies[-1]
-            
+
             if ($isLastTest) {
                 # Last test: generate final reports and check thresholds
                 Invoke-Execute {
@@ -304,10 +304,10 @@ function E2ETests {
             try {
                 Push-Location eng/docker-compose/
                 if ($UsePublishedImage) {
-                    ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig
+                    ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
                 }
                 else {
-                    ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -r
+                    ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -r -AddExtensionSecurityMetadata
                 }
             }
             finally {
