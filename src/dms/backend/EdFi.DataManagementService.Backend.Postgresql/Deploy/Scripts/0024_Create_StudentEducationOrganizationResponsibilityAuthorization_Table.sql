@@ -6,13 +6,13 @@
 CREATE TABLE dms.StudentEducationOrganizationResponsibilityAuthorization(
     Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     StudentUniqueId VARCHAR(32) NOT NULL,
-    HierarchyEducationOrganizationId BIGINT NOT NULL REFERENCES dms.EducationOrganizationHierarchy(EducationOrganizationId) ON DELETE CASCADE,
-    StudentEducationOrganizationResponsibilityAuthorizationEducationOrganizationIds JSONB NOT NULL,
-    StudentEducationOrganizationResponsibilityAssociationId BIGINT NOT NULL,
-    StudentEducationOrganizationResponsibilityAssociationPartitionKey SMALLINT NOT NULL,
-    CONSTRAINT FK_StudentEducationOrganizationResponsibilityAuthorization_Document FOREIGN KEY (StudentEducationOrganizationResponsibilityAssociationId, StudentEducationOrganizationResponsibilityAssociationPartitionKey)
+    HierarchyEdOrgId BIGINT NOT NULL REFERENCES dms.EducationOrganizationHierarchy(EducationOrganizationId) ON DELETE CASCADE,
+    StudentEdOrgResponsibilityAuthorizationEdOrgIds JSONB NOT NULL,
+    StudentEdOrgResponsibilityAssociationId BIGINT NOT NULL,
+    StudentEdOrgResponsibilityAssociationPartitionKey SMALLINT NOT NULL,
+    CONSTRAINT FK_StudentEdOrgResponsibilityAuthorization_Document FOREIGN KEY (StudentEdOrgResponsibilityAssociationId, StudentEdOrgResponsibilityAssociationPartitionKey)
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
 
-CREATE INDEX IX_StudentEducationOrganizationResponsibilityAuthorization_StudentUniqueId
+CREATE INDEX IX_StudentEdOrgResponsibilityAuthorization_StudentUniqueId
 ON dms.StudentEducationOrganizationResponsibilityAuthorization(StudentUniqueId);
