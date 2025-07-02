@@ -14,6 +14,7 @@ CREATE TABLE dms.Document (
   EdfiDoc JSONB NOT NULL,
   SecurityElements JSONB NOT NULL,
   StudentSchoolAuthorizationEdOrgIds JSONB NULL,
+  StudentEdOrgResponsibilityAuthorizationIds JSONB NULL,
   ContactStudentSchoolAuthorizationEdOrgIds JSONB NULL,
   StaffEducationOrganizationAuthorizationEdOrgIds JSONB NULL,
   CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
