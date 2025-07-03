@@ -164,11 +164,13 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             }
 
             JsonElement? schoolAuthorizationEdOrgIds = null;
+            JsonElement? studentEdOrgResponsibilityAuthorizationIds = null;
             JsonElement? contactStudentSchoolAuthorizationEdOrgIds = null;
             JsonElement? staffEducationOrganizationAuthorizationEdOrgIds = null;
 
             (
                 schoolAuthorizationEdOrgIds,
+                studentEdOrgResponsibilityAuthorizationIds,
                 contactStudentSchoolAuthorizationEdOrgIds,
                 staffEducationOrganizationAuthorizationEdOrgIds
             ) = await DocumentAuthorizationHelper.GetAuthorizationEducationOrganizationIds(
@@ -195,6 +197,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
                 updateRequest.DocumentSecurityElements.ToJsonElement(),
                 schoolAuthorizationEdOrgIds,
+                studentEdOrgResponsibilityAuthorizationIds,
                 contactStudentSchoolAuthorizationEdOrgIds,
                 staffEducationOrganizationAuthorizationEdOrgIds,
                 connection,
@@ -332,6 +335,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                                 JsonSerializer.Deserialize<JsonElement>(cascadeResult.ModifiedEdFiDoc),
                                 updateRequest.DocumentSecurityElements.ToJsonElement(),
                                 schoolAuthorizationEdOrgIds,
+                                null, // studentEdOrgResponsibilityAuthorizationIds - TODO: implement
                                 contactStudentSchoolAuthorizationEdOrgIds,
                                 staffEducationOrganizationAuthorizationEdOrgIds,
                                 connection,

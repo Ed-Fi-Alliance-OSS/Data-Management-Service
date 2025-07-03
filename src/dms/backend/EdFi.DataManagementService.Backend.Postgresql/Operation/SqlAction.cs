@@ -44,6 +44,9 @@ public partial class SqlAction() : ISqlAction
             StudentSchoolAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
                 reader.GetOrdinal("StudentSchoolAuthorizationEdOrgIds")
             ),
+            StudentEdOrgResponsibilityAuthorizationIds: await reader.GetFieldValueAsync<JsonElement?>(
+                reader.GetOrdinal("StudentEdOrgResponsibilityAuthorizationIds")
+            ),
             ContactStudentSchoolAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
                 reader.GetOrdinal("ContactStudentSchoolAuthorizationEdOrgIds")
             ),
@@ -462,12 +465,12 @@ public partial class SqlAction() : ISqlAction
         await using var command = new NpgsqlCommand(
             @"
             WITH Documents AS (
-            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, StudentSchoolAuthorizationEdOrgIds, ContactStudentSchoolAuthorizationEdOrgIds, StaffEducationOrganizationAuthorizationEdOrgIds, LastModifiedTraceId)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, StudentSchoolAuthorizationEdOrgIds, StudentEdOrgResponsibilityAuthorizationIds, ContactStudentSchoolAuthorizationEdOrgIds, StaffEducationOrganizationAuthorizationEdOrgIds, LastModifiedTraceId)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
               RETURNING Id
             )
             INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
-              SELECT $13, $14, Id, $1 FROM Documents RETURNING DocumentId;
+              SELECT $14, $15, Id, $1 FROM Documents RETURNING DocumentId;
             ",
             connection,
             transaction
@@ -487,6 +490,12 @@ public partial class SqlAction() : ISqlAction
                 {
                     Value = document.StudentSchoolAuthorizationEdOrgIds.HasValue
                         ? document.StudentSchoolAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
+                new()
+                {
+                    Value = document.StudentEdOrgResponsibilityAuthorizationIds.HasValue
+                        ? document.StudentEdOrgResponsibilityAuthorizationIds
                         : DBNull.Value,
                 },
                 new()
@@ -520,6 +529,7 @@ public partial class SqlAction() : ISqlAction
         JsonElement edfiDoc,
         JsonElement securityElements,
         JsonElement? studentSchoolAuthorizationEdOrgIds,
+        JsonElement? studentEdOrgResponsibilityAuthorizationIds,
         JsonElement? contactStudentSchoolAuthorizationEdOrgIds,
         JsonElement? staffEducationOrganizationAuthorizationEdOrgIds,
         NpgsqlConnection connection,
@@ -534,8 +544,9 @@ public partial class SqlAction() : ISqlAction
                 LastModifiedTraceId = $4,
                 SecurityElements = $5,
                 StudentSchoolAuthorizationEdOrgIds = $6,
-                ContactStudentSchoolAuthorizationEdOrgIds = $7,
-                StaffEducationOrganizationAuthorizationEdOrgIds = $8
+                StudentEdOrgResponsibilityAuthorizationIds = $7,
+                ContactStudentSchoolAuthorizationEdOrgIds = $8,
+                StaffEducationOrganizationAuthorizationEdOrgIds = $9
               WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
               RETURNING Id;",
             connection,
@@ -553,6 +564,12 @@ public partial class SqlAction() : ISqlAction
                 {
                     Value = studentSchoolAuthorizationEdOrgIds.HasValue
                         ? studentSchoolAuthorizationEdOrgIds
+                        : DBNull.Value,
+                },
+                new()
+                {
+                    Value = studentEdOrgResponsibilityAuthorizationIds.HasValue
+                        ? studentEdOrgResponsibilityAuthorizationIds
                         : DBNull.Value,
                 },
                 new()
@@ -1019,6 +1036,36 @@ public partial class SqlAction() : ISqlAction
                 FROM (
                     SELECT DISTINCT jsonb_array_elements(StudentSchoolAuthorizationEducationOrganizationIds) AS value
                     FROM dms.StudentSchoolAssociationAuthorization
+                    WHERE StudentUniqueId = $1
+                ) subquery;
+            """,
+            connection,
+            transaction
+        )
+        {
+            Parameters = { new() { Value = studentUniqueId } },
+        };
+
+        await command.PrepareAsync();
+        object? result = await command.ExecuteScalarAsync();
+
+        return result == DBNull.Value || result == null
+            ? null
+            : JsonSerializer.Deserialize<JsonElement>((string)result);
+    }
+
+    public async Task<JsonElement?> GetStudentEdOrgResponsibilityAuthorizationIds(
+        string studentUniqueId,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        await using NpgsqlCommand command = new(
+            $"""
+                SELECT jsonb_agg(DISTINCT value)
+                FROM (
+                    SELECT DISTINCT jsonb_array_elements(StudentEdOrgResponsibilityAuthorizationEdOrgIds) AS value
+                    FROM dms.StudentEducationOrganizationResponsibilityAuthorization
                     WHERE StudentUniqueId = $1
                 ) subquery;
             """,
