@@ -120,7 +120,7 @@ else {
 
     Write-Output "Starting published DMS"
     $env:NEED_DATABASE_SETUP = if ($LoadSeedData) { "false" } else { $env:NEED_DATABASE_SETUP }
-    docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
+    docker compose $files --env-file $EnvironmentFile -p dms-published up -d
     $env:NEED_DATABASE_SETUP = $envValues["NEED_DATABASE_SETUP"]
 
     if ($LASTEXITCODE -ne 0) {
