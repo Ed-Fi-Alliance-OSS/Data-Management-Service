@@ -28,8 +28,28 @@ param (
 
     # Enable the DMS Configuration Service
     [Switch]
-    $EnableConfig
+    $EnableConfig,
+
+    # Enable Swagger UI for the DMS API
+    [Switch]$EnableSwaggerUI,
+
+    # Load seed data using database template package
+    [Switch]
+    $LoadSeedData,
+
+    # Add extension security metadata
+    [Switch]
+    $AddExtensionSecurityMetadata
 )
+
+if($AddExtensionSecurityMetadata)
+{
+    Import-Module ./setup-extension-security-metadata.psm1 -Force
+    AddExtensionSecurityMetadata -EnvironmentFile $EnvironmentFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to set up extension security metadata, with exit code $LASTEXITCODE."
+    }
+}
 
 $files = @(
     "-f",
@@ -53,6 +73,10 @@ else {
 
 if ($EnableConfig) {
     $files += @("-f", "published-config.yml")
+}
+
+if ($EnableSwaggerUI) {
+    $files += @("-f", "swagger-ui.yml")
 }
 
 if ($d) {
@@ -91,14 +115,32 @@ else {
     # Create client with edfi_admin_api/authMetadata_readonly_access scope
     ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
 
+    Import-Module ./env-utility.psm1
+    $envValues = ReadValuesFromEnvFile $EnvironmentFile
+
     Write-Output "Starting published DMS"
+    $env:NEED_DATABASE_SETUP = if ($LoadSeedData) { "false" } else { $env:NEED_DATABASE_SETUP }
     docker compose $files --env-file $EnvironmentFile -p dms-published up -d
+    $env:NEED_DATABASE_SETUP = $envValues["NEED_DATABASE_SETUP"]
 
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to start Published Docker environment, with exit code $LASTEXITCODE."
     }
 
     Start-Sleep 20
-    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 
+    if($LoadSeedData)
+    {
+        Import-Module ./setup-database-template.psm1 -Force
+        Write-Output "Loading initial data from the database template..."
+        LoadSeedData -EnvironmentFile $EnvironmentFile
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to load initial data, with exit code $LASTEXITCODE."
+        }
+    }
+
+    Start-Sleep 10
+
+    Write-Output "Running connector setup..."
+    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 }
