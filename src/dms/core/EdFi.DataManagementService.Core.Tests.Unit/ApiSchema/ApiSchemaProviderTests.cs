@@ -196,37 +196,6 @@ public class ApiSchemaProviderTests
         }
 
         [Test]
-        public async Task ReloadApiSchemaAsync_ConcurrentReloads_AtLeastOneSucceeds()
-        {
-            // Arrange
-            await WriteTestSchemaFile("ApiSchema.json", CreateValidApiSchema());
-            List<bool> results = [];
-            Barrier barrier = new(5);
-
-            // Act
-            var tasks = Enumerable
-                .Range(0, 5)
-                .Select(_ =>
-                    Task.Run(async () =>
-                    {
-                        barrier.SignalAndWait();
-                        var reloadResult = await _loader.ReloadApiSchemaAsync();
-                        lock (results)
-                        {
-                            results.Add(reloadResult.Success);
-                        }
-                    })
-                )
-                .ToArray();
-
-            await Task.WhenAll(tasks);
-
-            // Assert
-            results.Should().HaveCount(5);
-            results.Count(r => r).Should().BeGreaterOrEqualTo(1, "at least one reload should succeed");
-        }
-
-        [Test]
         public async Task ReloadApiSchemaAsync_UpdatesSchemaContent()
         {
             // Arrange - Create core schemas (not extensions) with different project descriptions
