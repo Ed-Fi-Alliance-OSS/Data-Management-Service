@@ -31,7 +31,7 @@ param (
     $EnableConfig,
 
     # Enable Swagger UI for the DMS API
-    [switch]$EnableSwaggerUI,
+    [Switch]$EnableSwaggerUI,
 
     # Load seed data using database template package
     [Switch]
