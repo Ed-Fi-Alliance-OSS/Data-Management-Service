@@ -44,7 +44,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
+    [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
     $Command = "Build",
 
     # Assembly and package version number for the DMS Configuration Service. The
@@ -101,7 +101,7 @@ function DotNetClean {
 }
 
 function Restore {
-    Invoke-Execute { dotnet restore $defaultSolution }
+    Invoke-Execute { dotnet restore $defaultSolution --verbosity:normal }
 }
 
 function SetDMSAssemblyInfo {
@@ -128,6 +128,7 @@ function SetDMSAssemblyInfo {
 
 function Compile {
     Invoke-Execute {
+
         dotnet build $defaultSolution -c $Configuration --nologo --no-restore
     }
 }
@@ -185,6 +186,8 @@ function RunTests {
 
             Invoke-Execute {
                 dotnet test $target `
+                    --no-build `
+                    --no-restore `
                     --logger "trx;LogFileName=$trx.trx" `
                     --logger "console" `
                     --nologo
@@ -350,6 +353,10 @@ function Run {
     }
 }
 
+function Invoke-Restore {
+    Invoke-Step { Restore }
+}
+
 Invoke-Main {
     if ($IsLocalBuild) {
         $nugetExePath = Install-NugetCli
@@ -357,6 +364,7 @@ Invoke-Main {
     }
     switch ($Command) {
         Clean { Invoke-Clean }
+        Restore { Invoke-Restore }
         Build { Invoke-Build }
         BuildAndPublish {
             Invoke-SetAssemblyInfo
