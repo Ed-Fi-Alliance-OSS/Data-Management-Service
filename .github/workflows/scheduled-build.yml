@@ -49,7 +49,7 @@ jobs:
           dotnet tool install --global coverlet.console
           dotnet tool install --global dotnet-reportgenerator-globaltool
 
-      - name: Run DMS Unit Test
+      - name: Run DMS Unit Tests
         id: unit_test_step
         run: ./build-dms.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}
 
@@ -197,7 +197,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ GitHub Action build result: Failed\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ GitHub Action build result: ${{ job.status }}\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Commit Message:* ${{ github.event.head_commit.message || 'No commit message available' }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
