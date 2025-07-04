@@ -1,10 +1,12 @@
 # Docker Compose Test and Demonstration Configurations
 
-> [!WARNING] **NOT FOR PRODUCTION USE!** Includes passwords in the default
+> [!WARNING]
+> **NOT FOR PRODUCTION USE!** Includes passwords in the default
 > configuration that are visible in this repo and should never be used in real
 > life. Be very careful!
 
-> [!NOTE] This document describes a reference architecture intended to assist in
+> [!NOTE]
+> This document describes a reference architecture intended to assist in
 > building production deployments. This reference architecture will not be tuned
 > for real-world production usage. For example, it will not include service
 > clustering, may not be well secured, and it will not utilize cloud providers'
@@ -49,7 +51,8 @@ value is `OpenSearch`.
 ./setup-connectors.ps1 -SearchEngine "ElasticSearch"
 ```
 
-> [!WARNING] The script `setup-connectors.ps1` first attempts to delete
+> [!WARNING]
+> The script `setup-connectors.ps1` first attempts to delete
 > connectors that are already installed. On first execution, this results in a
 > 404 error. _This is normal_. Ignore that initial 404 error message.
 

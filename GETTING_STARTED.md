@@ -18,7 +18,8 @@ These instructions have been tested in Windows with current (April, 2025)
 versions of both Docker Desktop and Podman. This repository uses PowerShell for
 scripting, which _should_ work on any OS where PowerShell Core 7+ is installed.
 
-> [!TIP] If using Podman without Docker in Windows, you can create either
+> [!TIP]
+> If using Podman without Docker in Windows, you can create either
 >
 > 1. Find and replace "docker compose" with "podman compose" in the
 >    `eng/docker-compose` directory, or
