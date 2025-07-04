@@ -129,7 +129,8 @@ By default, Data Standard 5.2 core model and TPDM model are included. You can
 include custom extensions in the your deployment by configuring the SCHEMA_PACKAGES,
 USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
 
-> [!NOTE] To add custom extensions: In your `.env` file, set
+> [!NOTE]
+> To add custom extensions: In your `.env` file, set
 > `USE_API_SCHEMA_PATH` to `true` and specify `API_SCHEMA_PATH` as the path where
 > schema files will be downloaded. Then, add or update the `SCHEMA_PACKAGES`
 > variable to include the core package and any required extension packages.
@@ -180,7 +181,8 @@ Open your browser and go to <http://localhost:8082> Use the dropdown menu to
 select either the Resources or Descriptors spec. Swagger UI is configured to
 consume the DMS endpoints published on the host (localhost and the port defined
 in DMS_HTTP_PORTS).
->[!NOTE] The user that is configured to use swagger must have the Web Origins
+>[!NOTE]
+> The user that is configured to use swagger must have the Web Origins
 > configuration in Keycloak to allow CORS. To do this you must search for your
 > Client in keycloak and add Web Origins (Example: Web origins:
 > <http://localhost:8082>).
@@ -216,7 +218,8 @@ replication setup failed, this may be a Docker problem where it has failed to
 load a startup script properly. Restarting Docker Desktop (and possibly applying
 the latest updates) may fix the issue.
 
-> [!TIP] To diagnose the problem described above, open a terminal in the
+> [!TIP]
+> To diagnose the problem described above, open a terminal in the
 > PostgreSQL container and run `/docker-entrypoint-initdb.d/postgresql-init.sh`.
 > Does the result show you that this is a _file_ or a _directory_? Sometimes
 > Docker Desktop incorrectly loads this as a directory, which means that the

@@ -121,7 +121,8 @@ a container.
 This may take around a minute to startup. This script not only starts the
 containers, it also calls an additional script for configuring Keycloak.
 
-> [!TIP] Add `-SearchEngine ElasticSearch` to run Elasticsearch instead of
+> [!TIP]
+> Add `-SearchEngine ElasticSearch` to run Elasticsearch instead of
 > OpenSearch. Review the Docker Compose [README](./eng/docker-compose/README.md)
 > for available deployment options.
 
