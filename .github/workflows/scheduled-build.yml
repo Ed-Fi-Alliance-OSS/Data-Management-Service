@@ -49,20 +49,68 @@ jobs:
         id: unit_test_step
         run: ./build-dms.ps1 UnitTest -Configuration Release
 
-      - name: Run ElasticSearch End to End Tests
+      - name: Run ElasticSearch End to End Tests and Download OpenAPI specs
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableElasticSearch -Configuration Release
+        run: |
+          # Start E2E tests in background
+            $job = Start-Job -ScriptBlock {
+              ./build-dms.ps1 E2ETest -EnableElasticSearch -Configuration Release
+            }
+
+            # Wait for DMS service to be ready
+            Write-Host "Waiting for DMS service to be ready for OpenAPI specs download..."
+            $timeout = 300 # 5 minutes
+            $elapsed = 0
+            $interval = 10
+            $serviceReady = $false
+
+            do {
+              Start-Sleep -Seconds $interval
+              $elapsed += $interval
+              try {
+                $response = Invoke-WebRequest -Uri "http://localhost:8080/health" -UseBasicParsing -TimeoutSec 10
+                if ($response.StatusCode -eq 200) {
+                  Write-Host "DMS service is ready, downloading OpenAPI specs..."
+                  $serviceReady = $true
+
+                  # Download OpenAPI specs while E2E tests are running
+                  mkdir specs -ErrorAction SilentlyContinue
+                  Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -OutFile "specs/resources-spec.json"
+                  Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/descriptors-spec.json" -OutFile "specs/descriptors-spec.json"
+                  Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/discovery-spec.json" -OutFile "specs/discovery-spec.json"
+                  Write-Host "OpenAPI specs downloaded successfully"
+                  break
+                }
+              } catch {
+                Write-Host "Waiting for DMS service to be ready... ($elapsed/$timeout seconds)"
+              }
+            } while ($elapsed -lt $timeout)
+
+            if (-not $serviceReady) {
+              Write-Error "DMS service did not start within the timeout period"
+              Stop-Job $job -ErrorAction SilentlyContinue
+              Remove-Job $job -ErrorAction SilentlyContinue
+              exit 1
+            }
+
+            # Wait for E2E tests to complete
+            Write-Host "Waiting for E2E tests to complete..."
+            Wait-Job $job
+            $jobResult = Receive-Job $job
+            $jobState = $job.State
+            Remove-Job $job
+
+            Write-Host "E2E Tests output:"
+            Write-Host $jobResult
+
+            if ($jobState -ne "Completed") {
+              Write-Error "E2E tests failed"
+              exit 1
+            }
 
       - name: Run OpenSearch End to End Tests
         if: success()
         run: ./build-dms.ps1 E2ETest -EnableOpenSearch  -Configuration Release
-
-      - name: Download OpenAPI specs
-        run: |
-          mkdir specs
-          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -OutFile "specs/resources-spec.json"
-          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/descriptors-spec.json" -OutFile "specs/descriptors-spec.json"
-          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/discovery-spec.json" -OutFile "specs/discovery-spec.json"
 
       - name: Validate Resources Spec
         uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
