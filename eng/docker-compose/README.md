@@ -129,7 +129,7 @@ image from source code.
 ```
 
 By default, Data Standard 5.2 core model and TPDM model are included. You can
-include custom extensions in the your deployment by configuring the SCHEMA_PACKAGES,
+include custom extensions in your deployment by configuring the SCHEMA_PACKAGES,
 USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
 
 > [!NOTE]
