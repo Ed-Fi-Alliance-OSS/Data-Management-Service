@@ -7,7 +7,8 @@ additional developer information.
 
 There are two parts to the lab:
 
-* This markdown file provides context and instructions on running the DMS Platform.
+* This markdown file provides context and instructions on running the DMS
+  Platform.
 * File `getting-started.http` provides annotated HTTP commands demonstrating how
   to interact with the DMS and the DMS Configuration Service.
 
@@ -17,8 +18,7 @@ These instructions have been tested in Windows with current (April, 2025)
 versions of both Docker Desktop and Podman. This repository uses PowerShell for
 scripting, which _should_ work on any OS where PowerShell Core 7+ is installed.
 
-> [!TIP]
-> If using Podman without Docker in Windows, you can create either
+> [!TIP] If using Podman without Docker in Windows, you can create either
 >
 > 1. Find and replace "docker compose" with "podman compose" in the
 >    `eng/docker-compose` directory, or
@@ -121,8 +121,9 @@ a container.
 This may take around a minute to startup. This script not only starts the
 containers, it also calls an additional script for configuring Keycloak.
 
-> [!TIP]
-> Add `-SearchEngine ElasticSearch` to run Elasticsearch instead of OpenSearch.
+> [!TIP] Add `-SearchEngine ElasticSearch` to run Elasticsearch instead of
+> OpenSearch. Review the Docker Compose [README](./eng/docker-compose/README.md)
+> for available deployment options.
 
 Once started, try the following HTTP request, which will load the Ed-Fi
 Discovery API endpoint from the DMS.
@@ -146,12 +147,18 @@ information on developing client integrations:
 
 * [Basics](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/basics)
 * [Authentication](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/authentication)
-* [Date and Datetime Elements](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/date-datetime-elements)
-* [Descriptor References](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/descriptor-references)
-* [Error Handling and Best Practices](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/error-handling-best-practices)
-* [Error Response Knowledge Base](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/error-response-knowledge-base)
-* [Resource Dependency Order](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/resource-dependency-order)
-* [Using Code Generation to Create an SDK](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-code-generation-to-create-an-sdk)
+* [Date and Datetime
+  Elements](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/date-datetime-elements)
+* [Descriptor
+  References](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/descriptor-references)
+* [Error Handling and Best
+  Practices](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/error-handling-best-practices)
+* [Error Response Knowledge
+  Base](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/error-response-knowledge-base)
+* [Resource Dependency
+  Order](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/resource-dependency-order)
+* [Using Code Generation to Create an
+  SDK](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/using-code-generation-to-create-an-sdk)
 
 In the DMS we have not included the `v3/` segment that is present in the
 ODS/API. This segment was never part of a formal standard, and we felt that it
@@ -165,8 +172,8 @@ available; however, most of them should not be altered. After editing the
 
 ## Load Seed Data Using Database Template Package
 
-To load initial seed data into the database, set the appropriate database template
-package name using the .env variable:
+To load initial seed data into the database, set the appropriate database
+template package name using the .env variable:
 
 **Example:**
 
@@ -181,8 +188,8 @@ and load the seed data:
 ./start-local-dms.ps1 -EnableConfig -EnableSearchEngineUI -LoadSeedData
 ```
 
-This will ensure your environment is initialized with the required schema
-and data from the specified template package.
+This will ensure your environment is initialized with the required schema and
+data from the specified template package.
 
 ## Stopping the Containers
 

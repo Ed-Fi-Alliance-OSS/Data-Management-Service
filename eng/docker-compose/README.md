@@ -1,15 +1,15 @@
 # Docker Compose Test and Demonstration Configurations
 
-> [!WARNING]
-> **NOT FOR PRODUCTION USE!** Includes passwords in the default configuration that are
-> visible in this repo and should never be used in real life. Be very careful!
+> [!WARNING] **NOT FOR PRODUCTION USE!** Includes passwords in the default
+> configuration that are visible in this repo and should never be used in real
+> life. Be very careful!
 
-> [!NOTE]
-> This document describes a reference architecture that should assist in
+> [!NOTE] This document describes a reference architecture intended to assist in
 > building production deployments. This reference architecture will not be tuned
-> for real-world production usage. For example, it will not include service clustering,
-> may not be well secured, and it will not utilize cloud providers' manage services.
-> Also see [Debezium Connector for PostgreSQL](https://debezium.io/documentation/reference/2.7/connectors/postgresql.html)
+> for real-world production usage. For example, it will not include service
+> clustering, may not be well secured, and it will not utilize cloud providers'
+> manage services. Also see [Debezium Connector for
+> PostgreSQL](https://debezium.io/documentation/reference/2.7/connectors/postgresql.html)
 > for additional notes on securely configuring replication.
 
 ## Starting Services with Docker Compose
@@ -30,15 +30,14 @@ start up different configurations:
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
 
-After starting up the environment, you must install Kafka connector
-configurations into the two Kafka Connector images. The file
-`setup-connectors.ps1` will do this for you. Warning: you need to wait a few
-seconds after starting the services before you can install connector
-configurations.
+After starting the environment, you’ll need to install Kafka connector
+configurations in both Kafka Connector images. The file `setup-connectors.ps1`
+will do this for you. Warning: you need to wait a few seconds after starting the
+services before you can install connector configurations.
 
 You can specify the search engine type to set the appropriate Kafka connector
-configurations. Valid values are `OpenSearch` and `ElasticSearch`. The default value
-is `OpenSearch`.
+configurations. Valid values are `OpenSearch` and `ElasticSearch`. The default
+value is `OpenSearch`.
 
 ```pwsh
 # To install OpenSearch Kafka connector configurations
@@ -50,10 +49,9 @@ is `OpenSearch`.
 ./setup-connectors.ps1 -SearchEngine "ElasticSearch"
 ```
 
-> [!WARNING]
-> The script `setup-connectors.ps1` first attempts to delete connectors that are
-> already installed. On first execution, this results in a 404 error. _This is
-> normal_. Ignore that initial 404 error message.
+> [!WARNING] The script `setup-connectors.ps1` first attempts to delete
+> connectors that are already installed. On first execution, this results in a
+> 404 error. _This is normal_. Ignore that initial 404 error message.
 
 Convenience PowerShell scripts have been included in the directory, which
 startup the appropriate services and inject the Kafka connectors (where
@@ -94,7 +92,8 @@ for testing by passing the -EnableSearchEngineUI option.
 ./start-local-dms.ps1 -EnableSearchEngineUI
 ```
 
-Search engine type. Valid values are `OpenSearch`, `ElasticSearch`. Default: `OpenSearch`
+Search engine type. Valid values are `OpenSearch`, `ElasticSearch`. Default:
+`OpenSearch`
 
 ```pwsh
 # To setup OpenSearch search engine
@@ -126,22 +125,43 @@ image from source code.
 ./start-local-dms.ps1 -r
 ```
 
-You can automatically include extension-specific metadata in the authorization
-hierarchy to enable authorization for your extension resources.
+By default, Data Standard 5.2 core model and TPDM model are included. You can
+include custom extensions in the your deployment by configuring the SCHEMA_PACKAGES,
+USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
 
-> [!NOTE]
-> **Update the SCHEMA_PACKAGES Environment Variable:**
-> In your .env file, add or update the SCHEMA_PACKAGES variable to include your
-extension package.
+> [!NOTE] To add custom extensions: In your `.env` file, set
+> `USE_API_SCHEMA_PATH` to `true` and specify `API_SCHEMA_PATH` as the path where
+> schema files will be downloaded. Then, add or update the `SCHEMA_PACKAGES`
+> variable to include the core package and any required extension packages.
 
 ```env
- SCHEMA_PACKAGES='[{
-    "version": "1.0.221",
+ USE_API_SCHEMA_PATH=true
+ API_SCHEMA_PATH=/app/ApiSchema
+ SCHEMA_PACKAGES='[
+  {
+    "version": "1.0.223",
+    "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
+    "name": "EdFi.DataStandard52.ApiSchema"
+  },
+  {
+    "version": "1.0.223",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.Sample.ApiSchema",
     "extensionName": "Sample"
-  }]'
+  }
+]'
 ```
+
+You can also automatically include extension-specific metadata in the
+authorization hierarchy to enable authorization for your extension resources. To
+do this:
+
+1. Author your security claims hierarchy JSON file.
+2. Place it in the `.\eng\CmsHierarchy\ClaimSetFiles` folder  e.g.
+   :[SampleExtensionResourceClaims.json](../CmsHierarchy/ClaimSetFiles/SampleExtensionResourceClaims.json).
+
+Then, use the `-AddExtensionSecurityMetadata` parameter to include the setup
+from your JSON file:
 
 ```pwsh
 ./start-local-dms.ps1 -AddExtensionSecurityMetadata
@@ -160,8 +180,7 @@ Open your browser and go to <http://localhost:8082> Use the dropdown menu to
 select either the Resources or Descriptors spec. Swagger UI is configured to
 consume the DMS endpoints published on the host (localhost and the port defined
 in DMS_HTTP_PORTS).
->[!NOTE]
-> The user that is configured to use swagger must have the Web Origins
+>[!NOTE] The user that is configured to use swagger must have the Web Origins
 > configuration in Keycloak to allow CORS. To do this you must search for your
 > Client in keycloak and add Web Origins (Example: Web origins:
 > <http://localhost:8082>).
@@ -197,11 +216,11 @@ replication setup failed, this may be a Docker problem where it has failed to
 load a startup script properly. Restarting Docker Desktop (and possibly applying
 the latest updates) may fix the issue.
 
-> [!TIP]
-> To diagnose the problem described above, open a terminal in the PostgreSQL container
-> and run `/docker-entrypoint-initdb.d/postgresql-init.sh`. Does the result show you
-> that this is a _file_ or a _directory_? Sometimes Docker Desktop incorrectly loads
-> this as a directory, which means that the file will not execute on startup.
+> [!TIP] To diagnose the problem described above, open a terminal in the
+> PostgreSQL container and run `/docker-entrypoint-initdb.d/postgresql-init.sh`.
+> Does the result show you that this is a _file_ or a _directory_? Sometimes
+> Docker Desktop incorrectly loads this as a directory, which means that the
+> file will not execute on startup.
 
 ### Setup Keycloak
 
