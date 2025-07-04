@@ -53,46 +53,41 @@ jobs:
         if: success()
         run: ./build-dms.ps1 E2ETest -EnableElasticSearch -Configuration Release
 
-      - name: Run OpenSearch End to End Tests
-        if: success()
-        run: ./build-dms.ps1 E2ETest -EnableOpenSearch  -Configuration Release
-
-      - name: Wait for API to be ready after E2E tests
-        if: success()
+      - name: Run OpenSearch End to End Tests and download specs
+        shell: bash
         run: |
-          $timeout = 300
-          $elapsed = 0
-          $interval = 100
-          $serviceReady = $false
+          # Start the E2E process in background
+          ./build-dms.ps1 E2ETest -EnableOpenSearch -Configuration Release &
+          E2E_PID=$!
 
-          Write-Host "Waiting for DMS API to be ready..."
-          while ($elapsed -lt $timeout) {
-            try {
-              $response = Invoke-WebRequest -Uri "http://localhost:8080/health" -UseBasicParsing -TimeoutSec 5
-              if ($response.StatusCode -eq 200) {
-                Write-Host "DMS API is ready"
-                $serviceReady = $true
-                break
-              }
-            } catch {
-              Write-Host "Still waiting... ($elapsed/$timeout seconds)"
-            }
-            Start-Sleep -Seconds $interval
-            $elapsed += $interval
-          }
+          # Wait for API to be ready
+          TIMEOUT=300
+          INTERVAL=100
+          ELAPSED=0
+          SERVICE_READY=0
 
-          if (-not $serviceReady) {
-            Write-Error "DMS API did not become ready in time"
-            exit 1
-          }
+          echo "Waiting for DMS API to be ready..."
+          until curl -sf http://localhost:8080/health; do
+            if [ $ELAPSED -ge $TIMEOUT ]; then
+              echo "❌ DMS API did not become ready in time"
+              kill $E2E_PID
+              exit 1
+            fi
+            echo "Still waiting... ($ELAPSED/$TIMEOUT seconds)"
+            sleep $INTERVAL
+            ELAPSED=$((ELAPSED+INTERVAL))
+          done
 
-      - name: Download OpenAPI specs
-        if: success()
-        run: |
-          mkdir specs
-          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -OutFile "specs/resources-spec.json"
-          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/descriptors-spec.json" -OutFile "specs/descriptors-spec.json"
-          Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/discovery-spec.json" -OutFile "specs/discovery-spec.json"
+          echo "✅ DMS API is ready, downloading OpenAPI specs..."
+          mkdir -p specs
+          curl -f http://localhost:8080/metadata/specifications/resources-spec.json -o specs/resources-spec.json
+          curl -f http://localhost:8080/metadata/specifications/descriptors-spec.json -o specs/descriptors-spec.json
+          curl -f http://localhost:8080/metadata/specifications/discovery-spec.json -o specs/discovery-spec.json
+
+          echo "✅ Specs downloaded successfully."
+
+          # Wait for E2E process to finish
+          wait $E2E_PID
 
       - name: Validate Resources Spec
         uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
