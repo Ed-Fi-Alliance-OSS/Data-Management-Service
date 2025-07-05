@@ -33,7 +33,9 @@ public record FrontendRequest(
     /// </summary>
     TraceId TraceId,
     /// <summary>
-    /// ApiDetails retrieved from the token, used for resource authorization
+    /// ApiDetails retrieved from the token, used for resource authorization.
+    /// This will be null when the frontend passes the request, and will be populated
+    /// by the JWT authentication middleware in Core.
     /// </summary>
-    ClientAuthorizations ClientAuthorizations
+    ClientAuthorizations? ClientAuthorizations
 );

@@ -91,20 +91,15 @@ public static class AspNetCoreFrontend
         IOptions<AppSettings> options
     )
     {
-        var apiClientDetails = HttpRequest.HttpContext?.Items["ApiClientDetails"] as ClientAuthorizations;
+        // JWT token processing has been moved to Core middleware
+        // Frontend now only passes the Authorization header
         return new(
             Body: await ExtractJsonBodyFrom(HttpRequest),
             Headers: ExtractHeadersFrom(HttpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
             TraceId: ExtractTraceIdFrom(HttpRequest, options),
-            ClientAuthorizations: apiClientDetails
-                ?? new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+            ClientAuthorizations: null // JWT processing moved to Core
         );
     }
 

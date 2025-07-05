@@ -44,6 +44,7 @@ internal class ApiService : IApiService
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
     private readonly IUploadApiSchemaService _apiSchemaUploadService;
+    private readonly IServiceProvider _serviceProvider;
 
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -94,7 +95,8 @@ internal class ApiService : IApiService
         IAuthorizationServiceFactory authorizationServiceFactory,
         [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline resiliencePipeline,
         ResourceLoadOrderCalculator resourceLoadCalculator,
-        IUploadApiSchemaService apiSchemaUploadService
+        IUploadApiSchemaService apiSchemaUploadService,
+        IServiceProvider serviceProvider
     )
     {
         _apiSchemaProvider = apiSchemaProvider;
@@ -111,6 +113,7 @@ internal class ApiService : IApiService
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
         _apiSchemaUploadService = apiSchemaUploadService;
+        _serviceProvider = serviceProvider;
 
         // Initialize VersionedLazy instances with schema version provider
         _upsertSteps = new VersionedLazy<PipelineProvider>(
@@ -149,12 +152,26 @@ internal class ApiService : IApiService
         );
     }
 
+    private List<IPipelineStep> GetCommonInitialSteps()
+    {
+        var steps = new List<IPipelineStep> { new CoreExceptionLoggingMiddleware(_logger) };
+
+        // Add JWT authentication middleware if enabled
+        var jwtOptionsService = _serviceProvider.GetService<IOptions<JwtAuthenticationOptions>>();
+        if (jwtOptionsService != null && jwtOptionsService.Value.Enabled)
+        {
+            var jwtMiddleware = _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>();
+            steps.Add(jwtMiddleware);
+        }
+
+        return steps;
+    }
+
     private PipelineProvider CreateUpsertPipeline()
     {
-        var steps = new List<IPipelineStep>();
+        var steps = GetCommonInitialSteps();
         steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
@@ -212,9 +229,9 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateGetByIdPipeline()
     {
-        return new(
+        var steps = GetCommonInitialSteps();
+        steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
@@ -234,13 +251,15 @@ internal class ApiService : IApiService
                 ),
             ]
         );
+
+        return new PipelineProvider(steps);
     }
 
     private PipelineProvider CreateQueryPipeline()
     {
-        return new(
+        var steps = GetCommonInitialSteps();
+        steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
@@ -256,14 +275,15 @@ internal class ApiService : IApiService
                 new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
             ]
         );
+
+        return new PipelineProvider(steps);
     }
 
     private PipelineProvider CreateUpdatePipeline()
     {
-        var steps = new List<IPipelineStep>();
+        var steps = GetCommonInitialSteps();
         steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
@@ -320,9 +340,9 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateDeleteByIdPipeline()
     {
-        return new(
+        var steps = GetCommonInitialSteps();
+        steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
@@ -343,6 +363,8 @@ internal class ApiService : IApiService
                 ),
             ]
         );
+
+        return new PipelineProvider(steps);
     }
 
     private JsonNode CreateResourceOpenApiSpecification()

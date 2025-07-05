@@ -94,7 +94,8 @@ public class ApiServiceHotReloadIntegrationTests
             authorizationServiceFactory,
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
-            apiSchemaUploadService
+            apiSchemaUploadService,
+            serviceProvider
         );
     }
 
@@ -347,7 +348,8 @@ public class ApiServiceHotReloadIntegrationTests
                     [],
                     NullLogger<ResourceLoadOrderCalculator>.Instance
                 ),
-                apiSchemaUploadService
+                apiSchemaUploadService,
+                new ServiceCollection().BuildServiceProvider()
             );
 
             await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Student", "5.0.0"));
