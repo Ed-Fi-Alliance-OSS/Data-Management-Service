@@ -8,7 +8,10 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace EdFi.DataManagementService.Core.Security;
 
-public class ClaimSetsCache(IMemoryCache memoryCache, TimeSpan expiration)
+/// <summary>
+/// Memory cache wrapper for storing and retrieving claim sets with configurable expiration.
+/// </summary>
+public record ClaimSetsCache(IMemoryCache memoryCache, TimeSpan expiration)
 {
     public void CacheClaimSets(string cacheId, IList<ClaimSet> claimSets)
     {

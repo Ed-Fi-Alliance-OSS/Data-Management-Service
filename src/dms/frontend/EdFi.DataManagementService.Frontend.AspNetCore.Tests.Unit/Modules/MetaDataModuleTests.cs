@@ -32,8 +32,8 @@ public class MetadataModuleTests
         public void SetUp()
         {
             // Arrange
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
 
             var apiService = A.Fake<IApiService>();
 
@@ -43,7 +43,7 @@ public class MetadataModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddTransient((x) => claimSetCacheService);
+                        collection.AddTransient((x) => claimSetProvider);
                         collection.AddTransient((x) => apiService);
                     }
                 );
@@ -100,8 +100,8 @@ public class MetadataModuleTests
         [SetUp]
         public void SetUp()
         {
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
 
             var apiService = A.Fake<IApiService>();
             A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
@@ -142,7 +142,7 @@ public class MetadataModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddTransient((x) => claimSetCacheService);
+                        collection.AddTransient((x) => claimSetProvider);
                         collection.AddTransient((x) => apiService);
                     }
                 );
@@ -204,8 +204,8 @@ public class MetadataModuleTests
     {
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();
-        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+        var claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
 
         var apiService = A.Fake<IApiService>();
         A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
@@ -234,7 +234,7 @@ public class MetadataModuleTests
                 (collection) =>
                 {
                     collection.AddTransient((x) => contentProvider);
-                    collection.AddTransient((x) => claimSetCacheService);
+                    collection.AddTransient((x) => claimSetProvider);
                     collection.AddTransient((x) => apiService);
                 }
             );
@@ -261,15 +261,15 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Invalid_Resource_Error()
     {
         // Arrange
-        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+        var claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => claimSetCacheService);
+                    collection.AddTransient((x) => claimSetProvider);
                 }
             );
         });
@@ -287,8 +287,8 @@ public class MetadataModuleTests
     {
         // Arrange
         var httpContext = A.Fake<HttpContext>();
-        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+        var claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
 
         var apiService = A.Fake<IApiService>();
         var dependenciesJson = JsonNode
@@ -312,7 +312,7 @@ public class MetadataModuleTests
                 (collection) =>
                 {
                     collection.AddTransient(x => httpContext);
-                    collection.AddTransient((x) => claimSetCacheService);
+                    collection.AddTransient((x) => claimSetProvider);
                     collection.AddTransient((x) => apiService);
                 }
             );

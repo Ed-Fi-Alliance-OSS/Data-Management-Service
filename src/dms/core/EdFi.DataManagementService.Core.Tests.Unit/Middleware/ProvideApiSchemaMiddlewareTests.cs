@@ -186,13 +186,13 @@ public class ProvideApiSchemaMiddlewareTests
         public async Task Copies_paths_to_core()
         {
             // Act
-            var fakeRequestData = A.Fake<RequestData>();
-            await _provideApiSchemaMiddleware!.Execute(fakeRequestData, NullNext);
+            var fakeRequestInfo = A.Fake<RequestInfo>();
+            await _provideApiSchemaMiddleware!.Execute(fakeRequestInfo, NullNext);
 
             // Assert
-            fakeRequestData.ApiSchemaDocuments.Should().NotBeNull();
+            fakeRequestInfo.ApiSchemaDocuments.Should().NotBeNull();
 
-            var coreSchoolResource = fakeRequestData
+            var coreSchoolResource = fakeRequestInfo
                 .ApiSchemaDocuments.GetCoreProjectSchema()
                 .FindResourceSchemaNodeByResourceName(new ResourceName("School"));
 
@@ -309,7 +309,7 @@ public class ProvideApiSchemaMiddlewareTests
         public async Task Process_AfterSchemaReload_ProvidesNewSchema()
         {
             // Arrange
-            var requestData = No.RequestData();
+            var requestInfo = No.RequestInfo();
             var initialVersion = Guid.NewGuid();
             var newVersion = Guid.NewGuid();
 
@@ -338,15 +338,15 @@ public class ProvideApiSchemaMiddlewareTests
                 .ReturnsNextFromSequence(initialSchema, updatedSchema);
 
             // Act
-            await _middleware.Execute(requestData, NullNext);
-            var firstSchemaVersion = requestData
+            await _middleware.Execute(requestInfo, NullNext);
+            var firstSchemaVersion = requestInfo
                 .ApiSchemaDocuments.GetCoreProjectSchema()
                 .ResourceVersion.Value;
 
-            // Reset requestData for second execution
-            requestData = No.RequestData();
-            await _middleware.Execute(requestData, NullNext);
-            var secondSchemaVersion = requestData
+            // Reset requestInfo for second execution
+            requestInfo = No.RequestInfo();
+            await _middleware.Execute(requestInfo, NullNext);
+            var secondSchemaVersion = requestInfo
                 .ApiSchemaDocuments.GetCoreProjectSchema()
                 .ResourceVersion.Value;
 
@@ -361,7 +361,7 @@ public class ProvideApiSchemaMiddlewareTests
         public async Task Process_MultipleRequestsAfterReload_ConsistentSchema()
         {
             // Arrange
-            var contexts = Enumerable.Range(0, 10).Select(_ => No.RequestData()).ToList();
+            var contexts = Enumerable.Range(0, 10).Select(_ => No.RequestInfo()).ToList();
             var version = Guid.NewGuid();
 
             var schema = new ApiSchemaBuilder()
@@ -377,7 +377,7 @@ public class ProvideApiSchemaMiddlewareTests
             A.CallTo(() => _mockProvider.GetApiSchemaNodes()).Returns(schema);
 
             // Act
-            var tasks = contexts.Select(requestData => _middleware.Execute(requestData, NullNext)).ToArray();
+            var tasks = contexts.Select(requestInfo => _middleware.Execute(requestInfo, NullNext)).ToArray();
             await Task.WhenAll(tasks);
 
             // Assert
@@ -397,7 +397,7 @@ public class ProvideApiSchemaMiddlewareTests
         public async Task Process_ConcurrentWithSchemaChange_HandlesGracefully()
         {
             // Arrange
-            var contexts = Enumerable.Range(0, 20).Select(_ => No.RequestData()).ToList();
+            var contexts = Enumerable.Range(0, 20).Select(_ => No.RequestInfo()).ToList();
             var versions = new[] { Guid.NewGuid(), Guid.NewGuid() };
             var currentVersionIndex = 0;
 
@@ -429,14 +429,14 @@ public class ProvideApiSchemaMiddlewareTests
             // Act
             var tasks = contexts
                 .Select(
-                    async (requestData, index) =>
+                    async (requestInfo, index) =>
                     {
                         // Change version midway through
                         if (index == 10)
                         {
                             currentVersionIndex = 1;
                         }
-                        await _middleware.Execute(requestData, NullNext);
+                        await _middleware.Execute(requestInfo, NullNext);
                     }
                 )
                 .ToArray();

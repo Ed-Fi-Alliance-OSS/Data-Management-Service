@@ -30,31 +30,31 @@ internal class UpdateByIdHandler(
     IAuthorizationServiceFactory authorizationServiceFactory
 ) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", requestData.FrontendRequest.TraceId.Value);
-        Trace.Assert(requestData.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT");
+        _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
+        Trace.Assert(requestInfo.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT");
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
         var updateResult = await _resiliencePipeline.ExecuteAsync(async t =>
             await _documentStoreRepository.UpdateDocumentById(
                 new UpdateRequest(
-                    DocumentUuid: requestData.PathComponents.DocumentUuid,
-                    ResourceInfo: requestData.ResourceInfo,
-                    DocumentInfo: requestData.DocumentInfo,
-                    EdfiDoc: requestData.ParsedBody,
-                    Headers: requestData.FrontendRequest.Headers,
-                    DocumentSecurityElements: requestData.DocumentSecurityElements,
-                    TraceId: requestData.FrontendRequest.TraceId,
+                    DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                    ResourceInfo: requestInfo.ResourceInfo,
+                    DocumentInfo: requestInfo.DocumentInfo,
+                    EdfiDoc: requestInfo.ParsedBody,
+                    Headers: requestInfo.FrontendRequest.Headers,
+                    DocumentSecurityElements: requestInfo.DocumentSecurityElements,
+                    TraceId: requestInfo.FrontendRequest.TraceId,
                     UpdateCascadeHandler: updateCascadeHandler,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                        requestData.AuthorizationStrategyEvaluators,
-                        requestData.AuthorizationSecurableInfo,
+                        requestInfo.AuthorizationStrategyEvaluators,
+                        requestInfo.AuthorizationSecurableInfo,
                         authorizationServiceFactory,
                         _logger
                     ),
-                    ResourceAuthorizationPathways: requestData.AuthorizationPathways
+                    ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
                 )
             )
         );
@@ -62,20 +62,17 @@ internal class UpdateByIdHandler(
         _logger.LogDebug(
             "Document store UpdateDocumentById returned {UpdateResult}- {TraceId}",
             updateResult.GetType().FullName,
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        requestData.FrontendResponse = updateResult switch
+        requestInfo.FrontendResponse = updateResult switch
         {
             UpdateSuccess updateSuccess => new FrontendResponse(
                 StatusCode: 204,
                 Body: null,
-                Headers: new Dictionary<string, string>()
-                {
-                    { "etag", requestData.ParsedBody["_etag"]?.ToString() ?? "" },
-                },
+                Headers: new() { ["etag"] = requestInfo.ParsedBody["_etag"]?.ToString() ?? "" },
                 LocationHeaderPath: PathComponents.ToResourcePath(
-                    requestData.PathComponents,
+                    requestInfo.PathComponents,
                     updateSuccess.ExistingDocumentUuid
                 )
             ),
@@ -83,7 +80,7 @@ internal class UpdateByIdHandler(
                 StatusCode: 412,
                 Body: FailureResponse.ForETagMisMatch(
                     "The item has been modified by another user.",
-                    traceId: requestData.FrontendRequest.TraceId,
+                    traceId: requestInfo.FrontendRequest.TraceId,
                     errors: new[]
                     {
                         "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
@@ -95,7 +92,7 @@ internal class UpdateByIdHandler(
                 StatusCode: 404,
                 Body: FailureResponse.ForNotFound(
                     "Resource to update was not found",
-                    traceId: requestData.FrontendRequest.TraceId
+                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),
@@ -103,7 +100,7 @@ internal class UpdateByIdHandler(
                 StatusCode: 400,
                 Body: FailureResponse.ForBadRequest(
                     "Data validation failed. See 'validationErrors' for details.",
-                    traceId: requestData.FrontendRequest.TraceId,
+                    traceId: requestInfo.FrontendRequest.TraceId,
                     failure.InvalidDescriptorReferences.ToDictionary(
                         d => d.Path.Value,
                         d =>
@@ -120,7 +117,7 @@ internal class UpdateByIdHandler(
                 StatusCode: 409,
                 Body: FailureResponse.ForInvalidReferences(
                     failure.ReferencingDocumentInfo,
-                    traceId: requestData.FrontendRequest.TraceId
+                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),
@@ -131,7 +128,7 @@ internal class UpdateByIdHandler(
                         $"A natural key conflict occurred when attempting to update a resource {failure.ResourceName.Value} with a duplicate key. "
                             + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}",
                     ],
-                    traceId: requestData.FrontendRequest.TraceId
+                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),
@@ -140,26 +137,26 @@ internal class UpdateByIdHandler(
                 StatusCode: 400,
                 Body: FailureResponse.ForImmutableIdentity(
                     failure.FailureMessage,
-                    traceId: requestData.FrontendRequest.TraceId
+                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),
             UpdateFailureNotAuthorized failure => new FrontendResponse(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(
-                    traceId: requestData.FrontendRequest.TraceId,
+                    traceId: requestInfo.FrontendRequest.TraceId,
                     errors: failure.ErrorMessages
                 ),
                 Headers: []
             ),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestData.FrontendRequest.TraceId),
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
             _ => new FrontendResponse(
                 StatusCode: 500,
-                Body: ToJsonError("Unknown UpdateResult", requestData.FrontendRequest.TraceId),
+                Body: ToJsonError("Unknown UpdateResult", requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
         };

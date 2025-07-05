@@ -33,7 +33,7 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
     [Parallelizable]
     public class Given_Valid_Request_Body : InjectVersionMetadataToEdFiDocumentMiddlewareTests
     {
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
         private readonly string _pattern = @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$";
         private readonly string _lastModifiedDatePropertyName = "_lastModifiedDate";
 
@@ -62,21 +62,21 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
 
             var parsedBody = JsonNode.Parse(jsonBody);
 
-            _context.ParsedBody = parsedBody!;
+            _requestInfo.ParsedBody = parsedBody!;
 
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_should_not_have_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
         public void It_should_have_parsed_body_with_formatted_lastmodifieddate()
         {
-            var lastModifiedDate = _context?.ParsedBody[_lastModifiedDatePropertyName]?.AsValue();
+            var lastModifiedDate = _requestInfo?.ParsedBody[_lastModifiedDatePropertyName]?.AsValue();
             lastModifiedDate.Should().NotBeNull();
             var IsValid = Regex.IsMatch(lastModifiedDate!.ToString(), _pattern);
             IsValid.Should().BeTrue();
@@ -85,16 +85,16 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
         [Test]
         public void It_should_have_parsed_body_with_etag()
         {
-            var lastModifiedDate = _context.ParsedBody[_lastModifiedDatePropertyName]?.AsValue();
+            var lastModifiedDate = _requestInfo.ParsedBody[_lastModifiedDatePropertyName]?.AsValue();
             lastModifiedDate.Should().NotBeNull();
 
-            var eTag = _context.ParsedBody["_etag"]?.AsValue();
+            var eTag = _requestInfo.ParsedBody["_etag"]?.AsValue();
             eTag.Should().NotBeNull();
 
             Trace.Assert(lastModifiedDate != null);
             Trace.Assert(eTag != null);
 
-            if (_context.ParsedBody.DeepClone() is JsonObject cloneForHash)
+            if (_requestInfo.ParsedBody.DeepClone() is JsonObject cloneForHash)
             {
                 cloneForHash.Remove("_etag");
                 cloneForHash.Remove("_lastModifiedDate");

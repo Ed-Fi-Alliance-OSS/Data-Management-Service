@@ -77,20 +77,20 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(requestData, NullNext);
+            await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(204);
-            requestData.FrontendResponse.Body.Should().BeNull();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(204);
+            requestInfo.FrontendResponse.Body.Should().BeNull();
         }
     }
 
@@ -106,20 +106,20 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(requestData, NullNext);
+            await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(404);
-            requestData
+            requestInfo.FrontendResponse.StatusCode.Should().Be(404);
+            requestInfo
                 .FrontendResponse.Body?.AsJsonString()
                 .Should()
                 .Be(
@@ -144,20 +144,20 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(requestData, NullNext);
+            await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(409);
-            requestData.FrontendResponse.Body?.ToJsonString().Should().Contain(Repository.ResponseBody);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain(Repository.ResponseBody);
         }
     }
 
@@ -180,22 +180,22 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(requestData, NullNext);
+            await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(409);
-            requestData.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
-            requestData.FrontendResponse.Headers.Should().BeEmpty();
-            requestData.FrontendResponse.LocationHeaderPath.Should().BeNull();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -211,19 +211,19 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(requestData, NullNext);
+            await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(409);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
         }
     }
 
@@ -243,19 +243,19 @@ public class UpdateByIdHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(requestData, NullNext);
+            await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
     }
 
@@ -274,19 +274,19 @@ public class UpdateByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestData requestData = No.RequestData(_traceId);
+        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep updateByIdHandler = Handler(new Repository());
-            await updateByIdHandler.Execute(requestData, NullNext);
+            await updateByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(500);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = $$"""
 {
@@ -295,15 +295,15 @@ public class UpdateByIdHandlerTests
 }
 """;
 
-            requestData.FrontendResponse.Body.Should().NotBeNull();
+            requestInfo.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(requestData.FrontendResponse.Body, JsonNode.Parse(expected))
+                .DeepEquals(requestInfo.FrontendResponse.Body, JsonNode.Parse(expected))
                 .Should()
                 .BeTrue(
                     $"""
 expected: {expected}
 
-actual: {requestData.FrontendResponse.Body}
+actual: {requestInfo.FrontendResponse.Body}
 """
                 );
         }

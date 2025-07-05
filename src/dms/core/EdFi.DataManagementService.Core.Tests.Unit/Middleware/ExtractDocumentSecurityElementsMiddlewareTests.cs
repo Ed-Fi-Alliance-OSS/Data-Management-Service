@@ -30,7 +30,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
     public class Given_an_assessment_resource_that_has_a_namespace
         : ExtractDocumentSecurityElementsMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -54,19 +54,13 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
 
             string body = """{"assessmentIdentifier": "123", "namespace": "abc"}""";
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/assessments",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -75,14 +69,14 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_extracted_the_namespace()
         {
-            requestData.DocumentSecurityElements.Namespace.Should().HaveCount(1);
-            requestData.DocumentSecurityElements.Namespace[0].Should().Be("abc");
+            requestInfo.DocumentSecurityElements.Namespace.Should().HaveCount(1);
+            requestInfo.DocumentSecurityElements.Namespace[0].Should().Be("abc");
         }
     }
 
@@ -91,7 +85,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
     public class Given_an_academicWeeks_resource_that_has_a_educationOrganization
         : ExtractDocumentSecurityElementsMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -121,19 +115,13 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 }
                 """;
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -142,14 +130,14 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_extracted_the_educationOrganization()
         {
-            requestData.DocumentSecurityElements.EducationOrganization.Should().HaveCount(1);
-            requestData.DocumentSecurityElements.EducationOrganization[0].Id.Value.Should().Be(12345);
+            requestInfo.DocumentSecurityElements.EducationOrganization.Should().HaveCount(1);
+            requestInfo.DocumentSecurityElements.EducationOrganization[0].Id.Value.Should().Be(12345);
         }
     }
 
@@ -158,7 +146,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
     public class Given_a_StudentContactAssociations_resource_that_has_studentUniqueId_and_ContactUniqueId
         : ExtractDocumentSecurityElementsMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -191,19 +179,13 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 }
                 """;
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -212,16 +194,16 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_extracted_studentUniqueId_and_contactUniqueId()
         {
-            requestData.DocumentSecurityElements.Student.Should().HaveCount(1);
-            requestData.DocumentSecurityElements.Student[0].Value.Should().Be("12345");
-            requestData.DocumentSecurityElements.Contact.Should().HaveCount(1);
-            requestData.DocumentSecurityElements.Contact[0].Value.Should().Be("7878");
+            requestInfo.DocumentSecurityElements.Student.Should().HaveCount(1);
+            requestInfo.DocumentSecurityElements.Student[0].Value.Should().Be("12345");
+            requestInfo.DocumentSecurityElements.Contact.Should().HaveCount(1);
+            requestInfo.DocumentSecurityElements.Contact[0].Value.Should().Be("7878");
         }
     }
 }

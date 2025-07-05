@@ -20,7 +20,7 @@ internal interface IDocumentValidator
     /// <summary>
     /// Validates a document body against a JSON Schema
     /// </summary>
-    (string[], Dictionary<string, string[]>) Validate(RequestData requestData);
+    (string[], Dictionary<string, string[]>) Validate(RequestInfo requestInfo);
 }
 
 internal class DocumentValidator() : IDocumentValidator
@@ -38,7 +38,7 @@ internal class DocumentValidator() : IDocumentValidator
         return JsonSchema.FromText(stringifiedJsonSchema);
     }
 
-    public (string[], Dictionary<string, string[]>) Validate(RequestData requestData)
+    public (string[], Dictionary<string, string[]>) Validate(RequestInfo requestInfo)
     {
         EvaluationOptions validatorEvaluationOptions = new()
         {
@@ -46,40 +46,40 @@ internal class DocumentValidator() : IDocumentValidator
             RequireFormatValidation = true,
         };
 
-        var resourceSchemaValidator = GetSchema(requestData.ResourceSchema, requestData.Method);
-        var results = resourceSchemaValidator.Evaluate(requestData.ParsedBody, validatorEvaluationOptions);
+        var resourceSchemaValidator = GetSchema(requestInfo.ResourceSchema, requestInfo.Method);
+        var results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, validatorEvaluationOptions);
 
-        var overpostPruneResult = PruneOverpostedData(requestData.ParsedBody, results);
+        var overpostPruneResult = PruneOverpostedData(requestInfo.ParsedBody, results);
 
         if (overpostPruneResult is PruneResult.Pruned pruned)
         {
             // Used pruned body for the remainder of pipeline
-            requestData.ParsedBody = pruned.prunedDocumentBody;
+            requestInfo.ParsedBody = pruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
-            results = resourceSchemaValidator.Evaluate(requestData.ParsedBody, validatorEvaluationOptions);
+            results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, validatorEvaluationOptions);
         }
 
-        var nullPruneResult = PruneNullData(requestData.ParsedBody, results);
+        var nullPruneResult = PruneNullData(requestInfo.ParsedBody, results);
 
         if (nullPruneResult is PruneResult.Pruned nullPruned)
         {
             // Used pruned body for the remainder of pipeline
-            requestData.ParsedBody = nullPruned.prunedDocumentBody;
+            requestInfo.ParsedBody = nullPruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
-            results = resourceSchemaValidator.Evaluate(requestData.ParsedBody, validatorEvaluationOptions);
+            results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, validatorEvaluationOptions);
         }
 
-        var whitespacePruneResult = PruneCodeValueWhitespaceData(requestData.ParsedBody, results);
+        var whitespacePruneResult = PruneCodeValueWhitespaceData(requestInfo.ParsedBody, results);
 
         if (whitespacePruneResult is PruneResult.Pruned whitespacePruned)
         {
             // Used pruned body for the remainder of pipeline
-            requestData.ParsedBody = whitespacePruned.prunedDocumentBody;
+            requestInfo.ParsedBody = whitespacePruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
-            results = resourceSchemaValidator.Evaluate(requestData.ParsedBody, validatorEvaluationOptions);
+            results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, validatorEvaluationOptions);
         }
 
         return (new List<string>().ToArray(), ValidationErrorsFrom(results));
@@ -267,7 +267,7 @@ internal class DocumentValidator() : IDocumentValidator
                     return false;
                 }
 
-                var jsonObject = requestData.ParsedBody.AsObject();
+                var jsonObject = requestInfo.ParsedBody.AsObject();
                 string propertyName = instanceLocation[^1];
                 bool propertyExists = jsonObject.TryGetPropertyValue(propertyName, out var value);
 

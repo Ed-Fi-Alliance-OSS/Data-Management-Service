@@ -5,12 +5,14 @@
 
 using System.Net;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
@@ -27,8 +29,8 @@ public class ConfigurationTests
         [SetUp]
         public void Setup()
         {
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -43,7 +45,13 @@ public class ConfigurationTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddTransient((x) => claimSetCacheService);
+                        collection.AddTransient((x) => claimSetProvider);
+                        // Add validators to trigger ReportInvalidConfigurationMiddleware
+                        collection.AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>();
+                        collection.AddSingleton<
+                            IValidateOptions<ConnectionStrings>,
+                            ConnectionStringsValidator
+                        >();
                     }
                 );
             });
@@ -84,8 +92,8 @@ public class ConfigurationTests
         [SetUp]
         public void Setup()
         {
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -103,7 +111,13 @@ public class ConfigurationTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddTransient((x) => claimSetCacheService);
+                        collection.AddTransient((x) => claimSetProvider);
+                        // Add validators to trigger ReportInvalidConfigurationMiddleware
+                        collection.AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>();
+                        collection.AddSingleton<
+                            IValidateOptions<ConnectionStrings>,
+                            ConnectionStringsValidator
+                        >();
                     }
                 );
             });

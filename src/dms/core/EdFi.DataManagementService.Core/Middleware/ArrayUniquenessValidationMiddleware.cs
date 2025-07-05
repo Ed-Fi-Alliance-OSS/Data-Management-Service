@@ -25,15 +25,15 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
     /// </summary>
     /// <returns>A list of all validation errors found</returns>
     private static List<(string errorKey, string message)> ValidateArrayUniquenessConstraints(
-        RequestData requestData,
+        RequestInfo requestInfo,
         ILogger logger
     )
     {
         List<(string errorKey, string message)> errors = [];
 
-        foreach (var constraint in requestData.ResourceSchema.ArrayUniquenessConstraints)
+        foreach (var constraint in requestInfo.ResourceSchema.ArrayUniquenessConstraints)
         {
-            errors.AddRange(ValidateSingleConstraint(constraint, requestData, logger));
+            errors.AddRange(ValidateSingleConstraint(constraint, requestInfo, logger));
         }
 
         return errors;
@@ -44,7 +44,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
     /// </summary>
     private static List<(string errorKey, string message)> ValidateSingleConstraint(
         ArrayUniquenessConstraint constraint,
-        RequestData requestData,
+        RequestInfo requestInfo,
         ILogger logger,
         string? parentBasePath = null
     )
@@ -56,7 +56,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
         {
             List<(string errorKey, string message)> pathErrors = ValidatePathsConstraint(
                 constraint.Paths,
-                requestData,
+                requestInfo,
                 logger,
                 parentBasePath
             );
@@ -74,7 +74,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
 
                 var nestedErrors = ValidateSingleConstraint(
                     nestedConstraint,
-                    requestData,
+                    requestInfo,
                     logger,
                     nestedBasePath
                 );
@@ -90,7 +90,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
     /// </summary>
     private static List<(string errorKey, string message)> ValidatePathsConstraint(
         IReadOnlyList<JsonPath> paths,
-        RequestData requestData,
+        RequestInfo requestInfo,
         ILogger logger,
         string? basePath = null
     )
@@ -110,7 +110,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
                 var withinItemResult = ValidateNestedConstraintWithinItems(
                     basePath,
                     paths,
-                    requestData,
+                    requestInfo,
                     logger
                 );
                 if (withinItemResult.HasValue)
@@ -134,7 +134,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
                     string.Join(", ", relativePaths)
                 );
 
-                (string? arrayPath, int dupeIndex) = requestData.ParsedBody.FindDuplicatesWithArrayPath(
+                (string? arrayPath, int dupeIndex) = requestInfo.ParsedBody.FindDuplicatesWithArrayPath(
                     arrayRootPath,
                     relativePaths,
                     logger
@@ -176,7 +176,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
     private static (string errorKey, string message)? ValidateNestedConstraintWithinItems(
         string basePath,
         IReadOnlyList<JsonPath> paths,
-        RequestData requestData,
+        RequestInfo requestInfo,
         ILogger logger
     )
     {
@@ -185,7 +185,7 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
         try
         {
             // Get all items from the base path array
-            List<JsonNode?> baseItems = requestData
+            List<JsonNode?> baseItems = requestInfo
                 .ParsedBody.SelectNodesFromArrayPath(basePath, logger)
                 .ToList();
             logger.LogDebug("Found {ItemCount} base items for path {BasePath}", baseItems.Count, basePath);
@@ -353,15 +353,15 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
             .ToDictionary(g => g.Key, g => g.Select(e => e.message).ToArray());
     }
 
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
             "Entering ArrayUniquenessValidationMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         List<(string errorKey, string message)> validationErrors = ValidateArrayUniquenessConstraints(
-            requestData,
+            requestInfo,
             logger
         );
         if (validationErrors.Count > 0)
@@ -370,15 +370,15 @@ internal class ArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineSt
                 validationErrors
             );
 
-            requestData.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
+            requestInfo.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
                 errorsGroupedByErrorKey,
-                requestData.FrontendRequest.TraceId
+                requestInfo.FrontendRequest.TraceId
             );
 
             logger.LogDebug(
                 "Array uniqueness constraint violations found: {ErrorCount} - {TraceId}",
                 validationErrors.Count,
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
             return;
         }

@@ -20,22 +20,22 @@ internal class QueryRequestHandler(
     ResiliencePipeline _resiliencePipeline
 ) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering QueryRequestHandler - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         var queryResult = await _resiliencePipeline.ExecuteAsync(async t =>
             await _queryHandler.QueryDocuments(
                 new QueryRequest(
-                    ResourceInfo: requestData.ResourceInfo,
-                    QueryElements: requestData.QueryElements,
-                    AuthorizationSecurableInfo: requestData.AuthorizationSecurableInfo,
-                    AuthorizationStrategyEvaluators: requestData.AuthorizationStrategyEvaluators,
-                    PaginationParameters: requestData.PaginationParameters,
-                    TraceId: requestData.FrontendRequest.TraceId
+                    ResourceInfo: requestInfo.ResourceInfo,
+                    QueryElements: requestInfo.QueryElements,
+                    AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo,
+                    AuthorizationStrategyEvaluators: requestInfo.AuthorizationStrategyEvaluators,
+                    PaginationParameters: requestInfo.PaginationParameters,
+                    TraceId: requestInfo.FrontendRequest.TraceId
                 )
             )
         );
@@ -43,27 +43,27 @@ internal class QueryRequestHandler(
         _logger.LogDebug(
             "QueryHandler returned {QueryResult}- {TraceId}",
             queryResult.GetType().FullName,
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        requestData.FrontendResponse = queryResult switch
+        requestInfo.FrontendResponse = queryResult switch
         {
             QuerySuccess success => new FrontendResponse(
                 StatusCode: 200,
                 Body: success.EdfiDocs,
-                Headers: requestData.PaginationParameters.TotalCount
+                Headers: requestInfo.PaginationParameters.TotalCount
                     ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                     : []
             ),
             QueryFailureKnownError => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestData.FrontendRequest.TraceId),
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
             _ => new(
                 StatusCode: 500,
-                Body: ToJsonError("Unknown QueryResult", requestData.FrontendRequest.TraceId),
+                Body: ToJsonError("Unknown QueryResult", requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
         };

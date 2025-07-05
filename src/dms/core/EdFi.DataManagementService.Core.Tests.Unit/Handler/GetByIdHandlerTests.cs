@@ -50,20 +50,20 @@ public class GetByIdHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep getByIdHandler = Handler(new Repository());
-            await getByIdHandler.Execute(requestData, NullNext);
+            await getByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(200);
-            requestData.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body?.Should().BeEquivalentTo(Repository.ResponseBody);
         }
     }
 
@@ -79,20 +79,20 @@ public class GetByIdHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep getByIdHandler = Handler(new Repository());
-            await getByIdHandler.Execute(requestData, NullNext);
+            await getByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(404);
-            requestData.FrontendResponse.Body.Should().BeNull();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(404);
+            requestInfo.FrontendResponse.Body.Should().BeNull();
         }
     }
 
@@ -111,19 +111,19 @@ public class GetByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestData requestData = No.RequestData(_traceId);
+        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep getByIdHandler = Handler(new Repository());
-            await getByIdHandler.Execute(requestData, NullNext);
+            await getByIdHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(500);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = $$"""
 {
@@ -132,15 +132,15 @@ public class GetByIdHandlerTests
 }
 """;
 
-            requestData.FrontendResponse.Body.Should().NotBeNull();
+            requestInfo.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(requestData.FrontendResponse.Body, JsonNode.Parse(expected))
+                .DeepEquals(requestInfo.FrontendResponse.Body, JsonNode.Parse(expected))
                 .Should()
                 .BeTrue(
                     $"""
 expected: {expected}
 
-actual: {requestData.FrontendResponse.Body}
+actual: {requestInfo.FrontendResponse.Body}
 """
                 );
         }

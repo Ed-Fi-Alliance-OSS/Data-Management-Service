@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Security.Claims;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
@@ -15,11 +14,8 @@ using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
-using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 
@@ -31,12 +27,29 @@ public static class WebApplicationBuilderExtensions
     {
         var logger = ConfigureLogging();
 
+        // Debug logging
+        logger.Information(
+            "Current environment: {EnvironmentName}",
+            webAppBuilder.Environment.EnvironmentName
+        );
+
+        // Skip complex setup in test environment
+        if (webAppBuilder.Environment.IsEnvironment("Test"))
+        {
+            logger.Information("Test environment detected - using minimal configuration");
+            ConfigureTestServices(webAppBuilder, logger);
+            return;
+        }
+
         // Add custom mapping for ENABLE_MANAGEMENT_ENDPOINTS environment variable
         var enableManagementEndpoints = Environment.GetEnvironmentVariable("ENABLE_MANAGEMENT_ENDPOINTS");
         if (!string.IsNullOrEmpty(enableManagementEndpoints))
         {
             webAppBuilder.Configuration["AppSettings:EnableManagementEndpoints"] = enableManagementEndpoints;
         }
+
+        // Add custom mapping for JWT Authentication environment variables
+        MapJwtEnvironmentVariables(webAppBuilder);
 
         webAppBuilder.Configuration.AddEnvironmentVariables();
         webAppBuilder
@@ -55,8 +68,7 @@ public static class WebApplicationBuilderExtensions
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
-            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>()
-            .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
+            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
@@ -97,7 +109,6 @@ public static class WebApplicationBuilderExtensions
 
         // For Token handling
         webAppBuilder.Services.AddMemoryCache();
-        webAppBuilder.Services.AddSingleton<IApiClientDetailsProvider, ApiClientDetailsProvider>();
 
         // Access Configuration service
         var configServiceSettings = config
@@ -143,82 +154,25 @@ public static class WebApplicationBuilderExtensions
             IConfigurationServiceTokenHandler,
             ConfigurationServiceTokenHandler
         >();
-        webAppBuilder.Services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
-        webAppBuilder.Services.AddTransient<IClaimSetCacheService, ClaimSetCacheService>();
 
-        // For Security(Keycloak)
-        var settings = config.GetSection("IdentitySettings");
-        var identitySettings = config.GetSection("IdentitySettings").Get<IdentitySettings>();
-        if (identitySettings == null)
+        // Register the inner claim set provider by its concrete type
+        webAppBuilder.Services.AddTransient<ConfigurationServiceClaimSetProvider>();
+
+        // Register the cache decorator using a factory
+        webAppBuilder.Services.AddTransient<IClaimSetProvider>(provider =>
         {
-            logger.Error("Error reading IdentitySettings");
-            throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
-        }
-        webAppBuilder.Services.Configure<IdentitySettings>(settings);
-        webAppBuilder.Services.AddHttpClient();
+            // Resolve the inner service
+            var innerProvider = provider.GetRequiredService<ConfigurationServiceClaimSetProvider>();
 
-        string metadataAddress = $"{identitySettings.Authority}/.well-known/openid-configuration";
+            // Resolve the cache dependency
+            var claimSetsCache = provider.GetRequiredService<ClaimSetsCache>();
 
-        // Set up authentication using JWT bearer tokens
-        webAppBuilder
-            .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(
-                JwtBearerDefaults.AuthenticationScheme,
-                options =>
-                {
-                    options.MetadataAddress = metadataAddress;
-                    options.Authority = identitySettings.Authority;
-                    options.Audience = identitySettings.Audience;
-                    options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
-                    options.TokenValidationParameters = new TokenValidationParameters
-                    {
-                        ValidateAudience = true,
-                        ValidAudience = identitySettings.Audience,
-                        ValidateIssuer = true,
-                        ValidIssuer = identitySettings.Authority,
-                        ValidateLifetime = true,
-                        RoleClaimType = identitySettings.RoleClaimType,
-                    };
+            // Create and return the caching decorator
+            return new CachedClaimSetProvider(innerProvider, claimSetsCache);
+        });
 
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnAuthenticationFailed = context =>
-                        {
-                            Console.WriteLine($"Authentication failed: {context.Exception.Message}");
-                            return Task.CompletedTask;
-                        },
-                        OnTokenValidated = context =>
-                        {
-                            // Add token claims to HttpContext
-                            if (context.Principal != null)
-                            {
-                                var apiClientDetailsProvider =
-                                    context.HttpContext.RequestServices.GetRequiredService<IApiClientDetailsProvider>();
-                                var authHeader = context
-                                    .HttpContext.Request.Headers["Authorization"]
-                                    .ToString();
-                                string rawToken = authHeader["Bearer ".Length..];
-                                var tokenHashCode = rawToken.GetHashCode().ToString();
-                                var apiClientDetails =
-                                    apiClientDetailsProvider.RetrieveApiClientDetailsFromToken(
-                                        tokenHashCode,
-                                        context.Principal.Claims.ToList()
-                                    );
-                                context.HttpContext.Items["ApiClientDetails"] = apiClientDetails;
-                                return Task.FromResult(apiClientDetails);
-                            }
-                            Console.WriteLine($"Retrieving token claims failed");
-                            return Task.CompletedTask;
-                        },
-                    };
-                }
-            );
-        webAppBuilder.Services.AddAuthorization(options =>
-            options.AddPolicy(
-                SecurityConstants.ServicePolicy,
-                policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ClientRole)
-            )
-        );
+        // Add JWT authentication services from Core
+        webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
     }
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
@@ -291,5 +245,99 @@ public static class WebApplicationBuilderExtensions
                 )
             );
         });
+    }
+
+    private static void ConfigureTestServices(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
+    {
+        // Minimal services needed for tests
+        webAppBuilder.Services.AddMemoryCache();
+        webAppBuilder.Services.AddHealthChecks().AddCheck<ApplicationHealthCheck>("ApplicationHealthCheck");
+
+        // Check if rate limiting is configured and add it
+        if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
+        {
+            logger.Information("Injecting rate limiting for test environment");
+            ConfigureRateLimit(webAppBuilder);
+        }
+
+        // Add minimal DMS configuration without complex dependencies
+        webAppBuilder
+            .Services.AddDmsDefaultConfiguration(
+                logger,
+                webAppBuilder.Configuration.GetSection("CircuitBreaker"),
+                false // MaskRequestBodyInLogs
+            )
+            .AddTransient<IAssemblyLoader, ApiSchemaAssemblyLoader>()
+            .AddTransient<IContentProvider, ContentProvider>()
+            .AddTransient<IVersionProvider, VersionProvider>()
+            .AddTransient<IAssemblyProvider, AssemblyProvider>()
+            .AddTransient<IOAuthManager, OAuthManager>();
+
+        // Add minimal configuration validators
+        webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
+        webAppBuilder.Services.Configure<CoreAppSettings>(
+            webAppBuilder.Configuration.GetSection("AppSettings")
+        );
+
+        // Add JWT authentication services from Core
+        webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
+
+        // Add minimal datastore configuration for health checks
+        ConfigureDatastore(webAppBuilder, logger);
+
+        // Add fake configuration service dependencies to avoid external calls
+        webAppBuilder.Services.AddSingleton(
+            new ConfigurationServiceContext("test-client", "test-secret", "test-scope")
+        );
+
+        webAppBuilder.Services.AddSingleton(serviceProvider =>
+        {
+            var memoryCache = serviceProvider.GetRequiredService<IMemoryCache>();
+            return new ClaimSetsCache(memoryCache, TimeSpan.FromMinutes(5));
+        });
+
+        // Add stub implementations for test environment
+        // Register ConfigurationServiceApiClient for test environment
+        webAppBuilder.Services.AddTransient<ConfigurationServiceApiClient>();
+
+        // Register the inner claim set provider by its concrete type
+        webAppBuilder.Services.AddTransient<ConfigurationServiceClaimSetProvider>();
+
+        // Register the cache decorator using a factory (same as main configuration)
+        webAppBuilder.Services.AddTransient<IClaimSetProvider>(provider =>
+        {
+            var innerProvider = provider.GetRequiredService<ConfigurationServiceClaimSetProvider>();
+            var claimSetsCache = provider.GetRequiredService<ClaimSetsCache>();
+            return new CachedClaimSetProvider(innerProvider, claimSetsCache);
+        });
+
+        logger.Information("Test environment configuration completed");
+    }
+
+    private static void MapJwtEnvironmentVariables(WebApplicationBuilder webAppBuilder)
+    {
+        // Map JWT Authentication environment variables to configuration
+        var jwtEnvMappings = new Dictionary<string, string>
+        {
+            ["JWT_AUTHENTICATION_AUTHORITY"] = "JwtAuthentication:Authority",
+            ["JWT_AUTHENTICATION_AUDIENCE"] = "JwtAuthentication:Audience",
+            ["JWT_AUTHENTICATION_METADATA_ADDRESS"] = "JwtAuthentication:MetadataAddress",
+            ["JWT_AUTHENTICATION_REQUIRE_HTTPS_METADATA"] = "JwtAuthentication:RequireHttpsMetadata",
+            ["JWT_AUTHENTICATION_ROLE_CLAIM_TYPE"] = "JwtAuthentication:RoleClaimType",
+            ["JWT_AUTHENTICATION_CLIENT_ROLE"] = "JwtAuthentication:ClientRole",
+            ["JWT_AUTHENTICATION_CLOCK_SKEW_SECONDS"] = "JwtAuthentication:ClockSkewSeconds",
+            ["JWT_AUTHENTICATION_REFRESH_INTERVAL_MINUTES"] = "JwtAuthentication:RefreshIntervalMinutes",
+            ["JWT_AUTHENTICATION_AUTOMATIC_REFRESH_INTERVAL_HOURS"] =
+                "JwtAuthentication:AutomaticRefreshIntervalHours",
+        };
+
+        foreach (var (envVar, configKey) in jwtEnvMappings)
+        {
+            var value = Environment.GetEnvironmentVariable(envVar);
+            if (!string.IsNullOrEmpty(value))
+            {
+                webAppBuilder.Configuration[configKey] = value;
+            }
+        }
     }
 }

@@ -11,40 +11,40 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
-/// Initializes the AuthorizationPathways in the RequestData.
+/// Initializes the AuthorizationPathways in the RequestInfo.
 /// </summary>
 internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             $"Entering {nameof(ProvideAuthorizationPathwayMiddleware)} - {{TraceId}}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        requestData.AuthorizationPathways = requestData
+        requestInfo.AuthorizationPathways = requestInfo
             .ResourceSchema.AuthorizationPathways.Select(authorizationPathway =>
                 authorizationPathway switch
                 {
                     "StudentSchoolAssociationAuthorization" =>
                         BuildStudentSchoolAssociationAuthorizationPathway(
-                            requestData.DocumentSecurityElements,
-                            requestData.Method
+                            requestInfo.DocumentSecurityElements,
+                            requestInfo.Method
                         ),
                     "StudentEducationOrganizationResponsibilityAssociationAuthorization" =>
                         BuildStudentEducationOrganizationResponsibilityAssociationAuthorizationPathway(
-                            requestData.DocumentSecurityElements,
-                            requestData.Method
+                            requestInfo.DocumentSecurityElements,
+                            requestInfo.Method
                         ),
                     "ContactStudentSchoolAuthorization" =>
                         (AuthorizationPathway)BuildStudentContactAssociationAuthorizationPathway(
-                            requestData.DocumentSecurityElements,
-                            requestData.Method
+                            requestInfo.DocumentSecurityElements,
+                            requestInfo.Method
                         ),
                     "StaffEducationOrganizationAuthorization" =>
                         BuildStaffEducationOrganizationAuthorizationPathway(
-                            requestData.DocumentSecurityElements,
-                            requestData.Method
+                            requestInfo.DocumentSecurityElements,
+                            requestInfo.Method
                         ),
 
                     _ => throw new InvalidOperationException(

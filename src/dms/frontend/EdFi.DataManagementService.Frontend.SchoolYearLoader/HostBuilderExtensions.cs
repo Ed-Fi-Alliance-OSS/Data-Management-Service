@@ -40,8 +40,6 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
 
             ConfigureDatastore(configuration, services, logger);
             ConfigureQueryHandler(configuration, services, logger);
-            services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
-            services.AddTransient<IClaimSetCacheService, ClaimSetCacheService>();
 
             services.Configure<ConfigurationServiceSettings>(
                 configuration.GetSection("ConfigurationServiceSettings")
@@ -98,8 +96,17 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
             });
 
             services.AddTransient<IConfigurationServiceTokenHandler, ConfigurationServiceTokenHandler>();
-            services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
-            services.AddTransient<IClaimSetCacheService, ClaimSetCacheService>();
+
+            // Register the inner claim set provider by its concrete type
+            services.AddTransient<ConfigurationServiceClaimSetProvider>();
+
+            // Register the cache decorator using a factory
+            services.AddTransient<IClaimSetProvider>(provider =>
+            {
+                var innerProvider = provider.GetRequiredService<ConfigurationServiceClaimSetProvider>();
+                var claimSetsCache = provider.GetRequiredService<ClaimSetsCache>();
+                return new CachedClaimSetProvider(innerProvider, claimSetsCache);
+            });
 
             Serilog.ILogger ConfigureLogging(IConfiguration config)
             {

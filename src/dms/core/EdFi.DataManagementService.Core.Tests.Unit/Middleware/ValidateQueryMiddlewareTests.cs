@@ -32,7 +32,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Wrong_Query_Parameters : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -49,28 +49,22 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.GET);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.GET);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_should_send_bad_request()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_should_be_errors()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("The request could not be processed.");
@@ -79,7 +73,7 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_be_offset_errors()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("Offset must be a numeric value greater than or equal to 0.");
@@ -88,7 +82,7 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_be_limit_errors()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain($"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.");
@@ -97,7 +91,7 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_be_total_count_errors()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("TotalCount must be a boolean value.");
@@ -108,7 +102,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Greater_Limit_Value : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -125,28 +119,22 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.GET);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.GET);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_should_send_bad_request()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_should_be_errors()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("The request could not be processed.");
@@ -155,7 +143,7 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_be_limit_errors()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain($"Limit must be omitted or set to a numeric value between 0 and {_maxPageSize}.");
@@ -166,7 +154,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Invalid_Type_Query_Parameters : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -188,9 +176,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData docRefContext = new(frontendRequest, method)
+            RequestInfo docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -236,40 +224,37 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
-            _context = NewRequestData(frontendRequest, RequestMethod.GET);
+            _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
 
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_should_send_bad_request()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_should_be_beginDate_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.beginDate");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("$.beginDate");
 
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for beginDate.");
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("is not valid for beginDate.");
         }
 
         [Test]
         public void It_should_be_totalInstructionalDays_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.totalInstructionalDays");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("$.totalInstructionalDays");
 
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("is not valid for totalInstructionalDays.");
@@ -278,33 +263,36 @@ public class ValidateQueryMiddlewareTests
         [Test]
         public void It_should_be_SchoolId_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.schoolId");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("$.schoolId");
 
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for schoolId.");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for schoolId.");
         }
 
         [Test]
         public void It_should_validate_boolean()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.isRequired");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("$.isRequired");
 
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for isRequired.");
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("is not valid for isRequired.");
         }
 
         [Test]
         public void It_should_be_endDate_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.endDate");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("$.endDate");
 
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for endDate.");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("is not valid for endDate.");
         }
 
         [Test]
         public void It_should_be_time_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("$.classStartTime");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("$.classStartTime");
 
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("is not valid for classStartTime.");
@@ -315,7 +303,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Valid_Type_Query_Parameters : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -337,9 +325,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData docRefContext = new(frontendRequest, method)
+            RequestInfo docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -385,24 +373,18 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
-            _context = NewRequestData(frontendRequest, RequestMethod.GET);
+            _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
 
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_provides_no_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -410,7 +392,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Valid_Type_Query_Boolean_Parameter : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -427,9 +409,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData docRefContext = new(frontendRequest, method)
+            RequestInfo docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -467,24 +449,18 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
-            _context = NewRequestData(frontendRequest, RequestMethod.GET);
+            _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
 
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_provides_no_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -493,7 +469,7 @@ public class ValidateQueryMiddlewareTests
     public class Given_Pipeline_Context_With_Valid_Type_Query_DateTime_Parameter
         : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -510,9 +486,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData docRefContext = new(frontendRequest, method)
+            RequestInfo docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -553,24 +529,18 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
-            _context = NewRequestData(frontendRequest, RequestMethod.GET);
+            _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
 
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_provides_no_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

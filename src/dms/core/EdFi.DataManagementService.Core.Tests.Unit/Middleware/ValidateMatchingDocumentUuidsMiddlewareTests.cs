@@ -43,9 +43,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             );
         }
 
-        internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
+        internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData _context = new(frontendRequest, method)
+            RequestInfo _requestInfo = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 PathComponents = new(
@@ -54,21 +54,21 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     DocumentUuid: No.DocumentUuid
                 ),
             };
-            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            _requestInfo.ProjectSchema = _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
                 new("ed-fi")
             )!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicweeks"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicweeks"))
                     ?? new JsonObject()
             );
-            return _context;
+            return _requestInfo;
         }
 
         [TestFixture]
         [Parallelizable]
         public class Given_A_Matching_Id_In_Body_And_Url : ValidateMatchingDocumentUuidsMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
             private readonly string id = Guid.NewGuid().ToString();
 
             [SetUp]
@@ -95,28 +95,22 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
-                _context = Context(frontEndRequest, RequestMethod.PUT);
-                _context.ParsedBody = JsonNode.Parse(jsonData)!;
-                _context.PathComponents = _context.PathComponents with
+                _requestInfo = Context(frontEndRequest, RequestMethod.PUT);
+                _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
+                _requestInfo.PathComponents = _requestInfo.PathComponents with
                 {
                     DocumentUuid = new DocumentUuid(new(id)),
                 };
 
-                await Middleware().Execute(_context, Next());
+                await Middleware().Execute(_requestInfo, Next());
             }
 
             [Test]
             public void It_provides_no_response()
             {
-                _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+                _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
             }
         }
 
@@ -124,7 +118,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Different_Id_In_Body_And_Url : ValidateMatchingDocumentUuidsMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
             private readonly string id = Guid.NewGuid().ToString();
             private readonly string differentId = Guid.NewGuid().ToString();
 
@@ -152,34 +146,28 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
-                _context = Context(frontEndRequest, RequestMethod.PUT);
-                _context.ParsedBody = JsonNode.Parse(jsonData)!;
-                _context.PathComponents = _context.PathComponents with
+                _requestInfo = Context(frontEndRequest, RequestMethod.PUT);
+                _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
+                _requestInfo.PathComponents = _requestInfo.PathComponents with
                 {
                     DocumentUuid = new DocumentUuid(new(differentId)),
                 };
 
-                await Middleware().Execute(_context, Next());
+                await Middleware().Execute(_requestInfo, Next());
             }
 
             [Test]
             public void It_provides_status_code_400()
             {
-                _context?.FrontendResponse.StatusCode.Should().Be(400);
+                _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
             }
 
             [Test]
             public void It_returns_message_body_with_error()
             {
-                _context
+                _requestInfo
                     .FrontendResponse.Body?.ToJsonString()
                     .Should()
                     .Contain("Request body id must match the id in the url.");
@@ -190,7 +178,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Invalid_Guid_In_Body : ValidateMatchingDocumentUuidsMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
             private readonly string id = Guid.NewGuid().ToString();
 
             [SetUp]
@@ -217,34 +205,28 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
-                _context = Context(frontEndRequest, RequestMethod.PUT);
-                _context.ParsedBody = JsonNode.Parse(jsonData)!;
-                _context.PathComponents = _context.PathComponents with
+                _requestInfo = Context(frontEndRequest, RequestMethod.PUT);
+                _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
+                _requestInfo.PathComponents = _requestInfo.PathComponents with
                 {
                     DocumentUuid = new DocumentUuid(new(id)),
                 };
 
-                await Middleware().Execute(_context, Next());
+                await Middleware().Execute(_requestInfo, Next());
             }
 
             [Test]
             public void It_provides_error_response()
             {
-                _context?.FrontendResponse.StatusCode.Should().Be(400);
+                _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
             }
 
             [Test]
             public void It_returns_message_body_with_error()
             {
-                _context
+                _requestInfo
                     .FrontendResponse.Body?.ToJsonString()
                     .Should()
                     .Contain("Request body id must match the id in the url.");
@@ -255,7 +237,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_An_Empty_Id_In_Body : ValidateMatchingDocumentUuidsMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
             private readonly string id = Guid.NewGuid().ToString();
 
             [SetUp]
@@ -282,34 +264,28 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
-                _context = Context(frontEndRequest, RequestMethod.PUT);
-                _context.ParsedBody = JsonNode.Parse(jsonData)!;
-                _context.PathComponents = _context.PathComponents with
+                _requestInfo = Context(frontEndRequest, RequestMethod.PUT);
+                _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
+                _requestInfo.PathComponents = _requestInfo.PathComponents with
                 {
                     DocumentUuid = new DocumentUuid(new(id)),
                 };
 
-                await Middleware().Execute(_context, Next());
+                await Middleware().Execute(_requestInfo, Next());
             }
 
             [Test]
             public void It_provides_error_response()
             {
-                _context?.FrontendResponse.StatusCode.Should().Be(400);
+                _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
             }
 
             [Test]
             public void It_returns_message_body_with_error()
             {
-                _context
+                _requestInfo
                     .FrontendResponse.Body?.ToJsonString()
                     .Should()
                     .Contain("Request body id must match the id in the url.");

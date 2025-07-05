@@ -39,48 +39,48 @@ public class ValidateEndpointMiddlewareTests
     [Parallelizable]
     public class Given_An_Invalid_Project_Namespace : ValidateEndpointMiddlewareTests
     {
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
-            _context.ApiSchemaDocuments = SchemaDocuments();
-            _context.PathComponents = new(
+            _requestInfo.ApiSchemaDocuments = SchemaDocuments();
+            _requestInfo.PathComponents = new(
                 ProjectNamespace: new("not-ed-fi"),
                 EndpointName: new("schools"),
                 DocumentUuid: No.DocumentUuid
             );
-            await Middleware().Execute(_context, Next());
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_404()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(404);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(404);
         }
 
         [Test]
         public void It_returns_message_body()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Invalid resource");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Invalid resource");
         }
 
         [Test]
         public void It_has_no_project_schema()
         {
-            _context?.ProjectSchema.Should().Be(No.ProjectSchema);
+            _requestInfo?.ProjectSchema.Should().Be(No.ProjectSchema);
         }
 
         [Test]
         public void It_has_no_resource_schema()
         {
-            _context?.ResourceSchema.Should().Be(No.ResourceSchema);
+            _requestInfo?.ResourceSchema.Should().Be(No.ResourceSchema);
         }
     }
 
@@ -88,36 +88,36 @@ public class ValidateEndpointMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Project_Namespace_And_Invalid_Endpoint : ValidateEndpointMiddlewareTests
     {
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
-            _context.ApiSchemaDocuments = SchemaDocuments();
-            _context.PathComponents = new(
+            _requestInfo.ApiSchemaDocuments = SchemaDocuments();
+            _requestInfo.PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
                 EndpointName: new("notschools"),
                 DocumentUuid: No.DocumentUuid
             );
-            await Middleware().Execute(_context, Next());
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_404()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(404);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(404);
         }
 
         [Test]
         public void It_returns_message_body()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("The specified data could not be found.");
@@ -126,19 +126,19 @@ public class ValidateEndpointMiddlewareTests
         [Test]
         public void It_returns_content_type_problem_json()
         {
-            _context.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
         }
 
         [Test]
         public void It_has_a_project_schema_for_edfi()
         {
-            _context?.ProjectSchema.ProjectName.Value.Should().Be("Ed-Fi");
+            _requestInfo?.ProjectSchema.ProjectName.Value.Should().Be("Ed-Fi");
         }
 
         [Test]
         public void It_has_no_resource_schema()
         {
-            _context?.ResourceSchema.Should().Be(No.ResourceSchema);
+            _requestInfo?.ResourceSchema.Should().Be(No.ResourceSchema);
         }
     }
 
@@ -146,37 +146,37 @@ public class ValidateEndpointMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Project_Namespace_And_Valid_Endpoint : ValidateEndpointMiddlewareTests
     {
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
-            _context.ApiSchemaDocuments = SchemaDocuments();
-            _context.PathComponents = new(
+            _requestInfo.ApiSchemaDocuments = SchemaDocuments();
+            _requestInfo.PathComponents = new(
                 ProjectNamespace: new("ed-fi"),
                 EndpointName: new("schools"),
                 DocumentUuid: No.DocumentUuid
             );
-            await Middleware().Execute(_context, Next());
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_provides_no_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
         public void It_has_a_project_schema_for_edfi()
         {
-            _context?.ProjectSchema.ProjectName.Value.Should().Be("Ed-Fi");
+            _requestInfo?.ProjectSchema.ProjectName.Value.Should().Be("Ed-Fi");
         }
 
         [Test]
         public void It_has_a_resource_schema_for_schools()
         {
-            _context?.ResourceSchema.Should().NotBe(No.ResourceSchema);
-            _context?.ResourceSchema.ResourceName.Value.Should().Be("School");
+            _requestInfo?.ResourceSchema.Should().NotBe(No.ResourceSchema);
+            _requestInfo?.ResourceSchema.ResourceName.Value.Should().Be("School");
         }
     }
 }

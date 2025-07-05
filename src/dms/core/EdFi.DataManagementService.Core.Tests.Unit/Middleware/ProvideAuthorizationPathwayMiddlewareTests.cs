@@ -24,7 +24,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         NullLogger<ProvideApiSchemaMiddleware>.Instance
     );
 
-    private readonly RequestData _context = No.RequestData();
+    private readonly RequestInfo _requestInfo = No.RequestInfo();
 
     private readonly ApiSchemaDocuments _studentSchoolAssociationApiSchma = new ApiSchemaBuilder()
         .WithStartProject()
@@ -57,12 +57,14 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
+            _requestInfo.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StudentSchoolAssociations")
+                )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [
                     new EducationOrganizationSecurityElement(
@@ -74,24 +76,24 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [],
                 []
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
         public async Task Initializes_StudentSchoolAssociationAuthorizationPathway_In_The_Pipeline_Context()
         {
             // Act
-            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+            await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext);
 
             // Assert
-            _context.AuthorizationPathways.Count.Should().Be(1);
-            _context
+            _requestInfo.AuthorizationPathways.Count.Should().Be(1);
+            _requestInfo
                 .AuthorizationPathways.Single()
                 .Should()
                 .BeOfType<AuthorizationPathway.StudentSchoolAssociation>();
 
             var pathway = (AuthorizationPathway.StudentSchoolAssociation)
-                _context.AuthorizationPathways.Single();
+                _requestInfo.AuthorizationPathways.Single();
             pathway.StudentUniqueId.Should().Be(new StudentUniqueId("987"));
             pathway.SchoolId.Should().Be(new EducationOrganizationId(123));
         }
@@ -104,29 +106,31 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
+            _requestInfo.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StudentSchoolAssociations")
+                )!
             );
 
-            _context.Method = RequestMethod.GET;
+            _requestInfo.Method = RequestMethod.GET;
         }
 
         [Test]
         public async Task Initializes_StudentSchoolAssociationAuthorizationPathway_In_The_Pipeline_Context()
         {
             // Act
-            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+            await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext);
 
             // Assert
-            _context.AuthorizationPathways.Count.Should().Be(1);
-            _context
+            _requestInfo.AuthorizationPathways.Count.Should().Be(1);
+            _requestInfo
                 .AuthorizationPathways.Single()
                 .Should()
                 .BeOfType<AuthorizationPathway.StudentSchoolAssociation>();
 
             var pathway = (AuthorizationPathway.StudentSchoolAssociation)
-                _context.AuthorizationPathways.Single();
+                _requestInfo.AuthorizationPathways.Single();
             pathway.StudentUniqueId.Should().Be(default(StudentUniqueId));
             pathway.SchoolId.Should().Be(default(EducationOrganizationId));
         }
@@ -147,21 +151,21 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 .WithEndProject()
                 .ToApiSchemaDocuments();
 
-            _context.ProjectSchema = _invalidAuthorizationPathwayApiSchemaDocument.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("Students"))!
+            _requestInfo.ProjectSchema = _invalidAuthorizationPathwayApiSchemaDocument.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("Students"))!
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
         public async Task Does_Not_Initialize_AuthorizationPathways_In_The_Pipeline_Context()
         {
             // Act
-            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+            await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext);
 
             // Assert
-            _context.AuthorizationPathways.Should().BeEmpty();
+            _requestInfo.AuthorizationPathways.Should().BeEmpty();
         }
     }
 
@@ -181,12 +185,14 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 .WithEndProject()
                 .ToApiSchemaDocuments();
 
-            _context.ProjectSchema = _invalidAuthorizationPathwayApiSchemaDocument.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
+            _requestInfo.ProjectSchema = _invalidAuthorizationPathwayApiSchemaDocument.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StudentSchoolAssociations")
+                )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [
                     new EducationOrganizationSecurityElement(
@@ -198,7 +204,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [],
                 []
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
@@ -206,7 +212,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         {
             // Act & Assert
             Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+                await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext)
             );
         }
     }
@@ -219,12 +225,14 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
+            _requestInfo.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StudentSchoolAssociations")
+                )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [
                     new EducationOrganizationSecurityElement(
@@ -236,7 +244,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [],
                 []
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
@@ -244,7 +252,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         {
             // Act & Assert
             Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+                await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext)
             );
         }
     }
@@ -257,19 +265,21 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("StudentSchoolAssociations"))!
+            _requestInfo.ProjectSchema = _studentSchoolAssociationApiSchma.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+                    new("StudentSchoolAssociations")
+                )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [],
                 [new StudentUniqueId("987")],
                 [],
                 []
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
@@ -277,7 +287,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         {
             // Act & Assert
             Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+                await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext)
             );
         }
     }
@@ -289,14 +299,14 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+            _requestInfo.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
                     new("StudentContactAssociations")
                 )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [
                     new EducationOrganizationSecurityElement(
@@ -308,24 +318,24 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [new ContactUniqueId("898")],
                 []
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
         public async Task Initializes_StudentContactAssociationAuthorizationPathway_In_The_Pipeline_Context()
         {
             // Act
-            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+            await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext);
 
             // Assert
-            _context.AuthorizationPathways.Count.Should().Be(1);
-            _context
+            _requestInfo.AuthorizationPathways.Count.Should().Be(1);
+            _requestInfo
                 .AuthorizationPathways.Single()
                 .Should()
                 .BeOfType<AuthorizationPathway.StudentContactAssociation>();
 
             var pathway = (AuthorizationPathway.StudentContactAssociation)
-                _context.AuthorizationPathways.Single();
+                _requestInfo.AuthorizationPathways.Single();
             pathway.StudentUniqueId.Should().Be(new StudentUniqueId("987"));
             pathway.ContactUniqueId.Should().Be(new ContactUniqueId("898"));
         }
@@ -338,31 +348,31 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+            _requestInfo.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
                     new("StudentContactAssociations")
                 )!
             );
 
-            _context.Method = RequestMethod.GET;
+            _requestInfo.Method = RequestMethod.GET;
         }
 
         [Test]
         public async Task Initializes_StudentContactAssociationAuthorizationPathway_In_The_Pipeline_Context()
         {
             // Act
-            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+            await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext);
 
             // Assert
-            _context.AuthorizationPathways.Count.Should().Be(1);
-            _context
+            _requestInfo.AuthorizationPathways.Count.Should().Be(1);
+            _requestInfo
                 .AuthorizationPathways.Single()
                 .Should()
                 .BeOfType<AuthorizationPathway.StudentContactAssociation>();
 
             var pathway = (AuthorizationPathway.StudentContactAssociation)
-                _context.AuthorizationPathways.Single();
+                _requestInfo.AuthorizationPathways.Single();
             pathway.StudentUniqueId.Should().Be(default(StudentUniqueId));
             pathway.ContactUniqueId.Should().Be(default(ContactUniqueId));
         }
@@ -376,14 +386,14 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+            _requestInfo.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
                     new("StudentContactAssociations")
                 )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [
                     new EducationOrganizationSecurityElement(
@@ -395,7 +405,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [new ContactUniqueId("898")],
                 []
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
@@ -403,7 +413,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         {
             // Act & Assert
             Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+                await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext)
             );
         }
     }
@@ -416,21 +426,21 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+            _requestInfo.ProjectSchema = _studentContactAssociationApiSchma.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
                     new("StudentContactAssociations")
                 )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [],
                 [new StudentUniqueId("987")],
                 [],
                 []
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
@@ -438,7 +448,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         {
             // Act & Assert
             Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+                await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext)
             );
         }
     }
@@ -451,14 +461,14 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+            _requestInfo.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
                     new("StaffEducationOrganizationAssignmentAssociations")
                 )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [
                     new EducationOrganizationSecurityElement(
@@ -470,24 +480,24 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [],
                 [new StaffUniqueId("S123")]
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
         public async Task Initializes_StaffEducationOrganizationAssociationAuthorizationPathway_In_The_Pipeline_Context()
         {
             // Act
-            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+            await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext);
 
             // Assert
-            _context.AuthorizationPathways.Count.Should().Be(1);
-            _context
+            _requestInfo.AuthorizationPathways.Count.Should().Be(1);
+            _requestInfo
                 .AuthorizationPathways.Single()
                 .Should()
                 .BeOfType<AuthorizationPathway.StaffEducationOrganizationAssociation>();
 
             var pathway = (AuthorizationPathway.StaffEducationOrganizationAssociation)
-                _context.AuthorizationPathways.Single();
+                _requestInfo.AuthorizationPathways.Single();
             pathway.StaffUniqueId.Should().Be(new StaffUniqueId("S123"));
             pathway.EducationOrganizationId.Should().Be(new EducationOrganizationId(456));
         }
@@ -501,31 +511,31 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+            _requestInfo.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
                     new("StaffEducationOrganizationAssignmentAssociations")
                 )!
             );
 
-            _context.Method = RequestMethod.GET;
+            _requestInfo.Method = RequestMethod.GET;
         }
 
         [Test]
         public async Task Initializes_StaffEducationOrganizationAssociationAuthorizationPathway_In_The_Pipeline_Context()
         {
             // Act
-            await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext);
+            await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext);
 
             // Assert
-            _context.AuthorizationPathways.Count.Should().Be(1);
-            _context
+            _requestInfo.AuthorizationPathways.Count.Should().Be(1);
+            _requestInfo
                 .AuthorizationPathways.Single()
                 .Should()
                 .BeOfType<AuthorizationPathway.StaffEducationOrganizationAssociation>();
 
             var pathway = (AuthorizationPathway.StaffEducationOrganizationAssociation)
-                _context.AuthorizationPathways.Single();
+                _requestInfo.AuthorizationPathways.Single();
             pathway.StaffUniqueId.Should().Be(default(StaffUniqueId));
             pathway.EducationOrganizationId.Should().Be(default(EducationOrganizationId));
         }
@@ -539,14 +549,14 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+            _requestInfo.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
                     new("StaffEducationOrganizationAssignmentAssociations")
                 )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [
                     new EducationOrganizationSecurityElement(
@@ -558,7 +568,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
                 [],
                 []
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
@@ -566,7 +576,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         {
             // Act & Assert
             Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+                await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext)
             );
         }
     }
@@ -579,21 +589,21 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         [SetUp]
         public void Setup()
         {
-            _context.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+            _requestInfo.ProjectSchema = _staffEducationOrganizationApiSchema.GetCoreProjectSchema();
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
                     new("StaffEducationOrganizationAssignmentAssociations")
                 )!
             );
 
-            _context.DocumentSecurityElements = new DocumentSecurityElements(
+            _requestInfo.DocumentSecurityElements = new DocumentSecurityElements(
                 [],
                 [],
                 [],
                 [],
                 [new StaffUniqueId("S123")]
             );
-            _context.Method = RequestMethod.POST;
+            _requestInfo.Method = RequestMethod.POST;
         }
 
         [Test]
@@ -601,7 +611,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         {
             // Act & Assert
             Assert.ThrowsAsync<InvalidOperationException>(async () =>
-                await _provideAuthorizationPathwayMiddleware.Execute(_context, NullNext)
+                await _provideAuthorizationPathwayMiddleware.Execute(_requestInfo, NullNext)
             );
         }
     }

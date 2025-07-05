@@ -28,44 +28,38 @@ public class ParseBodyMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_With_Null_Body : ParseBodyMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: null,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = new(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_error_message_body()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("A non-empty request body is required");
@@ -76,44 +70,38 @@ public class ParseBodyMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_With_Empty_Body : ParseBodyMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: "",
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = new(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_error_message_body()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("A non-empty request body is required");
@@ -124,44 +112,38 @@ public class ParseBodyMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_With_Invalid_Json : ParseBodyMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: """{ "id":"value" "name":"firstname"}""",
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = new(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_error_message_body()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data validation failed.");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Data validation failed.");
         }
     }
 }
