@@ -71,7 +71,8 @@ public class ConfigurationTests
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-                content.Should().Be(string.Empty);
+                content.Should().Contain("\"message\"");
+                content.Should().Contain("\"traceId\"");
             }
         }
     }
@@ -131,7 +132,8 @@ public class ConfigurationTests
 
                 // Assert
                 response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-                content.Should().Be(string.Empty);
+                content.Should().Contain("\"message\"");
+                content.Should().Contain("\"traceId\"");
             }
         }
     }

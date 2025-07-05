@@ -5,12 +5,12 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -97,6 +97,47 @@ public class MetadataModuleTests
         {
             var claimSetCacheService = A.Fake<IClaimSetCacheService>();
             A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+
+            // Setup fake API service for OpenAPI specs
+            var apiService = A.Fake<IApiService>();
+
+            // When API service methods are called, they should return specs that already include servers
+            A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily(
+                    (JsonArray servers) =>
+                        new JsonObject
+                        {
+                            ["openapi"] = "3.0.0",
+                            ["paths"] = new JsonObject(),
+                            ["servers"] = servers,
+                        }
+                );
+
+            A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
+                .ReturnsLazily(
+                    (JsonArray servers) =>
+                        new JsonObject
+                        {
+                            ["openapi"] = "3.0.0",
+                            ["paths"] = new JsonObject(),
+                            ["servers"] = servers,
+                        }
+                );
+
+            // Setup fake content provider
+            var contentProvider = A.Fake<IContentProvider>();
+            var discoverySpec = new JsonObject { ["openapi"] = "3.0.0", ["paths"] = new JsonObject() };
+            A.CallTo(() => contentProvider.LoadJsonContent("discovery", A<string>._, A<string>._))
+                .Returns(discoverySpec);
+            A.CallTo(() =>
+                    contentProvider.LoadJsonContent(
+                        A<string>.That.Not.IsEqualTo("discovery"),
+                        A<string>._,
+                        A<string>._
+                    )
+                )
+                .Returns(new JsonObject { ["openapi"] = "3.0.0", ["paths"] = new JsonObject() });
+
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -105,6 +146,8 @@ public class MetadataModuleTests
                     (collection) =>
                     {
                         collection.AddTransient((x) => claimSetCacheService);
+                        collection.AddTransient((x) => apiService);
+                        collection.AddTransient((x) => contentProvider);
                     }
                 );
             });
@@ -164,7 +207,14 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Descriptors_Content()
     {
         // Arrange
-        var contentProvider = A.Fake<IContentProvider>();
+        var apiService = A.Fake<IApiService>();
+        var descriptorSpec = new JsonObject
+        {
+            ["openapi"] = "3.0.0",
+            ["paths"] = new JsonObject { ["/ed-fi/absenceEventCategoryDescriptors"] = new JsonObject() },
+        };
+        A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._)).Returns(descriptorSpec);
+
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
 
@@ -174,7 +224,7 @@ public class MetadataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => contentProvider);
+                    collection.AddTransient((x) => apiService);
                     collection.AddTransient((x) => claimSetCacheService);
                 }
             );
@@ -226,7 +276,13 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Dependencies()
     {
         // Arrange
-        var httpContext = A.Fake<HttpContext>();
+        var apiService = A.Fake<IApiService>();
+        var dependencies = new JsonArray
+        {
+            new JsonObject { ["resource"] = "/ed-fi/absenceEventCategoryDescriptors", ["order"] = 1 },
+        };
+        A.CallTo(() => apiService.GetDependencies()).Returns(dependencies);
+
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -235,7 +291,7 @@ public class MetadataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient(x => httpContext);
+                    collection.AddTransient(x => apiService);
                     collection.AddTransient((x) => claimSetCacheService);
                 }
             );

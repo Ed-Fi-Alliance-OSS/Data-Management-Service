@@ -56,7 +56,8 @@ public class InvalidResourceSchemasTests
                     [],
                     NullLogger<ResourceLoadOrderCalculator>.Instance
                 ),
-                apiSchemaUploadService
+                apiSchemaUploadService,
+                serviceProvider
             );
         }
 

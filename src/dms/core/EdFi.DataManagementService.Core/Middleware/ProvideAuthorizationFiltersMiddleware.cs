@@ -32,6 +32,26 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 requestData.FrontendRequest.TraceId.Value
             );
 
+            // Check if ClientAuthorizations has been populated by JWT middleware
+            if (requestData.FrontendRequest.ClientAuthorizations == null)
+            {
+                _logger.LogWarning(
+                    "ProvideAuthorizationFiltersMiddleware: No ClientAuthorizations found - JWT authentication may have failed - {TraceId}",
+                    requestData.FrontendRequest.TraceId.Value
+                );
+                requestData.FrontendResponse = new FrontendResponse(
+                    StatusCode: (int)HttpStatusCode.Unauthorized,
+                    Body: FailureResponse.ForUnauthorized(
+                        requestData.FrontendRequest.TraceId,
+                        error: "Unauthorized",
+                        description: "No authorization information found. Ensure valid JWT token is provided."
+                    ),
+                    Headers: [],
+                    ContentType: "application/problem+json"
+                );
+                return;
+            }
+
             List<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators = [];
             foreach (string authorizationStrategy in requestData.ResourceActionAuthStrategies)
             {

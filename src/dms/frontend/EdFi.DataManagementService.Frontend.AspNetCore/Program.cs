@@ -71,9 +71,6 @@ if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
 
 app.UseCors("AllowSwaggerUI");
 
-app.UseAuthentication();
-app.UseAuthorization();
-
 app.MapRouteEndpoints();
 
 app.MapHealthChecks("/health");
@@ -91,7 +88,6 @@ bool ReportInvalidConfiguration(WebApplication app)
         // Accessing IOptions<T> forces validation
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value;
-        _ = app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
     }
     catch (OptionsValidationException ex)
