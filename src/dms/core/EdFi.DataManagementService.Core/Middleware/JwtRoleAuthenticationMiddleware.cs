@@ -35,7 +35,7 @@ internal class JwtRoleAuthenticationMiddleware : IPipelineStep
         _options = options.Value;
     }
 
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // Feature flag check for gradual rollout
         if (!_options.Enabled)
@@ -47,18 +47,18 @@ internal class JwtRoleAuthenticationMiddleware : IPipelineStep
 
         // Extract Authorization header
         if (
-            !requestData.FrontendRequest.Headers.TryGetValue("Authorization", out var authHeader)
+            !requestInfo.FrontendRequest.Headers.TryGetValue("Authorization", out var authHeader)
             || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
         )
         {
             _logger.LogDebug(
                 "Missing or invalid Authorization header - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.FrontendResponse = CreateUnauthorizedResponse(
+            requestInfo.FrontendResponse = CreateUnauthorizedResponse(
                 "Bearer token required",
-                requestData.FrontendRequest.TraceId
+                requestInfo.FrontendRequest.TraceId
             );
             return;
         }
@@ -75,12 +75,12 @@ internal class JwtRoleAuthenticationMiddleware : IPipelineStep
         {
             _logger.LogWarning(
                 "Token validation failed - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.FrontendResponse = CreateUnauthorizedResponse(
+            requestInfo.FrontendResponse = CreateUnauthorizedResponse(
                 "Invalid token",
-                requestData.FrontendRequest.TraceId
+                requestInfo.FrontendRequest.TraceId
             );
             return;
         }
@@ -94,12 +94,12 @@ internal class JwtRoleAuthenticationMiddleware : IPipelineStep
                 _logger.LogWarning(
                     "Token missing required role: {RequiredRole} - {TraceId}",
                     _options.ClientRole,
-                    requestData.FrontendRequest.TraceId.Value
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
 
-                requestData.FrontendResponse = CreateForbiddenResponse(
+                requestInfo.FrontendResponse = CreateForbiddenResponse(
                     "Insufficient permissions",
-                    requestData.FrontendRequest.TraceId
+                    requestInfo.FrontendRequest.TraceId
                 );
                 return;
             }
@@ -107,7 +107,7 @@ internal class JwtRoleAuthenticationMiddleware : IPipelineStep
 
         _logger.LogDebug(
             "JWT role authentication successful - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         await next();

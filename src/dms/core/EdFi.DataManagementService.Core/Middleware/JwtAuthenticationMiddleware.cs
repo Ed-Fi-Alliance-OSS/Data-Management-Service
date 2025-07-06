@@ -33,7 +33,7 @@ internal class JwtAuthenticationMiddleware : IPipelineStep
         _options = options.Value;
     }
 
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         // Feature flag check for gradual rollout
         if (!_options.Enabled)
@@ -48,9 +48,9 @@ internal class JwtAuthenticationMiddleware : IPipelineStep
         {
             // Extract client ID from existing ClientAuthorizations if available
             var clientId =
-                requestData.ClientAuthorizations == No.ClientAuthorizations
+                requestInfo.ClientAuthorizations == No.ClientAuthorizations
                     ? null
-                    : requestData.ClientAuthorizations.TokenId;
+                    : requestInfo.ClientAuthorizations.TokenId;
             if (clientId == null || !_options.EnabledForClients.Contains(clientId))
             {
                 _logger.LogDebug(
@@ -64,18 +64,18 @@ internal class JwtAuthenticationMiddleware : IPipelineStep
 
         // Extract Authorization header
         if (
-            !requestData.FrontendRequest.Headers.TryGetValue("Authorization", out var authHeader)
+            !requestInfo.FrontendRequest.Headers.TryGetValue("Authorization", out var authHeader)
             || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
         )
         {
             _logger.LogDebug(
                 "Missing or invalid Authorization header - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.FrontendResponse = CreateUnauthorizedResponse(
+            requestInfo.FrontendResponse = CreateUnauthorizedResponse(
                 "Bearer token required",
-                requestData.FrontendRequest.TraceId
+                requestInfo.FrontendRequest.TraceId
             );
             return;
         }
@@ -93,23 +93,23 @@ internal class JwtAuthenticationMiddleware : IPipelineStep
         {
             _logger.LogWarning(
                 "Token validation failed - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.FrontendResponse = CreateUnauthorizedResponse(
+            requestInfo.FrontendResponse = CreateUnauthorizedResponse(
                 "Invalid token",
-                requestData.FrontendRequest.TraceId
+                requestInfo.FrontendRequest.TraceId
             );
             return;
         }
 
-        // Update RequestData with client authorizations
-        requestData.ClientAuthorizations = clientAuthorizations;
+        // Update RequestInfo with client authorizations
+        requestInfo.ClientAuthorizations = clientAuthorizations;
 
         _logger.LogDebug(
             "JWT authentication successful for TokenId: {TokenId} - {TraceId}",
             clientAuthorizations.TokenId,
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         await next();

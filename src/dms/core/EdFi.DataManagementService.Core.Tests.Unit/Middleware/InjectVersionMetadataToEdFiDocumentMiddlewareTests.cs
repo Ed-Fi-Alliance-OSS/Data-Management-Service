@@ -33,7 +33,7 @@ public class InjectVersionMetadataToEdFiDocumentMiddlewareTests
     [Parallelizable]
     public class Given_Valid_Request_Body : InjectVersionMetadataToEdFiDocumentMiddlewareTests
     {
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _context = No.RequestInfo();
         private readonly string _pattern = @"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$";
         private readonly string _lastModifiedDatePropertyName = "_lastModifiedDate";
 

@@ -78,9 +78,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             return new CoerceFromStringsMiddleware(NullLogger.Instance);
         }
 
-        internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
+        internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData _context = new(frontendRequest, method)
+            RequestInfo _context = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 PathComponents = new(
@@ -114,7 +114,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         public class Given_A_Request_With_Boolean_And_Numeric_Property_As_String
             : CoerceFromStringsMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _context = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()

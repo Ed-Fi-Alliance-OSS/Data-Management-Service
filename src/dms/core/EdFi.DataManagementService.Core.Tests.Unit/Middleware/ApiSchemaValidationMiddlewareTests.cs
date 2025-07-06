@@ -31,7 +31,7 @@ public class ApiSchemaValidationMiddlewareTests
     [Parallelizable]
     public class Given_An_Api_Schema_With_Validation_Errors : ApiSchemaValidationMiddlewareTests
     {
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _context = No.RequestInfo();
 
         public class Provider : IApiSchemaProvider
         {
@@ -103,14 +103,14 @@ public class ApiSchemaValidationMiddlewareTests
         public async Task Process_WhenSchemaIsValid_CallsNext()
         {
             // Arrange
-            var requestData = No.RequestData();
+            var requestInfo = No.RequestInfo();
             var nextWasCalled = false;
 
             A.CallTo(() => _mockProvider.IsSchemaValid).Returns(true);
 
             // Act
             await _middleware.Execute(
-                requestData,
+                requestInfo,
                 () =>
                 {
                     nextWasCalled = true;
@@ -120,21 +120,21 @@ public class ApiSchemaValidationMiddlewareTests
 
             // Assert
             nextWasCalled.Should().BeTrue();
-            requestData.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
         public async Task Process_WhenSchemaIsInvalid_Returns500()
         {
             // Arrange
-            var requestData = No.RequestData();
+            var requestInfo = No.RequestInfo();
             var nextWasCalled = false;
 
             A.CallTo(() => _mockProvider.IsSchemaValid).Returns(false);
 
             // Act
             await _middleware.Execute(
-                requestData,
+                requestInfo,
                 () =>
                 {
                     nextWasCalled = true;
@@ -144,9 +144,9 @@ public class ApiSchemaValidationMiddlewareTests
 
             // Assert
             nextWasCalled.Should().BeFalse();
-            requestData.FrontendResponse.Should().NotBe(No.FrontendResponse);
-            requestData.FrontendResponse.StatusCode.Should().Be(500);
-            requestData.FrontendResponse.Body?.AsValue().ToString().Should().Be(string.Empty);
+            requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            requestInfo.FrontendResponse.Body?.AsValue().ToString().Should().Be(string.Empty);
         }
     }
 }

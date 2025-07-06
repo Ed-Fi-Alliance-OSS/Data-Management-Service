@@ -176,7 +176,7 @@ internal class ApiService : IApiService
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
-                new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+                new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new RejectResourceIdentifierMiddleware(_logger),
@@ -288,7 +288,7 @@ internal class ApiService : IApiService
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
-                new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+                new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new CoerceDateFormatMiddleware(_logger),
@@ -390,9 +390,9 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest)
     {
-        RequestData requestData = new(frontendRequest, RequestMethod.POST);
-        await _upsertSteps.Value.Run(requestData);
-        return requestData.FrontendResponse;
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST);
+        await _upsertSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
     }
 
     /// <summary>
@@ -400,7 +400,7 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
-        RequestData requestData = new(frontendRequest, RequestMethod.GET);
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET);
 
         Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
 
@@ -413,13 +413,13 @@ internal class ApiService : IApiService
 
         if (documentUuid != string.Empty)
         {
-            await _getByIdSteps.Value.Run(requestData);
+            await _getByIdSteps.Value.Run(requestInfo);
         }
         else
         {
-            await _querySteps.Value.Run(requestData);
+            await _querySteps.Value.Run(requestInfo);
         }
-        return requestData.FrontendResponse;
+        return requestInfo.FrontendResponse;
     }
 
     /// <summary>
@@ -427,9 +427,9 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest)
     {
-        RequestData requestData = new(frontendRequest, RequestMethod.PUT);
-        await _updateSteps.Value.Run(requestData);
-        return requestData.FrontendResponse;
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.PUT);
+        await _updateSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
     }
 
     /// <summary>
@@ -437,9 +437,9 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest)
     {
-        RequestData requestData = new(frontendRequest, RequestMethod.DELETE);
-        await _deleteByIdSteps.Value.Run(requestData);
-        return requestData.FrontendResponse;
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.DELETE);
+        await _deleteByIdSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
     }
 
     /// <summary>

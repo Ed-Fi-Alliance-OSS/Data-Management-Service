@@ -26,7 +26,7 @@ public class JwtRoleAuthenticationMiddlewareTests
     private JwtAuthenticationOptions _options = null!;
     private JwtRoleAuthenticationMiddleware _middleware = null!;
     private FrontendRequest _frontendRequest = null!;
-    private RequestData _requestData = null!;
+    private RequestInfo _requestInfo = null!;
 
     [SetUp]
     public void Setup()
@@ -46,7 +46,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             QueryParameters: new Dictionary<string, string>(),
             TraceId: new TraceId("trace123")
         );
-        _requestData = new RequestData(_frontendRequest, RequestMethod.GET);
+        _requestInfo = new RequestInfo(_frontendRequest, RequestMethod.GET);
     }
 
     [Test]
@@ -67,11 +67,11 @@ public class JwtRoleAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(_requestData, next);
+        await _middleware.Execute(_requestInfo, next);
 
         // Assert
         nextCalled.Should().BeTrue();
-        _requestData.FrontendResponse.Should().Be(No.FrontendResponse);
+        _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
     }
 
     [Test]
@@ -86,14 +86,14 @@ public class JwtRoleAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(_requestData, next);
+        await _middleware.Execute(_requestInfo, next);
 
         // Assert
         nextCalled.Should().BeFalse();
-        _requestData.FrontendResponse.Should().NotBeNull();
-        _requestData.FrontendResponse!.StatusCode.Should().Be(401);
-        _requestData.FrontendResponse!.Headers.Should().ContainKey("WWW-Authenticate");
-        _requestData.FrontendResponse!.ContentType.Should().Be("application/problem+json");
+        _requestInfo.FrontendResponse.Should().NotBeNull();
+        _requestInfo.FrontendResponse!.StatusCode.Should().Be(401);
+        _requestInfo.FrontendResponse!.Headers.Should().ContainKey("WWW-Authenticate");
+        _requestInfo.FrontendResponse!.ContentType.Should().Be("application/problem+json");
     }
 
     [Test]
@@ -104,7 +104,7 @@ public class JwtRoleAuthenticationMiddlewareTests
         {
             Headers = new Dictionary<string, string> { ["Authorization"] = "Invalid token" },
         };
-        _requestData = new RequestData(_frontendRequest, RequestMethod.GET);
+        _requestInfo = new RequestInfo(_frontendRequest, RequestMethod.GET);
 
         var nextCalled = false;
         Func<Task> next = () =>
@@ -114,11 +114,11 @@ public class JwtRoleAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(_requestData, next);
+        await _middleware.Execute(_requestInfo, next);
 
         // Assert
         nextCalled.Should().BeFalse();
-        _requestData.FrontendResponse!.StatusCode.Should().Be(401);
+        _requestInfo.FrontendResponse!.StatusCode.Should().Be(401);
     }
 
     [Test]
@@ -129,7 +129,7 @@ public class JwtRoleAuthenticationMiddlewareTests
         {
             Headers = new Dictionary<string, string> { ["Authorization"] = "Bearer invalid-token" },
         };
-        _requestData = new RequestData(_frontendRequest, RequestMethod.GET);
+        _requestInfo = new RequestInfo(_frontendRequest, RequestMethod.GET);
 
         A.CallTo(() =>
                 _jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
@@ -147,11 +147,11 @@ public class JwtRoleAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(_requestData, next);
+        await _middleware.Execute(_requestInfo, next);
 
         // Assert
         nextCalled.Should().BeFalse();
-        _requestData.FrontendResponse!.StatusCode.Should().Be(401);
+        _requestInfo.FrontendResponse!.StatusCode.Should().Be(401);
     }
 
     [Test]
@@ -162,7 +162,7 @@ public class JwtRoleAuthenticationMiddlewareTests
         {
             Headers = new Dictionary<string, string> { ["Authorization"] = "Bearer valid-token" },
         };
-        _requestData = new RequestData(_frontendRequest, RequestMethod.GET);
+        _requestInfo = new RequestInfo(_frontendRequest, RequestMethod.GET);
 
         var claims = new List<Claim>
         {
@@ -193,12 +193,12 @@ public class JwtRoleAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(_requestData, next);
+        await _middleware.Execute(_requestInfo, next);
 
         // Assert
         nextCalled.Should().BeFalse();
-        _requestData.FrontendResponse!.StatusCode.Should().Be(403);
-        _requestData.FrontendResponse!.ContentType.Should().Be("application/problem+json");
+        _requestInfo.FrontendResponse!.StatusCode.Should().Be(403);
+        _requestInfo.FrontendResponse!.ContentType.Should().Be("application/problem+json");
     }
 
     [Test]
@@ -209,7 +209,7 @@ public class JwtRoleAuthenticationMiddlewareTests
         {
             Headers = new Dictionary<string, string> { ["Authorization"] = "Bearer valid-token" },
         };
-        _requestData = new RequestData(_frontendRequest, RequestMethod.GET);
+        _requestInfo = new RequestInfo(_frontendRequest, RequestMethod.GET);
 
         var claims = new List<Claim>
         {
@@ -240,11 +240,11 @@ public class JwtRoleAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(_requestData, next);
+        await _middleware.Execute(_requestInfo, next);
 
         // Assert
         nextCalled.Should().BeTrue();
-        _requestData.FrontendResponse.Should().Be(No.FrontendResponse);
+        _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
     }
 
     [Test]
@@ -256,7 +256,7 @@ public class JwtRoleAuthenticationMiddlewareTests
         {
             Headers = new Dictionary<string, string> { ["Authorization"] = "Bearer valid-token" },
         };
-        _requestData = new RequestData(_frontendRequest, RequestMethod.GET);
+        _requestInfo = new RequestInfo(_frontendRequest, RequestMethod.GET);
 
         var claims = new List<Claim> { new Claim(ClaimTypes.Name, "test-user") };
         var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
@@ -283,10 +283,10 @@ public class JwtRoleAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(_requestData, next);
+        await _middleware.Execute(_requestInfo, next);
 
         // Assert
         nextCalled.Should().BeTrue();
-        _requestData.FrontendResponse.Should().Be(No.FrontendResponse);
+        _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
     }
 }

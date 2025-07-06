@@ -51,9 +51,9 @@ public class ValidateEqualityConstraintMiddlewareTests
         return new ValidateEqualityConstraintMiddleware(NullLogger.Instance, equalityConstraintValidator);
     }
 
-    internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
+    internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
     {
-        RequestData _context = new(frontendRequest, method)
+        RequestInfo _context = new(frontendRequest, method)
         {
             ApiSchemaDocuments = SchemaDocuments(),
             PathComponents = new(
@@ -76,7 +76,7 @@ public class ValidateEqualityConstraintMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Body : ValidateEqualityConstraintMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -130,7 +130,7 @@ public class ValidateEqualityConstraintMiddlewareTests
     [Parallelizable]
     public class Given_An_Invalid_Body_With_Not_Equal_School_Ids : ValidateEqualityConstraintMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()

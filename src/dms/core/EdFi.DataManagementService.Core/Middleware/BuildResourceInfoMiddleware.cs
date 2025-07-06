@@ -14,22 +14,22 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class BuildResourceInfoMiddleware(ILogger _logger, List<string> _allowIdentityUpdateOverrides)
     : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering BuildResourceInfoMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        requestData.ResourceInfo = new(
-            ProjectName: requestData.ProjectSchema.ProjectName,
-            ResourceVersion: requestData.ProjectSchema.ResourceVersion,
-            ResourceName: requestData.ResourceSchema.ResourceName,
-            IsDescriptor: requestData.ResourceSchema.IsDescriptor,
-            AllowIdentityUpdates: requestData.ResourceSchema.AllowIdentityUpdates
-                || _allowIdentityUpdateOverrides.Contains(requestData.ResourceSchema.ResourceName.Value),
-            EducationOrganizationHierarchyInfo: requestData.EducationOrganizationHierarchyInfo,
-            AuthorizationSecurableInfo: requestData.AuthorizationSecurableInfo
+        requestInfo.ResourceInfo = new(
+            ProjectName: requestInfo.ProjectSchema.ProjectName,
+            ResourceVersion: requestInfo.ProjectSchema.ResourceVersion,
+            ResourceName: requestInfo.ResourceSchema.ResourceName,
+            IsDescriptor: requestInfo.ResourceSchema.IsDescriptor,
+            AllowIdentityUpdates: requestInfo.ResourceSchema.AllowIdentityUpdates
+                || _allowIdentityUpdateOverrides.Contains(requestInfo.ResourceSchema.ResourceName.Value),
+            EducationOrganizationHierarchyInfo: requestInfo.EducationOrganizationHierarchyInfo,
+            AuthorizationSecurableInfo: requestInfo.AuthorizationSecurableInfo
         );
 
         await next();

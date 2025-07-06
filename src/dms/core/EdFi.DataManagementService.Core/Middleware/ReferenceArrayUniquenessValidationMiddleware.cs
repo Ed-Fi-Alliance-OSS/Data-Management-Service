@@ -16,27 +16,27 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
             "Entering ReferenceUniquenessValidationMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        (string errorKey, string message)? validationError = ValidateUniqueReferences(requestData);
+        (string errorKey, string message)? validationError = ValidateUniqueReferences(requestInfo);
         if (validationError.HasValue)
         {
             var (errorKey, message) = validationError.Value;
             Dictionary<string, string[]> validationErrors = new() { [errorKey] = [message] };
 
-            requestData.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
+            requestInfo.FrontendResponse = ValidationErrorFactory.CreateValidationErrorResponse(
                 validationErrors,
-                requestData.FrontendRequest.TraceId
+                requestInfo.FrontendRequest.TraceId
             );
 
             logger.LogDebug(
                 "Duplicate reference detected - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
             return;
         }
@@ -48,9 +48,9 @@ internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IP
     /// Validates all document reference arrays have unique ReferentialIds
     /// </summary>
     /// <returns>A validation error tuple if duplicates are found, null otherwise</returns>
-    private static (string errorKey, string message)? ValidateUniqueReferences(RequestData requestData)
+    private static (string errorKey, string message)? ValidateUniqueReferences(RequestInfo requestInfo)
     {
-        foreach (var referenceArray in requestData.DocumentInfo.DocumentReferenceArrays)
+        foreach (var referenceArray in requestInfo.DocumentInfo.DocumentReferenceArrays)
         {
             if (referenceArray.DocumentReferences.Length > 1)
             {

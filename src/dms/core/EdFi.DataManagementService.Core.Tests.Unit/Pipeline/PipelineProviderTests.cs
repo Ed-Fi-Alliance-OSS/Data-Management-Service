@@ -16,13 +16,13 @@ public class PipelineProviderTests
     [TestFixture]
     public class Given_A_Pipeline_With_No_Steps : PipelineProviderTests
     {
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
         private readonly PipelineProvider pipeline = new([]);
 
         [Test]
         public void It_should_not_throw_an_exception_when_run()
         {
-            Func<Task> act = async () => await pipeline.Run(requestData);
+            Func<Task> act = async () => await pipeline.Run(requestInfo);
             act.Should().NotThrowAsync();
         }
     }
@@ -31,13 +31,13 @@ public class PipelineProviderTests
     [NonParallelizable]
     public class Given_A_Pipeline_With_One_Step : PipelineProviderTests
     {
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         private static bool wasExecuted = false;
 
         internal class PipelineStep : IPipelineStep
         {
-            public async Task Execute(RequestData requestData, Func<Task> next)
+            public async Task Execute(RequestInfo requestInfo, Func<Task> next)
             {
                 wasExecuted = true;
                 await next();
@@ -48,7 +48,7 @@ public class PipelineProviderTests
         public async Task Setup()
         {
             var pipeline = new PipelineProvider([new PipelineStep()]);
-            await pipeline.Run(requestData);
+            await pipeline.Run(requestInfo);
         }
 
         [Test]
@@ -62,13 +62,13 @@ public class PipelineProviderTests
     [NonParallelizable]
     public class Given_A_Pipeline_With_Three_Steps : PipelineProviderTests
     {
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         private static List<int> executionOrder = [];
 
         internal class PipelineStep(int order) : IPipelineStep
         {
-            public async Task Execute(RequestData requestData, Func<Task> next)
+            public async Task Execute(RequestInfo requestInfo, Func<Task> next)
             {
                 executionOrder.Add(order);
                 await next();
@@ -81,7 +81,7 @@ public class PipelineProviderTests
             var pipeline = new PipelineProvider(
                 [new PipelineStep(1), new PipelineStep(2), new PipelineStep(3)]
             );
-            await pipeline.Run(requestData);
+            await pipeline.Run(requestInfo);
         }
 
         [Test]
@@ -95,13 +95,13 @@ public class PipelineProviderTests
     [NonParallelizable]
     public class Given_A_Pipeline_Where_A_Middle_Step_Does_Not_Call_Next : PipelineProviderTests
     {
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         private static List<int> executionOrder = [];
 
         internal class NextingPipelineStep(int order) : IPipelineStep
         {
-            public async Task Execute(RequestData requestData, Func<Task> next)
+            public async Task Execute(RequestInfo requestInfo, Func<Task> next)
             {
                 executionOrder.Add(order);
                 await next();
@@ -110,7 +110,7 @@ public class PipelineProviderTests
 
         internal class NonNextingPipelineStep(int order) : IPipelineStep
         {
-            public Task Execute(RequestData requestData, Func<Task> next)
+            public Task Execute(RequestInfo requestInfo, Func<Task> next)
             {
                 executionOrder.Add(order);
                 return Task.CompletedTask;
@@ -123,7 +123,7 @@ public class PipelineProviderTests
             var pipeline = new PipelineProvider(
                 [new NextingPipelineStep(1), new NonNextingPipelineStep(2), new NextingPipelineStep(3)]
             );
-            await pipeline.Run(requestData);
+            await pipeline.Run(requestInfo);
         }
 
         [Test]

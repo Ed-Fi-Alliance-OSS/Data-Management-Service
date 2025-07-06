@@ -28,7 +28,7 @@ public class BuildResourceInfoMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_Has_Project_And_Resource_Schemas : BuildResourceInfoMiddlewareTests
     {
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -40,23 +40,23 @@ public class BuildResourceInfoMiddlewareTests
                 .WithEndProject()
                 .ToApiSchemaDocuments();
 
-            requestData.ProjectSchema = apiSchemaDocument.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            requestData.ResourceSchema = new ResourceSchema(
-                requestData.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            requestInfo.ProjectSchema = apiSchemaDocument.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            requestInfo.ResourceSchema = new ResourceSchema(
+                requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
 
-            await BuildMiddleware([]).Execute(requestData, NullNext);
+            await BuildMiddleware([]).Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_built_the_resource_info()
         {
-            requestData.ResourceInfo.ProjectName.Value.Should().Be("Ed-Fi");
-            requestData.ResourceInfo.ResourceName.Value.Should().Be("School");
-            requestData.ResourceInfo.ResourceVersion.Value.Should().Be("5.0.0");
-            requestData.ResourceInfo.IsDescriptor.Should().BeFalse();
-            requestData.ResourceInfo.AllowIdentityUpdates.Should().BeFalse();
+            requestInfo.ResourceInfo.ProjectName.Value.Should().Be("Ed-Fi");
+            requestInfo.ResourceInfo.ResourceName.Value.Should().Be("School");
+            requestInfo.ResourceInfo.ResourceVersion.Value.Should().Be("5.0.0");
+            requestInfo.ResourceInfo.IsDescriptor.Should().BeFalse();
+            requestInfo.ResourceInfo.AllowIdentityUpdates.Should().BeFalse();
         }
     }
 
@@ -65,7 +65,7 @@ public class BuildResourceInfoMiddlewareTests
     public class Given_Pipeline_Context_Has_Project_And_Resource_Schemas_And_Overrides_Allow_Identity_Updates
         : BuildResourceInfoMiddlewareTests
     {
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -77,23 +77,23 @@ public class BuildResourceInfoMiddlewareTests
                 .WithEndProject()
                 .ToApiSchemaDocuments();
 
-            requestData.ProjectSchema = apiSchemaDocument.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            requestData.ResourceSchema = new ResourceSchema(
-                requestData.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            requestInfo.ProjectSchema = apiSchemaDocument.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+            requestInfo.ResourceSchema = new ResourceSchema(
+                requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
 
-            await BuildMiddleware(["School"]).Execute(requestData, NullNext);
+            await BuildMiddleware(["School"]).Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_built_the_resource_info()
         {
-            requestData.ResourceInfo.ProjectName.Value.Should().Be("Ed-Fi");
-            requestData.ResourceInfo.ResourceName.Value.Should().Be("School");
-            requestData.ResourceInfo.ResourceVersion.Value.Should().Be("5.0.0");
-            requestData.ResourceInfo.IsDescriptor.Should().BeFalse();
-            requestData.ResourceInfo.AllowIdentityUpdates.Should().BeTrue();
+            requestInfo.ResourceInfo.ProjectName.Value.Should().Be("Ed-Fi");
+            requestInfo.ResourceInfo.ResourceName.Value.Should().Be("School");
+            requestInfo.ResourceInfo.ResourceVersion.Value.Should().Be("5.0.0");
+            requestInfo.ResourceInfo.IsDescriptor.Should().BeFalse();
+            requestInfo.ResourceInfo.AllowIdentityUpdates.Should().BeTrue();
         }
     }
 }

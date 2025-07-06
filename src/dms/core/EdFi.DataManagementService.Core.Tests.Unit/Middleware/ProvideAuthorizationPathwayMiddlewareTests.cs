@@ -24,7 +24,7 @@ public class ProvideAuthorizationPathwayMiddlewareTests
         NullLogger<ProvideApiSchemaMiddleware>.Instance
     );
 
-    private readonly RequestData _context = No.RequestData();
+    private readonly RequestInfo _context = No.RequestInfo();
 
     private readonly ApiSchemaDocuments _studentSchoolAssociationApiSchma = new ApiSchemaBuilder()
         .WithStartProject()

@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Pipeline;
 /// <summary>
 /// Data container for API request processing, enriched by pipeline steps and handlers
 /// </summary>
-internal class RequestData(FrontendRequest _frontendRequest, RequestMethod _method)
+internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _method)
 {
     /// <summary>
     /// An API request sent from the frontend to be processed

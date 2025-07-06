@@ -20,17 +20,17 @@ internal class ApiSchemaValidationMiddleware(IApiSchemaProvider apiSchemaProvide
     /// <summary>
     /// Prevents any operations from proceeding when ApiSchema is invalid.
     /// </summary>
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
             "Entering ApiSchemaValidationMiddleware- {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         if (!apiSchemaProvider.IsSchemaValid)
         {
             logger.LogError("API schema is invalid. Request cannot be processed.");
-            requestData.FrontendResponse = new FrontendResponse(
+            requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
                 Body: string.Empty,
                 Headers: []

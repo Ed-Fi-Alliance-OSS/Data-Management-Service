@@ -16,40 +16,40 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class CoerceFromStringsMiddleware(ILogger logger) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
             "Entering CoerceFromStringsMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        foreach (string path in requestData.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
+        foreach (string path in requestInfo.ResourceSchema.BooleanJsonPaths.Select(path => path.Value))
         {
-            IEnumerable<JsonNode?> jsonNodes = requestData.ParsedBody.SelectNodesFromArrayPath(path, logger);
+            IEnumerable<JsonNode?> jsonNodes = requestInfo.ParsedBody.SelectNodesFromArrayPath(path, logger);
             foreach (JsonNode? jsonNode in jsonNodes)
             {
                 jsonNode?.TryCoerceStringToBoolean();
             }
         }
 
-        var decimalPaths = requestData
+        var decimalPaths = requestInfo
             .ResourceSchema.DecimalPropertyValidationInfos.Select(i => i.Path.Value)
             .ToList();
         foreach (string path in decimalPaths)
         {
-            IEnumerable<JsonNode?> jsonNodes = requestData.ParsedBody.SelectNodesFromArrayPath(path, logger);
+            IEnumerable<JsonNode?> jsonNodes = requestInfo.ParsedBody.SelectNodesFromArrayPath(path, logger);
             foreach (JsonNode? jsonNode in jsonNodes)
             {
                 jsonNode?.TryCoerceStringToDecimal();
             }
         }
 
-        var numericPaths = requestData
+        var numericPaths = requestInfo
             .ResourceSchema.NumericJsonPaths.Select(path => path.Value)
             .Except(decimalPaths);
         foreach (string path in numericPaths)
         {
-            IEnumerable<JsonNode?> jsonNodes = requestData.ParsedBody.SelectNodesFromArrayPath(path, logger);
+            IEnumerable<JsonNode?> jsonNodes = requestInfo.ParsedBody.SelectNodesFromArrayPath(path, logger);
             foreach (JsonNode? jsonNode in jsonNodes)
             {
                 jsonNode?.TryCoerceStringToNumber();

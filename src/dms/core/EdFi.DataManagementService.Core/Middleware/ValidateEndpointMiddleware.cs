@@ -17,50 +17,50 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ValidateEndpointMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        ProjectSchema? projectSchema = requestData.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-            requestData.PathComponents.ProjectNamespace
+        ProjectSchema? projectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            requestInfo.PathComponents.ProjectNamespace
         );
 
         if (projectSchema == null)
         {
             _logger.LogDebug(
                 "Invalid resource project namespace in '{EndpointName}' - {TraceId}",
-                requestData.PathComponents.EndpointName,
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.PathComponents.EndpointName,
+                requestInfo.FrontendRequest.TraceId.Value
             );
-            requestData.FrontendResponse = new FrontendResponse(
+            requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
-                Body: $"Invalid resource '{requestData.PathComponents.EndpointName}'.",
+                Body: $"Invalid resource '{requestInfo.PathComponents.EndpointName}'.",
                 Headers: []
             );
             return;
         }
 
-        requestData.ProjectSchema = projectSchema;
+        requestInfo.ProjectSchema = projectSchema;
 
-        JsonNode? resourceSchemaNode = requestData.ProjectSchema.FindResourceSchemaNodeByEndpointName(
-            requestData.PathComponents.EndpointName
+        JsonNode? resourceSchemaNode = requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(
+            requestInfo.PathComponents.EndpointName
         );
 
         if (resourceSchemaNode == null)
         {
             _logger.LogDebug(
                 "Invalid resource name in '{EndpointName}' - {TraceId}",
-                requestData.PathComponents.EndpointName,
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.PathComponents.EndpointName,
+                requestInfo.FrontendRequest.TraceId.Value
             );
-            requestData.FrontendResponse = new FrontendResponse(
+            requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
                 Body: ForNotFound(
                     "The specified data could not be found.",
-                    requestData.FrontendRequest.TraceId
+                    requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: [],
                 ContentType: "application/problem+json"
@@ -68,7 +68,7 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             return;
         }
 
-        requestData.ResourceSchema = new(resourceSchemaNode);
+        requestInfo.ResourceSchema = new(resourceSchemaNode);
 
         await next();
     }

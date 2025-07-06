@@ -23,26 +23,26 @@ internal class ProvideAuthorizationFiltersMiddleware(
     ILogger _logger
 ) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         try
         {
             _logger.LogDebug(
                 "Entering ProvideAuthorizationFiltersMiddleware - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
             // Check if ClientAuthorizations has been populated by JWT middleware
-            if (requestData.ClientAuthorizations == No.ClientAuthorizations)
+            if (requestInfo.ClientAuthorizations == No.ClientAuthorizations)
             {
                 _logger.LogWarning(
                     "ProvideAuthorizationFiltersMiddleware: No ClientAuthorizations found - JWT authentication may have failed - {TraceId}",
-                    requestData.FrontendRequest.TraceId.Value
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
-                requestData.FrontendResponse = new FrontendResponse(
+                requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: (int)HttpStatusCode.Unauthorized,
                     Body: FailureResponse.ForUnauthorized(
-                        requestData.FrontendRequest.TraceId,
+                        requestInfo.FrontendRequest.TraceId,
                         error: "Unauthorized",
                         description: "No authorization information found. Ensure valid JWT token is provided."
                     ),
@@ -53,7 +53,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
             }
 
             List<AuthorizationStrategyEvaluator> authorizationStrategyEvaluators = [];
-            foreach (string authorizationStrategy in requestData.ResourceActionAuthStrategies)
+            foreach (string authorizationStrategy in requestInfo.ResourceActionAuthStrategies)
             {
                 var authFiltersProvider =
                     _authorizationServiceFactory.GetByName<IAuthorizationFiltersProvider>(
@@ -61,10 +61,10 @@ internal class ProvideAuthorizationFiltersMiddleware(
                     );
                 if (authFiltersProvider == null)
                 {
-                    requestData.FrontendResponse = new FrontendResponse(
+                    requestInfo.FrontendResponse = new FrontendResponse(
                         StatusCode: (int)HttpStatusCode.Forbidden,
                         Body: FailureResponse.ForForbidden(
-                            traceId: requestData.FrontendRequest.TraceId,
+                            traceId: requestInfo.FrontendRequest.TraceId,
                             errors:
                             [
                                 $"Could not find authorization filters implementation for the following strategy: '{authorizationStrategy}'.",
@@ -77,20 +77,20 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 }
 
                 authorizationStrategyEvaluators.Add(
-                    authFiltersProvider.GetFilters(requestData.ClientAuthorizations)
+                    authFiltersProvider.GetFilters(requestInfo.ClientAuthorizations)
                 );
             }
 
-            requestData.AuthorizationStrategyEvaluators = [.. authorizationStrategyEvaluators];
+            requestInfo.AuthorizationStrategyEvaluators = [.. authorizationStrategyEvaluators];
 
             await next();
         }
         catch (AuthorizationException ex)
         {
-            requestData.FrontendResponse = new FrontendResponse(
+            requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: (int)HttpStatusCode.Forbidden,
                 Body: FailureResponse.ForForbidden(
-                    traceId: requestData.FrontendRequest.TraceId,
+                    traceId: requestInfo.FrontendRequest.TraceId,
                     errors: [ex.Message]
                 ),
                 Headers: [],
@@ -102,14 +102,14 @@ internal class ProvideAuthorizationFiltersMiddleware(
             _logger.LogError(
                 ex,
                 "Error while authorizing the request - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
-            requestData.FrontendResponse = new FrontendResponse(
+            requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 500,
                 Body: new JsonObject
                 {
                     ["message"] = $"Error while authorizing the request.{ex.Message}",
-                    ["traceId"] = requestData.FrontendRequest.TraceId.Value,
+                    ["traceId"] = requestInfo.FrontendRequest.TraceId.Value,
                 },
                 Headers: []
             );

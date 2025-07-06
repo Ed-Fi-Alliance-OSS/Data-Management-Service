@@ -54,7 +54,7 @@ public class JwtAuthenticationMiddlewareTests
             QueryParameters: new Dictionary<string, string>(),
             TraceId: new TraceId("123")
         );
-        var requestData = new RequestData(frontendRequest, RequestMethod.GET);
+        var requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
         var nextCalled = false;
         Func<Task> next = () =>
@@ -64,11 +64,11 @@ public class JwtAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(requestData, next);
+        await _middleware.Execute(requestInfo, next);
 
         // Assert
         nextCalled.Should().BeTrue();
-        requestData.FrontendResponse.Should().Be(No.FrontendResponse);
+        requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
     }
 
     [Test]
@@ -82,7 +82,7 @@ public class JwtAuthenticationMiddlewareTests
             QueryParameters: new Dictionary<string, string>(),
             TraceId: new TraceId("123")
         );
-        var requestData = new RequestData(frontendRequest, RequestMethod.GET);
+        var requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
         var expectedPrincipal = new ClaimsPrincipal();
         var expectedAuthorizations = new ClientAuthorizations(
@@ -112,12 +112,12 @@ public class JwtAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(requestData, next);
+        await _middleware.Execute(requestInfo, next);
 
         // Assert
         nextCalled.Should().BeTrue();
-        requestData.ClientAuthorizations.Should().Be(expectedAuthorizations);
-        requestData.FrontendResponse.Should().Be(No.FrontendResponse);
+        requestInfo.ClientAuthorizations.Should().Be(expectedAuthorizations);
+        requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
     }
 
     [Test]
@@ -131,7 +131,7 @@ public class JwtAuthenticationMiddlewareTests
             QueryParameters: new Dictionary<string, string>(),
             TraceId: new TraceId("123")
         );
-        var requestData = new RequestData(frontendRequest, RequestMethod.GET);
+        var requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
         A.CallTo(() =>
                 _jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
@@ -149,13 +149,13 @@ public class JwtAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(requestData, next);
+        await _middleware.Execute(requestInfo, next);
 
         // Assert
         nextCalled.Should().BeFalse();
-        requestData.FrontendResponse.StatusCode.Should().Be(401);
-        requestData.FrontendResponse.Headers.Should().ContainKey("WWW-Authenticate");
-        requestData.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        requestInfo.FrontendResponse.StatusCode.Should().Be(401);
+        requestInfo.FrontendResponse.Headers.Should().ContainKey("WWW-Authenticate");
+        requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
     }
 
     [Test]
@@ -169,7 +169,7 @@ public class JwtAuthenticationMiddlewareTests
             QueryParameters: new Dictionary<string, string>(),
             TraceId: new TraceId("123")
         );
-        var requestData = new RequestData(frontendRequest, RequestMethod.GET);
+        var requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
         var nextCalled = false;
         Func<Task> next = () =>
@@ -179,11 +179,11 @@ public class JwtAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(requestData, next);
+        await _middleware.Execute(requestInfo, next);
 
         // Assert
         nextCalled.Should().BeFalse();
-        requestData.FrontendResponse.StatusCode.Should().Be(401);
+        requestInfo.FrontendResponse.StatusCode.Should().Be(401);
     }
 
     [Test]
@@ -197,7 +197,7 @@ public class JwtAuthenticationMiddlewareTests
             QueryParameters: new Dictionary<string, string>(),
             TraceId: new TraceId("123")
         );
-        var requestData = new RequestData(frontendRequest, RequestMethod.GET);
+        var requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
         var nextCalled = false;
         Func<Task> next = () =>
@@ -207,11 +207,11 @@ public class JwtAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(requestData, next);
+        await _middleware.Execute(requestInfo, next);
 
         // Assert
         nextCalled.Should().BeFalse();
-        requestData.FrontendResponse.StatusCode.Should().Be(401);
+        requestInfo.FrontendResponse.StatusCode.Should().Be(401);
     }
 
     [Test]
@@ -234,8 +234,8 @@ public class JwtAuthenticationMiddlewareTests
             QueryParameters: new Dictionary<string, string>(),
             TraceId: new TraceId("123")
         );
-        var requestData = new RequestData(frontendRequest, RequestMethod.GET);
-        requestData.ClientAuthorizations = new ClientAuthorizations(
+        var requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
+        requestInfo.ClientAuthorizations = new ClientAuthorizations(
             TokenId: "not-allowed-client",
             ClaimSetName: "edfi-admin",
             EducationOrganizationIds: new List<EducationOrganizationId>(),
@@ -250,10 +250,10 @@ public class JwtAuthenticationMiddlewareTests
         };
 
         // Act
-        await _middleware.Execute(requestData, next);
+        await _middleware.Execute(requestInfo, next);
 
         // Assert
         nextCalled.Should().BeTrue(); // Should bypass validation for non-allowed client
-        requestData.FrontendResponse.Should().Be(No.FrontendResponse);
+        requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
     }
 }

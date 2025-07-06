@@ -64,7 +64,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -73,17 +73,17 @@ public class DeleteByIdHandlerTests
             {
                 ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
             };
-            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            _context.ResourceSchema = GetResourceSchema();
-            await deleteByIdHandler.Execute(_context, NullNext);
+            _requestInfo.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(204);
-            _context.FrontendResponse.Body.Should().BeNull();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(204);
+            _requestInfo.FrontendResponse.Body.Should().BeNull();
         }
     }
 
@@ -99,7 +99,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -108,18 +108,18 @@ public class DeleteByIdHandlerTests
             {
                 ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
             };
-            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
 
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            _context.ResourceSchema = GetResourceSchema();
-            await deleteByIdHandler.Execute(_context, NullNext);
+            _requestInfo.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(404);
-            _context.FrontendResponse.Body.Should().BeNull();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(404);
+            _requestInfo.FrontendResponse.Body.Should().BeNull();
         }
     }
 
@@ -137,7 +137,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -146,18 +146,18 @@ public class DeleteByIdHandlerTests
             {
                 ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
             };
-            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
 
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            _context.ResourceSchema = GetResourceSchema();
-            await deleteByIdHandler.Execute(_context, NullNext);
+            _requestInfo.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(409);
-            _context
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain(string.Join(", ", Repository.ResponseBody));
@@ -176,7 +176,7 @@ public class DeleteByIdHandlerTests
             }
         }
 
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -185,16 +185,16 @@ public class DeleteByIdHandlerTests
             {
                 ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
             };
-            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            _context.ResourceSchema = GetResourceSchema();
-            await deleteByIdHandler.Execute(_context, NullNext);
+            _requestInfo.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(409);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(409);
         }
     }
 
@@ -213,7 +213,7 @@ public class DeleteByIdHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestData _context = No.RequestData(_traceId);
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
 
         [SetUp]
         public async Task Setup()
@@ -222,16 +222,16 @@ public class DeleteByIdHandlerTests
             {
                 ["educationOrganizationTypes"] = new JsonArray { "Type1", "Type2" },
             };
-            _context.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
+            _requestInfo.ProjectSchema = new ProjectSchema(projectSchemaNode, NullLogger.Instance);
             IPipelineStep deleteByIdHandler = Handler(new Repository());
-            _context.ResourceSchema = GetResourceSchema();
-            await deleteByIdHandler.Execute(_context, NullNext);
+            _requestInfo.ResourceSchema = GetResourceSchema();
+            await deleteByIdHandler.Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = $$"""
 {
@@ -240,15 +240,15 @@ public class DeleteByIdHandlerTests
 }
 """;
 
-            _context.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(_context.FrontendResponse.Body, JsonNode.Parse(expected))
+                .DeepEquals(_requestInfo.FrontendResponse.Body, JsonNode.Parse(expected))
                 .Should()
                 .BeTrue(
                     $"""
 expected: {expected}
 
-actual: {_context.FrontendResponse.Body}
+actual: {_requestInfo.FrontendResponse.Body}
 """
                 );
         }

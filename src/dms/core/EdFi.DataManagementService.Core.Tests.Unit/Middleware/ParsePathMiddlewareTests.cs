@@ -30,7 +30,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_An_Empty_Path : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -63,7 +63,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_An_Invalid_Path : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -96,7 +96,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Path_Without_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -132,7 +132,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Path_With_Valid_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
         private readonly string documentUuid = "7825fba8-0b3d-4fc9-ae72-5ad8194d3ce2";
 
         [SetUp]
@@ -170,7 +170,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Path_With_Invalid_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -213,7 +213,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_With_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -254,7 +254,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Put_With_Missing_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -295,7 +295,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Delete_With_Missing_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()

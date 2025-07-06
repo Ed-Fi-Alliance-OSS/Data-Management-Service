@@ -22,16 +22,16 @@ internal class ValidateEqualityConstraintMiddleware(
     IEqualityConstraintValidator _equalityConstraintValidator
 ) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ValidateEqualityConstraintMiddleware- {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         Dictionary<string, string[]> validationErrors = _equalityConstraintValidator.Validate(
-            requestData.ParsedBody,
-            requestData.ResourceSchema.EqualityConstraints
+            requestInfo.ParsedBody,
+            requestInfo.ResourceSchema.EqualityConstraints
         );
 
         if (validationErrors.Count == 0)
@@ -42,7 +42,7 @@ internal class ValidateEqualityConstraintMiddleware(
         {
             var failureResponse = FailureResponse.ForDataValidation(
                 "Data validation failed. See 'validationErrors' for details.",
-                requestData.FrontendRequest.TraceId,
+                requestInfo.FrontendRequest.TraceId,
                 validationErrors,
                 []
             );
@@ -50,11 +50,11 @@ internal class ValidateEqualityConstraintMiddleware(
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
-                requestData.PathComponents.EndpointName,
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.PathComponents.EndpointName,
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.FrontendResponse = new FrontendResponse(
+            requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: failureResponse,
                 Headers: []

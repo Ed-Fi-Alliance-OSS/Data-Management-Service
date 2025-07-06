@@ -43,20 +43,20 @@ public class QueryRequestHandlerTests
             }
         }
 
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep queryHandler = Handler(new Repository());
-            await queryHandler.Execute(_context, NullNext);
+            await queryHandler.Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(200);
-            _context
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Be(Repository.ResponseBody.ToJsonString());
@@ -75,20 +75,20 @@ public class QueryRequestHandlerTests
             }
         }
 
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep queryHandler = Handler(new Repository());
-            await queryHandler.Execute(_context, NullNext);
+            await queryHandler.Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
-            _context.FrontendResponse.Body.Should().BeNull();
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.Body.Should().BeNull();
         }
     }
 
@@ -107,31 +107,31 @@ public class QueryRequestHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestData _context = No.RequestData(_traceId);
+        private readonly RequestInfo _requestInfo = No.RequestInfo(_traceId);
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep queryHandler = Handler(new Repository());
-            await queryHandler.Execute(_context, NullNext);
+            await queryHandler.Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = ToJsonError("FailureMessage", new TraceId(_traceId));
 
-            _context.FrontendResponse.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(_context.FrontendResponse.Body, expected)
+                .DeepEquals(_requestInfo.FrontendResponse.Body, expected)
                 .Should()
                 .BeTrue(
                     $"""
                     expected: {expected}
 
-                    actual: {_context.FrontendResponse.Body}
+                    actual: {_requestInfo.FrontendResponse.Body}
                     """
                 );
         }

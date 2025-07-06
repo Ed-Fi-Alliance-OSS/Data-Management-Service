@@ -131,11 +131,11 @@ internal static class No
     ];
 
     /// <summary>
-    /// A constructor of a RequestData initialized with null objects
+    /// A constructor of a RequestInfo initialized with null objects
     /// </summary>
-    public static RequestData RequestData(string traceId = "")
+    public static RequestInfo RequestInfo(string traceId = "")
     {
-        return new RequestData(CreateFrontendRequest(traceId), RequestMethod.GET);
+        return new RequestInfo(CreateFrontendRequest(traceId), RequestMethod.GET);
     }
 
     /// <summary>
