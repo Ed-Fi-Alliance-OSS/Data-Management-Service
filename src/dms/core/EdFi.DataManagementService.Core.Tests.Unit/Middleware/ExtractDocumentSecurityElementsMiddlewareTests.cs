@@ -60,13 +60,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/assessments",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -127,13 +121,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -197,13 +185,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )

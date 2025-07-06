@@ -116,4 +116,11 @@ internal class RequestData(FrontendRequest _frontendRequest, RequestMethod _meth
     /// </summary>
     public AuthorizationSecurableInfo[] AuthorizationSecurableInfo { get; set; } =
         No.AuthorizationSecurableInfo;
+
+    /// <summary>
+    /// ApiDetails retrieved from the token, used for resource authorization.
+    /// This will be null when the frontend passes the request, and will be populated
+    /// by the JWT authentication middleware in Core.
+    /// </summary>
+    public ClientAuthorizations ClientAuthorizations { get; set; } = No.ClientAuthorizations;
 }

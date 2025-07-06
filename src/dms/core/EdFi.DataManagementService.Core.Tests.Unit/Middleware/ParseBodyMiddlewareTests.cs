@@ -34,17 +34,11 @@ public class ParseBodyMiddlewareTests
         public async Task Setup()
         {
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: null,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -82,17 +76,11 @@ public class ParseBodyMiddlewareTests
         public async Task Setup()
         {
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: "",
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -130,17 +118,11 @@ public class ParseBodyMiddlewareTests
         public async Task Setup()
         {
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: """{ "id":"value" "name":"firstname"}""",
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);

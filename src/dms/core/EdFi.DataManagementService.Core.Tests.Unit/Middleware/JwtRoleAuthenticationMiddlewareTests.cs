@@ -44,8 +44,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             Headers: new Dictionary<string, string>(),
             Path: "/test",
             QueryParameters: new Dictionary<string, string>(),
-            TraceId: new TraceId("trace123"),
-            ClientAuthorizations: null
+            TraceId: new TraceId("trace123")
         );
         _requestData = new RequestData(_frontendRequest, RequestMethod.GET);
     }

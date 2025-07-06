@@ -52,8 +52,7 @@ public class JwtAuthenticationMiddlewareTests
             Body: null,
             Headers: new Dictionary<string, string>(),
             QueryParameters: new Dictionary<string, string>(),
-            TraceId: new TraceId("123"),
-            ClientAuthorizations: null
+            TraceId: new TraceId("123")
         );
         var requestData = new RequestData(frontendRequest, RequestMethod.GET);
 
@@ -81,8 +80,7 @@ public class JwtAuthenticationMiddlewareTests
             Body: null,
             Headers: new Dictionary<string, string> { ["Authorization"] = "Bearer valid-token" },
             QueryParameters: new Dictionary<string, string>(),
-            TraceId: new TraceId("123"),
-            ClientAuthorizations: null
+            TraceId: new TraceId("123")
         );
         var requestData = new RequestData(frontendRequest, RequestMethod.GET);
 
@@ -118,7 +116,7 @@ public class JwtAuthenticationMiddlewareTests
 
         // Assert
         nextCalled.Should().BeTrue();
-        requestData.FrontendRequest.ClientAuthorizations.Should().Be(expectedAuthorizations);
+        requestData.ClientAuthorizations.Should().Be(expectedAuthorizations);
         requestData.FrontendResponse.Should().Be(No.FrontendResponse);
     }
 
@@ -131,8 +129,7 @@ public class JwtAuthenticationMiddlewareTests
             Body: null,
             Headers: new Dictionary<string, string> { ["Authorization"] = "Bearer invalid-token" },
             QueryParameters: new Dictionary<string, string>(),
-            TraceId: new TraceId("123"),
-            ClientAuthorizations: null
+            TraceId: new TraceId("123")
         );
         var requestData = new RequestData(frontendRequest, RequestMethod.GET);
 
@@ -170,8 +167,7 @@ public class JwtAuthenticationMiddlewareTests
             Body: null,
             Headers: new Dictionary<string, string>(),
             QueryParameters: new Dictionary<string, string>(),
-            TraceId: new TraceId("123"),
-            ClientAuthorizations: null
+            TraceId: new TraceId("123")
         );
         var requestData = new RequestData(frontendRequest, RequestMethod.GET);
 
@@ -199,8 +195,7 @@ public class JwtAuthenticationMiddlewareTests
             Body: null,
             Headers: new Dictionary<string, string> { ["Authorization"] = "Basic dXNlcjpwYXNz" },
             QueryParameters: new Dictionary<string, string>(),
-            TraceId: new TraceId("123"),
-            ClientAuthorizations: null
+            TraceId: new TraceId("123")
         );
         var requestData = new RequestData(frontendRequest, RequestMethod.GET);
 
@@ -237,15 +232,15 @@ public class JwtAuthenticationMiddlewareTests
             Body: null,
             Headers: new Dictionary<string, string>(),
             QueryParameters: new Dictionary<string, string>(),
-            TraceId: new TraceId("123"),
-            ClientAuthorizations: new ClientAuthorizations(
-                TokenId: "not-allowed-client",
-                ClaimSetName: "edfi-admin",
-                EducationOrganizationIds: new List<EducationOrganizationId>(),
-                NamespacePrefixes: new List<NamespacePrefix>()
-            )
+            TraceId: new TraceId("123")
         );
         var requestData = new RequestData(frontendRequest, RequestMethod.GET);
+        requestData.ClientAuthorizations = new ClientAuthorizations(
+            TokenId: "not-allowed-client",
+            ClaimSetName: "edfi-admin",
+            EducationOrganizationIds: new List<EducationOrganizationId>(),
+            NamespacePrefixes: new List<NamespacePrefix>()
+        );
 
         var nextCalled = false;
         Func<Task> next = () =>

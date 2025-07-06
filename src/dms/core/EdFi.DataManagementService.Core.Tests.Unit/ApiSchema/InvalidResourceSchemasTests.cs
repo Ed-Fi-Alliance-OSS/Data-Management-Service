@@ -83,17 +83,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noresourcenames/123"),
-                    null,
+                    Path: new("/ed-fi/noresourcenames/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -110,17 +104,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noIsDescriptors/123"),
-                    null,
+                    Path: new("/ed-fi/noIsDescriptors/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -137,17 +125,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noallowidentityupdates/123"),
-                    null,
+                    Path: new("/ed-fi/noallowidentityupdates/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -169,17 +151,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noIsSchoolYearEnumerations/123"),
-                    null,
+                    Path: new("/ed-fi/noIsSchoolYearEnumerations/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -196,17 +172,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noJsonSchemaForInserts/123"),
-                    null,
+                    Path: new("/ed-fi/noJsonSchemaForInserts/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -223,17 +193,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noidentityjsonpaths/123"),
-                    null,
+                    Path: new("/ed-fi/noidentityjsonpaths/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -250,17 +214,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noequalityconstraints/123"),
-                    null,
+                    Path: new("/ed-fi/noequalityconstraints/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -277,17 +235,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noIsSubclasses/123"),
-                    null,
+                    Path: new("/ed-fi/noIsSubclasses/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -304,17 +256,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noSubClassTypes/123"),
-                    null,
+                    Path: new("/ed-fi/noSubClassTypes/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -331,17 +277,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/nosuperclassresourcenames/123"),
-                    null,
+                    Path: new("/ed-fi/nosuperclassresourcenames/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -358,17 +298,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/nosuperclassprojectnames/123"),
-                    null,
+                    Path: new("/ed-fi/nosuperclassprojectnames/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -385,17 +319,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/nosuperclassidentitydocumentkeys/123"),
-                    null,
+                    Path: new("/ed-fi/nosuperclassidentitydocumentkeys/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act
@@ -412,17 +340,11 @@ public class InvalidResourceSchemasTests
                 // Arrange
                 ApiService apiService = BuildCoreFacade(apiSchemaProvider!);
                 FrontendRequest request = new(
-                    new("/ed-fi/noSubclassIdentityDocumentKeys/123"),
-                    null,
+                    Path: new("/ed-fi/noSubclassIdentityDocumentKeys/123"),
+                    Body: null,
                     Headers: [],
-                    [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    QueryParameters: [],
+                    TraceId: new TraceId("")
                 );
 
                 // Act

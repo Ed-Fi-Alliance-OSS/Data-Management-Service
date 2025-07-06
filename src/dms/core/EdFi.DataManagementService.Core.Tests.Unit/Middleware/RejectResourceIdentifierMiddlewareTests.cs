@@ -38,13 +38,7 @@ public class RejectResourceIdentifierMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/students",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -88,13 +82,7 @@ public class RejectResourceIdentifierMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/students",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);

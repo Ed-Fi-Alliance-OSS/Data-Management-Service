@@ -91,19 +91,7 @@ internal static class No
     /// The null object for FrontendRequest
     /// </summary>
     public static FrontendRequest CreateFrontendRequest(string traceId) =>
-        new(
-            Body: "{}",
-            Headers: [],
-            Path: "",
-            QueryParameters: [],
-            TraceId: new TraceId(traceId),
-            ClientAuthorizations: new ClientAuthorizations(
-                TokenId: "",
-                ClaimSetName: "",
-                EducationOrganizationIds: [],
-                NamespacePrefixes: []
-            )
-        );
+        new(Body: "{}", Headers: [], Path: "", QueryParameters: [], TraceId: new TraceId(traceId));
 
     /// <summary>
     /// The null object for FrontendResponse
@@ -154,4 +142,14 @@ internal static class No
     /// The null object for AuthorizationPathways
     /// </summary>
     public static readonly IReadOnlyList<AuthorizationPathway> AuthorizationPathways = [];
+
+    /// <summary>
+    /// The null object for ClientAuthorizations
+    /// </summary>
+    public static readonly ClientAuthorizations ClientAuthorizations = new(
+        TokenId: "",
+        ClaimSetName: "",
+        EducationOrganizationIds: [],
+        NamespacePrefixes: []
+    );
 }

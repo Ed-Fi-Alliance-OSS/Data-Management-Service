@@ -375,13 +375,7 @@ public class ApiServiceHotReloadIntegrationTests
             Body: body,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("test-trace-id"),
-            ClientAuthorizations: new ClientAuthorizations(
-                TokenId: "test-token",
-                ClaimSetName: "test-claim-set",
-                EducationOrganizationIds: [],
-                NamespacePrefixes: []
-            )
+            TraceId: new TraceId("test-trace-id")
         );
     }
 

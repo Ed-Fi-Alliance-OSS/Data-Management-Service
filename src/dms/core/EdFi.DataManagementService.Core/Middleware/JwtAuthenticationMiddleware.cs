@@ -47,7 +47,10 @@ internal class JwtAuthenticationMiddleware : IPipelineStep
         if (_options.EnabledForClients.Count > 0)
         {
             // Extract client ID from existing ClientAuthorizations if available
-            var clientId = requestData.FrontendRequest.ClientAuthorizations?.TokenId;
+            var clientId =
+                requestData.ClientAuthorizations == No.ClientAuthorizations
+                    ? null
+                    : requestData.ClientAuthorizations.TokenId;
             if (clientId == null || !_options.EnabledForClients.Contains(clientId))
             {
                 _logger.LogDebug(
@@ -100,11 +103,8 @@ internal class JwtAuthenticationMiddleware : IPipelineStep
             return;
         }
 
-        // Update FrontendRequest with client authorizations
-        requestData.FrontendRequest = requestData.FrontendRequest with
-        {
-            ClientAuthorizations = clientAuthorizations,
-        };
+        // Update RequestData with client authorizations
+        requestData.ClientAuthorizations = clientAuthorizations;
 
         _logger.LogDebug(
             "JWT authentication successful for TokenId: {TokenId} - {TraceId}",

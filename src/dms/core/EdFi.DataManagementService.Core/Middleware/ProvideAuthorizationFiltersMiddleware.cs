@@ -33,7 +33,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
             );
 
             // Check if ClientAuthorizations has been populated by JWT middleware
-            if (requestData.FrontendRequest.ClientAuthorizations == null)
+            if (requestData.ClientAuthorizations == No.ClientAuthorizations)
             {
                 _logger.LogWarning(
                     "ProvideAuthorizationFiltersMiddleware: No ClientAuthorizations found - JWT authentication may have failed - {TraceId}",
@@ -77,7 +77,7 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 }
 
                 authorizationStrategyEvaluators.Add(
-                    authFiltersProvider.GetFilters(requestData.FrontendRequest.ClientAuthorizations)
+                    authFiltersProvider.GetFilters(requestData.ClientAuthorizations)
                 );
             }
 

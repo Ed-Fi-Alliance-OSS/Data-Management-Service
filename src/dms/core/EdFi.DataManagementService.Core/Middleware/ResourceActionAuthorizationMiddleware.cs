@@ -33,7 +33,7 @@ internal class ResourceActionAuthorizationMiddleware(
             );
 
             // Check if ClientAuthorizations has been populated by JWT middleware
-            if (requestData.FrontendRequest.ClientAuthorizations == null)
+            if (requestData.ClientAuthorizations == No.ClientAuthorizations)
             {
                 _logger.LogWarning(
                     "ResourceActionAuthorizationMiddleware: No ClientAuthorizations found - JWT authentication may have failed - {TraceId}",
@@ -52,7 +52,7 @@ internal class ResourceActionAuthorizationMiddleware(
                 return;
             }
 
-            string claimSetName = requestData.FrontendRequest.ClientAuthorizations.ClaimSetName;
+            string claimSetName = requestData.ClientAuthorizations.ClaimSetName;
             _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
 
             _logger.LogInformation("Retrieving claim set list");

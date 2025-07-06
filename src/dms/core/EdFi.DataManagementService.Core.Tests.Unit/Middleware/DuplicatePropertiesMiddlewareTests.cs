@@ -52,17 +52,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -122,17 +116,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -194,17 +182,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/bellschedules",
+                Path: "ed-fi/bellschedules",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -264,17 +246,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -334,17 +310,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -394,17 +364,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                $"ed-fi/students/{id}",
+                Path: $"ed-fi/students/{id}",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
@@ -467,17 +431,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                $"ed-fi/schools/{id}",
+                Path: $"ed-fi/schools/{id}",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);

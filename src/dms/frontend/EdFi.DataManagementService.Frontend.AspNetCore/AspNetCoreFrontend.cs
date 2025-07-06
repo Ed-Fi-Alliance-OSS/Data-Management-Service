@@ -98,8 +98,7 @@ public static class AspNetCoreFrontend
             Headers: ExtractHeadersFrom(HttpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
-            TraceId: ExtractTraceIdFrom(HttpRequest, options),
-            ClientAuthorizations: null // JWT processing moved to Core
+            TraceId: ExtractTraceIdFrom(HttpRequest, options)
         );
     }
 

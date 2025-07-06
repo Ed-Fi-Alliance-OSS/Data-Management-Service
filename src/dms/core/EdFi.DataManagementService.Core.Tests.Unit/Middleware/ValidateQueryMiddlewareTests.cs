@@ -49,13 +49,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_context, NullNext);
@@ -125,13 +119,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_context, NullNext);
@@ -236,13 +224,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
             _context = NewRequestData(frontendRequest, RequestMethod.GET);
@@ -385,13 +367,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
             _context = NewRequestData(frontendRequest, RequestMethod.GET);
@@ -467,13 +443,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
             _context = NewRequestData(frontendRequest, RequestMethod.GET);
@@ -553,13 +523,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
             _context = NewRequestData(frontendRequest, RequestMethod.GET);
