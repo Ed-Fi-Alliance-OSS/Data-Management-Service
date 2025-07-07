@@ -42,15 +42,6 @@ param (
     $AddExtensionSecurityMetadata
 )
 
-if($AddExtensionSecurityMetadata)
-{
-    Import-Module ./setup-extension-security-metadata.psm1 -Force
-    AddExtensionSecurityMetadata -EnvironmentFile $EnvironmentFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to set up extension security metadata, with exit code $LASTEXITCODE."
-    }
-}
-
 $files = @(
     "-f",
     "postgresql.yml",
@@ -137,6 +128,17 @@ else {
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to load initial data, with exit code $LASTEXITCODE."
         }
+    }
+
+    if($AddExtensionSecurityMetadata)
+    {
+        Write-Output "Updating Claim Hierarchy..."
+        Import-Module ./setup-extension-security-metadata.psm1 -Force
+        UpdateExtensionSecurityMetadata -EnvironmentFile $EnvironmentFile
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to set up extension security metadata, with exit code $LASTEXITCODE."
+        }
+        docker restart dms-published-dms-1
     }
 
     Start-Sleep 10
