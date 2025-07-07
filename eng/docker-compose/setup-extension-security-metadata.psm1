@@ -52,14 +52,11 @@ function Get-SchemaPackagesFromEnv {
     }
 }
 
-function AddExtensionSecurityMetadata {
+function Get-InputFileList {
     param (
+        [Parameter(Mandatory = $true)]
         [string]$EnvironmentFile
     )
-
-    try {
-
-    $schemaPackages = Get-SchemaPackagesFromEnv -EnvFilePath $EnvironmentFile
 
     # Initial file list
     $inputFileList = @(
@@ -68,49 +65,85 @@ function AddExtensionSecurityMetadata {
         "E2E-RelationshipsWithEdOrgsOnlyClaimSet.json"
     )
 
-    $schemaPackages |
-            Where-Object { $_.extensionName -and $_.extensionName.Trim() -ne "" } |
-            ForEach-Object { $inputFileList += "$($_.extensionName)ExtensionResourceClaims.json" }
-
-    $inputFileListString = $inputFileList -join ";"
-    Write-Host "Input file list: $inputFileListString"
-
-    Push-Location ../CmsHierarchy/
-    Write-Output "Loading extension resource claims..."
-    dotnet build CmsHierarchy.csproj -c Release
-
-    dotnet run --configuration Release --project "CmsHierarchy.csproj" --no-launch-profile -- --command Transform --input $inputFileListString --outputFormat ToFile --output ../docker-compose/SecurityMetadata.json --skipAuths "RelationshipsWithEdOrgsAndPeopleInverted;RelationshipsWithStudentsOnlyThroughResponsibility;RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
-    Pop-Location
-
-    $updatedAuthorizationHierarchyFilePath = "SecurityMetadata.json"
-
-    # Read JSON content
-    $jsonContent = Get-Content -Raw -Path $updatedAuthorizationHierarchyFilePath
-    $escapedJson = $jsonContent -replace "'", "''"
-
-    $existingScriptFilePath = Join-Path -Path $PSScriptRoot -ChildPath "..\..\src\config\backend\EdFi.DmsConfigurationService.Backend.Postgresql\Deploy\Scripts\0011_Insert_ClaimsHierarchy.sql"
-    $resolvedPath = Resolve-Path $existingScriptFilePath
-
-    # Read original .sql file content
-    $originalLines = Get-Content -Raw -Path $resolvedPath
-
-    # Retain only the commented lines (lines starting with "--")
-    $commentLines = Get-Content -Path $resolvedPath | Where-Object {
-        $_.TrimStart().StartsWith("--")
+    $SchemaPackages = Get-SchemaPackagesFromEnv -EnvFilePath $EnvironmentFile
+    if ($null -eq $SchemaPackages) {
+        throw "Failed to get schema packages from environment file"
     }
 
-    # Define the new INSERT SQL
-    $insertStatement = @(
-        "`nINSERT INTO dmscs.claimshierarchy(",
-        "`t hierarchy)",
-        "`tVALUES ('$escapedJson'::jsonb);"
-    ) -join "`n"
+    $SchemaPackages |
+        Where-Object { $_.extensionName -and $_.extensionName.Trim() -ne "" } |
+        ForEach-Object { $inputFileList += "$($_.extensionName)ExtensionResourceClaims.json" }
 
-    # Combine comments and new insert
-    $finalContent = ($commentLines -join "`n") + "`n" + $insertStatement
+    return $inputFileList
+}
 
-    # Write the updated file
-    Set-Content -Path $resolvedPath -Value $finalContent -Encoding UTF8
+function Invoke-CmsHierarchyTransform {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$InputFileListString
+    )
+
+    try {
+        Push-Location ../CmsHierarchy/
+        Write-Output "Loading extension resource claims..."
+        dotnet build CmsHierarchy.csproj -c Release
+
+        dotnet run --configuration Release --project "CmsHierarchy.csproj" --no-launch-profile -- --command Transform --input $InputFileListString --outputFormat ToFile --output ../docker-compose/SecurityMetadata.json --skipAuths "RelationshipsWithEdOrgsAndPeopleInverted;RelationshipsWithStudentsOnlyThroughResponsibility;RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
+        Pop-Location
+    }
+    catch {
+        Pop-Location
+        throw
+    }
+}
+
+function Get-EscapedJsonContent {
+    param (
+        [Parameter(Mandatory = $true)]
+        [string]$JsonFilePath
+    )
+
+    # Read JSON content
+    $jsonContent = Get-Content -Raw -Path $JsonFilePath
+    return $jsonContent -replace "'", "''"
+}
+
+function AddExtensionSecurityMetadata {
+    param (
+        [string]$EnvironmentFile
+    )
+
+    try {
+        $inputFileList = Get-InputFileList -EnvironmentFile $EnvironmentFile
+        $inputFileListString = $inputFileList -join ";"
+        Write-Host "Input file list: $inputFileListString"
+
+        Invoke-CmsHierarchyTransform -InputFileListString $inputFileListString
+
+        $updatedAuthorizationHierarchyFilePath = "SecurityMetadata.json"
+        $escapedJson = Get-EscapedJsonContent -JsonFilePath $updatedAuthorizationHierarchyFilePath
+        Remove-Item -Path $updatedAuthorizationHierarchyFilePath -ErrorAction SilentlyContinue
+
+        $existingScriptFilePath = Join-Path -Path $PSScriptRoot -ChildPath "..\..\src\config\backend\EdFi.DmsConfigurationService.Backend.Postgresql\Deploy\Scripts\0011_Insert_ClaimsHierarchy.sql"
+        $resolvedPath = Resolve-Path $existingScriptFilePath
+
+        # Retain only the commented lines (lines starting with "--")
+        $commentLines = Get-Content -Path $resolvedPath | Where-Object {
+            $_.TrimStart().StartsWith("--")
+        }
+
+        # Define the new INSERT SQL
+        $insertStatement = @(
+            "`nINSERT INTO dmscs.claimshierarchy(",
+            "`t hierarchy)",
+            "`tVALUES ('$escapedJson'::jsonb);"
+        ) -join "`n"
+
+        # Combine comments and new insert
+        $finalContent = ($commentLines -join "`n") + "`n" + $insertStatement
+
+        # Write the updated file
+        Set-Content -Path $resolvedPath -Value $finalContent -Encoding UTF8
     }
     catch {
         Write-Error "Failed to load extension resource claims: $_"
@@ -124,39 +157,18 @@ function UpdateExtensionSecurityMetadata {
     )
 
     try {
-        $schemaPackages = Get-SchemaPackagesFromEnv -EnvFilePath $EnvironmentFile
-
-        # Initial file list
-        $inputFileList = @(
-            "E2E-NameSpaceBasedClaimSet.json",
-            "E2E-NoFurtherAuthRequiredClaimSet.json",
-            "E2E-RelationshipsWithEdOrgsOnlyClaimSet.json"
-        )
-
-        $schemaPackages |
-                Where-Object { $_.extensionName -and $_.extensionName.Trim() -ne "" } |
-                ForEach-Object { $inputFileList += "$($_.extensionName)ExtensionResourceClaims.json" }
-
+        $inputFileList = Get-InputFileList -EnvironmentFile $EnvironmentFile
         $inputFileListString = $inputFileList -join ";"
         Write-Host "Input file list: $inputFileListString"
 
-        Push-Location ../CmsHierarchy/
-        Write-Output "Loading extension resource claims..."
-        dotnet build CmsHierarchy.csproj -c Release
-
-        dotnet run --configuration Release --project "CmsHierarchy.csproj" --no-launch-profile -- --command Transform --input $inputFileListString --outputFormat ToFile --output ../docker-compose/SecurityMetadata.json --skipAuths "RelationshipsWithEdOrgsAndPeopleInverted;RelationshipsWithStudentsOnlyThroughResponsibility;RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
-        Pop-Location
+        Invoke-CmsHierarchyTransform -InputFileListString $inputFileListString
 
         $updatedAuthorizationHierarchyFilePath = "SecurityMetadata.json"
+        $escapedJson = Get-EscapedJsonContent -JsonFilePath $updatedAuthorizationHierarchyFilePath
+        Remove-Item -Path $updatedAuthorizationHierarchyFilePath -ErrorAction SilentlyContinue
 
-        # Read JSON content
-        $jsonContent = Get-Content -Raw -Path $updatedAuthorizationHierarchyFilePath
-        $escapedJson = $jsonContent -replace "'", "''"
-
-        # Define the new INSERT SQL
-        $updateStatement = @(
-            "UPDATE dmscs.claimshierarchy set hierarchy = '$escapedJson'::jsonb;"
-        ) -join "`n"
+        # Define the UPDATE SQL
+        $updateStatement = "UPDATE dmscs.claimshierarchy SET hierarchy = '$escapedJson'::jsonb;"
 
         $envValues = ReadValuesFromEnvFile $EnvironmentFile
         $database = $envValues["POSTGRES_DB_NAME"]
@@ -167,3 +179,5 @@ function UpdateExtensionSecurityMetadata {
         exit 1
     }
 }
+
+Export-ModuleMember -Function AddExtensionSecurityMetadata, UpdateExtensionSecurityMetadata
