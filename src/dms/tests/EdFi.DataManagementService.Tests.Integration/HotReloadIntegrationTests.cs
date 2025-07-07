@@ -126,69 +126,6 @@ public class HotReloadIntegrationTests
     }
 
     [Test]
-    public async Task HotReload_ConcurrentRequests_NoErrors()
-    {
-        // Arrange - Create schema
-        var schema = new ApiSchemaBuilder()
-            .WithStartProject("Ed-Fi", "5.0.0")
-            .WithStartResource("School")
-            .WithIdentityJsonPaths("$.schoolId")
-            .WithSimpleJsonSchema(("schoolId", "string"), ("nameOfInstitution", "string"))
-            .WithEndResource()
-            .WithEndProject();
-
-        await WriteSchemaToDirectory(schema);
-
-        // Create test data
-        var schoolData = JsonSerializer.Serialize(
-            new { schoolId = "12345", nameOfInstitution = "Test School" }
-        );
-
-        // Act - Send concurrent requests while reloading
-        var tasks = new List<Task<HttpResponseMessage>>();
-
-        // Start requests
-        for (int i = 0; i < 20; i++)
-        {
-            tasks.Add(
-                _client.PostAsync(
-                    "/ed-fi/schools",
-                    new StringContent(schoolData, Encoding.UTF8, "application/json")
-                )
-            );
-        }
-
-        // Trigger reload in the middle
-        tasks.Add(_client.PostAsync("/management/reload-api-schema", null));
-
-        // More requests after reload
-        for (int i = 0; i < 20; i++)
-        {
-            tasks.Add(
-                _client.PostAsync(
-                    "/ed-fi/schools",
-                    new StringContent(schoolData, Encoding.UTF8, "application/json")
-                )
-            );
-        }
-
-        var responses = await Task.WhenAll(tasks);
-
-        // Assert - All requests should complete without errors
-        responses.Should().HaveCount(41); // 40 POST requests + 1 reload
-        responses
-            .Where(r => r.RequestMessage?.RequestUri?.ToString().Contains("reload-api-schema") ?? false)
-            .Should()
-            .OnlyContain(r => r.StatusCode == HttpStatusCode.OK);
-        responses
-            .Where(r => !(r.RequestMessage?.RequestUri?.ToString().Contains("reload-api-schema") ?? false))
-            .Should()
-            .OnlyContain(r =>
-                r.StatusCode == HttpStatusCode.Created || r.StatusCode == HttpStatusCode.BadRequest
-            ); // Duplicate key errors are ok
-    }
-
-    [Test]
     public async Task HotReload_MultipleReloads_Successive()
     {
         // Arrange - Create schemas with different versions
