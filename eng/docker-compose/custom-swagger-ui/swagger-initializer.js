@@ -6,6 +6,36 @@
 window.onload = function () {
     const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
 
+    function AugmentingLayout(props) {
+
+        const {
+            React,
+            getComponent
+        } = props
+
+        const standaloneLayout = getComponent("StandaloneLayout", true)
+
+        return React.createElement(
+            'div',
+            { },
+            React.createElement(
+                'h1',
+                { },
+                'A dummy plugin with a custom header'
+            ),
+            React.createElement(standaloneLayout),
+        );
+    }
+
+    // Create the plugin that provides our layout component
+    const AugmentingLayoutPlugin = () => {
+        return {
+            components: {
+                AugmentingLayout: AugmentingLayout
+            }
+        }
+    }
+
     window.ui = SwaggerUIBundle({
         urls: [
             { url: `http://localhost:${dmsPort}/metadata/specifications/resources-spec.json`, name: "Resources" },
@@ -13,8 +43,9 @@ window.onload = function () {
         ],
         dom_id: '#swagger-ui',
         presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-        layout: "StandaloneLayout",
-        docExpansion: "none"
+        docExpansion: "none",
+        layout: "AugmentingLayout",
+        plugins: [ AugmentingLayoutPlugin ],
     });
 
     // Update the title of the page
