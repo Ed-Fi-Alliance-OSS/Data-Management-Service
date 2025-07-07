@@ -117,3 +117,53 @@ function AddExtensionSecurityMetadata {
         exit 1
     }
 }
+
+function UpdateExtensionSecurityMetadata {
+    param (
+        [string]$EnvironmentFile
+    )
+
+    try {
+        $schemaPackages = Get-SchemaPackagesFromEnv -EnvFilePath $EnvironmentFile
+
+        # Initial file list
+        $inputFileList = @(
+            "E2E-NameSpaceBasedClaimSet.json",
+            "E2E-NoFurtherAuthRequiredClaimSet.json",
+            "E2E-RelationshipsWithEdOrgsOnlyClaimSet.json"
+        )
+
+        $schemaPackages |
+                Where-Object { $_.extensionName -and $_.extensionName.Trim() -ne "" } |
+                ForEach-Object { $inputFileList += "$($_.extensionName)ExtensionResourceClaims.json" }
+
+        $inputFileListString = $inputFileList -join ";"
+        Write-Host "Input file list: $inputFileListString"
+
+        Push-Location ../CmsHierarchy/
+        Write-Output "Loading extension resource claims..."
+        dotnet build CmsHierarchy.csproj -c Release
+
+        dotnet run --configuration Release --project "CmsHierarchy.csproj" --no-launch-profile -- --command Transform --input $inputFileListString --outputFormat ToFile --output ../docker-compose/SecurityMetadata.json --skipAuths "RelationshipsWithEdOrgsAndPeopleInverted;RelationshipsWithStudentsOnlyThroughResponsibility;RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
+        Pop-Location
+
+        $updatedAuthorizationHierarchyFilePath = "SecurityMetadata.json"
+
+        # Read JSON content
+        $jsonContent = Get-Content -Raw -Path $updatedAuthorizationHierarchyFilePath
+        $escapedJson = $jsonContent -replace "'", "''"
+
+        # Define the new INSERT SQL
+        $updateStatement = @(
+            "UPDATE dmscs.claimshierarchy set hierarchy = '$escapedJson'::jsonb;"
+        ) -join "`n"
+
+        $envValues = ReadValuesFromEnvFile $EnvironmentFile
+        $database = $envValues["POSTGRES_DB_NAME"]
+        Write-Output $updateStatement | docker exec -i dms-postgresql psql -U postgres -d $database
+    }
+    catch {
+        Write-Error "Failed to load extension resource claims: $_"
+        exit 1
+    }
+}
