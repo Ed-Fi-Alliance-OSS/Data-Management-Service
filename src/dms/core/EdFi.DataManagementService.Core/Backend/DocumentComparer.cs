@@ -12,25 +12,16 @@ namespace EdFi.DataManagementService.Core.Backend;
 
 internal static class DocumentComparer
 {
-    public static string GenerateContentHash(JsonNode document, bool excludeMetadata = false)
+    public static string GenerateContentHash(JsonNode document)
     {
         var parsedBody = document.DeepClone() as JsonObject;
-        if (excludeMetadata)
-        {
-            parsedBody!.Remove("_etag");
-            parsedBody!.Remove("_lastModifiedDate");
-            parsedBody!.Remove("id");
-        }
+        parsedBody!.Remove("_etag");
+        parsedBody!.Remove("_lastModifiedDate");
+        parsedBody!.Remove("id");
 
         var parsedJson = JsonSerializer.Serialize(parsedBody);
 
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(parsedJson));
         return Convert.ToBase64String(hash);
-    }
-
-    public static bool DocumentsAreEquivalent(JsonNode doc1, JsonNode doc2)
-    {
-        return GenerateContentHash(doc1, excludeMetadata: true)
-            == GenerateContentHash(doc2, excludeMetadata: true);
     }
 }

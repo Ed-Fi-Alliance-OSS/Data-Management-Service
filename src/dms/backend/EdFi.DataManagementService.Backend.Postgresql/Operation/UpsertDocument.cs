@@ -380,9 +380,9 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
             // Check if document has been modified
             if (
-                upsertRequest.EdfiDoc["_etag"]!.TryGetValue<string>(out var payloadEtag)
+                upsertRequest.EdfiDoc["_etag"]!.TryGetValue<string>(out var incomingEtag)
                 && documentFromDb.EdfiDoc.TryGetProperty("_etag", out var persistedEtag)
-                && payloadEtag == persistedEtag.GetString()
+                && incomingEtag == persistedEtag.GetString()
             )
             {
                 // No changes detected - return existing document

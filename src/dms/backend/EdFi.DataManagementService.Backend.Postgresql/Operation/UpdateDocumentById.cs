@@ -177,9 +177,9 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
 
             // Check if document has been modified
             if (
-                updateRequest.EdfiDoc["_etag"]!.TryGetValue<string>(out var payloadEtag)
+                updateRequest.EdfiDoc["_etag"]!.TryGetValue<string>(out var incomingEtag)
                 && existingEdfiDoc.TryGetProperty("_etag", out var persistedEtag)
-                && payloadEtag == persistedEtag.GetString()
+                && incomingEtag == persistedEtag.GetString()
             )
             {
                 // No changes detected - return existing document
