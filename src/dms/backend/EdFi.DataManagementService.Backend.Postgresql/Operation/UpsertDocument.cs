@@ -7,6 +7,7 @@ using System.Text.Json;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using Json.Path;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -376,6 +377,21 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             long documentId =
                 documentFromDb.Id
                 ?? throw new InvalidOperationException("documentFromDb.Id should never be null");
+
+            // Check if document has been modified
+            if (
+                upsertRequest.EdfiDoc["_etag"]!.TryGetValue<string>(out var payloadEtag)
+                && documentFromDb.EdfiDoc.TryGetProperty("_etag", out var persistedEtag)
+                && payloadEtag == persistedEtag.GetString()
+            )
+            {
+                // No changes detected - return existing document
+                _logger.LogInformation(
+                    "Persisted document is equivalent to Request document - {TraceId}",
+                    upsertRequest.TraceId.Value
+                );
+                return new UpsertResult.UpdateSuccess(upsertRequest.DocumentUuid);
+            }
 
             return await AsUpdate(
                 documentId,
