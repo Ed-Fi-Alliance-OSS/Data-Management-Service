@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -13,6 +12,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using Json.More;
 using Json.Path;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Backend.DocumentComparer;
 using JsonPath = Json.Path.JsonPath;
 
 namespace EdFi.DataManagementService.Core.Backend;
@@ -221,13 +221,8 @@ public class UpdateCascadeHandler(IApiSchemaProvider _apiSchemaProvider, ILogger
         }
 
         // finally update _lastModifiedDate and _etag
-        DateTimeOffset utcNow = DateTimeOffset.UtcNow;
-        string formattedUtcDateTime = utcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-        returnEdFiDoc["_lastModifiedDate"] = formattedUtcDateTime;
-        returnEdFiDoc["_etag"] = DateTime
-            .ParseExact(formattedUtcDateTime, "yyyy-MM-ddTHH:mm:ssZ", DateTimeFormatInfo.InvariantInfo)
-            .ToBinary()
-            .ToString(CultureInfo.InvariantCulture);
+        returnEdFiDoc["_etag"] = GenerateContentHash(returnEdFiDoc);
+        returnEdFiDoc["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
         return new UpdateCascadeResult(
             referencingEdFiDoc,
