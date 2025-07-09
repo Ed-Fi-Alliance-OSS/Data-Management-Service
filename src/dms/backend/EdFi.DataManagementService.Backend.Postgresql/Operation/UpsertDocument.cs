@@ -385,12 +385,12 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 && incomingEtag == persistedEtag.GetString()
             )
             {
-                // No changes detected - return existing document
+                // No changes detected
                 _logger.LogInformation(
-                    "Persisted document is equivalent to Request document - {TraceId}",
+                    "Persisted document is equivalent to Request document, no changes were made to the stored document - {TraceId}",
                     upsertRequest.TraceId.Value
                 );
-                return new UpsertResult.UpdateSuccess(upsertRequest.DocumentUuid);
+                return new UpsertResult.UpdateSuccess(new(documentFromDb.DocumentUuid));
             }
 
             return await AsUpdate(

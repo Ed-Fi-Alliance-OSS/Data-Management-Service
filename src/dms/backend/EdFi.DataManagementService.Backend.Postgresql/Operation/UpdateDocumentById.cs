@@ -182,9 +182,9 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 && incomingEtag == persistedEtag.GetString()
             )
             {
-                // No changes detected - return existing document
+                // No changes detected
                 _logger.LogInformation(
-                    "Persisted document is equivalent to Request document - {TraceId}",
+                    "Persisted document is equivalent to Request document, no changes were made to the stored document - {TraceId}",
                     updateRequest.TraceId.Value
                 );
                 return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
