@@ -311,7 +311,43 @@ public class OpenApiDocument(ILogger _logger)
         #region [DMS-754] Workarround OpenAPI need a format double definition for Ed-Fi
         if (documentSection == DocumentSection.Resource)
         {
-            // Add format="double" to all number properties to prevent ambiguous decimal constructor errors
+            // Rename EdFi_Course_CourseIdentificationCode to EdFi_Course_IdentificationCode for ODS sdk
+            string dmsIdCode = "EdFi_Course_CourseIdentificationCode";
+            string odsIdCode = "EdFi_Course_IdentificationCode";
+            string dmsRefIdCodeValue = $"#/components/schemas/{dmsIdCode}";
+            string odsRefIdCodeValue = $"#/components/schemas/{odsIdCode}";
+
+            var schemas = openApiSpecification["components"]?["schemas"] as JsonObject;
+
+            if (schemas != null && schemas.ContainsKey(dmsIdCode))
+            {
+                var schemaValue = schemas[dmsIdCode];
+                schemas.Remove(dmsIdCode);
+                schemas[odsIdCode] = schemaValue!;
+
+                ReplaceAllRefs(openApiSpecification, dmsRefIdCodeValue, odsRefIdCodeValue);
+            }
+
+            // Rename EdFi_StudentTransportation_StudentBusDetail to edFi_studentTransportationStudentBusDetails for ODS sdk
+            string dmsBusRef = "EdFi_StudentTransportation_StudentBusDetail";
+            string odsBusRef = "EdFi_StudentTransportation_StudentBusDetails";
+            string dmsRefBusDetailValue = $"#/components/schemas/{dmsBusRef}";
+            string odsRefBusDetailValue = $"#/components/schemas/{odsBusRef}";
+
+            if (schemas != null && schemas.ContainsKey(dmsBusRef))
+            {
+                var schemaValue = schemas[dmsBusRef];
+                schemas.Remove(dmsBusRef);
+                schemas[odsBusRef] = schemaValue!;
+
+                ReplaceAllRefs(openApiSpecification, dmsRefBusDetailValue, odsRefBusDetailValue);
+            }
+
+            // EdFi_SchoolYearTypeReference not rendering parameterless constructor for DMS sdk
+            openApiSpecification["components"]!["schemas"]!["EdFi_SchoolYearTypeReference"]!["required"] =
+                JsonValue.Create(new[] { "schoolYear" });
+
+            // Add format="double" to all number properties to prevent ambiguous decimal constructor errors for DMS sdk
             AddFormatToNumberProperties(openApiSpecification);
         }
         #endregion
@@ -357,9 +393,15 @@ public class OpenApiDocument(ILogger _logger)
             }
         }
 
+        #region [DMS-754] Workarround OpenAPI need a format double definition for Ed-Fi
+        // Add format="double" to all number properties to prevent ambiguous decimal constructor errors
+        AddFormatToNumberProperties(openApiSpecification);
+        #endregion
+
         return openApiSpecification;
     }
 
+    #region [DMS-754]
     /// <summary>
     /// Adds format specification to all number properties that don't have a format defined.
     /// This prevents the "Ambiguous match found for 'System.Decimal Void .ctor(System.Currency)'" error.
@@ -398,4 +440,33 @@ public class OpenApiDocument(ILogger _logger)
             }
         }
     }
+
+    private void ReplaceAllRefs(JsonNode? node, string oldRef, string newRef)
+    {
+        if (node is JsonObject obj)
+        {
+            var keys = obj.Select(kvp => kvp.Key).ToList();
+
+            foreach (var key in keys)
+            {
+                var child = obj[key];
+                if (key == "$ref" && child is JsonValue value && value.ToString() == oldRef)
+                {
+                    obj[key] = newRef;
+                }
+                else
+                {
+                    ReplaceAllRefs(child, oldRef, newRef);
+                }
+            }
+        }
+        else if (node is JsonArray array)
+        {
+            foreach (var item in array)
+            {
+                ReplaceAllRefs(item, oldRef, newRef);
+            }
+        }
+    }
+    #endregion
 }
