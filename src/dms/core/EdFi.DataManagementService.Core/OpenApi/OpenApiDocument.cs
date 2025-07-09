@@ -308,6 +308,15 @@ public class OpenApiDocument(ILogger _logger)
         }
         #endregion
 
+        #region [DMS-754] Workarround OpenAPI need a format double definition for Ed-Fi
+        if (documentSection == DocumentSection.Resource)
+        {
+            // Add format="double" to all number properties to prevent ambiguous decimal constructor errors
+            AddFormatToNumberProperties(openApiSpecification);
+        }
+        #endregion
+
+
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {
@@ -349,5 +358,44 @@ public class OpenApiDocument(ILogger _logger)
         }
 
         return openApiSpecification;
+    }
+
+    /// <summary>
+    /// Adds format specification to all number properties that don't have a format defined.
+    /// This prevents the "Ambiguous match found for 'System.Decimal Void .ctor(System.Currency)'" error.
+    /// </summary>
+    private void AddFormatToNumberProperties(JsonNode node)
+    {
+        if (node is JsonObject jsonObject)
+        {
+            if (
+                jsonObject.ContainsKey("type")
+                && jsonObject["type"]?.GetValue<string>() == "number"
+                && !jsonObject.ContainsKey("format")
+            )
+            {
+                jsonObject["format"] = JsonValue.Create("double");
+            }
+
+            // Recursively process all child objects
+            foreach (var value in jsonObject.Select(property => property.Value))
+            {
+                if (value != null)
+                {
+                    AddFormatToNumberProperties(value);
+                }
+            }
+        }
+        else if (node is JsonArray jsonArray)
+        {
+            // Process all array items
+            foreach (var item in jsonArray)
+            {
+                if (item != null)
+                {
+                    AddFormatToNumberProperties(item);
+                }
+            }
+        }
     }
 }
