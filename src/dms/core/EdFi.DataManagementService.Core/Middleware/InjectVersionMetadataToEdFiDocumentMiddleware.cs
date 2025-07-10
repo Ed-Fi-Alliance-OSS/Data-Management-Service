@@ -3,12 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
+using static EdFi.DataManagementService.Core.Backend.DocumentComparer;
 
 namespace EdFi.DataManagementService.Core.Middleware
 {
@@ -21,15 +18,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                 requestData.FrontendRequest.TraceId.Value
             );
 
-            var parsedBody = requestData.ParsedBody.DeepClone() as JsonObject;
-
-            parsedBody!.Remove("_etag");
-            parsedBody!.Remove("_lastModifiedDate");
-
-            string json = JsonSerializer.Serialize(parsedBody);
-            byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
-
-            requestData.ParsedBody["_etag"] = Convert.ToBase64String(hash);
+            requestData.ParsedBody["_etag"] = GenerateContentHash(requestData.ParsedBody);
 
             requestData.ParsedBody["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString(
                 "yyyy-MM-ddTHH:mm:ssZ"

@@ -1107,3 +1107,35 @@ Feature: Resources "Update" Operation validations
                   }
                   """
 
+        @API-221 @IdempotentUpdate
+        Scenario: 23 Update with identical payload should not make database changes
+            # This test verifies that updating a resource with an identical payload doesn't cause any database changes
+             When a GET request is made to "/ed-fi/educationContents/{id}"
+              And the lastModifiedDate is stored
+             When a POST request is made to "/ed-fi/educationContents" with
+                  """
+                  {
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing"
+                  }
+                  """
+             Then it should respond with 200
+             When a GET request is made to "/ed-fi/educationContents/{id}"
+             Then the lastModifiedDate has not changed
+             When a PUT request is made to "/ed-fi/educationContents/{id}" with
+                  """
+                  {
+                    "id": "{id}",
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing"
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/ed-fi/educationContents/{id}"
+             Then the lastModifiedDate has not changed

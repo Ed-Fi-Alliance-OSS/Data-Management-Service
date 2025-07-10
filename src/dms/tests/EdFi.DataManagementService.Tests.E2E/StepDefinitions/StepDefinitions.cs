@@ -45,6 +45,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _id = string.Empty;
         private string _location = string.Empty;
         private string _etag = string.Empty;
+        private string _lastModifiedDate = string.Empty;
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
         private ScenarioVariables _scenarioVariables = new();
@@ -529,6 +530,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
         }
 
+        [When("the lastModifiedDate is stored")]
+        public async Task GivenTheLastModifiedDateIsStored()
+        {
+            var responseJson = JsonNode.Parse(await _apiResponse.TextAsync());
+
+            if (responseJson is not null)
+            {
+                _lastModifiedDate = LastModifiedDate(responseJson) ?? string.Empty;
+            }
+        }
+
         #endregion
 
         #region Then
@@ -921,6 +933,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             _etag = _apiResponse.Headers["etag"];
             _etag.Should().NotBeNullOrEmpty();
         }
+
+        [Then("the lastModifiedDate has not changed")]
+        public async Task ThenTheLastModifiedDateHasNotChanged()
+        {
+            var responseJson = JsonNode.Parse(await _apiResponse.TextAsync());
+
+            if (responseJson is not null)
+            {
+                _lastModifiedDate.Should().Be(LastModifiedDate(responseJson));
+            }
+        }
+
         #endregion
 
         private static string AddDataPrefixIfNecessary(string input)

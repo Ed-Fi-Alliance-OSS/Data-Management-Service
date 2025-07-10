@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Json.More;
+using Json.Path;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -163,6 +164,32 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 return new UpdateResult.UpdateFailureNotExists();
             }
 
+            JsonElement existingEdfiDoc = documentFromDb.EdfiDoc;
+
+            if (IsDocumentLocked(updateRequest.Headers, existingEdfiDoc))
+            {
+                _logger.LogInformation(
+                    "Failure: _etag does not match on update - {TraceId}",
+                    updateRequest.TraceId.Value
+                );
+                return new UpdateResult.UpdateFailureETagMisMatch();
+            }
+
+            // Check if document has been modified
+            if (
+                updateRequest.EdfiDoc["_etag"]!.TryGetValue<string>(out var incomingEtag)
+                && existingEdfiDoc.TryGetProperty("_etag", out var persistedEtag)
+                && incomingEtag == persistedEtag.GetString()
+            )
+            {
+                // No changes detected
+                _logger.LogInformation(
+                    "Persisted document is equivalent to Request document, no changes were made to the stored document - {TraceId}",
+                    updateRequest.TraceId.Value
+                );
+                return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
+            }
+
             JsonElement? schoolAuthorizationEdOrgIds = null;
             JsonElement? contactStudentSchoolAuthorizationEdOrgIds = null;
             JsonElement? staffEducationOrganizationAuthorizationEdOrgIds = null;
@@ -177,17 +204,6 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 transaction,
                 _sqlAction
             );
-
-            JsonElement existingEdfiDoc = documentFromDb.EdfiDoc;
-
-            if (IsDocumentLocked(updateRequest.Headers, existingEdfiDoc))
-            {
-                _logger.LogInformation(
-                    "Failure: _etag does not match on update - {TraceId}",
-                    updateRequest.TraceId.Value
-                );
-                return new UpdateResult.UpdateFailureETagMisMatch();
-            }
 
             int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
                 PartitionKeyFor(updateRequest.DocumentUuid).Value,
