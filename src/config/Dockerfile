@@ -8,7 +8,7 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0.401-alpine3.20@sha256:658c93223111638f9bb5
 WORKDIR /source
 # Named context support https://github.com/hadolint/hadolint/issues/830
 # hadolint ignore=DL3022
-COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config .
+COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config ./
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/*.csproj ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/*.csproj ./backend/EdFi.DmsConfigurationService.Backend/
