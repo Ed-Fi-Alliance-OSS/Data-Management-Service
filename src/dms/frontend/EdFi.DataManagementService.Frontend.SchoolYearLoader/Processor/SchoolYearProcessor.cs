@@ -44,13 +44,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader.Processor
                     payload,
                     Headers: [],
                     [],
-                    new TraceId(""),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "BootstrapDescriptorsandEdOrgs",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    new TraceId("")
                 );
 
                 var response = await apiService.Upsert(request);

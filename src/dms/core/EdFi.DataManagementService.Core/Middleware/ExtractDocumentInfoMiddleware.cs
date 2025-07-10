@@ -20,32 +20,32 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
     /// <summary>
     /// Builds a DocumentInfo using the various extractors on a document body
     /// </summary>
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ExtractDocumentInfoMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        Trace.Assert(requestData.ParsedBody != null, "Body was null, pipeline config invalid");
+        Trace.Assert(requestInfo.ParsedBody != null, "Body was null, pipeline config invalid");
 
-        var (documentIdentity, superclassIdentity) = requestData.ResourceSchema.ExtractIdentities(
-            requestData.ParsedBody,
+        var (documentIdentity, superclassIdentity) = requestInfo.ResourceSchema.ExtractIdentities(
+            requestInfo.ParsedBody,
             _logger
         );
 
         (DocumentReference[] documentReferences, DocumentReferenceArray[] documentReferenceArrays) =
-            requestData.ResourceSchema.ExtractReferences(requestData.ParsedBody, _logger);
+            requestInfo.ResourceSchema.ExtractReferences(requestInfo.ParsedBody, _logger);
 
-        requestData.DocumentInfo = new(
+        requestInfo.DocumentInfo = new(
             DocumentReferences: documentReferences,
             DocumentReferenceArrays: documentReferenceArrays,
-            DescriptorReferences: requestData.ResourceSchema.ExtractDescriptors(
-                requestData.ParsedBody,
+            DescriptorReferences: requestInfo.ResourceSchema.ExtractDescriptors(
+                requestInfo.ParsedBody,
                 _logger
             ),
             DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdFrom(requestData.ResourceInfo, documentIdentity),
+            ReferentialId: ReferentialIdFrom(requestInfo.ResourceInfo, documentIdentity),
             SuperclassIdentity: superclassIdentity
         );
 

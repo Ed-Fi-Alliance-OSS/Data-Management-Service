@@ -94,7 +94,8 @@ public class ApiServiceHotReloadIntegrationTests
             authorizationServiceFactory,
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
-            apiSchemaUploadService
+            apiSchemaUploadService,
+            serviceProvider
         );
     }
 
@@ -347,7 +348,8 @@ public class ApiServiceHotReloadIntegrationTests
                     [],
                     NullLogger<ResourceLoadOrderCalculator>.Instance
                 ),
-                apiSchemaUploadService
+                apiSchemaUploadService,
+                new ServiceCollection().BuildServiceProvider()
             );
 
             await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Student", "5.0.0"));
@@ -373,13 +375,7 @@ public class ApiServiceHotReloadIntegrationTests
             Body: body,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("test-trace-id"),
-            ClientAuthorizations: new ClientAuthorizations(
-                TokenId: "test-token",
-                ClaimSetName: "test-claim-set",
-                EducationOrganizationIds: [],
-                NamespacePrefixes: []
-            )
+            TraceId: new TraceId("test-trace-id")
         );
     }
 

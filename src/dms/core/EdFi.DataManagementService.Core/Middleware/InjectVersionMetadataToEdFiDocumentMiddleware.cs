@@ -14,14 +14,14 @@ namespace EdFi.DataManagementService.Core.Middleware
 {
     internal class InjectVersionMetadataToEdFiDocumentMiddleware(ILogger _logger) : IPipelineStep
     {
-        public async Task Execute(RequestData requestData, Func<Task> next)
+        public async Task Execute(RequestInfo requestInfo, Func<Task> next)
         {
             _logger.LogDebug(
                 "Entering InjectPropertiesToEdFiDocumentMiddleware - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            var parsedBody = requestData.ParsedBody.DeepClone() as JsonObject;
+            var parsedBody = requestInfo.ParsedBody.DeepClone() as JsonObject;
 
             parsedBody!.Remove("_etag");
             parsedBody!.Remove("_lastModifiedDate");
@@ -29,9 +29,9 @@ namespace EdFi.DataManagementService.Core.Middleware
             string json = JsonSerializer.Serialize(parsedBody);
             byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(json));
 
-            requestData.ParsedBody["_etag"] = Convert.ToBase64String(hash);
+            requestInfo.ParsedBody["_etag"] = Convert.ToBase64String(hash);
 
-            requestData.ParsedBody["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString(
+            requestInfo.ParsedBody["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString(
                 "yyyy-MM-ddTHH:mm:ssZ"
             );
 

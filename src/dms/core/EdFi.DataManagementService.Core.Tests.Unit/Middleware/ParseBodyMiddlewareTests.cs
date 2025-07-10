@@ -28,23 +28,17 @@ public class ParseBodyMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_With_Null_Body : ParseBodyMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: null,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -76,23 +70,17 @@ public class ParseBodyMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_With_Empty_Body : ParseBodyMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: "",
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -124,23 +112,17 @@ public class ParseBodyMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_With_Invalid_Json : ParseBodyMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: """{ "id":"value" "name":"firstname"}""",
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);

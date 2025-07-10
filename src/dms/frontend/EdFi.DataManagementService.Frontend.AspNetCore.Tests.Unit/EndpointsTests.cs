@@ -5,10 +5,9 @@
 
 using System.Net;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.TestBase;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -16,7 +15,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 
 [TestFixture]
 [NonParallelizable]
-public class EndpointsTests
+public class EndpointsTests : FrontendTestBase
 {
     [Test]
     public async Task TestHealthEndpoint()
@@ -24,25 +23,26 @@ public class EndpointsTests
         // Arrange
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+
+        await using var factory = CreateTestFactory(services =>
         {
-            // This environment has an extreme rate limit
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((x) => claimSetCacheService);
-                }
-            );
+            services.AddTransient((x) => claimSetCacheService);
         });
+
         using var client = factory.CreateClient();
 
         // Act
         var response = await client.GetAsync("/health");
         var content = await response.Content.ReadAsStringAsync();
 
-        // Assert
+        // Assert - if failing, log the error content
+        if (response.StatusCode != HttpStatusCode.OK)
+        {
+            Console.WriteLine($"Response Status: {response.StatusCode}");
+            Console.WriteLine($"Response Content: {content}");
+        }
+
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        content.Should().Contain("\"Description\": \"Application is up and running\"");
+        content.Should().Contain("\"Status\": \"Healthy\"");
     }
 }

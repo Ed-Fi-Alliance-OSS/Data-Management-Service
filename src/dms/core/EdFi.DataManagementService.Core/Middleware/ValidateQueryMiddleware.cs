@@ -20,20 +20,20 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
     private static readonly string[] _disallowedQueryFields = ["limit", "offset", "totalCount"];
 
     /// <summary>
-    /// Finds and sets PaginationParameters on the requestData by parsing the client request.
+    /// Finds and sets PaginationParameters on the requestInfo by parsing the client request.
     /// Returns any errors found for those parameters.
     /// </summary>
-    private static List<string> SetPaginationParametersOn(RequestData requestData, int maxPageSize)
+    private static List<string> SetPaginationParametersOn(RequestInfo requestInfo, int maxPageSize)
     {
         int? offset = null;
         int? limit = null;
         bool totalCount = false;
         List<string> errors = [];
 
-        if (requestData.FrontendRequest.QueryParameters.ContainsKey("offset"))
+        if (requestInfo.FrontendRequest.QueryParameters.ContainsKey("offset"))
         {
             if (
-                !int.TryParse(requestData.FrontendRequest.QueryParameters["offset"], out int offsetVal)
+                !int.TryParse(requestInfo.FrontendRequest.QueryParameters["offset"], out int offsetVal)
                 || offsetVal < 0
             )
             {
@@ -45,10 +45,10 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             }
         }
 
-        if (requestData.FrontendRequest.QueryParameters.ContainsKey("limit"))
+        if (requestInfo.FrontendRequest.QueryParameters.ContainsKey("limit"))
         {
             if (
-                !int.TryParse(requestData.FrontendRequest.QueryParameters["limit"], out int limitVal)
+                !int.TryParse(requestInfo.FrontendRequest.QueryParameters["limit"], out int limitVal)
                 || limitVal < 0
                 || limitVal > maxPageSize
             )
@@ -61,16 +61,16 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             }
         }
 
-        if (requestData.FrontendRequest.QueryParameters.ContainsKey("totalCount"))
+        if (requestInfo.FrontendRequest.QueryParameters.ContainsKey("totalCount"))
         {
-            if (!bool.TryParse(requestData.FrontendRequest.QueryParameters["totalCount"], out totalCount))
+            if (!bool.TryParse(requestInfo.FrontendRequest.QueryParameters["totalCount"], out totalCount))
             {
                 errors.Add("TotalCount must be a boolean value.");
             }
             else
             {
                 totalCount = bool.TryParse(
-                    requestData.FrontendRequest.QueryParameters["totalCount"],
+                    requestInfo.FrontendRequest.QueryParameters["totalCount"],
                     out bool totalValue
                 )
                     ? totalValue
@@ -80,7 +80,7 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
 
         if (errors.Count == 0)
         {
-            requestData.PaginationParameters = new PaginationParameters(
+            requestInfo.PaginationParameters = new PaginationParameters(
                 limit,
                 offset,
                 totalCount,
@@ -137,20 +137,20 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
         );
     }
 
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ValidateQueryMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        List<string> errors = SetPaginationParametersOn(requestData, _maximumPageSize);
+        List<string> errors = SetPaginationParametersOn(requestInfo, _maximumPageSize);
 
         if (errors.Count > 0)
         {
             JsonNode failureResponse = FailureResponse.ForBadRequest(
                 "The request could not be processed. See 'errors' for details.",
-                requestData.FrontendRequest.TraceId,
+                requestInfo.FrontendRequest.TraceId,
                 [],
                 errors.ToArray()
             );
@@ -158,18 +158,18 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
-                requestData.PathComponents.EndpointName,
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.PathComponents.EndpointName,
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.FrontendResponse = new FrontendResponse(StatusCode: 400, Body: failureResponse, []);
+            requestInfo.FrontendResponse = new FrontendResponse(StatusCode: 400, Body: failureResponse, []);
             return;
         }
 
         IEnumerable<KeyValuePair<string, string>> nonPaginationQueryTerms =
-            requestData.FrontendRequest.QueryParameters.ExceptBy(_disallowedQueryFields, (term) => term.Key);
+            requestInfo.FrontendRequest.QueryParameters.ExceptBy(_disallowedQueryFields, (term) => term.Key);
 
-        QueryField[] possibleQueryFields = requestData.ResourceSchema.QueryFields.ToArray();
+        QueryField[] possibleQueryFields = requestInfo.ResourceSchema.QueryFields.ToArray();
 
         List<QueryElement> queryElements = [];
 
@@ -183,12 +183,12 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             {
                 JsonNode failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
-                    requestData.FrontendRequest.TraceId,
+                    requestInfo.FrontendRequest.TraceId,
                     [],
                     [$@"The query field '{clientQueryTerm.Key}' is not valid for this resource."]
                 );
 
-                requestData.FrontendResponse = new FrontendResponse(
+                requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
                     Body: failureResponse,
                     []
@@ -291,14 +291,14 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
         {
             _logger.LogDebug(
                 "Query parameter format error - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.FrontendResponse = new FrontendResponse(
+            requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: ForDataValidation(
                     "Data validation failed. See 'validationErrors' for details.",
-                    traceId: requestData.FrontendRequest.TraceId,
+                    traceId: requestInfo.FrontendRequest.TraceId,
                     validationErrors,
                     []
                 ),
@@ -308,7 +308,7 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
         }
         else
         {
-            requestData.QueryElements = queryElements.ToArray();
+            requestInfo.QueryElements = queryElements.ToArray();
 
             await next();
         }

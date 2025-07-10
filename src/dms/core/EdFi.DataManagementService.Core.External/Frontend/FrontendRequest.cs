@@ -31,9 +31,5 @@ public record FrontendRequest(
     /// <summary>
     /// A request identifier provided by the frontend service, used for log tracing
     /// </summary>
-    TraceId TraceId,
-    /// <summary>
-    /// ApiDetails retrieved from the token, used for resource authorization
-    /// </summary>
-    ClientAuthorizations ClientAuthorizations
+    TraceId TraceId
 );

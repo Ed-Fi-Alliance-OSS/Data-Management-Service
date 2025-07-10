@@ -44,6 +44,7 @@ internal class ApiService : IApiService
     private readonly ResiliencePipeline _resiliencePipeline;
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
     private readonly IUploadApiSchemaService _apiSchemaUploadService;
+    private readonly IServiceProvider _serviceProvider;
 
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -94,7 +95,8 @@ internal class ApiService : IApiService
         IAuthorizationServiceFactory authorizationServiceFactory,
         [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline resiliencePipeline,
         ResourceLoadOrderCalculator resourceLoadCalculator,
-        IUploadApiSchemaService apiSchemaUploadService
+        IUploadApiSchemaService apiSchemaUploadService,
+        IServiceProvider serviceProvider
     )
     {
         _apiSchemaProvider = apiSchemaProvider;
@@ -111,6 +113,7 @@ internal class ApiService : IApiService
         _resiliencePipeline = resiliencePipeline;
         _resourceLoadCalculator = resourceLoadCalculator;
         _apiSchemaUploadService = apiSchemaUploadService;
+        _serviceProvider = serviceProvider;
 
         // Initialize VersionedLazy instances with schema version provider
         _upsertSteps = new VersionedLazy<PipelineProvider>(
@@ -149,17 +152,31 @@ internal class ApiService : IApiService
         );
     }
 
+    private List<IPipelineStep> GetCommonInitialSteps()
+    {
+        var steps = new List<IPipelineStep> { new CoreExceptionLoggingMiddleware(_logger) };
+
+        // Add JWT authentication middleware if enabled
+        var jwtOptionsService = _serviceProvider.GetService<IOptions<JwtAuthenticationOptions>>();
+        if (jwtOptionsService != null && jwtOptionsService.Value.Enabled)
+        {
+            var jwtMiddleware = _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>();
+            steps.Add(jwtMiddleware);
+        }
+
+        return steps;
+    }
+
     private PipelineProvider CreateUpsertPipeline()
     {
-        var steps = new List<IPipelineStep>();
+        var steps = GetCommonInitialSteps();
         steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
-                new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+                new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new RejectResourceIdentifierMiddleware(_logger),
@@ -212,9 +229,9 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateGetByIdPipeline()
     {
-        return new(
+        var steps = GetCommonInitialSteps();
+        steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
@@ -234,13 +251,15 @@ internal class ApiService : IApiService
                 ),
             ]
         );
+
+        return new PipelineProvider(steps);
     }
 
     private PipelineProvider CreateQueryPipeline()
     {
-        return new(
+        var steps = GetCommonInitialSteps();
+        steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
@@ -256,19 +275,20 @@ internal class ApiService : IApiService
                 new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
             ]
         );
+
+        return new PipelineProvider(steps);
     }
 
     private PipelineProvider CreateUpdatePipeline()
     {
-        var steps = new List<IPipelineStep>();
+        var steps = GetCommonInitialSteps();
         steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
-                new RequestDataBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+                new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new CoerceDateFormatMiddleware(_logger),
@@ -320,9 +340,9 @@ internal class ApiService : IApiService
 
     private PipelineProvider CreateDeleteByIdPipeline()
     {
-        return new(
+        var steps = GetCommonInitialSteps();
+        steps.AddRange(
             [
-                new CoreExceptionLoggingMiddleware(_logger),
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
                 new ParsePathMiddleware(_logger),
@@ -343,6 +363,8 @@ internal class ApiService : IApiService
                 ),
             ]
         );
+
+        return new PipelineProvider(steps);
     }
 
     private JsonNode CreateResourceOpenApiSpecification()
@@ -368,9 +390,9 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest)
     {
-        RequestData requestData = new(frontendRequest, RequestMethod.POST);
-        await _upsertSteps.Value.Run(requestData);
-        return requestData.FrontendResponse;
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST);
+        await _upsertSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
     }
 
     /// <summary>
@@ -378,7 +400,7 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> Get(FrontendRequest frontendRequest)
     {
-        RequestData requestData = new(frontendRequest, RequestMethod.GET);
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.GET);
 
         Match match = UtilityService.PathExpressionRegex().Match(frontendRequest.Path);
 
@@ -391,13 +413,13 @@ internal class ApiService : IApiService
 
         if (documentUuid != string.Empty)
         {
-            await _getByIdSteps.Value.Run(requestData);
+            await _getByIdSteps.Value.Run(requestInfo);
         }
         else
         {
-            await _querySteps.Value.Run(requestData);
+            await _querySteps.Value.Run(requestInfo);
         }
-        return requestData.FrontendResponse;
+        return requestInfo.FrontendResponse;
     }
 
     /// <summary>
@@ -405,9 +427,9 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest)
     {
-        RequestData requestData = new(frontendRequest, RequestMethod.PUT);
-        await _updateSteps.Value.Run(requestData);
-        return requestData.FrontendResponse;
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.PUT);
+        await _updateSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
     }
 
     /// <summary>
@@ -415,9 +437,9 @@ internal class ApiService : IApiService
     /// </summary>
     public async Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest)
     {
-        RequestData requestData = new(frontendRequest, RequestMethod.DELETE);
-        await _deleteByIdSteps.Value.Run(requestData);
-        return requestData.FrontendResponse;
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.DELETE);
+        await _deleteByIdSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
     }
 
     /// <summary>

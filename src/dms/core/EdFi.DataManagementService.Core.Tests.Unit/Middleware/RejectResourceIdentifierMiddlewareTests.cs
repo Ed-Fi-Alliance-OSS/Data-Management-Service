@@ -28,7 +28,7 @@ public class RejectResourceIdentifierMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_Payload_With_ResourceId : RejectResourceIdentifierMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -38,13 +38,7 @@ public class RejectResourceIdentifierMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/students",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -78,7 +72,7 @@ public class RejectResourceIdentifierMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_Payload_Without_ResourceId : RejectResourceIdentifierMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -88,13 +82,7 @@ public class RejectResourceIdentifierMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/students",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);

@@ -27,7 +27,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ResourceActionAuthorizationMiddlewareTests
 {
-    private RequestData _context = No.RequestData();
+    private RequestInfo _context = No.RequestInfo();
 
     internal static IPipelineStep Middleware()
     {
@@ -97,12 +97,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _context = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
@@ -138,12 +138,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "NO-MATCH", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _context = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "NO-MATCH", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
@@ -184,12 +184,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _context = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("stateDescriptor"),
@@ -230,12 +230,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _context = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
@@ -270,12 +270,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.PUT)
+            _context = new RequestInfo(frontEndRequest, RequestMethod.PUT)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
@@ -340,12 +340,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.PUT)
+            _context = new RequestInfo(frontEndRequest, RequestMethod.PUT)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("stateDescriptor"),
@@ -387,12 +387,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _context = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
@@ -428,12 +428,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _context = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),

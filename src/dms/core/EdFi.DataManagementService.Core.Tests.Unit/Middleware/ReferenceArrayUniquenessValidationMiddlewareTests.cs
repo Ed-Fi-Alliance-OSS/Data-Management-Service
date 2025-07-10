@@ -42,7 +42,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         return result;
     }
 
-    internal static async Task<RequestData> CreateContextAndExecute(
+    internal static async Task<RequestInfo> CreateContextAndExecute(
         ApiSchemaDocuments apiSchema,
         string jsonBody,
         string endpointName,
@@ -54,16 +54,10 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
             Body: jsonBody,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId(""),
-            new ClientAuthorizations(
-                TokenId: "",
-                ClaimSetName: "",
-                EducationOrganizationIds: [],
-                NamespacePrefixes: []
-            )
+            TraceId: new TraceId("")
         );
 
-        RequestData requestData = new(frontEndRequest, method)
+        RequestInfo requestInfo = new(frontEndRequest, method)
         {
             ApiSchemaDocuments = apiSchema,
             PathComponents = new(
@@ -72,24 +66,24 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        requestData.ProjectSchema = requestData.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+        requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
             new("ed-fi")
         )!;
-        requestData.ResourceSchema = new ResourceSchema(
-            requestData.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
+        requestInfo.ResourceSchema = new ResourceSchema(
+            requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
                 ?? new JsonObject()
         );
 
-        var body = JsonNode.Parse(requestData.FrontendRequest.Body!);
+        var body = JsonNode.Parse(requestInfo.FrontendRequest.Body!);
         if (body != null)
         {
-            requestData.ParsedBody = body;
+            requestInfo.ParsedBody = body;
         }
 
-        await BuildResourceInfo().Execute(requestData, NullNext);
-        await ExtractDocument().Execute(requestData, NullNext);
-        await Middleware().Execute(requestData, NullNext);
-        return requestData;
+        await BuildResourceInfo().Execute(requestInfo, NullNext);
+        await ExtractDocument().Execute(requestInfo, NullNext);
+        await Middleware().Execute(requestInfo, NullNext);
+        return requestInfo;
     }
 
     internal static BuildResourceInfoMiddleware BuildResourceInfo()
@@ -111,7 +105,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     [Parallelizable]
     public class Given_Document_With_Duplicate_References : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -176,7 +170,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     [Parallelizable]
     public class Given_Document_With_Unique_References : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -226,7 +220,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     [Parallelizable]
     public class Given_Document_With_Single_Reference : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -270,7 +264,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     [Parallelizable]
     public class Given_Document_With_No_Reference_Arrays : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()

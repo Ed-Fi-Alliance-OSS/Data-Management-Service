@@ -18,17 +18,17 @@ internal class ExtractDocumentSecurityElementsMiddleware(ILogger _logger) : IPip
     /// <summary>
     /// Builds a DocumentSecurityElements from a document body
     /// </summary>
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ExtractDocumentSecurityElementsMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        Trace.Assert(requestData.ParsedBody != null, "Body was null, pipeline config invalid");
+        Trace.Assert(requestInfo.ParsedBody != null, "Body was null, pipeline config invalid");
 
-        requestData.DocumentSecurityElements = requestData.ResourceSchema.ExtractSecurityElements(
-            requestData.ParsedBody,
+        requestInfo.DocumentSecurityElements = requestInfo.ResourceSchema.ExtractSecurityElements(
+            requestInfo.ParsedBody,
             _logger
         );
 

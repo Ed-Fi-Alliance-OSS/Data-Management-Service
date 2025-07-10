@@ -76,7 +76,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Slash_Formatted_Dates : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _context = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -102,13 +102,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -184,7 +178,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Mixed_Date_Formats : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _context = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -207,13 +201,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -268,7 +256,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Various_Slash_Date_Formats : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _context = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -291,13 +279,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -352,7 +334,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Invalid_Date_Values : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _context = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -375,13 +357,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -434,7 +410,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Slash_Formatted_DateTimes : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _context = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -460,13 +436,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)
@@ -524,7 +494,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Mixed_DateTime_Formats : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _context = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -553,13 +523,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
                 _context = new(frontEndRequest, RequestMethod.POST)

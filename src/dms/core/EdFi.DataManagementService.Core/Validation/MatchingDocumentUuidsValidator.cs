@@ -13,17 +13,17 @@ internal interface IMatchingDocumentUuidsValidator
     /// Validates a document for update has id matching the id in the request path
     /// </summary>
     /// <returns>A boolean indicating whether the validator passed or not</returns>
-    bool Validate(RequestData requestData);
+    bool Validate(RequestInfo requestInfo);
 }
 
 internal class MatchingDocumentUuidsValidator() : IMatchingDocumentUuidsValidator
 {
-    public bool Validate(RequestData requestData)
+    public bool Validate(RequestInfo requestInfo)
     {
-        string? documentId = requestData.ParsedBody["id"]?.GetValue<string>();
+        string? documentId = requestInfo.ParsedBody["id"]?.GetValue<string>();
 
         return documentId != null
             && Guid.TryParse(documentId, out var id)
-            && requestData.PathComponents.DocumentUuid.Value == id;
+            && requestInfo.PathComponents.DocumentUuid.Value == id;
     }
 }

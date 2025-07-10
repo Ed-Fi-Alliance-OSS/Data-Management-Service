@@ -32,7 +32,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Wrong_Query_Parameters : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -49,13 +49,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_context, NullNext);
@@ -108,7 +102,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Greater_Limit_Value : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -125,13 +119,7 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
             _context = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_context, NullNext);
@@ -166,7 +154,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Invalid_Type_Query_Parameters : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -188,9 +176,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData docRefContext = new(frontendRequest, method)
+            RequestInfo docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -236,16 +224,10 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
-            _context = NewRequestData(frontendRequest, RequestMethod.GET);
+            _context = NewRequestInfo(frontendRequest, RequestMethod.GET);
 
             await Middleware().Execute(_context, NullNext);
         }
@@ -315,7 +297,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Valid_Type_Query_Parameters : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -337,9 +319,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData docRefContext = new(frontendRequest, method)
+            RequestInfo docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -385,16 +367,10 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
-            _context = NewRequestData(frontendRequest, RequestMethod.GET);
+            _context = NewRequestInfo(frontendRequest, RequestMethod.GET);
 
             await Middleware().Execute(_context, NullNext);
         }
@@ -410,7 +386,7 @@ public class ValidateQueryMiddlewareTests
     [Parallelizable]
     public class Given_Pipeline_Context_With_Valid_Type_Query_Boolean_Parameter : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -427,9 +403,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData docRefContext = new(frontendRequest, method)
+            RequestInfo docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -467,16 +443,10 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
-            _context = NewRequestData(frontendRequest, RequestMethod.GET);
+            _context = NewRequestInfo(frontendRequest, RequestMethod.GET);
 
             await Middleware().Execute(_context, NullNext);
         }
@@ -493,7 +463,7 @@ public class ValidateQueryMiddlewareTests
     public class Given_Pipeline_Context_With_Valid_Type_Query_DateTime_Parameter
         : ValidateQueryMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         private static ApiSchemaDocuments NewApiSchemaDocuments()
         {
@@ -510,9 +480,9 @@ public class ValidateQueryMiddlewareTests
             return result;
         }
 
-        private static RequestData NewRequestData(FrontendRequest frontendRequest, RequestMethod method)
+        private static RequestInfo NewRequestInfo(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData docRefContext = new(frontendRequest, method)
+            RequestInfo docRefContext = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
@@ -553,16 +523,10 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
 
-            _context = NewRequestData(frontendRequest, RequestMethod.GET);
+            _context = NewRequestInfo(frontendRequest, RequestMethod.GET);
 
             await Middleware().Execute(_context, NullNext);
         }

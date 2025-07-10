@@ -29,7 +29,7 @@ public class DuplicatePropertiesMiddlewareTest
     public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level
         : DuplicatePropertiesMiddlewareTest
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -52,17 +52,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -95,7 +89,7 @@ public class DuplicatePropertiesMiddlewareTest
     public class Given_Pipeline_Context_With_A_Collection_As_Duplicated_Property_On_First_Level
         : DuplicatePropertiesMiddlewareTest
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -122,17 +116,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -170,7 +158,7 @@ public class DuplicatePropertiesMiddlewareTest
     public class Given_Pipeline_Context_With_Duplicate_Property_Inside_Of_A_Collection
         : DuplicatePropertiesMiddlewareTest
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -194,17 +182,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/bellschedules",
+                Path: "ed-fi/bellschedules",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -237,7 +219,7 @@ public class DuplicatePropertiesMiddlewareTest
     public class Given_Pipeline_Context_With_Same_Value_Inside_An_Array_Of_Properties
         : DuplicatePropertiesMiddlewareTest
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -264,17 +246,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -306,7 +282,7 @@ public class DuplicatePropertiesMiddlewareTest
     public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties
         : DuplicatePropertiesMiddlewareTest
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -334,17 +310,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                "ed-fi/schools",
+                Path: "ed-fi/schools",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_context, NullNext);
@@ -377,7 +347,7 @@ public class DuplicatePropertiesMiddlewareTest
     public class Given_Pipeline_Context_With_Duplicate_Property_On_First_Level_Using_Put
         : DuplicatePropertiesMiddlewareTest
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
         private readonly string id = Guid.NewGuid().ToString();
 
         [SetUp]
@@ -394,17 +364,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                $"ed-fi/students/{id}",
+                Path: $"ed-fi/students/{id}",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);
@@ -437,7 +401,7 @@ public class DuplicatePropertiesMiddlewareTest
     public class Given_Pipeline_Context_With_Duplicate_Property_And_Same_Value_Inside_An_Array_Of_Properties_Using_Put
         : DuplicatePropertiesMiddlewareTest
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _context = No.RequestInfo();
         private readonly string id = Guid.NewGuid().ToString();
 
         [SetUp]
@@ -467,17 +431,11 @@ public class DuplicatePropertiesMiddlewareTest
                 }
                 """;
             var frontEndRequest = new FrontendRequest(
-                $"ed-fi/schools/{id}",
+                Path: $"ed-fi/schools/{id}",
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                new TraceId("traceId"),
-                new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
             _context = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_context, NullNext);

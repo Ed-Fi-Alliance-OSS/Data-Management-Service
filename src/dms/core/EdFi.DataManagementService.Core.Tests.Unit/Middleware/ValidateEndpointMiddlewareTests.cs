@@ -39,7 +39,7 @@ public class ValidateEndpointMiddlewareTests
     [Parallelizable]
     public class Given_An_Invalid_Project_Namespace : ValidateEndpointMiddlewareTests
     {
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -88,7 +88,7 @@ public class ValidateEndpointMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Project_Namespace_And_Invalid_Endpoint : ValidateEndpointMiddlewareTests
     {
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -146,7 +146,7 @@ public class ValidateEndpointMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Project_Namespace_And_Valid_Endpoint : ValidateEndpointMiddlewareTests
     {
-        private readonly RequestData _context = No.RequestData();
+        private readonly RequestInfo _context = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()

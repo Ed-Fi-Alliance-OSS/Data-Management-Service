@@ -19,24 +19,24 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 
 [TestFixture]
 [NonParallelizable]
-public class RequestDataBodyLoggingMiddlewareTests
+public class RequestInfoBodyLoggingMiddlewareTests
 {
-    private RequestData _context = No.RequestData();
-    private ILogger<RequestDataBodyLoggingMiddleware>? _logger;
+    private RequestInfo _context = No.RequestInfo();
+    private ILogger<RequestInfoBodyLoggingMiddleware>? _logger;
     private string _capturedLogMessage = string.Empty;
     private string _logFilePath = string.Empty;
 
     internal static IPipelineStep Middleware(
-        ILogger<RequestDataBodyLoggingMiddleware> logger,
+        ILogger<RequestInfoBodyLoggingMiddleware> logger,
         bool maskRequestBody
     )
     {
-        return new RequestDataBodyLoggingMiddleware(logger, maskRequestBody);
+        return new RequestInfoBodyLoggingMiddleware(logger, maskRequestBody);
     }
 
     [TestFixture]
     [NonParallelizable]
-    public class Given_A_LogLevel_Debug_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
+    public class Given_A_LogLevel_Debug_And_MaskRequestBody_True : RequestInfoBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -58,20 +58,14 @@ public class RequestDataBodyLoggingMiddlewareTests
                 .WriteTo.File(_logFilePath)
                 .CreateLogger();
 
-            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
+            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestInfoBodyLoggingMiddleware>();
 
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
 
             _context = new(frontEndRequest, RequestMethod.POST);
@@ -101,7 +95,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
     [TestFixture]
     [NonParallelizable]
-    public class Given_A_LogLevel_Debug_And_MaskRequestBody_False : RequestDataBodyLoggingMiddlewareTests
+    public class Given_A_LogLevel_Debug_And_MaskRequestBody_False : RequestInfoBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -123,20 +117,14 @@ public class RequestDataBodyLoggingMiddlewareTests
                 .WriteTo.File(_logFilePath)
                 .CreateLogger();
 
-            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
+            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestInfoBodyLoggingMiddleware>();
 
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{"schoolId":"12345","nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
 
             _context = new(frontEndRequest, RequestMethod.POST);
@@ -168,7 +156,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
     [TestFixture]
     [NonParallelizable]
-    public class Given_A_LogLevel_Verbose_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
+    public class Given_A_LogLevel_Verbose_And_MaskRequestBody_True : RequestInfoBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -190,20 +178,14 @@ public class RequestDataBodyLoggingMiddlewareTests
                 .WriteTo.File(_logFilePath)
                 .CreateLogger();
 
-            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
+            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestInfoBodyLoggingMiddleware>();
 
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
 
             _context = new(frontEndRequest, RequestMethod.POST);
@@ -233,7 +215,7 @@ public class RequestDataBodyLoggingMiddlewareTests
 
     [TestFixture]
     [NonParallelizable]
-    public class Given_A_LogLevel_Information_And_MaskRequestBody_True : RequestDataBodyLoggingMiddlewareTests
+    public class Given_A_LogLevel_Information_And_MaskRequestBody_True : RequestInfoBodyLoggingMiddlewareTests
     {
         [SetUp]
         public async Task Setup()
@@ -255,20 +237,14 @@ public class RequestDataBodyLoggingMiddlewareTests
                 .WriteTo.File(_logFilePath)
                 .CreateLogger();
 
-            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestDataBodyLoggingMiddleware>();
+            _logger = new SerilogLoggerFactory(Log.Logger).CreateLogger<RequestInfoBodyLoggingMiddleware>();
 
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
 
             _context = new(frontEndRequest, RequestMethod.POST);
