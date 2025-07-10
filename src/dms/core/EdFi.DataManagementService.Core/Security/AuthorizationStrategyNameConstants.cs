@@ -11,5 +11,7 @@ public static class AuthorizationStrategyNameConstants
     public const string RelationshipsWithEdOrgsOnly = "RelationshipsWithEdOrgsOnly";
     public const string RelationshipsWithEdOrgsAndPeople = "RelationshipsWithEdOrgsAndPeople";
     public const string RelationshipsWithStudentsOnly = "RelationshipsWithStudentsOnly";
+    public const string RelationshipsWithStudentsOnlyThroughResponsibility =
+        "RelationshipsWithStudentsOnlyThroughResponsibility";
     public const string NoFurtherAuthorizationRequired = "NoFurtherAuthorizationRequired";
 }
