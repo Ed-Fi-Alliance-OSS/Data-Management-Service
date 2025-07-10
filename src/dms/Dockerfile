@@ -60,8 +60,6 @@ ENV CURRENT_SCHOOL_YEAR=2025
 
 WORKDIR /app
 
-COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
-
 COPY --from=build /app/Frontend/*.dll ./
 COPY --from=build /app/Installer/*.* ./Installer/
 COPY --from=build /app/Frontend/ApiSchema/*.json ./ApiSchema/
@@ -70,6 +68,7 @@ COPY --from=build /app/Frontend/appsettings.json ./
 COPY --from=build /app/Frontend/*runtimeconfig.json ./
 COPY --from=build /app/Frontend/*.deps.json ./
 COPY --from=build /app/ApiSchemaDownloader/*.* ./ApiSchemaDownloader/
+COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
 COPY --chmod=700 run.sh /app/run.sh
 
 EXPOSE ${ASPNETCORE_HTTP_PORTS}
