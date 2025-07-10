@@ -261,53 +261,6 @@ public class OpenApiDocument(ILogger _logger)
             )
             .DeepClone();
 
-        #region [DMS-597] Workaround for DMS-627 Array references should not be partially inlined in the OpenApi spec
-        if (documentSection == DocumentSection.Resource)
-        {
-            var resourceWithArrayReferences = openApiSpecification["components"]!["schemas"]!
-                .AsObject()
-                .Select(schema =>
-                {
-                    var properties = schema
-                        .Value!["properties"]
-                        ?.AsObject()
-                        .Where(property =>
-                            property.Value!["type"]?.GetValue<string>() == "array"
-                            && property.Value["items"]!["$ref"] == null
-                        )
-                        .ToList();
-
-                    return (schema, properties);
-                })
-                .Where(schema => schema.properties?.Any() == true)
-                .ToList();
-
-            foreach (var resource in resourceWithArrayReferences)
-            {
-                foreach (var referenceProperty in resource.properties!)
-                {
-                    var newRefName =
-                        resource.schema.Key.Replace("EdFi_", "")
-                        + referenceProperty.Value!["items"]!["properties"]!.AsObject().ToArray()[0].Value![
-                            "$ref"
-                        ]!
-                            .GetValue<string>()
-                            .Replace("#/components/schemas/", "")
-                            .Replace("_Reference", "")
-                            .Replace("EdFi_", "");
-
-                    openApiSpecification["components"]!["schemas"]![newRefName] = referenceProperty.Value![
-                        "items"
-                    ]!.DeepClone();
-
-                    resource.schema.Value!["properties"]![referenceProperty.Key]!["items"] = JsonNode.Parse(
-                        $"{{ \"$ref\": \"#/components/schemas/{newRefName}\" }}"
-                    );
-                }
-            }
-        }
-        #endregion
-
         // Get each extension OpenAPI fragment to insert into core OpenAPI spec
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {

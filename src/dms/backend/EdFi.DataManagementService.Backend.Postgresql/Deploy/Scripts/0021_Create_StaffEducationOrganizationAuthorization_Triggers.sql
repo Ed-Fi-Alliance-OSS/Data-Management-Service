@@ -14,11 +14,11 @@ AS $$
 BEGIN
     UPDATE dms.Document d
     SET StaffEducationOrganizationAuthorizationEdOrgIds = ed_org_ids
-    FROM dms.StaffEducationOrganizationAuthorization ssoa
+    FROM dms.StaffSecurableDocument ssd
     WHERE
-        ssoa.StaffUniqueId = staff_id AND
-        d.Id = ssoa.StaffEducationOrganizationId AND
-        d.DocumentPartitionKey = ssoa.StaffEducationOrganizationPartitionKey;
+        ssd.StaffUniqueId = staff_id AND
+        d.Id = ssd.StaffSecurableDocumentId AND
+        d.DocumentPartitionKey = ssd.StaffSecurableDocumentPartitionKey;
 END;
 $$ LANGUAGE plpgsql;
 
