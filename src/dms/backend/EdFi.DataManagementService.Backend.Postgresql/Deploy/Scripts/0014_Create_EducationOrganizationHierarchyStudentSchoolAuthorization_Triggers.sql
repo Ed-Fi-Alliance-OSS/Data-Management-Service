@@ -109,29 +109,6 @@ BEGIN
     WHERE ssa.HierarchySchoolId = sch.EducationOrganizationId;
 
     -- Also update StudentEducationOrganizationResponsibilityAuthorization records for schools in the changed hierarchy
-    WITH RECURSIVE SchoolsInChangedHierarchy AS (
-        -- Base case: start with the affected school
-        SELECT
-            Id,
-            EducationOrganizationId,
-            ParentId
-        FROM
-            dms.EducationOrganizationHierarchy
-        WHERE
-            EducationOrganizationId = affected_school_id
-
-        UNION ALL
-
-        -- Find all descendants of the affected school
-        SELECT
-            child.Id,
-            child.EducationOrganizationId,
-            child.ParentId
-        FROM
-            dms.EducationOrganizationHierarchy child
-        JOIN
-            SchoolsInChangedHierarchy parent ON child.ParentId = parent.Id
-    )
     UPDATE dms.StudentEducationOrganizationResponsibilityAuthorization seora
     SET StudentEdOrgResponsibilityAuthorizationEdOrgIds = (
         SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
