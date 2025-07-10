@@ -31,6 +31,11 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
                             requestData.DocumentSecurityElements,
                             requestData.Method
                         ),
+                    "StudentEducationOrganizationResponsibilityAssociationAuthorization" =>
+                        BuildStudentEducationOrganizationResponsibilityAssociationAuthorizationPathway(
+                            requestData.DocumentSecurityElements,
+                            requestData.Method
+                        ),
                     "ContactStudentSchoolAuthorization" =>
                         (AuthorizationPathway)BuildStudentContactAssociationAuthorizationPathway(
                             requestData.DocumentSecurityElements,
@@ -100,6 +105,33 @@ internal class ProvideAuthorizationPathwayMiddleware(ILogger _logger) : IPipelin
         return new AuthorizationPathway.StudentContactAssociation(
             documentSecurityElements.Student.FirstOrDefault(),
             documentSecurityElements.Contact.FirstOrDefault()
+        );
+    }
+
+    /// <summary>
+    /// Builds the StudentEducationOrganizationResponsibilityAssociation AuthorizationPathway from the DocumentSecurityElements.
+    /// </summary>
+    private static AuthorizationPathway.StudentEducationOrganizationResponsibilityAssociation BuildStudentEducationOrganizationResponsibilityAssociationAuthorizationPathway(
+        DocumentSecurityElements documentSecurityElements,
+        RequestMethod requestMethod
+    )
+    {
+        if (
+            requestMethod is RequestMethod.POST or RequestMethod.PUT
+            && (
+                documentSecurityElements.Student.Length == 0
+                || documentSecurityElements.EducationOrganization.Length == 0
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "The StudentUniqueId and/or EducationOrganizationId are missing from the request body."
+            );
+        }
+
+        return new AuthorizationPathway.StudentEducationOrganizationResponsibilityAssociation(
+            documentSecurityElements.Student.FirstOrDefault(),
+            documentSecurityElements.EducationOrganization.FirstOrDefault()?.Id ?? default
         );
     }
 
