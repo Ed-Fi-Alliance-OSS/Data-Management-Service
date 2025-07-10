@@ -161,6 +161,32 @@ public static class RelationshipsBasedAuthorizationHelper
         return new AuthorizationResult.Authorized();
     }
 
+    public static async Task<AuthorizationResult> ValidateStudentResponsibilityAuthorization(
+        IAuthorizationRepository authorizationRepository,
+        DocumentSecurityElements securityElements,
+        AuthorizationFilter[] authorizationFilters
+    )
+    {
+        string propertyName = "StudentUniqueId";
+        if (securityElements.Student.Length == 0)
+        {
+            return new AuthorizationResult.MissingProperty([propertyName]);
+        }
+        string studentUniqueId = securityElements.Student[0].Value;
+        long[] educationOrgIds =
+            await authorizationRepository.GetEducationOrganizationsForStudentResponsibility(studentUniqueId);
+        bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
+        if (!isAuthorized)
+        {
+            return new AuthorizationResult.NotAuthorized(
+                [propertyName],
+                "Hint: You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item."
+            );
+        }
+
+        return new AuthorizationResult.Authorized();
+    }
+
     public static async Task<AuthorizationResult> ValidateContactAuthorization(
         IAuthorizationRepository authorizationRepository,
         DocumentSecurityElements securityElements,
