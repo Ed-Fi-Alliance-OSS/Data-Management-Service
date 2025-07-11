@@ -17,8 +17,7 @@ COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/*.csproj ./backend/EdFi.
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/*.csproj ./backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/*.csproj ./datamodel/EdFi.DmsConfigurationService.DataModel/
 
-RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj & \
-    wait
+RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/ ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/ ./backend/EdFi.DmsConfigurationService.Backend/
@@ -27,7 +26,7 @@ COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ ./backend/EdFi.DmsConfi
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/ ./backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/ ./datamodel/EdFi.DmsConfigurationService.DataModel/
 
-RUN dotnet publish /source/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj \
+RUN dotnet publish frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj \
     -c Release --no-restore --self-contained false -o /app/Frontend
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef6246e91704f4efb1954f69912af2d2bd54d117fa09922a53 AS runtimebase
