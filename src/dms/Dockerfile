@@ -21,10 +21,9 @@ COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj ./backend/Ed
 COPY backend/EdFi.DataManagementService.Backend.OpenSearch/*.csproj ./backend/EdFi.DataManagementService.Backend.OpenSearch/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/*.csproj ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
-RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj && \
-    dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj && \
-    dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj & \
-    wait
+RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj
+RUN dotnet restore backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj
+RUN dotnet restore clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj
 
 COPY frontend/EdFi.DataManagementService.Frontend.AspNetCore/ ./frontend/EdFi.DataManagementService.Frontend.AspNetCore/
 COPY core/EdFi.DataManagementService.Core/ ./core/EdFi.DataManagementService.Core/
@@ -36,11 +35,11 @@ COPY backend/EdFi.DataManagementService.Backend.Postgresql/ ./backend/EdFi.DataM
 COPY backend/EdFi.DataManagementService.Backend.OpenSearch/ ./backend/EdFi.DataManagementService.Backend.OpenSearch/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
-RUN dotnet publish /source/frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \
-    -c Release --no-restore --self-contained false -o /app/Frontend && \
-    dotnet publish /source/backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj \
-    -c Release --no-restore --self-contained false -o /app/Installer && \
-    dotnet publish /source/clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj \
+RUN dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \
+    -c Release --no-restore --self-contained false -o /app/Frontend
+RUN dotnet publish backend/EdFi.DataManagementService.Backend.Installer/EdFi.DataManagementService.Backend.Installer.csproj \
+    -c Release --no-restore --self-contained false -o /app/Installer
+RUN dotnet publish clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj \
     -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef6246e91704f4efb1954f69912af2d2bd54d117fa09922a53 AS runtimebase
