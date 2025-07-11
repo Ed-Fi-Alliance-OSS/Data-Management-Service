@@ -61,6 +61,15 @@ public class StaffEducationOrganizationAuthorization
     public short StaffEducationOrganizationPartitionKey { get; set; }
 }
 
+public class StudentEducationOrganizationResponsibilityAuthorization
+{
+    public required string StudentUniqueId { get; set; }
+    public long HierarchyEducationOrganizationId { get; set; }
+    public required string StudentEdOrgResponsibilityAuthorizationEdOrgIds { get; set; }
+    public long StudentEducationOrganizationResponsibilityAssociationId { get; set; }
+    public short StudentEducationOrganizationResponsibilityAssociationPartitionKey { get; set; }
+}
+
 public class DatabaseIntegrationTestHelper : DatabaseTest
 {
     public async Task<UpsertResult> UpsertEducationOrganization(
@@ -776,7 +785,163 @@ public class DatabaseIntegrationTestHelper : DatabaseTest
         return results;
     }
 
-    public static long[] ParseEducationOrganizationIds(string ids)
+    public async Task<UpsertResult> UpsertStudentEducationOrganizationResponsibilityAssociation(
+        long educationOrganizationId,
+        string studentUniqueId
+    )
+    {
+        return await UpsertStudentEducationOrganizationResponsibilityAssociation(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            educationOrganizationId,
+            studentUniqueId
+        );
+    }
+
+    public async Task<UpsertResult> UpsertStudentEducationOrganizationResponsibilityAssociation(
+        Guid documentUuid,
+        Guid referentialId,
+        long educationOrganizationId,
+        string studentUniqueId
+    )
+    {
+        IUpsertRequest upsertRequest = CreateUpsertRequest(
+            "StudentEducationOrganizationResponsibilityAssociation",
+            documentUuid,
+            referentialId,
+            $$"""
+            {
+                "studentReference": {
+                  "studentUniqueId": "{{studentUniqueId}}"
+                },
+                "educationOrganizationReference": {
+                  "educationOrganizationId": {{educationOrganizationId}}
+                },
+                "beginDate": "2023-08-01",
+                "responsibilityDescriptor": "uri://ed-fi.org/ResponsibilityDescriptor#IT Support"
+            }
+            """,
+            isStudentAuthorizationSecurable: true,
+            documentSecurityElements: new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new MetaEdPropertyFullName("EducationOrganizationId"),
+                        new EducationOrganizationId(educationOrganizationId)
+                    ),
+                ],
+                [new StudentUniqueId(studentUniqueId)],
+                [],
+                []
+            ),
+            projectName: "Ed-Fi"
+        );
+
+        return await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+    }
+
+    public async Task<UpdateResult> UpdateStudentEducationOrganizationResponsibilityAssociation(
+        Guid documentUuid,
+        Guid referentialId,
+        long educationOrganizationId,
+        string studentUniqueId
+    )
+    {
+        IUpdateRequest updateRequest = CreateUpdateRequest(
+            "StudentEducationOrganizationResponsibilityAssociation",
+            documentUuid,
+            referentialId,
+            $$"""
+            {
+                "studentReference": {
+                  "studentUniqueId": "{{studentUniqueId}}"
+                },
+                "educationOrganizationReference": {
+                  "educationOrganizationId": {{educationOrganizationId}}
+                },
+                "beginDate": "2023-08-01",
+                "responsibilityDescriptor": "uri://ed-fi.org/ResponsibilityDescriptor#IT Support"
+            }
+            """,
+            documentSecurityElements: new DocumentSecurityElements(
+                [],
+                [
+                    new EducationOrganizationSecurityElement(
+                        new MetaEdPropertyFullName("EducationOrganizationId"),
+                        new EducationOrganizationId(educationOrganizationId)
+                    ),
+                ],
+                [new StudentUniqueId(studentUniqueId)],
+                [],
+                []
+            ),
+            projectName: "Ed-Fi"
+        );
+
+        return await CreateUpdate().UpdateById(updateRequest, Connection!, Transaction!);
+    }
+
+    public async Task DeleteStudentEducationOrganizationResponsibilityAssociation(Guid documentUuid)
+    {
+        IDeleteRequest deleteRequest = CreateDeleteRequest(
+            "StudentEducationOrganizationResponsibilityAssociation",
+            documentUuid
+        );
+        await CreateDeleteById().DeleteById(deleteRequest, Connection!, Transaction!);
+    }
+
+    public async Task<
+        List<StudentEducationOrganizationResponsibilityAuthorization>
+    > GetAllStudentEducationOrganizationResponsibilityAuthorizations()
+    {
+        var command = Connection!.CreateCommand();
+        command.Transaction = Transaction;
+        command.CommandText = "SELECT * FROM dms.StudentEducationOrganizationResponsibilityAuthorization";
+
+        var results = new List<StudentEducationOrganizationResponsibilityAuthorization>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            var authorization = new StudentEducationOrganizationResponsibilityAuthorization
+            {
+                StudentUniqueId = reader["StudentUniqueId"].ToString()!,
+                HierarchyEducationOrganizationId = (long)reader["HierarchyEdOrgId"],
+                StudentEdOrgResponsibilityAuthorizationEdOrgIds = reader[
+                    "StudentEdOrgResponsibilityAuthorizationEdOrgIds"
+                ]
+                    .ToString()!,
+                StudentEducationOrganizationResponsibilityAssociationId = (long)
+                    reader["StudentEdOrgResponsibilityAssociationId"],
+                StudentEducationOrganizationResponsibilityAssociationPartitionKey = (short)
+                    reader["StudentEdOrgResponsibilityAssociationPartitionKey"],
+            };
+            results.Add(authorization);
+        }
+
+        return results;
+    }
+
+    public async Task<string> GetDocumentStudentEdOrgResponsibilityAuthorizationIds(Guid documentUuid)
+    {
+        await using NpgsqlCommand command = new(
+            "SELECT StudentEdOrgResponsibilityAuthorizationIds FROM dms.Document WHERE DocumentUuid = $1;",
+            Connection!,
+            Transaction!
+        )
+        {
+            Parameters = { new() { Value = documentUuid } },
+        };
+
+        await using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return reader["StudentEdOrgResponsibilityAuthorizationIds"]?.ToString() ?? "";
+        }
+
+        return "";
+    }
+
+    protected static long[] ParseEducationOrganizationIds(string ids)
     {
         if (string.IsNullOrWhiteSpace(ids) || ids == "[]")
         {

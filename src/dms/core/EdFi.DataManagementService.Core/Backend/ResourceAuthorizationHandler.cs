@@ -29,7 +29,30 @@ public class ResourceAuthorizationHandler(
         TraceId traceId
     )
     {
-        logger.LogInformation("Entering ResourceAuthorizationHandler. TraceId:{TraceId}", traceId.Value);
+        logger.LogInformation(
+            "Entering ResourceAuthorizationHandler. OperationType:{OperationType}, AuthorizationStrategyCount:{StrategyCount} TraceId:{TraceId}",
+            operationType,
+            authorizationStrategyEvaluators.Length,
+            traceId.Value
+        );
+
+        logger.LogDebug(
+            "DocumentSecurityElements - Namespaces: {Namespaces}, EdOrgs: {EdOrgs}, Students: {Students}, Contacts: {Contacts}, Staff: {Staff}",
+            string.Join(", ", documentSecurityElements.Namespace),
+            string.Join(
+                ", ",
+                documentSecurityElements.EducationOrganization.Select(x => $"{x.PropertyName}={x.Id}")
+            ),
+            string.Join(", ", documentSecurityElements.Student.Select(x => x.Value)),
+            string.Join(", ", documentSecurityElements.Contact.Select(x => x.Value)),
+            string.Join(", ", documentSecurityElements.Staff.Select(x => x.Value))
+        );
+
+        logger.LogDebug(
+            "AuthorizationSecurableInfos: {SecurableInfos}",
+            string.Join(", ", authorizationSecurableInfos.Select(x => x.SecurableKey))
+        );
+
         List<ResourceAuthorizationResult> andResults = [];
         List<ResourceAuthorizationResult> orResults = [];
 
@@ -43,12 +66,36 @@ public class ResourceAuthorizationHandler(
                     $"Could not find authorization strategy implementation for the following strategy: '{evaluator.AuthorizationStrategyName}'."
                 );
 
+            logger.LogDebug(
+                "Using AuthorizationStrategy: {AuthorizationStrategyName} for TraceId: {TraceId}",
+                evaluator.AuthorizationStrategyName,
+                traceId.Value
+            );
+
             var authResult = await validator.ValidateAuthorization(
                 documentSecurityElements,
                 evaluator.Filters,
                 authorizationSecurableInfos,
                 operationType
             );
+
+            logger.LogDebug(
+                "Authorization strategy '{AuthorizationStrategyName}' result: {AuthResult}, Operator: {Operator} for TraceId: {TraceId}",
+                evaluator.AuthorizationStrategyName,
+                authResult.GetType().Name,
+                evaluator.Operator,
+                traceId.Value
+            );
+
+            if (authResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            {
+                logger.LogDebug(
+                    "Authorization strategy '{AuthorizationStrategyName}' failed with errors: {Errors} for TraceId: {TraceId}",
+                    evaluator.AuthorizationStrategyName,
+                    string.Join("; ", notAuthorized.ErrorMessages),
+                    traceId.Value
+                );
+            }
 
             if (evaluator.Operator == FilterOperator.And)
             {
@@ -60,21 +107,40 @@ public class ResourceAuthorizationHandler(
             }
         }
 
+        logger.LogDebug(
+            "Authorization evaluation complete. AND results: {AndResultCount} ({AndResults}), OR results: {OrResultCount} ({OrResults}) for TraceId: {TraceId}",
+            andResults.Count,
+            string.Join(", ", andResults.Select(r => r.GetType().Name)),
+            orResults.Count,
+            string.Join(", ", orResults.Select(r => r.GetType().Name)),
+            traceId.Value
+        );
+
         if (andResults.Exists(f => f is ResourceAuthorizationResult.NotAuthorized))
         {
-            return CreateNotAuthorizedResult(andResults);
+            logger.LogInformation(
+                "Authorization DENIED due to AND logic failure for TraceId: {TraceId}",
+                traceId.Value
+            );
+            return CreateNotAuthorizedResult(andResults, traceId);
         }
 
         if (orResults.Count != 0 && orResults.TrueForAll(f => f is ResourceAuthorizationResult.NotAuthorized))
         {
-            return CreateNotAuthorizedResult(orResults);
+            logger.LogInformation(
+                "Authorization DENIED due to OR logic failure (all OR conditions failed) for TraceId: {TraceId}",
+                traceId.Value
+            );
+            return CreateNotAuthorizedResult(orResults, traceId);
         }
 
+        logger.LogInformation("Authorization GRANTED for TraceId: {TraceId}", traceId.Value);
         return new ResourceAuthorizationResult.Authorized();
     }
 
-    private static ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
-        IEnumerable<ResourceAuthorizationResult> results
+    private ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
+        IEnumerable<ResourceAuthorizationResult> results,
+        TraceId traceId
     )
     {
         string[] errors = results
@@ -87,8 +153,18 @@ public class ResourceAuthorizationHandler(
             .SelectMany(x => x.Hints)
             .ToArray();
 
-        return hints.Any()
+        logger.LogDebug(
+            "Creating NotAuthorized result with {ErrorCount} errors and {HintCount} hints for TraceId: {TraceId}. Errors: {Errors}",
+            errors.Length,
+            hints.Length,
+            traceId.Value,
+            string.Join("; ", errors)
+        );
+
+        var result = hints.Any()
             ? new ResourceAuthorizationResult.NotAuthorized.WithHint(errors, hints)
             : new ResourceAuthorizationResult.NotAuthorized(errors);
+
+        return result;
     }
 }
