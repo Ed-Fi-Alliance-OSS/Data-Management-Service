@@ -28,7 +28,7 @@ internal class ResourceActionAuthorizationMiddleware(
         try
         {
             _logger.LogDebug(
-                "Entering ResourceAuthorizationMiddleware - {TraceId}",
+                "Entering ResourceActionAuthorizationMiddleware - {TraceId}",
                 requestData.FrontendRequest.TraceId.Value
             );
 
@@ -70,6 +70,8 @@ internal class ResourceActionAuthorizationMiddleware(
             // Create resource claim URI
             string resourceClaimUri =
                 $"{Conventions.EdFiOdsResourceClaimBaseUri}/{requestData.PathComponents.ProjectNamespace.Value}/{resourceClaimName}";
+
+            _logger.LogDebug("resourceClaimUri: {ResourceClaimUri}", resourceClaimUri);
 
             ResourceClaim[] matchingClaims = claimSet
                 .ResourceClaims.Where(r =>
@@ -121,6 +123,11 @@ internal class ResourceActionAuthorizationMiddleware(
             IReadOnlyList<string> resourceActionAuthStrategies = authorizedAction
                 .AuthorizationStrategies.Select(auth => auth.Name)
                 .ToList();
+
+            _logger.LogDebug(
+                "resourceActionAuthStrategies: {ResourceActionAuthStrategies}",
+                string.Join(", ", resourceActionAuthStrategies)
+            );
 
             if (resourceActionAuthStrategies.Count == 0)
             {
