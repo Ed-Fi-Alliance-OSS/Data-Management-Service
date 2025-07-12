@@ -149,12 +149,9 @@ jobs:
           path-replace-backslashes: 'true'
           reporter: dotnet-trx
 
-  run-e2e-tests:
-    name: Run ${{matrix.queryhandler}} E2E Tests
+  build-docker-images:
+    name: Build Docker Images
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        queryhandler: [opensearch, postgresql]
     permissions:
       checks: write
     defaults:
@@ -163,14 +160,6 @@ jobs:
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Cache Nuget packages
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
@@ -183,17 +172,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildx-
 
-      - name: Setup dotnet
-        uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
-        with:
-          dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: ./build-dms.ps1 Restore -Configuration ${{ env.CONFIGURATION }}
-
-      - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
-
       - name: Build DMS Docker image
         uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
         with:
@@ -205,6 +183,62 @@ jobs:
           tags: dms-local-dms:latest
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Save Docker image as artifact
+        run: |
+          docker save dms-local-dms:latest | gzip > dms-local-dms.tar.gz
+        shell: bash
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4.5
+        with:
+          name: dms-local-dms-image
+          path: dms-local-dms.tar.gz
+
+  run-e2e-tests:
+    name: Run ${{matrix.queryhandler}} E2E Tests
+    runs-on: ubuntu-latest
+    needs: build-docker-images
+    strategy:
+      matrix:
+        queryhandler: [opensearch, postgresql]
+    permissions:
+      checks: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4.5
+        with:
+          name: dms-local-dms-image
+
+      - name: Load Docker image
+        run: |
+          gunzip -c dms-local-dms.tar.gz | docker load
+        shell: bash
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: ./build-dms.ps1 Restore -Configuration ${{ env.CONFIGURATION }}
+
+      - name: Build
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
       - name: Run ${{matrix.queryhandler}} E2E Tests
         if: success()
