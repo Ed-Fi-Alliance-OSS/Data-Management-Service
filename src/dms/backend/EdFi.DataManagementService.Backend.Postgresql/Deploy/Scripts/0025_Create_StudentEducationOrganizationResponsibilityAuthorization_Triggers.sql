@@ -9,8 +9,6 @@
 
 -- Sets the EducationOrganizationIds to all the student-securable documents
 -- of a given student (existing function, no need to recreate)
-
--- New function for StudentEducationOrganizationResponsibility authorization
 CREATE OR REPLACE FUNCTION dms.GetStudentEdOrgResponsibilityIds(
     student_id text
 )

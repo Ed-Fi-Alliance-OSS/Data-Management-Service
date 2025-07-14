@@ -88,16 +88,6 @@ public class ResourceAuthorizationHandler(
                 traceId.Value
             );
 
-            if (authResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
-            {
-                logger.LogDebug(
-                    "Authorization strategy '{AuthorizationStrategyName}' failed with errors: {Errors} for TraceId: {TraceId}",
-                    evaluator.AuthorizationStrategyName,
-                    string.Join("; ", notAuthorized.ErrorMessages),
-                    traceId.Value
-                );
-            }
-
             if (evaluator.Operator == FilterOperator.And)
             {
                 andResults.Add(authResult);
@@ -119,29 +109,20 @@ public class ResourceAuthorizationHandler(
 
         if (andResults.Exists(f => f is ResourceAuthorizationResult.NotAuthorized))
         {
-            logger.LogInformation(
-                "Authorization DENIED due to AND logic failure for TraceId: {TraceId}",
-                traceId.Value
-            );
-            return CreateNotAuthorizedResult(andResults, traceId);
+            return CreateNotAuthorizedResult(andResults);
         }
 
         if (orResults.Count != 0 && orResults.TrueForAll(f => f is ResourceAuthorizationResult.NotAuthorized))
         {
-            logger.LogInformation(
-                "Authorization DENIED due to OR logic failure (all OR conditions failed) for TraceId: {TraceId}",
-                traceId.Value
-            );
-            return CreateNotAuthorizedResult(orResults, traceId);
+            return CreateNotAuthorizedResult(orResults);
         }
 
         logger.LogInformation("Authorization GRANTED for TraceId: {TraceId}", traceId.Value);
         return new ResourceAuthorizationResult.Authorized();
     }
 
-    private ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
-        IEnumerable<ResourceAuthorizationResult> results,
-        TraceId traceId
+    private static ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
+        IEnumerable<ResourceAuthorizationResult> results
     )
     {
         string[] errors = results
@@ -154,15 +135,6 @@ public class ResourceAuthorizationHandler(
             .OfType<ResourceAuthorizationResult.NotAuthorized.WithHint>()
             .SelectMany(x => x.Hints)
             .ToArray();
-
-        logger.LogDebug(
-            "Creating NotAuthorized result with {ErrorCount} errors and {HintCount} hints for TraceId: {TraceId}. Errors: {Errors} Hints: {Hints}",
-            errors.Length,
-            hints.Length,
-            traceId.Value,
-            string.Join("; ", errors),
-            string.Join("; ", hints)
-        );
 
         var result = hints.Any()
             ? new ResourceAuthorizationResult.NotAuthorized.WithHint(errors, hints)
