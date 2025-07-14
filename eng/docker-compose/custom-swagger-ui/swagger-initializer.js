@@ -13,8 +13,15 @@ window.onload = function () {
         ],
         dom_id: '#swagger-ui',
         presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+        plugins: [window.EdFiCustomFields],
         layout: "StandaloneLayout",
-        docExpansion: "none"
+        docExpansion: "none",
+        onComplete: function() {
+            console.log('Swagger UI loaded successfully');
+        },
+        onFailure: function(data) {
+            console.log('Swagger UI failed to load:', data);
+        }
     });
 
     // Update the title of the page
