@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.load-test
+
+# k6 output
+*.json
+*.csv
+*.html
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test artifacts
+results/
+reports/
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Include package.json
+!package.json
+!package-lock.json

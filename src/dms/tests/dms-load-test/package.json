@@ -1,0 +1,20 @@
+{
+  "name": "dms-load-test",
+  "version": "1.0.0",
+  "description": "Ed-Fi Data Management Service load testing tool using k6",
+  "type": "module",
+  "scripts": {
+    "test:smoke": "node src/run-k6.js run src/scenarios/smoke.js",
+    "test:load": "node src/run-k6.js run src/scenarios/load.js",
+    "test:readwrite": "node src/run-k6.js run src/scenarios/readwrite.js",
+    "test:full": "npm run test:smoke && npm run test:load && npm run test:readwrite",
+    "format": "prettier --write src/"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.1"
+  },
+  "devDependencies": {
+    "prettier": "^3.2.4",
+    "ts-node": "^10.9.2"
+  }
+}
