@@ -488,8 +488,8 @@ Invoke-Main {
         Clean { Invoke-Clean }
         Restore { Invoke-Restore }
         Build { Invoke-Build }
-        BuildAndPublish {s
-            Invoke-SetAssemblyInfos
+        BuildAndPublish {
+            Invoke-SetAssemblyInfo
             Invoke-Build
             Invoke-Publish
         }
