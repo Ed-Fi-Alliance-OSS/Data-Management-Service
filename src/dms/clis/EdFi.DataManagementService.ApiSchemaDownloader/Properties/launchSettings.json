@@ -2,7 +2,7 @@
     "profiles": {
         "EdFi.DataManagementService.ApiSchemaDownloader": {
             "commandName": "Project",
-            "commandLineArgs": "--packageId \"EdFi.DataStandard52.ApiSchema\"  --apiSchemaFolder \"$(ProjectDir)\\..\\..\\EdFi.DataStandard52.ApiSchema\" --packageVersion \"1.0.223\" --feedUrl \"https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json\""
+            "commandLineArgs": "--packageId \"EdFi.DataStandard52.ApiSchema\"  --apiSchemaFolder \"$(ProjectDir)\\..\\..\\EdFi.DataStandard52.ApiSchema\" --packageVersion \"1.0.246\" --feedUrl \"https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json\""
         }
     }
 }
