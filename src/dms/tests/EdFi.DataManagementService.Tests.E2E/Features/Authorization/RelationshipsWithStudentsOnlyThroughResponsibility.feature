@@ -11,9 +11,6 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   | uri://ed-fi.org/ResponsibilityDescriptor#Attendance                  |
                   | uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education |
                   | uri://ed-fi.org/IdeaPartDescriptor#Eligible                          |
-
-    Rule: StudentEducationOrganizationResponsibilityAssociation CRUD is properly authorized
-        Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001, 1255901002"
               And the system has these "schools"
                   | schoolId   | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
@@ -32,6 +29,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   | programName                      | programTypeDescriptor                                                | educationOrganizationReference          |
                   | "Career and Technical Education" | uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education | {"educationOrganizationId": 1255901002} |
 
+    Rule: StudentEducationOrganizationResponsibilityAssociation CRUD is properly authorized
         Scenario: 01 Ensure client can create a StudentEducationOrganizationResponsibilityAssociation
              When a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
                   """
@@ -109,6 +107,190 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   """
                   {
                     "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's EducationOrganizationId value.",
+                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's StudentUniqueId value."
+                    ]
+                  }
+                  """
+
+        Scenario: 04 Ensure client can update a StudentSpecialEducationProgramEligibilityAssociation
+            Given a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
+                  """
+                  {
+                      "beginDate": "2023-08-01",
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1255901002
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "11"
+                      },
+                      "responsibilityDescriptor": "uri://ed-fi.org/ResponsibilityDescriptor#Accountability"
+                  }
+                  """
+              And a POST request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations" with
+                  """
+                  {
+                      "beginDate": "2023-08-01",
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1255901002
+                      },
+                      "programReference": {
+                          "educationOrganizationId": 1255901002,
+                          "programName": "Career and Technical Education",
+                          "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "11"
+                      },
+                      "consentToEvaluationReceivedDate": "2023-08-01",
+                      "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+                  }
+                  """
+             When a PUT request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "beginDate": "2023-08-01",
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1255901002
+                      },
+                      "programReference": {
+                          "educationOrganizationId": 1255901002,
+                          "programName": "Career and Technical Education",
+                          "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "11"
+                      },
+                      "consentToEvaluationReceivedDate": "2023-08-01",
+                      "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+                  }
+                  """
+             Then it should respond with 204
+
+        Scenario: 05 Ensure client can delete a StudentSpecialEducationProgramEligibilityAssociation
+            Given a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
+                  """
+                  {
+                      "beginDate": "2023-08-01",
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1255901002
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "11"
+                      },
+                      "responsibilityDescriptor": "uri://ed-fi.org/ResponsibilityDescriptor#Accountability"
+                  }
+                  """
+              And a POST request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations" with
+                  """
+                  {
+                      "beginDate": "2023-08-01",
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1255901002
+                      },
+                      "programReference": {
+                          "educationOrganizationId": 1255901002,
+                          "programName": "Career and Technical Education",
+                          "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "11"
+                      },
+                      "consentToEvaluationReceivedDate": "2023-08-01",
+                      "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+                  }
+                  """
+             When a DELETE request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations/{id}"
+             Then it should respond with 204
+
+    Rule: StudentEducationOrganizationResponsibilityAssociation CRUD is client is not authorized
+        Background:
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001, 1255901002"
+              And a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
+                  """
+                  {
+                      "beginDate": "2023-08-01",
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1255901002
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "11"
+                      },
+                      "responsibilityDescriptor": "uri://ed-fi.org/ResponsibilityDescriptor#Accountability"
+                  }
+                  """
+              And a POST request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations" with
+                  """
+                  {
+                      "beginDate": "2023-08-01",
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1255901002
+                      },
+                      "programReference": {
+                          "educationOrganizationId": 1255901002,
+                          "programName": "Career and Technical Education",
+                          "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "11"
+                      },
+                      "consentToEvaluationReceivedDate": "2023-08-01",
+                      "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+                  }
+                  """
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
+
+        Scenario: 06 Ensure client cannot update a StudentSpecialEducationProgramEligibilityAssociation
+              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
+             When a PUT request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "beginDate": "2023-08-01",
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1255901002
+                      },
+                      "programReference": {
+                          "educationOrganizationId": 1255901002,
+                          "programName": "Career and Technical Education",
+                          "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "11"
+                      },
+                      "consentToEvaluationReceivedDate": "2023-08-01",
+                      "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+                  }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's EducationOrganizationId value.",
+                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's StudentUniqueId value."
+                    ]
+                  }
+                  """
+
+        Scenario: 07 Ensure client cannot delete a StudentSpecialEducationProgramEligibilityAssociation
+             When a DELETE request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations/{id}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                    "detail": "Access to the resource could not be authorized.",
                     "type": "urn:ed-fi:api:security:authorization:",
                     "title": "Authorization Denied",
                     "status": 403,
