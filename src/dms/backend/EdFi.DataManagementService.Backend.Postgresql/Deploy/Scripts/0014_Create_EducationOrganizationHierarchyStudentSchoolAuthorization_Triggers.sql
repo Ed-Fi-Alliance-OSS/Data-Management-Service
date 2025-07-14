@@ -5,13 +5,14 @@
 
 -- When EducationOrganizationHierarchy rows are inserted, updated, or deleted,
 -- this trigger re-evaluates the StudentSchoolAuthorizationEducationOrganizationIds array
--- for affected rows.
+-- and StudentEdOrgResponsibilityAuthorizationEdOrgIds array for affected rows.
 CREATE OR REPLACE FUNCTION dms.EducationOrganizationHierarchyStudentSchoolAuthorizationTriggerFunction()
 RETURNS TRIGGER
 AS $$
 DECLARE
     affected_school_id BIGINT;
-    affected_record RECORD;
+    affected_ssa RECORD;
+    affected_seora RECORD;
 BEGIN
     -- Determine which education organization ID was affected
     IF (TG_OP = 'DELETE') THEN
@@ -22,7 +23,7 @@ BEGIN
 
     -- Find all StudentSchoolAssociationAuthorization records that have the affected school ID
     -- either directly as HierarchySchoolId or as part of StudentSchoolAuthorizationEducationOrganizationIds
-    FOR affected_record IN
+    FOR affected_ssa IN
         SELECT
             ssa.StudentSchoolAssociationId,
             ssa.StudentSchoolAssociationPartitionKey,
@@ -40,11 +41,38 @@ BEGIN
         UPDATE dms.StudentSchoolAssociationAuthorization
         SET StudentSchoolAuthorizationEducationOrganizationIds = (
             SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
-            FROM dms.GetEducationOrganizationAncestors(affected_record.HierarchySchoolId)
+            FROM dms.GetEducationOrganizationAncestors(affected_ssa.HierarchySchoolId)
         )
         WHERE
-            StudentSchoolAssociationId = affected_record.StudentSchoolAssociationId
-            AND StudentSchoolAssociationPartitionKey = affected_record.StudentSchoolAssociationPartitionKey;
+            StudentSchoolAssociationId = affected_ssa.StudentSchoolAssociationId
+            AND StudentSchoolAssociationPartitionKey = affected_ssa.StudentSchoolAssociationPartitionKey;
+    END LOOP;
+
+    -- Find all StudentEducationOrganizationResponsibilityAuthorization records that have the affected education organization ID
+    -- either directly as HierarchyEdOrgId or as part of StudentEdOrgResponsibilityAuthorizationEdOrgIds
+    FOR affected_seora IN
+        SELECT
+            seora.StudentEdOrgResponsibilityAssociationId,
+            seora.StudentEdOrgResponsibilityAssociationPartitionKey,
+            seora.StudentUniqueId,
+            seora.HierarchyEdOrgId
+        FROM
+            dms.StudentEducationOrganizationResponsibilityAuthorization seora
+        WHERE
+            seora.HierarchyEdOrgId = affected_school_id
+            OR
+            jsonb_path_exists(seora.StudentEdOrgResponsibilityAuthorizationEdOrgIds, '$[*] ? (@ == $id)',
+                             jsonb_build_object('id', affected_school_id))
+    LOOP
+        -- Update each affected record with the new hierarchy information
+        UPDATE dms.StudentEducationOrganizationResponsibilityAuthorization
+        SET StudentEdOrgResponsibilityAuthorizationEdOrgIds = (
+            SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
+            FROM dms.GetEducationOrganizationAncestors(affected_seora.HierarchyEdOrgId)
+        )
+        WHERE
+            StudentEdOrgResponsibilityAssociationId = affected_seora.StudentEdOrgResponsibilityAssociationId
+            AND StudentEdOrgResponsibilityAssociationPartitionKey = affected_seora.StudentEdOrgResponsibilityAssociationPartitionKey;
     END LOOP;
 
     -- Also update records that might be affected by changes in ancestor relationships
@@ -79,6 +107,38 @@ BEGIN
     )
     FROM SchoolsInChangedHierarchy sch
     WHERE ssa.HierarchySchoolId = sch.EducationOrganizationId;
+
+    -- Also update StudentEducationOrganizationResponsibilityAuthorization records for schools in the changed hierarchy
+    WITH RECURSIVE SchoolsInChangedHierarchy AS (
+        -- Base case: start with the affected school
+        SELECT
+            Id,
+            EducationOrganizationId,
+            ParentId
+        FROM
+            dms.EducationOrganizationHierarchy
+        WHERE
+            EducationOrganizationId = affected_school_id
+
+        UNION ALL
+
+        -- Find all descendants of the affected school
+        SELECT
+            child.Id,
+            child.EducationOrganizationId,
+            child.ParentId
+        FROM
+            dms.EducationOrganizationHierarchy child
+        JOIN
+            SchoolsInChangedHierarchy parent ON child.ParentId = parent.Id
+    )
+    UPDATE dms.StudentEducationOrganizationResponsibilityAuthorization seora
+    SET StudentEdOrgResponsibilityAuthorizationEdOrgIds = (
+        SELECT jsonb_agg(to_jsonb(EducationOrganizationId::text))
+        FROM dms.GetEducationOrganizationAncestors(seora.HierarchyEdOrgId)
+    )
+    FROM SchoolsInChangedHierarchy sch
+    WHERE seora.HierarchyEdOrgId = sch.EducationOrganizationId;
 
     RETURN NULL;
 END;

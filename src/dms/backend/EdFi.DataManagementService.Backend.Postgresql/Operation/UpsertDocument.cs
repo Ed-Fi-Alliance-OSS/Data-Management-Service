@@ -58,6 +58,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
         JsonElement? studentSchoolAuthorizationEducationOrganizationIds,
+        JsonElement? studentEdOrgResponsibilityAuthorizationIds,
         JsonElement? contactStudentSchoolAuthorizationEducationOrganizationIds,
         JsonElement? staffEducationOrganizationAuthorizationEdOrgIds,
         NpgsqlConnection connection,
@@ -80,6 +81,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
                 SecurityElements: upsertRequest.DocumentSecurityElements.ToJsonElement(),
                 StudentSchoolAuthorizationEdOrgIds: studentSchoolAuthorizationEducationOrganizationIds,
+                StudentEdOrgResponsibilityAuthorizationIds: studentEdOrgResponsibilityAuthorizationIds,
                 ContactStudentSchoolAuthorizationEdOrgIds: contactStudentSchoolAuthorizationEducationOrganizationIds,
                 StaffEducationOrganizationAuthorizationEdOrgIds: staffEducationOrganizationAuthorizationEdOrgIds,
                 LastModifiedTraceId: traceId.Value
@@ -196,6 +198,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
         JsonElement? studentSchoolAuthorizationEducationOrganizationIds,
+        JsonElement? studentEdOrgResponsibilityAuthorizationIds,
         JsonElement? contactStudentSchoolAuthorizationEducationOrganizationIds,
         JsonElement? staffEducationOrganizationAuthorizationEdOrgIds,
         NpgsqlConnection connection,
@@ -211,6 +214,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
             upsertRequest.DocumentSecurityElements.ToJsonElement(),
             studentSchoolAuthorizationEducationOrganizationIds,
+            studentEdOrgResponsibilityAuthorizationIds,
             contactStudentSchoolAuthorizationEducationOrganizationIds,
             staffEducationOrganizationAuthorizationEdOrgIds,
             connection,
@@ -340,15 +344,27 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
             if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
             {
+                if (
+                    getAuthorizationResult
+                    is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorizedWithHint
+                )
+                {
+                    return new UpsertResult.UpsertFailureNotAuthorized(
+                        notAuthorizedWithHint.ErrorMessages,
+                        notAuthorizedWithHint.Hints
+                    );
+                }
                 return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
             JsonElement? studentSchoolAuthorizationEdOrgIds = null;
+            JsonElement? studentEdOrgResponsibilityAuthorizationIds = null;
             JsonElement? contactStudentSchoolAuthorizationEdOrgIds = null;
             JsonElement? staffEducationOrganizationAuthorizationEdOrgIds = null;
 
             (
                 studentSchoolAuthorizationEdOrgIds,
+                studentEdOrgResponsibilityAuthorizationIds,
                 contactStudentSchoolAuthorizationEdOrgIds,
                 staffEducationOrganizationAuthorizationEdOrgIds
             ) = await DocumentAuthorizationHelper.GetAuthorizationEducationOrganizationIds(
@@ -366,6 +382,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     documentReferenceIds,
                     descriptorReferenceIds,
                     studentSchoolAuthorizationEdOrgIds,
+                    studentEdOrgResponsibilityAuthorizationIds,
                     contactStudentSchoolAuthorizationEdOrgIds,
                     staffEducationOrganizationAuthorizationEdOrgIds,
                     connection,
@@ -401,6 +418,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 documentReferenceIds,
                 descriptorReferenceIds,
                 studentSchoolAuthorizationEdOrgIds,
+                studentEdOrgResponsibilityAuthorizationIds,
                 contactStudentSchoolAuthorizationEdOrgIds,
                 staffEducationOrganizationAuthorizationEdOrgIds,
                 connection,

@@ -18,6 +18,7 @@ public static class DocumentAuthorizationHelper
 {
     public static async Task<(
         JsonElement? StudentEdOrgIds,
+        JsonElement? StudentResponsibilityEdOrgIds,
         JsonElement? ContactEdOrgIds,
         JsonElement? StaffEdOrgIds
     )> GetAuthorizationEducationOrganizationIds(
@@ -46,12 +47,20 @@ public static class DocumentAuthorizationHelper
 
         // Process student authorization if applicable
         JsonElement? studentEdOrgIds = null;
+        JsonElement? studentResponsibilityEdOrgIds = null;
+
         if (
             HasSecurable(authInfo, SecurityElementNameConstants.StudentUniqueId)
             && securityElements.Student?.Length > 0
         )
         {
             studentEdOrgIds = await sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
+                securityElements.Student[0].Value,
+                connection,
+                transaction
+            );
+
+            studentResponsibilityEdOrgIds = await sqlAction.GetStudentEdOrgResponsibilityAuthorizationIds(
                 securityElements.Student[0].Value,
                 connection,
                 transaction
@@ -85,7 +94,7 @@ public static class DocumentAuthorizationHelper
             );
         }
 
-        return (studentEdOrgIds, contactEdOrgIds, staffEdOrgIds);
+        return (studentEdOrgIds, studentResponsibilityEdOrgIds, contactEdOrgIds, staffEdOrgIds);
     }
 
     // Helper method to check if a securable key exists

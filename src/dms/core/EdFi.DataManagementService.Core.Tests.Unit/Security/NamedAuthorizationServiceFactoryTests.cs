@@ -33,10 +33,27 @@ public class NamedAuthorizationServiceFactoryTests
             services.AddTransient<NoFurtherAuthorizationRequiredValidator>();
             services.AddTransient<NamespaceBasedValidator>();
             services.AddTransient<RelationshipsWithEdOrgsOnlyValidator>();
+            services.AddTransient<RelationshipsWithEdOrgsAndPeopleValidator>();
+            services.AddTransient<RelationshipsWithStudentsOnlyValidator>();
+            services.AddTransient<RelationshipsWithStudentsOnlyThroughResponsibilityValidator>();
+            services.AddTransient<RelationshipsWithEdOrgsOnlyFiltersProvider>();
+            services.AddTransient<RelationshipsWithEdOrgsAndPeopleFiltersProvider>();
+            services.AddTransient<RelationshipsWithStudentsOnlyFiltersProvider>();
+            services.AddTransient<RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider>();
+            services.AddTransient<NoFurtherAuthorizationRequiredFiltersProvider>();
+            services.AddTransient<NamespaceBasedFiltersProvider>();
 
             var fakeAuthorizationRepository = A.Fake<IAuthorizationRepository>();
             A.CallTo(() => fakeAuthorizationRepository.GetAncestorEducationOrganizationIds(A<long[]>.Ignored))
                 .Returns(Task.FromResult(new long[] { 255901, 255902 }));
+            A.CallTo(() => fakeAuthorizationRepository.GetEducationOrganizationsForStudent(A<string>.Ignored))
+                .Returns(Task.FromResult(new long[] { 255901 }));
+            A.CallTo(() =>
+                    fakeAuthorizationRepository.GetEducationOrganizationsForStudentResponsibility(
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(Task.FromResult(new long[] { 255901 }));
             services.AddTransient(_ => fakeAuthorizationRepository);
 
             serviceProvider = services.BuildServiceProvider();
@@ -108,6 +125,61 @@ public class NamedAuthorizationServiceFactoryTests
                 )
                 .Result;
             authResult.Should().NotBeNull();
+        }
+
+        [Test]
+        public void Should_Return_RelationshipsWithEdOrgsAndPeopleValidator()
+        {
+            var handler =
+                handlerProvider!.GetByName<IAuthorizationValidator>("RelationshipsWithEdOrgsAndPeople")
+                as RelationshipsWithEdOrgsAndPeopleValidator;
+            handler.Should().NotBeNull();
+        }
+
+        [Test]
+        public void Should_Return_RelationshipsWithStudentsOnlyValidator()
+        {
+            var handler =
+                handlerProvider!.GetByName<IAuthorizationValidator>("RelationshipsWithStudentsOnly")
+                as RelationshipsWithStudentsOnlyValidator;
+            handler.Should().NotBeNull();
+        }
+
+        [Test]
+        public void Should_Return_RelationshipsWithStudentsOnlyThroughResponsibilityValidator()
+        {
+            var handler =
+                handlerProvider!.GetByName<IAuthorizationValidator>(
+                    "RelationshipsWithStudentsOnlyThroughResponsibility"
+                ) as RelationshipsWithStudentsOnlyThroughResponsibilityValidator;
+            handler.Should().NotBeNull();
+            var authResult = handler!
+                .ValidateAuthorization(
+                    new DocumentSecurityElements([], [], [new StudentUniqueId("12345")], [], []),
+                    [new AuthorizationFilter.EducationOrganization("255901")],
+                    [new AuthorizationSecurableInfo("StudentUniqueId")],
+                    OperationType.Get
+                )
+                .Result;
+            authResult.Should().NotBeNull();
+        }
+
+        [Test]
+        public void Should_Return_RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider()
+        {
+            var handler =
+                handlerProvider!.GetByName<IAuthorizationFiltersProvider>(
+                    "RelationshipsWithStudentsOnlyThroughResponsibility"
+                ) as RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider;
+            handler.Should().NotBeNull();
+            var filters = handler!.GetFilters(
+                new ClientAuthorizations("", "", [new EducationOrganizationId(255901)], [])
+            );
+            filters.Should().NotBeNull();
+            filters.Filters.Should().NotBeEmpty();
+            filters.Operator.Should().Be(FilterOperator.Or);
+            filters.Filters[0].GetType().Name.Should().Be("EducationOrganization");
+            filters.Filters[0].Value.Should().Be("255901");
         }
     }
 

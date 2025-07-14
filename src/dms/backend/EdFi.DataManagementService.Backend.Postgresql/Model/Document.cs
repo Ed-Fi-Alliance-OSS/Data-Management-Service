@@ -48,6 +48,10 @@ public record Document(
     /// </summary>
     JsonElement? StudentSchoolAuthorizationEdOrgIds,
     /// <summary>
+    /// Array of EducationOrganizationIds through StudentEducationOrganizationResponsibilityAssociation
+    /// </summary>
+    JsonElement? StudentEdOrgResponsibilityAuthorizationIds,
+    /// <summary>
     /// Array of EducationOrganizationIds through StudentContactAssociation
     /// </summary>
     JsonElement? ContactStudentSchoolAuthorizationEdOrgIds,

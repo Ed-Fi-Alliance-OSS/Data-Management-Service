@@ -48,7 +48,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
              Then it should respond with 201
 
 
-        Scenario: 02 Ensure client cannot  authorize create a staffSchoolAssociations when the staff is not assigned to the school school using staffEducationOrganizationAssignmentAssociations
+        Scenario: 02 Ensure client cannot create a staffSchoolAssociations when the staff is not assigned to the school school using staffEducationOrganizationAssignmentAssociations
              When a POST request is made to "/ed-fi/staffSchoolAssociations" with
                   """
                      {
@@ -65,7 +65,7 @@ Feature: RelationshipsWithEdOrgsAndStaff Authorization
               And the response body is
                   """
                     {
-                      "detail": "Access to the resource could not be authorized.",
+                      "detail": "Access to the resource could not be authorized. Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items.",
                       "type": "urn:ed-fi:api:security:authorization:",
                       "title": "Authorization Denied",
                       "status": 403,
