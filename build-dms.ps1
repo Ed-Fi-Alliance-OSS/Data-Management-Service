@@ -90,7 +90,11 @@ param(
 
     # Only required with E2E testing.
     [switch]
-    $UsePublishedImage
+    $UsePublishedImage,
+
+    # Only required with E2E testing.
+    [switch]
+    $SkipDockerBuild
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -279,7 +283,7 @@ function RunE2E {
 }
 
 function E2ETests {
-    if (-not $UsePublishedImage) {
+if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
     }
 
@@ -311,7 +315,7 @@ function E2ETests {
                     ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
                 }
                 else {
-                    ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -r -AddExtensionSecurityMetadata
+                    ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
                 }
             }
             finally {
@@ -398,10 +402,13 @@ function Invoke-TestExecution {
         $EnableElasticSearch,
 
         [switch]
-        $UsePublishedImage
+        $UsePublishedImage,
+
+        [switch]
+        $SkipDockerBuild
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage } }
+        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -487,7 +494,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage }
+        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
