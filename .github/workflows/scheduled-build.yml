@@ -132,9 +132,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore
-        run: ./build-dms.ps1 Restore -Configuration ${{ env.CONFIGURATION }}
-
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 

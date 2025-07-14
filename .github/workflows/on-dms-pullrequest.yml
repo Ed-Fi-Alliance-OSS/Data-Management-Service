@@ -58,9 +58,6 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Restore
-        run: ./build-dms.ps1 Restore -Configuration ${{ env.CONFIGURATION }}
-
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
@@ -129,9 +126,6 @@ jobs:
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
           dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: ./build-dms.ps1 Restore -Configuration ${{ env.CONFIGURATION }}
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
@@ -292,9 +286,6 @@ jobs:
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
           dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: ./build-dms.ps1 Restore -Configuration ${{ env.CONFIGURATION }}
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
