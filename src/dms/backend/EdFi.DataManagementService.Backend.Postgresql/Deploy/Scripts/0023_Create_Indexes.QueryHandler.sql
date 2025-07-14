@@ -10,6 +10,7 @@ CREATE INDEX IX_Document_ResourceName_CreatedAt ON dms.Document (ResourceName, C
 CREATE INDEX IX_Document_StudentSchoolAuthorizationEdOrgIds ON dms.Document USING GIN (StudentSchoolAuthorizationEdOrgIds);
 CREATE INDEX IX_Document_ContactStudentSchoolAuthorizationEdOrgIds ON dms.Document USING GIN (ContactStudentSchoolAuthorizationEdOrgIds);
 CREATE INDEX IX_Document_StaffEducationOrganizationAuthorizationEdOrgIds ON dms.Document USING GIN (StaffEducationOrganizationAuthorizationEdOrgIds);
+CREATE INDEX IX_Document_StudentEdOrgResponsibilityAuthorizationIds ON dms.Document USING GIN (StudentEdOrgResponsibilityAuthorizationIds);
 
 CREATE INDEX IX_Document_SecurityElements_EducationOrganization ON dms.Document USING GIN ((SecurityElements -> 'EducationOrganization'));
 CREATE INDEX IX_Document_SecurityElements_Namespace ON dms.Document USING GIN ((SecurityElements -> 'Namespace'));
