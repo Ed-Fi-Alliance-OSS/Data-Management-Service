@@ -75,7 +75,10 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                     break;
                 case AuthorizationResult.NotAuthorized notAuthorized:
                     notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
-                    hints.Add(notAuthorized.Hint);
+                    if (notAuthorized is AuthorizationResult.NotAuthorized.WithHint notAuthorizedWithHint)
+                    {
+                        hints.Add(notAuthorizedWithHint.Hint);
+                    }
                     break;
             }
         }
@@ -99,7 +102,10 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                     break;
                 case AuthorizationResult.NotAuthorized notAuthorized:
                     notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
-                    hints.Add(notAuthorized.Hint);
+                    if (notAuthorized is AuthorizationResult.NotAuthorized.WithHint notAuthorizedWithHint)
+                    {
+                        hints.Add(notAuthorizedWithHint.Hint);
+                    }
                     break;
             }
         }
@@ -123,7 +129,10 @@ public class RelationshipsWithEdOrgsAndPeopleValidator(IAuthorizationRepository 
                     break;
                 case AuthorizationResult.NotAuthorized notAuthorized:
                     notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
-                    hints.Add(notAuthorized.Hint);
+                    if (notAuthorized is AuthorizationResult.NotAuthorized.WithHint notAuthorizedWithHint)
+                    {
+                        hints.Add(notAuthorizedWithHint.Hint);
+                    }
                     break;
             }
         }

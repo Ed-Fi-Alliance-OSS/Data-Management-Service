@@ -60,19 +60,28 @@ public static class RelationshipsBasedAuthorizationHelper
                 break;
             case AuthorizationResult.NotAuthorized notAuthorized:
                 notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
-                hints.Add(notAuthorized.Hint);
+                if (notAuthorized is AuthorizationResult.NotAuthorized.WithHint notAuthorizedWithHint)
+                {
+                    hints.Add(notAuthorizedWithHint.Hint);
+                }
                 break;
         }
 
-        if (missingProperties.Count != 0 || notAuthorizedProperties.Count != 0)
+        if (missingProperties.Count == 0 && notAuthorizedProperties.Count == 0)
+        {
+            return new ResourceAuthorizationResult.Authorized();
+        }
+
+        if (hints.Any())
         {
             return new ResourceAuthorizationResult.NotAuthorized.WithHint(
                 [BuildErrorMessage(authorizationFilters, missingProperties, notAuthorizedProperties)],
                 hints.Distinct().ToArray()
             );
         }
-
-        return new ResourceAuthorizationResult.Authorized();
+        return new ResourceAuthorizationResult.NotAuthorized(
+            [BuildErrorMessage(authorizationFilters, missingProperties, notAuthorizedProperties)]
+        );
     }
 
     private static bool IsAuthorized(AuthorizationFilter[] authorizationFilters, long[]? educationOrgIds)
@@ -130,8 +139,7 @@ public static class RelationshipsBasedAuthorizationHelper
         if (!isAuthorized)
         {
             return new AuthorizationResult.NotAuthorized(
-                securityElements.EducationOrganization.Select(e => e.PropertyName.Value).Distinct().ToArray(),
-                ""
+                securityElements.EducationOrganization.Select(e => e.PropertyName.Value).Distinct().ToArray()
             );
         }
         return new AuthorizationResult.Authorized();
@@ -155,7 +163,7 @@ public static class RelationshipsBasedAuthorizationHelper
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult.NotAuthorized(
+            return new AuthorizationResult.NotAuthorized.WithHint(
                 [propertyName],
                 "Hint: You may need to create a corresponding 'StudentSchoolAssociation' item."
             );
@@ -181,7 +189,7 @@ public static class RelationshipsBasedAuthorizationHelper
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult.NotAuthorized(
+            return new AuthorizationResult.NotAuthorized.WithHint(
                 [propertyName],
                 "Hint: You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item."
             );
@@ -211,7 +219,7 @@ public static class RelationshipsBasedAuthorizationHelper
 
         if (!isAuthorized)
         {
-            return new AuthorizationResult.NotAuthorized(
+            return new AuthorizationResult.NotAuthorized.WithHint(
                 [propertyName],
                 "Hint: You may need to create corresponding 'StudentSchoolAssociation' and 'StudentContactAssociation' items."
             );
@@ -238,7 +246,7 @@ public static class RelationshipsBasedAuthorizationHelper
         bool isAuthorized = IsAuthorized(authorizationFilters, educationOrgIds);
         if (!isAuthorized)
         {
-            return new AuthorizationResult.NotAuthorized(
+            return new AuthorizationResult.NotAuthorized.WithHint(
                 [propertyName],
                 "Hint: You may need to create corresponding 'StaffEducationOrganizationEmploymentAssociation' or 'StaffEducationOrganizationAssignmentAssociation' items."
             );
@@ -251,7 +259,10 @@ public abstract record AuthorizationResult
 {
     public record Authorized() : AuthorizationResult;
 
-    public record NotAuthorized(string[] PropertyNames, string Hint) : AuthorizationResult;
+    public record NotAuthorized(string[] PropertyNames) : AuthorizationResult
+    {
+        public record WithHint(string[] PropertyNames, string Hint) : NotAuthorized(PropertyNames);
+    }
 
     public record MissingProperty(string[] PropertyNames) : AuthorizationResult;
 }

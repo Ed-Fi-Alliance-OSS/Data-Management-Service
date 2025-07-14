@@ -117,8 +117,11 @@ public class RelationshipsWithStudentsOnlyThroughResponsibilityValidatorTests
         [Test]
         public void Should_Return_Expected_AuthorizationResult()
         {
-            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
-            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
+            _expectedResult!
+                .GetType()
+                .Should()
+                .Be(typeof(ResourceAuthorizationResult.NotAuthorized.WithHint));
+            if (_expectedResult is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorized)
             {
                 notAuthorized!.ErrorMessages.Should().HaveCount(1);
                 notAuthorized!
@@ -126,6 +129,12 @@ public class RelationshipsWithStudentsOnlyThroughResponsibilityValidatorTests
                     .Should()
                     .Be(
                         "No relationships have been established between the caller's education organization id claims ('255901') and the resource item's StudentUniqueId value."
+                    );
+                notAuthorized!
+                    .Hints[0]
+                    .Should()
+                    .Be(
+                        "Hint: You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item."
                     );
             }
         }
@@ -199,7 +208,10 @@ public class RelationshipsWithStudentsOnlyThroughResponsibilityValidatorTests
         public void Should_Return_NotAuthorized_Result()
         {
             _expectedResult.Should().NotBeNull();
-            _expectedResult!.GetType().Should().Be(typeof(ResourceAuthorizationResult.NotAuthorized));
+            _expectedResult!
+                .GetType()
+                .Should()
+                .Be(typeof(ResourceAuthorizationResult.NotAuthorized.WithHint));
         }
     }
 }
