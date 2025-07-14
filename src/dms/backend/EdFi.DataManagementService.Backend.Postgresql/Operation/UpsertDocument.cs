@@ -344,6 +344,16 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
             if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
             {
+                if (
+                    getAuthorizationResult
+                    is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorizedWithHint
+                )
+                {
+                    return new UpsertResult.UpsertFailureNotAuthorized(
+                        notAuthorizedWithHint.ErrorMessages,
+                        notAuthorizedWithHint.Hints
+                    );
+                }
                 return new UpsertResult.UpsertFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 

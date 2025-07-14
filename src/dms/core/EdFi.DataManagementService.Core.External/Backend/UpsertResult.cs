@@ -55,7 +55,7 @@ public record UpsertResult
     /// <summary>
     /// A failure because the client is not authorized to upsert the document
     /// </summary>
-    public record UpsertFailureNotAuthorized(string[] ErrorMessages) : UpsertResult();
+    public record UpsertFailureNotAuthorized(string[] ErrorMessages, string[]? Hints = null) : UpsertResult();
 
     /// <summary>
     /// A failure of unknown category

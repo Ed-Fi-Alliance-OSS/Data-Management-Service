@@ -51,6 +51,7 @@ public static class RelationshipsBasedAuthorizationHelper
     {
         var missingProperties = new List<string>();
         var notAuthorizedProperties = new List<string>();
+        var hints = new List<string>();
 
         switch (authorizationResult)
         {
@@ -59,13 +60,15 @@ public static class RelationshipsBasedAuthorizationHelper
                 break;
             case AuthorizationResult.NotAuthorized notAuthorized:
                 notAuthorizedProperties.AddRange(notAuthorized.PropertyNames);
+                hints.Add(notAuthorized.Hint);
                 break;
         }
 
         if (missingProperties.Count != 0 || notAuthorizedProperties.Count != 0)
         {
-            return new ResourceAuthorizationResult.NotAuthorized(
-                [BuildErrorMessage(authorizationFilters, missingProperties, notAuthorizedProperties)]
+            return new ResourceAuthorizationResult.NotAuthorized.WithHint(
+                [BuildErrorMessage(authorizationFilters, missingProperties, notAuthorizedProperties)],
+                hints.Distinct().ToArray()
             );
         }
 

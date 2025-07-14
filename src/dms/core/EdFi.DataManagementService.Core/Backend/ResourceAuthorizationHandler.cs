@@ -80,10 +80,11 @@ public class ResourceAuthorizationHandler(
             );
 
             logger.LogDebug(
-                "Authorization strategy '{AuthorizationStrategyName}' result: {AuthResult}, Operator: {Operator} for TraceId: {TraceId}",
+                "Authorization strategy '{AuthorizationStrategyName}' result: {AuthResult}, Operator: {Operator}, Filters: {Filters}, for TraceId: {TraceId}",
                 evaluator.AuthorizationStrategyName,
                 authResult.GetType().Name,
                 evaluator.Operator,
+                string.Join(", ", evaluator.Filters.Select(f => $"{f.GetType().Name}={f.Value}")),
                 traceId.Value
             );
 
@@ -146,6 +147,7 @@ public class ResourceAuthorizationHandler(
         string[] errors = results
             .OfType<ResourceAuthorizationResult.NotAuthorized>()
             .SelectMany(x => x.ErrorMessages)
+            .Distinct()
             .ToArray();
 
         string[] hints = results
@@ -154,11 +156,12 @@ public class ResourceAuthorizationHandler(
             .ToArray();
 
         logger.LogDebug(
-            "Creating NotAuthorized result with {ErrorCount} errors and {HintCount} hints for TraceId: {TraceId}. Errors: {Errors}",
+            "Creating NotAuthorized result with {ErrorCount} errors and {HintCount} hints for TraceId: {TraceId}. Errors: {Errors} Hints: {Hints}",
             errors.Length,
             hints.Length,
             traceId.Value,
-            string.Join("; ", errors)
+            string.Join("; ", errors),
+            string.Join("; ", hints)
         );
 
         var result = hints.Any()

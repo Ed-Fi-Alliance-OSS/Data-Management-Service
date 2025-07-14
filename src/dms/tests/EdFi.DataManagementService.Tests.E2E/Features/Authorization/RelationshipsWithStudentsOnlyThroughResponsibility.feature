@@ -14,7 +14,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
 
     Rule: StudentEducationOrganizationResponsibilityAssociation CRUD is properly authorized
         Background:
-            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001, 1255901002"
               And the system has these "schools"
                   | schoolId   | nameOfInstitution   | gradeLevels                                                                      | educationOrganizationCategories                                                                                   |
                   | 1255901001 | Authorized school 1 | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"} ] |
@@ -27,10 +27,10 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
               And the system has these "studentSchoolAssociations"
                   | entryDate  | schoolReference            | studentReference           | entryGradeLevelDescriptor                        |
                   | 2023-08-01 | { "schoolId": 1255901001 } | {"studentUniqueId": "11" } | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade |
+                  | 2023-08-01 | { "schoolId": 1255901002 } | {"studentUniqueId": "11" } | uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade |
               And the system has these "programs"
                   | programName                      | programTypeDescriptor                                                | educationOrganizationReference          |
-                  | "Career and Technical Education" | uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education | {"educationOrganizationId": 1255901001} |
-              And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901002"
+                  | "Career and Technical Education" | uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education | {"educationOrganizationId": 1255901002} |
 
         Scenario: 01 Ensure client can create a StudentEducationOrganizationResponsibilityAssociation
              When a POST request is made to "/ed-fi/studentEducationOrganizationResponsibilityAssociations" with
@@ -54,7 +54,7 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   {
                       "beginDate": "2023-08-01",
                       "educationOrganizationReference": {
-                          "educationOrganizationId": 1255901001
+                          "educationOrganizationId": 1255901002
                       },
                       "studentReference": {
                           "studentUniqueId": "11"
@@ -67,10 +67,10 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
                   {
                       "beginDate": "2023-08-01",
                       "educationOrganizationReference": {
-                          "educationOrganizationId": 1255901001
+                          "educationOrganizationId": 1255901002
                       },
                       "programReference": {
-                          "educationOrganizationId": 1255901001,
+                          "educationOrganizationId": 1255901002,
                           "programName": "Career and Technical Education",
                           "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
                       },
@@ -84,23 +84,38 @@ Feature: RelationshipsWithStudentsOnlyThroughResponsibility Authorization
              Then it should respond with 201
 
         Scenario: 03 Ensure client can not create a StudentSpecialEducationProgramEligibilityAssociation without a StudentEducationOrganizationResponsibilityAssociation
+            Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "1255901001"
              When a POST request is made to "/ed-fi/studentSpecialEducationProgramEligibilityAssociations" with
                   """
                   {
                       "beginDate": "2023-08-01",
                       "educationOrganizationReference": {
-                          "educationOrganizationId": 1255901001
+                          "educationOrganizationId": 1255901002
                       },
                       "programReference": {
-                          "educationOrganizationId": 1255901001,
+                          "educationOrganizationId": 1255901002,
                           "programName": "Career and Technical Education",
                           "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
                       },
                       "studentReference": {
-                          "studentUniqueId": "12"
+                          "studentUniqueId": "11"
                       },
                       "consentToEvaluationReceivedDate": "2023-08-01",
                       "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
                   }
                   """
              Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                    "detail": "Access to the resource could not be authorized. Hint: You may need to create a corresponding 'StudentEducationOrganizationResponsibilityAssociation' item.",
+                    "type": "urn:ed-fi:api:security:authorization:",
+                    "title": "Authorization Denied",
+                    "status": 403,
+                    "validationErrors": {},
+                    "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's EducationOrganizationId value.",
+                        "No relationships have been established between the caller's education organization id claims ('1255901001') and the resource item's StudentUniqueId value."
+                    ]
+                  }
+                  """
