@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
@@ -33,6 +34,9 @@ public class MetadataModuleTests
             // Arrange
             var claimSetCacheService = A.Fake<IClaimSetCacheService>();
             A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+
+            var apiService = A.Fake<IApiService>();
+
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -40,6 +44,7 @@ public class MetadataModuleTests
                     (collection) =>
                     {
                         collection.AddTransient((x) => claimSetCacheService);
+                        collection.AddTransient((x) => apiService);
                     }
                 );
             });
@@ -97,6 +102,21 @@ public class MetadataModuleTests
         {
             var claimSetCacheService = A.Fake<IClaimSetCacheService>();
             A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
+                .Returns(
+                    JsonNode.Parse(
+                        "{\"openapi\":\"3.0.0\",\"servers\":[{\"url\":\"http://localhost/data\"}]}"
+                    )!
+                );
+            A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
+                .Returns(
+                    JsonNode.Parse(
+                        "{\"openapi\":\"3.0.0\",\"servers\":[{\"url\":\"http://localhost/data\"}]}"
+                    )!
+                );
+
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
@@ -105,6 +125,7 @@ public class MetadataModuleTests
                     (collection) =>
                     {
                         collection.AddTransient((x) => claimSetCacheService);
+                        collection.AddTransient((x) => apiService);
                     }
                 );
             });
@@ -168,6 +189,14 @@ public class MetadataModuleTests
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
 
+        var apiService = A.Fake<IApiService>();
+        A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
+            .Returns(
+                JsonNode.Parse(
+                    "{\"openapi\":\"3.0.0\",\"servers\":[{\"url\":\"http://localhost/data\"}],\"paths\":{\"/ed-fi/absenceEventCategoryDescriptors\":{}}}"
+                )!
+            );
+
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
@@ -176,6 +205,7 @@ public class MetadataModuleTests
                 {
                     collection.AddTransient((x) => contentProvider);
                     collection.AddTransient((x) => claimSetCacheService);
+                    collection.AddTransient((x) => apiService);
                 }
             );
         });
@@ -229,6 +259,13 @@ public class MetadataModuleTests
         var httpContext = A.Fake<HttpContext>();
         var claimSetCacheService = A.Fake<IClaimSetCacheService>();
         A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+
+        var apiService = A.Fake<IApiService>();
+        var dependenciesJson = JsonNode
+            .Parse("[{\"resource\":\"/ed-fi/absenceEventCategoryDescriptors\",\"order\":1}]")!
+            .AsArray();
+        A.CallTo(() => apiService.GetDependencies()).Returns(dependenciesJson);
+
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
@@ -237,6 +274,7 @@ public class MetadataModuleTests
                 {
                     collection.AddTransient(x => httpContext);
                     collection.AddTransient((x) => claimSetCacheService);
+                    collection.AddTransient((x) => apiService);
                 }
             );
         });

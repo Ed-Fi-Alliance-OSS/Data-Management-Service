@@ -51,7 +51,7 @@ internal class ApiSchemaValidator(ILogger<ApiSchemaValidator> _logger) : IApiSch
     /// </summary>
     private static List<SchemaValidationFailure> ValidationErrorsFrom(EvaluationResults results)
     {
-        List<SchemaValidationFailure> validationErrors = [];
+        var validationErrorsByPath = new Dictionary<string, List<string>>();
 
         foreach (var detail in results.Details)
         {
@@ -61,15 +61,25 @@ internal class ApiSchemaValidator(ILogger<ApiSchemaValidator> _logger) : IApiSch
             {
                 propertyPathAndName = $"${detail.InstanceLocation.ToString().Replace("/", ".")}";
             }
+
             if (detail.Errors != null && detail.Errors.Any())
             {
-                List<string> errors = [];
+                if (!validationErrorsByPath.ContainsKey(propertyPathAndName))
+                {
+                    validationErrorsByPath[propertyPathAndName] = [];
+                }
+
                 foreach (var error in detail.Errors)
                 {
-                    errors.Add(error.Value);
+                    validationErrorsByPath[propertyPathAndName].Add(error.Value);
                 }
-                validationErrors.Add(new(new(propertyPathAndName), errors));
             }
+        }
+
+        List<SchemaValidationFailure> validationErrors = [];
+        foreach (var kvp in validationErrorsByPath)
+        {
+            validationErrors.Add(new(new(kvp.Key), kvp.Value));
         }
 
         return validationErrors;

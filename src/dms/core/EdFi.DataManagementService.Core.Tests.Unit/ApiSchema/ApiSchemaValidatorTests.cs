@@ -61,6 +61,43 @@ public class ApiSchemaValidatorTests
             response[0].FailureMessages[0].Should().Contain("Required properties");
             response[0].FailureMessages[0].Should().Contain("abstractResources");
             response[0].FailureMessages[0].Should().Contain("caseInsensitiveEndpointNameMapping");
+            response[0].FailureMessages[0].Should().Contain("educationOrganizationHierarchy");
+            response[0].FailureMessages[0].Should().Contain("educationOrganizationTypes");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_ProjectSchema_With_Missing_OpenApi_Core_Properties : ApiSchemaValidatorTests
+    {
+        private readonly JsonNode _apiSchemaRootNode =
+            JsonNode.Parse(
+                """
+                {
+                  "apiSchemaVersion": "1.0.0",
+                  "projectSchema": {
+                    "caseInsensitiveEndpointNameMapping": {},
+                    "abstractResources": {},
+                    "description": "The Ed-Fi Data Standard v5.0",
+                    "educationOrganizationHierarchy": {},
+                    "educationOrganizationTypes": [],
+                    "isExtensionProject": false,
+                    "projectName": "ed-fi",
+                    "projectEndpointName": "ed-fi",
+                    "projectVersion": "5.0.0",
+                    "resourceNameMapping": {},
+                    "resourceSchemas": {}
+                  }
+                }
+                """
+            ) ?? new JsonObject();
+
+        [Test]
+        public void It_has_no_validation_errors()
+        {
+            var response = _validator!.Validate(_apiSchemaRootNode);
+            response.Should().NotBeNull();
+            response.Count.Should().Be(0);
         }
     }
 
@@ -86,6 +123,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
+                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
@@ -129,6 +168,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
+                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
@@ -181,6 +222,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
+                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
@@ -224,6 +267,61 @@ public class ApiSchemaValidatorTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_ResourceSchema_With_Missing_New_Properties : ApiSchemaValidatorTests
+    {
+        private readonly JsonNode _apiSchemaRootNode =
+            JsonNode.Parse(
+                """
+                {
+                  "apiSchemaVersion": "1.0.0",
+                  "projectSchema": {
+                    "caseInsensitiveEndpointNameMapping": {},
+                    "abstractResources": {},
+                    "description": "The Ed-Fi Data Standard v5.0",
+                    "educationOrganizationHierarchy": {},
+                    "educationOrganizationTypes": [],
+                    "isExtensionProject": false,
+                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "projectName": "ed-fi",
+                    "projectEndpointName": "ed-fi",
+                    "projectVersion": "5.0.0",
+                    "resourceNameMapping": {},
+                    "resourceSchemas": {
+                      "Students": {
+                        "allowIdentityUpdates": false,
+                        "documentPathsMapping": {},
+                        "identityJsonPaths": [],
+                        "isDescriptor": false,
+                        "isSchoolYearEnumeration": false,
+                        "isSubclass": false,
+                        "equalityConstraints": [],
+                        "jsonSchemaForInsert": {},
+                        "resourceName": "Student",
+                        "invalidProperty": "should not be allowed"
+                      }
+                    }
+                  }
+                }
+                """
+            ) ?? new JsonObject();
+
+        [Test]
+        public void It_has_validation_errors()
+        {
+            var response = _validator!.Validate(_apiSchemaRootNode);
+            response.Should().NotBeNull();
+            response.Count.Should().Be(1);
+            response[0].Should().NotBeNull();
+
+            response[0].FailureMessages.Count.Should().Be(1);
+            response[0].FailurePath.Value.Should().Contain("resourceSchemas.Students.invalidProperty");
+            response[0].FailureMessages[0].Should().Contain("All values fail against the false schema");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Valid_Api_Schema : ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
@@ -238,6 +336,8 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
+                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
@@ -245,6 +345,12 @@ public class ApiSchemaValidatorTests
                     "resourceSchemas": {
                       "Students": {
                         "allowIdentityUpdates": false,
+                        "arrayUniquenessConstraints": [],
+                        "authorizationPathways": [],
+                        "booleanJsonPaths": [],
+                        "dateJsonPaths": [],
+                        "dateTimeJsonPaths": [],
+                        "decimalPropertyValidationInfos": [],
                         "documentPathsMapping": {
                           "begindate": {
                             "isReference": false
@@ -253,10 +359,20 @@ public class ApiSchemaValidatorTests
                         "identityJsonPaths": [],
                         "isSchoolYearEnumeration": false,
                         "isSubclass": false,
-                        "equalityConstraints": [],
                         "isDescriptor": false,
+                        "isResourceExtension": false,
+                        "equalityConstraints": [],
                         "jsonSchemaForInsert": {},
-                        "resourceName": "Student"
+                        "numericJsonPaths": [],
+                        "queryFieldMapping": {},
+                        "resourceName": "Student",
+                        "securableElements": {
+                          "Namespace": [],
+                          "EducationOrganization": [],
+                          "Student": [],
+                          "Contact": [], 
+                          "Staff": []
+                        }
                       }
                     }
                   }
@@ -268,6 +384,42 @@ public class ApiSchemaValidatorTests
         public void It_has_no_validation_errors()
         {
             _validator!.Validate(_apiSchemaRootNode).Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Valid_Extension_Project_Schema : ApiSchemaValidatorTests
+    {
+        private readonly JsonNode _apiSchemaRootNode =
+            JsonNode.Parse(
+                """
+                {
+                  "apiSchemaVersion": "1.0.0",
+                  "projectSchema": {
+                    "caseInsensitiveEndpointNameMapping": {},
+                    "abstractResources": {},
+                    "description": "Sample Extension",
+                    "educationOrganizationHierarchy": {},
+                    "educationOrganizationTypes": [],
+                    "isExtensionProject": true,
+                    "openApiExtensionResourceFragments": { "exts": {}, "newPaths": {}, "newSchemas": {}, "newTags": [] },
+                    "openApiExtensionDescriptorFragments": { "exts": {}, "newPaths": {}, "newSchemas": {}, "newTags": [] },
+                    "projectName": "sample-extension",
+                    "projectEndpointName": "sample-extension",
+                    "projectVersion": "1.0.0",
+                    "resourceNameMapping": {},
+                    "resourceSchemas": {}
+                  }
+                }
+                """
+            ) ?? new JsonObject();
+
+        [Test]
+        public void It_has_no_validation_errors()
+        {
+            var response = _validator!.Validate(_apiSchemaRootNode);
+            response.Count.Should().Be(0);
         }
     }
 }
