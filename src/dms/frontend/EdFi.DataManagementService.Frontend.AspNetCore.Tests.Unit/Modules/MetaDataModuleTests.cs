@@ -107,13 +107,31 @@ public class MetadataModuleTests
             A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
                 .Returns(
                     JsonNode.Parse(
-                        "{\"openapi\":\"3.0.0\",\"servers\":[{\"url\":\"http://localhost/data\"}]}"
+                        """
+                        {
+                          "openapi": "3.0.0",
+                          "servers": [
+                            {
+                              "url": "http://localhost/data"
+                            }
+                          ]
+                        }
+                        """
                     )!
                 );
             A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
                 .Returns(
                     JsonNode.Parse(
-                        "{\"openapi\":\"3.0.0\",\"servers\":[{\"url\":\"http://localhost/data\"}]}"
+                        """
+                        {
+                          "openapi": "3.0.0",
+                          "servers": [
+                            {
+                              "url": "http://localhost/data"
+                            }
+                          ]
+                        }
+                        """
                     )!
                 );
 
@@ -193,7 +211,19 @@ public class MetadataModuleTests
         A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
             .Returns(
                 JsonNode.Parse(
-                    "{\"openapi\":\"3.0.0\",\"servers\":[{\"url\":\"http://localhost/data\"}],\"paths\":{\"/ed-fi/absenceEventCategoryDescriptors\":{}}}"
+                    """
+                    {
+                      "openapi": "3.0.0",
+                      "servers": [
+                        {
+                          "url": "http://localhost/data"
+                        }
+                      ],
+                      "paths": {
+                        "/ed-fi/absenceEventCategoryDescriptors": {}
+                      }
+                    }
+                    """
                 )!
             );
 
@@ -262,7 +292,16 @@ public class MetadataModuleTests
 
         var apiService = A.Fake<IApiService>();
         var dependenciesJson = JsonNode
-            .Parse("[{\"resource\":\"/ed-fi/absenceEventCategoryDescriptors\",\"order\":1}]")!
+            .Parse(
+                """
+                [
+                  {
+                    "resource": "/ed-fi/absenceEventCategoryDescriptors",
+                    "order": 1
+                  }
+                ]
+                """
+            )!
             .AsArray();
         A.CallTo(() => apiService.GetDependencies()).Returns(dependenciesJson);
 

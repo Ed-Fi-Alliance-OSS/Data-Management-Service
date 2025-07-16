@@ -46,7 +46,20 @@ public class ApiSchemaValidatorTests
     {
         private readonly JsonNode _apiSchemaRootNode =
             JsonNode.Parse(
-                "{\"apiSchemaVersion\":\"1.0.0\", \"projectSchema\": { \"description\":\"The Ed-Fi Data Standard v5.0\",\"isExtensionProject\":false,\"projectName\":\"ed-fi\",\"projectEndpointName\":\"ed-fi\",\"projectVersion\":\"5.0.0\",\"resourceNameMapping\":{},\"resourceSchemas\":{}} }"
+                """
+                {
+                  "apiSchemaVersion": "1.0.0",
+                  "projectSchema": {
+                    "description": "The Ed-Fi Data Standard v5.0",
+                    "isExtensionProject": false,
+                    "projectName": "ed-fi",
+                    "projectEndpointName": "ed-fi",
+                    "projectVersion": "5.0.0",
+                    "resourceNameMapping": {},
+                    "resourceSchemas": {}
+                  }
+                }
+                """
             ) ?? new JsonObject();
 
         [Test]
@@ -370,7 +383,7 @@ public class ApiSchemaValidatorTests
                           "Namespace": [],
                           "EducationOrganization": [],
                           "Student": [],
-                          "Contact": [], 
+                          "Contact": [],
                           "Staff": []
                         }
                       }
