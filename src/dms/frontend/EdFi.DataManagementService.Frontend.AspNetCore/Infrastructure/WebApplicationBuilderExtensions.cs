@@ -33,14 +33,6 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Environment.EnvironmentName
         );
 
-        // Skip complex setup in test environment
-        if (webAppBuilder.Environment.IsEnvironment("Test"))
-        {
-            logger.Information("Test environment detected - using minimal configuration");
-            ConfigureTestServices(webAppBuilder, logger);
-            return;
-        }
-
         // Add custom mapping for ENABLE_MANAGEMENT_ENDPOINTS environment variable
         var enableManagementEndpoints = Environment.GetEnvironmentVariable("ENABLE_MANAGEMENT_ENDPOINTS");
         if (!string.IsNullOrEmpty(enableManagementEndpoints))
@@ -245,73 +237,6 @@ public static class WebApplicationBuilderExtensions
                 )
             );
         });
-    }
-
-    private static void ConfigureTestServices(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
-    {
-        // Minimal services needed for tests
-        webAppBuilder.Services.AddMemoryCache();
-        webAppBuilder.Services.AddHealthChecks().AddCheck<ApplicationHealthCheck>("ApplicationHealthCheck");
-
-        // Check if rate limiting is configured and add it
-        if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
-        {
-            logger.Information("Injecting rate limiting for test environment");
-            ConfigureRateLimit(webAppBuilder);
-        }
-
-        // Add minimal DMS configuration without complex dependencies
-        webAppBuilder
-            .Services.AddDmsDefaultConfiguration(
-                logger,
-                webAppBuilder.Configuration.GetSection("CircuitBreaker"),
-                false // MaskRequestBodyInLogs
-            )
-            .AddTransient<IAssemblyLoader, ApiSchemaAssemblyLoader>()
-            .AddTransient<IContentProvider, ContentProvider>()
-            .AddTransient<IVersionProvider, VersionProvider>()
-            .AddTransient<IAssemblyProvider, AssemblyProvider>()
-            .AddTransient<IOAuthManager, OAuthManager>();
-
-        // Add minimal configuration validators
-        webAppBuilder.Services.Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"));
-        webAppBuilder.Services.Configure<CoreAppSettings>(
-            webAppBuilder.Configuration.GetSection("AppSettings")
-        );
-
-        // Add JWT authentication services from Core
-        webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
-
-        // Add minimal datastore configuration for health checks
-        ConfigureDatastore(webAppBuilder, logger);
-
-        // Add fake configuration service dependencies to avoid external calls
-        webAppBuilder.Services.AddSingleton(
-            new ConfigurationServiceContext("test-client", "test-secret", "test-scope")
-        );
-
-        webAppBuilder.Services.AddSingleton(serviceProvider =>
-        {
-            var memoryCache = serviceProvider.GetRequiredService<IMemoryCache>();
-            return new ClaimSetsCache(memoryCache, TimeSpan.FromMinutes(5));
-        });
-
-        // Add stub implementations for test environment
-        // Register ConfigurationServiceApiClient for test environment
-        webAppBuilder.Services.AddTransient<ConfigurationServiceApiClient>();
-
-        // Register the inner claim set provider by its concrete type
-        webAppBuilder.Services.AddTransient<ConfigurationServiceClaimSetProvider>();
-
-        // Register the cache decorator using a factory (same as main configuration)
-        webAppBuilder.Services.AddTransient<IClaimSetProvider>(provider =>
-        {
-            var innerProvider = provider.GetRequiredService<ConfigurationServiceClaimSetProvider>();
-            var claimSetsCache = provider.GetRequiredService<ClaimSetsCache>();
-            return new CachedClaimSetProvider(innerProvider, claimSetsCache);
-        });
-
-        logger.Information("Test environment configuration completed");
     }
 
     private static void MapJwtEnvironmentVariables(WebApplicationBuilder webAppBuilder)
