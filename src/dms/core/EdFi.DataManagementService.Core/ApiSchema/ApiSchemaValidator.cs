@@ -5,6 +5,7 @@
 
 using System.Reflection;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Model;
 using Json.Schema;
 using Microsoft.Extensions.Logging;
 
@@ -51,26 +52,40 @@ internal class ApiSchemaValidator(ILogger<ApiSchemaValidator> _logger) : IApiSch
     /// </summary>
     private static List<SchemaValidationFailure> ValidationErrorsFrom(EvaluationResults results)
     {
-        List<SchemaValidationFailure> validationErrors = [];
+        Dictionary<string, List<string>> validationErrorsByPath = new();
 
         foreach (var detail in results.Details)
         {
-            var propertyPathAndName = "$.";
+            string propertyPathAndName = "$.";
 
-            if (detail.InstanceLocation != null && detail.InstanceLocation.Count != 0)
+            if (detail.InstanceLocation.Count != 0)
             {
                 propertyPathAndName = $"${detail.InstanceLocation.ToString().Replace("/", ".")}";
             }
-            if (detail.Errors != null && detail.Errors.Any())
+
+            if (detail.Errors == null || !detail.Errors.Any())
             {
-                List<string> errors = [];
-                foreach (var error in detail.Errors)
-                {
-                    errors.Add(error.Value);
-                }
-                validationErrors.Add(new(new(propertyPathAndName), errors));
+                continue;
+            }
+
+            if (!validationErrorsByPath.ContainsKey(propertyPathAndName))
+            {
+                validationErrorsByPath[propertyPathAndName] = [];
+            }
+
+            foreach (var error in detail.Errors)
+            {
+                validationErrorsByPath[propertyPathAndName].Add(error.Value);
             }
         }
+
+        List<SchemaValidationFailure> validationErrors = [];
+        validationErrors.AddRange(
+            validationErrorsByPath.Select(kvp => new SchemaValidationFailure(
+                new JsonPath(kvp.Key),
+                kvp.Value
+            ))
+        );
 
         return validationErrors;
     }
