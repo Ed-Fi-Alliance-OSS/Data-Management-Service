@@ -1,0 +1,518 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed to the Ed-Fi Alliance under one or more agreements.
+ * The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+ * See the LICENSE and NOTICES files in the project root for more information.
+ */
+
+#5126 or 8081
+@configPort=8081
+
+#5198 or 8080
+@dmsPort=8080
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+#
+# Create a new system administrator and create a token
+#
+
+### Create the system administrator credentials
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+### Create a token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+#
+# Create vendor, application, and new DMS client credentials
+#
+
+### Create a new vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Demo Vendor",
+    "contactName": "George Washington",
+    "contactEmailAddress": "george@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
+
+### Create a new application
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Demo application",
+    "claimSetName": "EdFiSandbox",
+    "educationOrganizationIds": [1255901001, 1255901002]
+}
+
+###
+@clientKey={{createApplication.response.body.key}}
+@clientSecret={{createApplication.response.body.secret}}
+@applicationLocation={{createApplication.response.headers.location}}
+
+### Read the Token URL from the Discovery API
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+@tokenUrl={{discovery.response.body.urls.oauth}}
+
+### Create a DMS token
+# @name dmsTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{clientKey}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken={{dmsTokenRequest.response.body.access_token}}
+
+### Create required descriptors
+POST {{dataApi}}/ed-fi/responsibilityDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/ResponsibilityDescriptor",
+    "codeValue": "Accountability",
+    "shortDescription": "Accountability"
+}
+
+### Create required descriptors
+POST {{dataApi}}/ed-fi/responsibilityDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/ResponsibilityDescriptor",
+    "codeValue": "Attendance",
+    "shortDescription": "Attendance"
+}
+
+### Create required descriptors
+POST {{dataApi}}/ed-fi/programTypeDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/ProgramTypeDescriptor",
+    "codeValue": "Career and Technical Education",
+    "shortDescription": "Career and Technical Education"
+}
+
+### Create required descriptors
+POST {{dataApi}}/ed-fi/ideaPartDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/IdeaPartDescriptor",
+    "codeValue": "Eligible",
+    "shortDescription": "Eligible"
+}
+
+### Create required descriptors
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+    "codeValue": "school",
+    "shortDescription": "School"
+}
+
+### Create required descriptors
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+    "codeValue": "Tenth Grade",
+    "shortDescription": "Tenth Grade"
+}
+
+### Create School 1255901001
+# @name createSchool1
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolId": 1255901001,
+    "nameOfInstitution": "Authorized school 1",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+        }
+    ]
+}
+
+### Create School 1255901002
+# @name createSchool2
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolId": 1255901002,
+    "nameOfInstitution": "Authorized school 2",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+        }
+    ]
+}
+
+### Create School 1255901003 (Unauthorized)
+# @name createSchool3
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolId": 1255901003,
+    "nameOfInstitution": "Unauthorized school",
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#school"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade"
+        }
+    ]
+}
+
+### Create Student 11
+# @name createStudent1
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "studentUniqueId": "11",
+    "birthDate": "2008-01-01",
+    "firstName": "Authorized student",
+    "lastSurname": "student-ln"
+}
+
+### Create Student 12
+# @name createStudent2
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "studentUniqueId": "12",
+    "birthDate": "2008-01-01",
+    "firstName": "Unauthorized student",
+    "lastSurname": "student-ln"
+}
+
+### Create StudentSchoolAssociation for Student 11 with School 1255901001
+POST {{dataApi}}/ed-fi/studentSchoolAssociations
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "entryDate": "2023-08-01",
+    "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
+    "schoolReference": {
+        "schoolId": 1255901001
+    },
+    "studentReference": {
+        "studentUniqueId": "11"
+    }
+}
+
+### Create StudentSchoolAssociation for Student 11 with School 1255901002
+POST {{dataApi}}/ed-fi/studentSchoolAssociations
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "entryDate": "2023-08-01",
+    "entryGradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth Grade",
+    "schoolReference": {
+        "schoolId": 1255901002
+    },
+    "studentReference": {
+        "studentUniqueId": "11"
+    }
+}
+
+### Create Program
+# @name createProgram
+POST {{dataApi}}/ed-fi/programs
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "programName": "Career and Technical Education",
+    "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education",
+    "educationOrganizationReference": {
+        "educationOrganizationId": 1255901002
+    }
+}
+
+### Scenario 01: Create a StudentEducationOrganizationResponsibilityAssociation
+# @name createStudentEducationOrganizationResponsibilityAssociation
+POST {{dataApi}}/ed-fi/studentEducationOrganizationResponsibilityAssociations
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "beginDate": "2023-08-01",
+    "educationOrganizationReference": {
+        "educationOrganizationId": 1255901002
+    },
+    "studentReference": {
+        "studentUniqueId": "11"
+    },
+    "responsibilityDescriptor": "uri://ed-fi.org/ResponsibilityDescriptor#Accountability"
+}
+
+### Scenario 02: Create a StudentSpecialEducationProgramEligibilityAssociation (should succeed with existing responsibility association)
+# @name createStudentSpecialEducationProgramEligibilityAssociation
+POST {{dataApi}}/ed-fi/studentSpecialEducationProgramEligibilityAssociations
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "beginDate": "2023-08-01",
+    "educationOrganizationReference": {
+        "educationOrganizationId": 1255901002
+    },
+    "programReference": {
+        "educationOrganizationId": 1255901002,
+        "programName": "Career and Technical Education",
+        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+    },
+    "studentReference": {
+        "studentUniqueId": "11"
+    },
+    "consentToEvaluationReceivedDate": "2023-08-01",
+    "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+}
+
+### Get the created StudentSpecialEducationProgramEligibilityAssociation
+# @name getStudentSpecialEducationProgramEligibilityAssociation
+GET {{createStudentSpecialEducationProgramEligibilityAssociation.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+###
+@studentSpecialEducationProgramEligibilityAssociationId={{getStudentSpecialEducationProgramEligibilityAssociation.response.body.id}}
+
+### Scenario 04: Update a StudentSpecialEducationProgramEligibilityAssociation
+PUT {{createStudentSpecialEducationProgramEligibilityAssociation.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "id": "{{studentSpecialEducationProgramEligibilityAssociationId}}",
+    "beginDate": "2023-08-01",
+    "educationOrganizationReference": {
+        "educationOrganizationId": 1255901002
+    },
+    "programReference": {
+        "educationOrganizationId": 1255901002,
+        "programName": "Career and Technical Education",
+        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+    },
+    "studentReference": {
+        "studentUniqueId": "11"
+    },
+    "consentToEvaluationReceivedDate": "2023-08-01",
+    "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+}
+
+### Scenario 05: Delete a StudentSpecialEducationProgramEligibilityAssociation
+DELETE {{createStudentSpecialEducationProgramEligibilityAssociation.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+### Delete the StudentEducationOrganizationResponsibilityAssociation
+DELETE {{createStudentEducationOrganizationResponsibilityAssociation.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+### Create application with limited authorization (for unauthorized scenarios)
+# @name createLimitedApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Limited Demo application",
+    "claimSetName": "EdFiSandbox",
+    "educationOrganizationIds": [1255901001]
+}
+
+###
+@limitedClientKey={{createLimitedApplication.response.body.key}}
+@limitedClientSecret={{createLimitedApplication.response.body.secret}}
+
+### Create a limited DMS token
+# @name limitedDmsTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{limitedClientKey}}:{{limitedClientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@limitedDmsToken={{limitedDmsTokenRequest.response.body.access_token}}
+
+### Setup for unauthorized scenarios - Create responsibility association with full access first
+# @name createResponsibilityForUnauthorizedTest
+POST {{dataApi}}/ed-fi/studentEducationOrganizationResponsibilityAssociations
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "beginDate": "2023-08-01",
+    "educationOrganizationReference": {
+        "educationOrganizationId": 1255901002
+    },
+    "studentReference": {
+        "studentUniqueId": "11"
+    },
+    "responsibilityDescriptor": "uri://ed-fi.org/ResponsibilityDescriptor#Accountability"
+}
+
+### Setup for unauthorized scenarios - Create special education association with full access first
+# @name createSpecialEducationForUnauthorizedTest
+POST {{dataApi}}/ed-fi/studentSpecialEducationProgramEligibilityAssociations
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "beginDate": "2023-08-01",
+    "educationOrganizationReference": {
+        "educationOrganizationId": 1255901002
+    },
+    "programReference": {
+        "educationOrganizationId": 1255901002,
+        "programName": "Career and Technical Education",
+        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+    },
+    "studentReference": {
+        "studentUniqueId": "11"
+    },
+    "consentToEvaluationReceivedDate": "2023-08-01",
+    "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+}
+
+### Get the created association for unauthorized tests
+# @name getSpecialEducationForUnauthorizedTest
+GET {{createSpecialEducationForUnauthorizedTest.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+###
+@unauthorizedTestAssociationId={{getSpecialEducationForUnauthorizedTest.response.body.id}}
+
+### Scenario 03: Try to create StudentSpecialEducationProgramEligibilityAssociation without responsibility association (should fail with 403)
+POST {{dataApi}}/ed-fi/studentSpecialEducationProgramEligibilityAssociations
+Authorization: bearer {{limitedDmsToken}}
+Content-Type: application/json
+
+{
+    "beginDate": "2023-08-01",
+    "educationOrganizationReference": {
+        "educationOrganizationId": 1255901002
+    },
+    "programReference": {
+        "educationOrganizationId": 1255901002,
+        "programName": "Career and Technical Education",
+        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+    },
+    "studentReference": {
+        "studentUniqueId": "11"
+    },
+    "consentToEvaluationReceivedDate": "2023-08-01",
+    "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+}
+
+### Scenario 06: Try to update StudentSpecialEducationProgramEligibilityAssociation with limited permissions (should fail with 403)
+PUT {{createSpecialEducationForUnauthorizedTest.response.headers.location}}
+Authorization: bearer {{limitedDmsToken}}
+Content-Type: application/json
+
+{
+    "id": "{{unauthorizedTestAssociationId}}",
+    "beginDate": "2023-08-01",
+    "educationOrganizationReference": {
+        "educationOrganizationId": 1255901002
+    },
+    "programReference": {
+        "educationOrganizationId": 1255901002,
+        "programName": "Career and Technical Education",
+        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+    },
+    "studentReference": {
+        "studentUniqueId": "11"
+    },
+    "consentToEvaluationReceivedDate": "2023-08-01",
+    "ideaPartDescriptor": "uri://ed-fi.org/IdeaPartDescriptor#Eligible"
+}
+
+### Scenario 07: Try to delete StudentSpecialEducationProgramEligibilityAssociation with limited permissions (should fail with 403)
+DELETE {{createSpecialEducationForUnauthorizedTest.response.headers.location}}
+Authorization: bearer {{limitedDmsToken}}
+
+### Cleanup - Delete associations with full access
+DELETE {{createSpecialEducationForUnauthorizedTest.response.headers.location}}
+Authorization: bearer {{dmsToken}}
+
+DELETE {{createResponsibilityForUnauthorizedTest.response.headers.location}}
+Authorization: bearer {{dmsToken}}
