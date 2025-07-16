@@ -14,7 +14,7 @@ export class DependencyResolver {
             return this.dependencies;
         }
 
-        const url = `${this.apiBaseUrl}/metadata/data/v3/dependencies`;
+        const url = `${this.apiBaseUrl}/metadata/dependencies`;
         const headers = this.authManager.getAuthHeaders();
 
         console.log(`Fetching dependencies from: ${url}`);

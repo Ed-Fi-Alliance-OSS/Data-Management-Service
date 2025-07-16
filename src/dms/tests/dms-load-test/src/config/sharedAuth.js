@@ -1,5 +1,6 @@
 import http from 'k6/http';
 import { check } from 'k6';
+import encoding from 'k6/encoding';
 
 // Global token storage - shared across all VUs and iterations
 const tokenStore = {
@@ -43,17 +44,15 @@ export class SharedAuthManager {
 
         try {
             // Request new token
+            const basicAuth = encoding.b64encode(`${this.clientId}:${this.clientSecret}`);
             const params = {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    'Authorization': `Basic ${basicAuth}`,
                 },
             };
 
-            const payload = {
-                grant_type: 'client_credentials',
-                client_id: this.clientId,
-                client_secret: this.clientSecret,
-            };
+            const payload = 'grant_type=client_credentials&scope=edfi_admin_api/full_access';
 
             console.log(`Requesting new token from: ${this.tokenUrl}`);
             const response = http.post(this.tokenUrl, payload, params);
