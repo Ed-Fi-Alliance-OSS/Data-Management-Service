@@ -169,6 +169,26 @@ Results are displayed in the console and can be exported to various formats.
 - Check token URL matches your API instance
 - Ensure client has appropriate permissions
 
+#### Authorization (403) Errors
+If you encounter 403 Forbidden errors, the client likely lacks proper claim sets. The load test tool includes a setup script that creates a properly authorized client:
+
+```bash
+# Automatically creates a client with E2E-NoFurtherAuthRequiredClaimSet
+./run-smoke-test.sh  # Will set up client if .env.load-test doesn't exist
+
+# Or manually run the setup
+node src/utils/setupLoadTestClient.js
+
+# To clean up the configuration
+./clean-load-test.sh
+```
+
+The setup script:
+1. Creates a sys-admin client
+2. Uses it to create a vendor via Config Service
+3. Creates an application with the E2E-NoFurtherAuthRequiredClaimSet
+4. Saves credentials to .env.load-test
+
 ### Dependency Errors
 - The tool automatically fetches dependencies from `/metadata/data/v3/dependencies`
 - Ensure this endpoint is accessible
@@ -192,7 +212,7 @@ src/
 ├── config/         # Authentication and test configuration
 ├── generators/     # Data generation for each resource type
 ├── utils/          # Helper utilities (API client, data store, dependencies)
-├── scenarios/      # Test scenarios (smoke, load, readwrite)
+├── scenarios/      # Test scenarios (smoke, load, read-write)
 └── main.js         # Entry point (future)
 ```
 

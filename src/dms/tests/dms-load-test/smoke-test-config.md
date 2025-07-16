@@ -75,6 +75,16 @@ k6 run src/scenarios/smoke.js
 - Changed to: `/api/metadata/dependencies`
 
 ## Next Steps
-1. Create a test client with proper Ed-Fi resource permissions
-2. Implement proper claim sets for the test client
-3. Consider using separate clients for different test scenarios
+1. ✅ Created test client with proper Ed-Fi resource permissions
+2. ✅ Implemented E2E-NoFurtherAuthRequiredClaimSet for the test client
+3. ✅ Fixed 403 authorization errors - test now authenticates successfully
+4. ⚠️ Fix 400 validation errors - appears to be a data format issue, not authorization
+
+## Solution Summary
+The 403 errors were resolved by:
+1. Creating a sys-admin client for initial setup
+2. Using the sys-admin client to create a vendor via Config Service API
+3. Creating an application with the E2E-NoFurtherAuthRequiredClaimSet claim set
+4. Using the generated client credentials for the load test
+
+The load test now successfully authenticates and has proper permissions. The remaining 400 errors appear to be data validation issues unrelated to authorization.

@@ -23,16 +23,25 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
-# Set minimal environment variables for smoke test
-export API_BASE_URL="http://localhost:8080/api"
-export OAUTH_TOKEN_URL="http://localhost:8080/api/oauth/token"
-export CLIENT_ID="DmsConfigurationService"
-export CLIENT_SECRET="s3creT@09"
-export SCHOOL_COUNT=2
-export STUDENT_COUNT=2
-export STAFF_COUNT=2
-export COURSES_PER_SCHOOL=2
-export SECTIONS_PER_COURSE=2
+# Check if .env.load-test exists, if not create a client
+if [ ! -f ".env.load-test" ]; then
+    echo "🔧 No load test client found. Setting up authorized client..."
+    node src/utils/setupLoadTestClient.js
+    if [ $? -ne 0 ]; then
+        echo "❌ Failed to set up load test client"
+        exit 1
+    fi
+    echo ""
+fi
+
+# Load environment variables from .env.load-test
+if [ -f ".env.load-test" ]; then
+    echo "📋 Loading configuration from .env.load-test"
+    export $(grep -v '^#' .env.load-test | xargs)
+else
+    echo "❌ .env.load-test not found after setup"
+    exit 1
+fi
 
 echo ""
 echo "Configuration:"
