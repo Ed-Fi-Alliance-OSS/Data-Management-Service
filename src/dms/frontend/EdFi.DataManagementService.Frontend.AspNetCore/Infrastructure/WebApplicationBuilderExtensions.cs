@@ -33,16 +33,6 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Environment.EnvironmentName
         );
 
-        // Add custom mapping for ENABLE_MANAGEMENT_ENDPOINTS environment variable
-        var enableManagementEndpoints = Environment.GetEnvironmentVariable("ENABLE_MANAGEMENT_ENDPOINTS");
-        if (!string.IsNullOrEmpty(enableManagementEndpoints))
-        {
-            webAppBuilder.Configuration["AppSettings:EnableManagementEndpoints"] = enableManagementEndpoints;
-        }
-
-        // Add custom mapping for JWT Authentication environment variables
-        MapJwtEnvironmentVariables(webAppBuilder);
-
         webAppBuilder.Configuration.AddEnvironmentVariables();
         webAppBuilder
             .Services.AddDmsDefaultConfiguration(
@@ -97,7 +87,7 @@ public static class WebApplicationBuilderExtensions
             return configureLogging;
         }
 
-        IConfiguration config = webAppBuilder.Configuration;
+        ConfigurationManager config = webAppBuilder.Configuration;
 
         // For Token handling
         webAppBuilder.Services.AddMemoryCache();
@@ -237,32 +227,5 @@ public static class WebApplicationBuilderExtensions
                 )
             );
         });
-    }
-
-    private static void MapJwtEnvironmentVariables(WebApplicationBuilder webAppBuilder)
-    {
-        // Map JWT Authentication environment variables to configuration
-        var jwtEnvMappings = new Dictionary<string, string>
-        {
-            ["JWT_AUTHENTICATION_AUTHORITY"] = "JwtAuthentication:Authority",
-            ["JWT_AUTHENTICATION_AUDIENCE"] = "JwtAuthentication:Audience",
-            ["JWT_AUTHENTICATION_METADATA_ADDRESS"] = "JwtAuthentication:MetadataAddress",
-            ["JWT_AUTHENTICATION_REQUIRE_HTTPS_METADATA"] = "JwtAuthentication:RequireHttpsMetadata",
-            ["JWT_AUTHENTICATION_ROLE_CLAIM_TYPE"] = "JwtAuthentication:RoleClaimType",
-            ["JWT_AUTHENTICATION_CLIENT_ROLE"] = "JwtAuthentication:ClientRole",
-            ["JWT_AUTHENTICATION_CLOCK_SKEW_SECONDS"] = "JwtAuthentication:ClockSkewSeconds",
-            ["JWT_AUTHENTICATION_REFRESH_INTERVAL_MINUTES"] = "JwtAuthentication:RefreshIntervalMinutes",
-            ["JWT_AUTHENTICATION_AUTOMATIC_REFRESH_INTERVAL_HOURS"] =
-                "JwtAuthentication:AutomaticRefreshIntervalHours",
-        };
-
-        foreach (var (envVar, configKey) in jwtEnvMappings)
-        {
-            var value = Environment.GetEnvironmentVariable(envVar);
-            if (!string.IsNullOrEmpty(value))
-            {
-                webAppBuilder.Configuration[configKey] = value;
-            }
-        }
     }
 }
