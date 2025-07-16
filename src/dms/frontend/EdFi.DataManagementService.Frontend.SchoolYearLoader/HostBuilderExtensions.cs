@@ -98,10 +98,10 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
             services.AddTransient<IConfigurationServiceTokenHandler, ConfigurationServiceTokenHandler>();
 
             // Register the inner claim set provider by its concrete type
-            services.AddTransient<ConfigurationServiceClaimSetProvider>();
+            services.AddSingleton<ConfigurationServiceClaimSetProvider>();
 
             // Register the cache decorator using a factory
-            services.AddTransient<IClaimSetProvider>(provider =>
+            services.AddSingleton<IClaimSetProvider>(provider =>
             {
                 var innerProvider = provider.GetRequiredService<ConfigurationServiceClaimSetProvider>();
                 var claimSetsCache = provider.GetRequiredService<ClaimSetsCache>();

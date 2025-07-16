@@ -138,10 +138,10 @@ public static class WebApplicationBuilderExtensions
         >();
 
         // Register the inner claim set provider by its concrete type
-        webAppBuilder.Services.AddTransient<ConfigurationServiceClaimSetProvider>();
+        webAppBuilder.Services.AddSingleton<ConfigurationServiceClaimSetProvider>();
 
         // Register the cache decorator using a factory
-        webAppBuilder.Services.AddTransient<IClaimSetProvider>(provider =>
+        webAppBuilder.Services.AddSingleton<IClaimSetProvider>(provider =>
         {
             // Resolve the inner service
             var innerProvider = provider.GetRequiredService<ConfigurationServiceClaimSetProvider>();
