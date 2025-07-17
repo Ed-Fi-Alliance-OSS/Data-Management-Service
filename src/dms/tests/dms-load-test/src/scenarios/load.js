@@ -234,7 +234,7 @@ export default function (data) {
                         const generatedData = dataGenerator.generateForResourceType(resourceType, 1, dependencies);
                         
                         if (debug) {
-                            console.log(`VU ${vuId}: Generated data sample:`, JSON.stringify(generatedData).substring(0, 200));
+                            console.log(`VU ${vuId}: Generated data:`, JSON.stringify(generatedData, null, 2));
                         }
                         
                         // Create via API

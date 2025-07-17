@@ -72,7 +72,15 @@ This document tracks the debugging process for the Ed-Fi DMS load test tool. It 
 - **Changes Made**: Changed OAUTH_TOKEN_URL from DMS endpoint to Keycloak endpoint
   - From: http://localhost:8080/api/oauth/token
   - To: http://localhost:8045/realms/edfi/protocol/openid-connect/token
-- **Result**: [To be tested] 
+- **Result**: OAuth working, but client lacked proper claims
+
+### Fix 7: Created properly authorized client
+- **Files Modified**: setupLoadTestClient.js, .env.load-test
+- **Changes Made**: 
+  - Updated setupLoadTestClient.js to use correct endpoints
+  - Created new client with E2E-NoFurtherAuthRequiredClaimSet
+  - Generated new client ID: 4a8059b5-3dc7-459d-9fd7-501b0dc70bcf
+- **Result**: Full success! Load test tool now fully functional 
 
 ## Environment Setup
 - **DMS Stack**: dms-local

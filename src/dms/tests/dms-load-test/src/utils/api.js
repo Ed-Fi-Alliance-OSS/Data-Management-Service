@@ -16,12 +16,31 @@ export class ApiClient {
         const url = `${this.baseUrl}${endpoint}`;
         const headers = this.authManager.getAuthHeaders();
         
+        // Validate data is an object and not a string
+        if (typeof data !== 'object' || data === null) {
+            console.error(`ERROR: Invalid data type for ${resourceType}. Expected object, got ${typeof data}: ${data}`);
+            return { success: false, error: `Invalid data type: ${typeof data}` };
+        }
+        
+        // Remove any 'id' field from the data before sending
+        const cleanData = { ...data };
+        if (cleanData.id) {
+            console.warn(`WARNING: Removing 'id' field from ${resourceType} data before POST`);
+            delete cleanData.id;
+        }
+        
         const params = {
             headers: headers,
             tags: { ...tags, operation: 'POST', resourceType: resourceType }
         };
 
-        const response = http.post(url, JSON.stringify(data), params);
+        const requestBody = JSON.stringify(cleanData);
+        const response = http.post(url, requestBody, params);
+        
+        if (__ENV.DEBUG === 'true' && response.status === 400) {
+            console.log(`DEBUG: Request body that caused 400 error: ${requestBody}`);
+            console.log(`DEBUG: Response body: ${response.body}`);
+        }
         
         const success = check(response, {
             'POST status is 201 or 200': (r) => r.status === 201 || r.status === 200,

@@ -88,7 +88,7 @@ export default function () {
     };
 
     // Create descriptor
-    const createResult = localApiClient.post('/data/ed-fi/gradeLevelDescriptors', descriptorData, 'gradeLevelDescriptors');
+    const createResult = localApiClient.post('/ed-fi/gradeLevelDescriptors', descriptorData, 'gradeLevelDescriptors');
     
     if (createResult.success) {
         console.log('✅ Successfully created test descriptor');
@@ -96,7 +96,7 @@ export default function () {
         // Read descriptor
         const location = createResult.response.headers['Location'];
         const id = location.split('/').pop();
-        const readResult = localApiClient.get(`/data/ed-fi/gradeLevelDescriptors/${id}`);
+        const readResult = localApiClient.get(`/ed-fi/gradeLevelDescriptors/${id}`);
         
         check(readResult.response, {
             'Can read created descriptor': (r) => r.status === 200,
@@ -105,14 +105,14 @@ export default function () {
 
         // Update descriptor
         const updatedData = { ...descriptorData, id: id, shortDescription: 'Updated Test Descriptor' };
-        const updateResult = localApiClient.put(`/data/ed-fi/gradeLevelDescriptors/${id}`, updatedData);
+        const updateResult = localApiClient.put(`/ed-fi/gradeLevelDescriptors/${id}`, updatedData);
         
         check(updateResult.response, {
             'Can update descriptor': (r) => r.status === 204
         });
 
         // Delete descriptor
-        const deleteResult = localApiClient.delete(`/data/ed-fi/gradeLevelDescriptors/${id}`);
+        const deleteResult = localApiClient.delete(`/ed-fi/gradeLevelDescriptors/${id}`);
         
         check(deleteResult.response, {
             'Can delete descriptor': (r) => r.status === 204
@@ -120,7 +120,7 @@ export default function () {
     }
 
     // Test listing resources
-    const listResult = localApiClient.get('/data/ed-fi/academicWeeks?limit=5');
+    const listResult = localApiClient.get('/ed-fi/academicWeeks?limit=5');
     check(listResult.response, {
         'Can list resources': (r) => r.status === 200
     });
@@ -128,7 +128,7 @@ export default function () {
     // Test batch operations
     const batchRequests = [
         { method: 'GET', endpoint: '/metadata/', tags: { name: 'batch_metadata' } },
-        { method: 'GET', endpoint: '/data/ed-fi/academicWeeks?limit=1', tags: { name: 'batch_list' } }
+        { method: 'GET', endpoint: '/ed-fi/academicWeeks?limit=1', tags: { name: 'batch_list' } }
     ];
 
     const batchResults = localApiClient.batch(batchRequests);
