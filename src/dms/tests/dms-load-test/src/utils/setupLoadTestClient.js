@@ -92,9 +92,9 @@ async function getSysAdminToken(clientId, clientSecret) {
     });
     
     const response = await httpRequest({
-        hostname: DMS_HOST,
-        port: DMS_PORT,
-        path: '/api/oauth/token',
+        hostname: 'localhost',
+        port: '8045',
+        path: '/realms/edfi/protocol/openid-connect/token',
         method: 'POST',
         headers: {
             'Authorization': `Basic ${basicAuth}`,
@@ -135,25 +135,37 @@ async function createVendor(token) {
         }
     }, vendorData);
     
-    if (response.statusCode !== 201) {
+    if (response.statusCode !== 201 && response.statusCode !== 200) {
         throw new Error(`Failed to create vendor: ${response.statusCode} - ${response.body}`);
     }
     
-    // Get vendor ID from location header
-    const vendorLocation = response.headers.location;
-    const getResponse = await httpRequest({
-        hostname: CONFIG_SERVICE_HOST,
-        port: CONFIG_SERVICE_PORT,
-        path: vendorLocation,
-        method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${token}`
-        }
-    });
+    // Get vendor ID from response or location header
+    let vendorId;
     
-    const vendor = JSON.parse(getResponse.body);
-    console.log('✅ Vendor created with ID:', vendor.id);
-    return vendor.id;
+    if (response.statusCode === 200) {
+        // Vendor already exists, parse ID from response
+        const responseJson = JSON.parse(response.body);
+        vendorId = responseJson.id;
+        console.log('✅ Using existing vendor with ID:', vendorId);
+    } else {
+        // New vendor created, get from location header
+        const vendorLocation = response.headers.location;
+        const getResponse = await httpRequest({
+            hostname: CONFIG_SERVICE_HOST,
+            port: CONFIG_SERVICE_PORT,
+            path: vendorLocation,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        const vendor = JSON.parse(getResponse.body);
+        vendorId = vendor.id;
+        console.log('✅ Vendor created with ID:', vendorId);
+    }
+    
+    return vendorId;
 }
 
 // Step 4: Create application with claim set
@@ -199,8 +211,8 @@ async function saveCredentials(credentials) {
 # Generated: ${new Date().toISOString()}
 
 # API Configuration
-API_BASE_URL=http://${DMS_HOST}:${DMS_PORT}/api
-OAUTH_TOKEN_URL=http://${DMS_HOST}:${DMS_PORT}/api/oauth/token
+API_BASE_URL=http://${DMS_HOST}:${DMS_PORT}/api/data
+OAUTH_TOKEN_URL=http://localhost:8045/realms/edfi/protocol/openid-connect/token
 CLIENT_ID=${credentials.clientId}
 CLIENT_SECRET=${credentials.clientSecret}
 

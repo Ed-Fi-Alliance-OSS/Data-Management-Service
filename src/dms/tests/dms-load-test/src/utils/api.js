@@ -24,8 +24,8 @@ export class ApiClient {
         const response = http.post(url, JSON.stringify(data), params);
         
         const success = check(response, {
-            'POST status is 201': (r) => r.status === 201,
-            'POST has location header': (r) => r.headers['Location'] !== undefined
+            'POST status is 201 or 200': (r) => r.status === 201 || r.status === 200,
+            'POST has location header or already exists': (r) => r.headers['Location'] !== undefined || r.status === 200
         });
 
         errorRate.add(!success);
