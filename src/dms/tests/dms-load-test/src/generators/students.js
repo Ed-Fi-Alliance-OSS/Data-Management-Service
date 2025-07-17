@@ -1,4 +1,4 @@
-import { faker } from '@faker-js/faker';
+import { faker } from '../utils/faker-k6.js';
 import { getRandomDescriptorUri } from './descriptors.js';
 
 export function generateStudent() {

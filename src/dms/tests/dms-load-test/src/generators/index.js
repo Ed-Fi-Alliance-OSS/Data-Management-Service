@@ -1,4 +1,4 @@
-import { faker } from '@faker-js/faker';
+import { faker } from '../utils/faker-k6.js';
 import { generateDescriptor, getRandomDescriptorUri } from './descriptors.js';
 import { generateLocalEducationAgency, generateSchool, generateCalendar, generateCalendarDate, generateClassPeriod } from './schools.js';
 import { generateStudent, generateStudentEducationOrganizationAssociation, generateStudentSchoolAssociation, generateParent, generateStudentParentAssociation } from './students.js';

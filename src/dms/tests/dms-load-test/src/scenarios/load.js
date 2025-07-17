@@ -1,5 +1,4 @@
 import { sleep, group } from 'k6';
-import { SharedArray } from 'k6/data';
 import { SharedAuthManager } from '../config/sharedAuth.js';
 import { DependencyResolver } from '../utils/dependencies.js';
 import { ApiClient, getResourceEndpoint } from '../utils/api.js';
@@ -41,30 +40,30 @@ const dataGenerator = new DataGenerator();
 // Focus on 5 key domains
 const targetDomains = ['enrollment', 'studentAcademicRecord', 'teachingAndLearning', 'assessment', 'studentIdentification'];
 
-// Shared data for load distribution
-const resourceOrder = new SharedArray('resourceOrder', function () {
-    console.log('🔍 Fetching resource dependencies...');
-    const resolver = new DependencyResolver(apiBaseUrl, sharedAuthManager);
-    const filtered = resolver.filterByDomains(targetDomains);
-    console.log(`📋 Filtered to ${filtered.length} resources for target domains`);
-    return filtered;
-});
+// Shared data for load distribution - populated in setup
+let resourceOrder = null;
 
 export function setup() {
     console.log('🏫 Setting up Austin ISD scale load test...');
     console.log(`📊 Configuration: ${__ENV.SCHOOL_COUNT || 130} schools, ${__ENV.STUDENT_COUNT || 75000} students, ${__ENV.STAFF_COUNT || 12000} staff`);
     
+    // Fetch dependencies during setup (where HTTP requests are allowed)
+    console.log('🔍 Fetching resource dependencies...');
+    const filtered = dependencyResolver.filterByDomains(targetDomains);
+    console.log(`📋 Filtered to ${filtered.length} resources for target domains`);
+    
     return {
-        authManager,
+        authManager: sharedAuthManager,
         apiClient,
         dependencyResolver,
         dataGenerator,
-        startTime: Date.now()
+        startTime: Date.now(),
+        resourceOrder: filtered  // Pass the resource order to the default function
     };
 }
 
 export default function (data) {
-    const { apiClient, dataGenerator } = data;
+    const { apiClient, dataGenerator, resourceOrder } = data;
     
     // Each VU processes a subset of resources
     const vuId = __VU;

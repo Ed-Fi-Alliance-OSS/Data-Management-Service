@@ -1,4 +1,4 @@
-import { faker } from '@faker-js/faker';
+import { faker } from '../utils/faker-k6.js';
 
 // Common descriptor values based on Ed-Fi standards
 export const descriptorValues = {
