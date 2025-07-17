@@ -10,7 +10,7 @@ export const options = {
     scenarios: {
         load_phase: {
             executor: 'ramping-vus',
-            startVUs: 0,
+            startVUs: 1,
             stages: [
                 { duration: '2m', target: parseInt(__ENV.VUS_LOAD_PHASE) || 10 }, // Ramp up
                 { duration: __ENV.DURATION_LOAD_PHASE || '30m', target: parseInt(__ENV.VUS_LOAD_PHASE) || 10 }, // Stay at target
@@ -41,16 +41,29 @@ const targetDomains = ['enrollment', 'studentAcademicRecord', 'teachingAndLearni
 export function setup() {
     console.log('🏫 Setting up Austin ISD scale load test...');
     console.log(`📊 Configuration: ${__ENV.SCHOOL_COUNT || 130} schools, ${__ENV.STUDENT_COUNT || 75000} students, ${__ENV.STAFF_COUNT || 12000} staff`);
-    
-    // Create instances in setup
-    const apiClient = new ApiClient(apiBaseUrl, sharedAuthManager);
-    const dependencyResolver = new DependencyResolver(apiBaseUrl, sharedAuthManager);
-    const dataGenerator = new DataGenerator();
-    
-    // Fetch dependencies during setup (where HTTP requests are allowed)
-    console.log('🔍 Fetching resource dependencies...');
+    console.log(`🔧 Debug mode: ${__ENV.DEBUG === 'true' ? 'ENABLED' : 'disabled'}`);
+    console.log(`🌐 API Base URL: ${apiBaseUrl}`);
+    console.log(`🔑 OAuth Token URL: ${__ENV.OAUTH_TOKEN_URL}`);
     
     try {
+        // Create instances in setup
+        console.log('📦 Creating API client...');
+        const apiClient = new ApiClient(apiBaseUrl, sharedAuthManager);
+        console.log('✅ API client created');
+        
+        console.log('📦 Creating dependency resolver...');
+        const dependencyResolver = new DependencyResolver(apiBaseUrl, sharedAuthManager);
+        console.log('✅ Dependency resolver created');
+        
+        console.log('📦 Creating data generator...');
+        const dataGenerator = new DataGenerator();
+        console.log('✅ Data generator created');
+        console.log(`📊 DataGenerator type: ${typeof dataGenerator}`);
+        console.log(`📊 DataGenerator methods: ${Object.getOwnPropertyNames(Object.getPrototypeOf(dataGenerator)).join(', ')}`);
+        
+        // Fetch dependencies during setup (where HTTP requests are allowed)
+        console.log('🔍 Fetching resource dependencies...');
+        
         // First fetch all dependencies
         const allDependencies = dependencyResolver.fetchDependencies();
         console.log(`✅ Found ${Object.keys(allDependencies).length} total resources`);
@@ -84,22 +97,58 @@ export function setup() {
                 'grades'
             ];
             
-            return {
-                authManager: sharedAuthManager,
-                apiClient: new ApiClient(apiBaseUrl, sharedAuthManager),
-                dataGenerator: new DataGenerator(),
+            const fallbackData = {
+                apiBaseUrl: apiBaseUrl,
+                tokenUrl: __ENV.OAUTH_TOKEN_URL,
+                clientId: __ENV.CLIENT_ID,
+                clientSecret: __ENV.CLIENT_SECRET,
                 startTime: Date.now(),
-                resourceOrder: fallbackResources
+                resourceOrder: fallbackResources,
+                dependencies: {},
+                config: {
+                    schoolCount: parseInt(__ENV.SCHOOL_COUNT) || 130,
+                    studentCount: parseInt(__ENV.STUDENT_COUNT) || 75000,
+                    staffCount: parseInt(__ENV.STAFF_COUNT) || 12000,
+                    coursesPerSchool: parseInt(__ENV.COURSES_PER_SCHOOL) || 50,
+                    sectionsPerCourse: parseInt(__ENV.SECTIONS_PER_COURSE) || 4,
+                    schoolYear: 2024
+                }
             };
+            
+            console.log('📋 Fallback setup data prepared');
+            return fallbackData;
         }
         
-        return {
-            authManager: sharedAuthManager,
-            apiClient: new ApiClient(apiBaseUrl, sharedAuthManager),
-            dataGenerator: new DataGenerator(),
+        // k6 can't pass class instances between setup and default, only plain data
+        // So we'll pass the configuration and recreate instances in the VU
+        const setupData = {
+            apiBaseUrl: apiBaseUrl,
+            tokenUrl: __ENV.OAUTH_TOKEN_URL,
+            clientId: __ENV.CLIENT_ID,
+            clientSecret: __ENV.CLIENT_SECRET,
             startTime: Date.now(),
-            resourceOrder: filtered  // Pass the resource order to the default function
+            resourceOrder: filtered,  // Pass the resource order to the default function
+            dependencies: allDependencies,  // Pass raw dependencies for debugging
+            config: {
+                schoolCount: parseInt(__ENV.SCHOOL_COUNT) || 130,
+                studentCount: parseInt(__ENV.STUDENT_COUNT) || 75000,
+                staffCount: parseInt(__ENV.STAFF_COUNT) || 12000,
+                coursesPerSchool: parseInt(__ENV.COURSES_PER_SCHOOL) || 50,
+                sectionsPerCourse: parseInt(__ENV.SECTIONS_PER_COURSE) || 4,
+                schoolYear: 2024
+            }
         };
+        
+        console.log('📋 Setup data prepared:');
+        console.log(`  - resourceOrder length: ${setupData.resourceOrder.length}`);
+        console.log(`  - dependencies count: ${Object.keys(setupData.dependencies).length}`);
+        console.log(`  - config: ${JSON.stringify(setupData.config)}`);
+        
+        if (__ENV.DEBUG === 'true') {
+            console.log('🔍 Resource order:', setupData.resourceOrder.slice(0, 10).join(', '), '...');
+        }
+        
+        return setupData;
     } catch (error) {
         console.error('❌ Setup failed:', error.message);
         throw error;
@@ -107,16 +156,48 @@ export function setup() {
 }
 
 export default function (data) {
-    const { apiClient, dataGenerator, resourceOrder } = data;
-    
-    // Debug: Check what we're getting
-    console.log(`VU ${__VU}: Received data keys:`, Object.keys(data));
-    console.log(`VU ${__VU}: dataGenerator type:`, typeof dataGenerator);
-    console.log(`VU ${__VU}: resourceOrder length:`, resourceOrder ? resourceOrder.length : 'undefined');
-    
-    // Each VU processes a subset of resources
     const vuId = __VU;
-    const totalVUs = parseInt(__ENV.VUS_LOAD_PHASE) || 10;
+    const debug = __ENV.DEBUG === 'true';
+    
+    try {
+        // Debug: Check what we're getting
+        console.log(`VU ${vuId}: Starting execution...`);
+        console.log(`VU ${vuId}: Received data keys:`, Object.keys(data));
+        
+        if (!data) {
+            throw new Error('No data received from setup function');
+        }
+        
+        const { apiBaseUrl, tokenUrl, clientId, clientSecret, resourceOrder, config } = data;
+        
+        // Create instances in the VU context
+        console.log(`VU ${vuId}: Creating auth manager...`);
+        const authManager = new SharedAuthManager({
+            tokenUrl: tokenUrl,
+            clientId: clientId,
+            clientSecret: clientSecret
+        });
+        
+        console.log(`VU ${vuId}: Creating API client...`);
+        const apiClient = new ApiClient(apiBaseUrl, authManager);
+        
+        console.log(`VU ${vuId}: Creating data generator...`);
+        const dataGenerator = new DataGenerator(config);
+        
+        if (!resourceOrder || !Array.isArray(resourceOrder)) {
+            throw new Error(`resourceOrder is invalid: ${typeof resourceOrder}`);
+        }
+        
+        console.log(`VU ${vuId}: dataGenerator type:`, typeof dataGenerator);
+        console.log(`VU ${vuId}: resourceOrder length:`, resourceOrder.length);
+        
+        if (debug) {
+            console.log(`VU ${vuId}: dataGenerator methods:`, Object.getOwnPropertyNames(Object.getPrototypeOf(dataGenerator)).join(', '));
+            console.log(`VU ${vuId}: Testing generateForResourceType method:`, typeof dataGenerator.generateForResourceType);
+        }
+    
+        // Each VU processes a subset of resources
+        const totalVUs = parseInt(__ENV.VUS_LOAD_PHASE) || 10;
     
     // Calculate which resources this VU should create
     const resourcesPerVU = Math.ceil(resourceOrder.length / totalVUs);
@@ -142,11 +223,27 @@ export default function (data) {
                         const dependencies = getDependencies(resourceType);
                         
                         // Generate data
-                        const data = dataGenerator.generateForResourceType(resourceType, 1, dependencies);
+                        if (debug) {
+                            console.log(`VU ${vuId}: Generating data for ${resourceType} with dependencies:`, JSON.stringify(dependencies));
+                        }
+                        
+                        if (!dataGenerator.generateForResourceType) {
+                            throw new Error(`dataGenerator.generateForResourceType is not a function. Available methods: ${Object.getOwnPropertyNames(Object.getPrototypeOf(dataGenerator)).join(', ')}`);
+                        }
+                        
+                        const generatedData = dataGenerator.generateForResourceType(resourceType, 1, dependencies);
+                        
+                        if (debug) {
+                            console.log(`VU ${vuId}: Generated data sample:`, JSON.stringify(generatedData).substring(0, 200));
+                        }
                         
                         // Create via API
                         const endpoint = getResourceEndpoint(resourceType);
-                        const result = apiClient.post(endpoint, data, resourceType, { domain: getDomain(resourceType) });
+                        if (debug) {
+                            console.log(`VU ${vuId}: POSTing to ${endpoint}`);
+                        }
+                        
+                        const result = apiClient.post(endpoint, generatedData, resourceType, { domain: getDomain(resourceType) });
                         
                         if (!result.success) {
                             console.error(`Failed to create ${resourceType}: ${result.error}`);
@@ -163,6 +260,11 @@ export default function (data) {
         
         // Pause between resource types
         sleep(1);
+    }
+    } catch (error) {
+        console.error(`VU ${vuId}: FATAL ERROR:`, error.message);
+        console.error(`VU ${vuId}: Stack trace:`, error.stack);
+        throw error;
     }
 }
 

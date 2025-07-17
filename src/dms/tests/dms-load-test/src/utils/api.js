@@ -180,9 +180,9 @@ export class ApiClient {
 
 // Helper function to create resource endpoints
 export function getResourceEndpoint(resourceType) {
-    // Convert camelCase to kebab-case for URL
-    const endpoint = resourceType.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-    return `/data/ed-fi/${endpoint}`;
+    // The resource type from dependencies has already been stripped of /ed-fi/
+    // so we need to add it back
+    return `/ed-fi/${resourceType}`;
 }
 
 // Helper function to handle rate limiting

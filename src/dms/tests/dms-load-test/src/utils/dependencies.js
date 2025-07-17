@@ -14,7 +14,9 @@ export class DependencyResolver {
             return this.dependencies;
         }
 
-        const url = `${this.apiBaseUrl}/metadata/dependencies`;
+        // Metadata endpoint is at the root API level, not under /data
+        const metadataUrl = this.apiBaseUrl.replace('/api/data', '/api');
+        const url = `${metadataUrl}/metadata/dependencies`;
         const headers = this.authManager.getAuthHeaders();
 
         console.log(`Fetching dependencies from: ${url}`);
@@ -32,15 +34,33 @@ export class DependencyResolver {
 
         const responseData = response.json();
         
-        // Check if the response is wrapped in a 'dependencies' property
-        if (responseData.dependencies) {
-            this.dependencies = responseData.dependencies;
-        } else {
-            this.dependencies = responseData;
+        // The response appears to be an object with numeric keys, each containing resource info
+        // Let's parse it correctly
+        this.dependencies = {};
+        
+        if (Array.isArray(responseData)) {
+            // If it's an array, convert to object
+            responseData.forEach((item, index) => {
+                if (item && item.resource) {
+                    // Remove /ed-fi/ prefix and convert to camelCase
+                    const resourceName = item.resource.replace('/ed-fi/', '');
+                    this.dependencies[resourceName] = item.order;
+                }
+            });
+        } else if (typeof responseData === 'object') {
+            // If it's an object with numeric keys
+            for (const [key, value] of Object.entries(responseData)) {
+                if (value && value.resource) {
+                    // Remove /ed-fi/ prefix 
+                    const resourceName = value.resource.replace('/ed-fi/', '');
+                    this.dependencies[resourceName] = value.order;
+                }
+            }
         }
         
         console.log(`Dependencies structure:`, Object.keys(this.dependencies).slice(0, 5));
         console.log(`First few dependencies:`, Object.entries(this.dependencies).slice(0, 5));
+        console.log(`Total dependencies parsed: ${Object.keys(this.dependencies).length}`);
         
         this.buildResourceOrder();
         return this.dependencies;

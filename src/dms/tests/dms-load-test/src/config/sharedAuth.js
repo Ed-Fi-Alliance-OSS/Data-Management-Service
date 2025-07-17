@@ -52,7 +52,7 @@ export class SharedAuthManager {
                 },
             };
 
-            const payload = 'grant_type=client_credentials&scope=edfi_admin_api/full_access';
+            const payload = 'grant_type=client_credentials&scope=E2E-NoFurtherAuthRequiredClaimSet';
 
             console.log(`Requesting new token from: ${this.tokenUrl}`);
             const response = http.post(this.tokenUrl, payload, params);
