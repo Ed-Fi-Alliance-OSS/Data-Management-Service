@@ -66,23 +66,44 @@ DURATION_READWRITE_PHASE=20m  # Read-write phase duration
 
 ## Usage
 
+### Quick Start with Test Runner (Recommended)
+
+```bash
+# Run a smoke test (minimal configuration)
+./run-load-test.sh --profile smoke
+
+# Run a development-scale test
+./run-load-test.sh --profile dev
+
+# Run a production-scale test
+./run-load-test.sh --profile prod
+
+# See all options
+./run-load-test.sh --help
+```
+
+See the [How to Use Guide](docs/how-to-use-load-test-runner.md) for detailed instructions.
+
 ### Run Individual Test Scenarios
 
 ```bash
 # Smoke test - verify API connectivity
-k6 run src/scenarios/smoke.js
+./run-smoke-test.sh
 
-# Load phase - create resources following dependencies
-k6 run src/scenarios/load.js
+# Load phase only
+./run-load-test.sh --phase load
 
-# Read-write phase - mixed CRUD operations
-k6 run src/scenarios/readwrite.js
+# Read-write phase only
+./run-load-test.sh --phase readwrite
 ```
 
-### Run Complete Test Suite
+### Direct k6 Execution (Advanced)
 
 ```bash
-npm run test:full
+# Run scenarios directly with k6
+k6 run src/scenarios/smoke.js
+k6 run src/scenarios/load.js
+k6 run src/scenarios/readwrite.js
 ```
 
 ### Running Against Local DMS

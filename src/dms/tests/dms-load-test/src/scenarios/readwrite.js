@@ -1,6 +1,6 @@
 import { sleep, group } from 'k6';
 import { SharedArray } from 'k6/data';
-import { AuthManager } from '../config/auth.js';
+import { SharedAuthManager } from '../config/sharedAuth.js';
 import { ApiClient, getResourceEndpoint } from '../utils/api.js';
 import { dataStore } from '../utils/dataStore.js';
 import { DataGenerator } from '../generators/index.js';
@@ -29,12 +29,12 @@ export const options = {
 
 // Initialize components
 const apiBaseUrl = __ENV.API_BASE_URL || 'https://api.ed-fi.org/v7.3/api';
-const authManager = new AuthManager({
+const sharedAuthManager = new SharedAuthManager({
     tokenUrl: __ENV.OAUTH_TOKEN_URL,
     clientId: __ENV.CLIENT_ID,
     clientSecret: __ENV.CLIENT_SECRET
 });
-const apiClient = new ApiClient(apiBaseUrl, authManager);
+const apiClient = new ApiClient(apiBaseUrl, sharedAuthManager);
 const dataGenerator = new DataGenerator();
 
 // CRUD operation weights (must sum to 100)

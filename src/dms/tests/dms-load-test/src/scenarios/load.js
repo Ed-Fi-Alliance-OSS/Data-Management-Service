@@ -1,6 +1,6 @@
 import { sleep, group } from 'k6';
 import { SharedArray } from 'k6/data';
-import { AuthManager } from '../config/auth.js';
+import { SharedAuthManager } from '../config/sharedAuth.js';
 import { DependencyResolver } from '../utils/dependencies.js';
 import { ApiClient, getResourceEndpoint } from '../utils/api.js';
 import { dataStore } from '../utils/dataStore.js';
@@ -29,13 +29,13 @@ export const options = {
 
 // Initialize components
 const apiBaseUrl = __ENV.API_BASE_URL || 'https://api.ed-fi.org/v7.3/api';
-const authManager = new AuthManager({
+const sharedAuthManager = new SharedAuthManager({
     tokenUrl: __ENV.OAUTH_TOKEN_URL,
     clientId: __ENV.CLIENT_ID,
     clientSecret: __ENV.CLIENT_SECRET
 });
-const apiClient = new ApiClient(apiBaseUrl, authManager);
-const dependencyResolver = new DependencyResolver(apiBaseUrl, authManager);
+const apiClient = new ApiClient(apiBaseUrl, sharedAuthManager);
+const dependencyResolver = new DependencyResolver(apiBaseUrl, sharedAuthManager);
 const dataGenerator = new DataGenerator();
 
 // Focus on 5 key domains
@@ -44,7 +44,7 @@ const targetDomains = ['enrollment', 'studentAcademicRecord', 'teachingAndLearni
 // Shared data for load distribution
 const resourceOrder = new SharedArray('resourceOrder', function () {
     console.log('🔍 Fetching resource dependencies...');
-    const resolver = new DependencyResolver(apiBaseUrl, authManager);
+    const resolver = new DependencyResolver(apiBaseUrl, sharedAuthManager);
     const filtered = resolver.filterByDomains(targetDomains);
     console.log(`📋 Filtered to ${filtered.length} resources for target domains`);
     return filtered;
