@@ -182,7 +182,7 @@ export class ApiClient {
 export function getResourceEndpoint(resourceType) {
     // Convert camelCase to kebab-case for URL
     const endpoint = resourceType.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-    return `/data/v3/ed-fi/${endpoint}`;
+    return `/data/ed-fi/${endpoint}`;
 }
 
 // Helper function to handle rate limiting

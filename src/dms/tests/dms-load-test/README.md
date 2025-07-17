@@ -190,7 +190,7 @@ The setup script:
 4. Saves credentials to .env.load-test
 
 ### Dependency Errors
-- The tool automatically fetches dependencies from `/metadata/data/v3/dependencies`
+- The tool automatically fetches dependencies from `/metadata/dependencies`
 - Ensure this endpoint is accessible
 - Check that all required descriptors are created first
 
