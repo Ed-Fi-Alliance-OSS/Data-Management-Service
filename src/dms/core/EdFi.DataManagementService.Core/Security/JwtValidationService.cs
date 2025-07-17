@@ -23,11 +23,8 @@ internal class JwtValidationService(
     ILogger<JwtValidationService> logger
 ) : IJwtValidationService
 {
-    private readonly IConfigurationManager<OpenIdConnectConfiguration> _configurationManager =
-        configurationManager;
     private readonly JwtSecurityTokenHandler _tokenHandler = new();
     private readonly JwtAuthenticationOptions _options = options.Value;
-    private readonly ILogger<JwtValidationService> _logger = logger;
 
     /// <summary>
     /// Validates a JWT token and extracts client authorization information.
@@ -42,7 +39,7 @@ internal class JwtValidationService(
     {
         try
         {
-            OpenIdConnectConfiguration oidcConfig = await _configurationManager.GetConfigurationAsync(
+            OpenIdConnectConfiguration oidcConfig = await configurationManager.GetConfigurationAsync(
                 cancellationToken
             );
 
@@ -79,7 +76,7 @@ internal class JwtValidationService(
                 validatedToken
             );
 
-            _logger.LogDebug(
+            logger.LogDebug(
                 "Token validation successful for TokenId: {TokenId}",
                 clientAuthorizations.TokenId
             );
@@ -88,17 +85,17 @@ internal class JwtValidationService(
         }
         catch (SecurityTokenExpiredException ex)
         {
-            _logger.LogWarning(ex, "Token validation failed: Token expired");
+            logger.LogWarning(ex, "Token validation failed: Token expired");
             return (null, null);
         }
         catch (SecurityTokenException ex)
         {
-            _logger.LogWarning(ex, "Token validation failed");
+            logger.LogWarning(ex, "Token validation failed");
             return (null, null);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error during token validation");
+            logger.LogError(ex, "Unexpected error during token validation");
             return (null, null);
         }
     }

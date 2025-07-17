@@ -21,9 +21,6 @@ internal class JwtAuthenticationMiddleware(
     ILogger<JwtAuthenticationMiddleware> logger
 ) : IPipelineStep
 {
-    private readonly IJwtValidationService _jwtValidationService = jwtValidationService;
-    private readonly ILogger<JwtAuthenticationMiddleware> _logger = logger;
-
     /// <summary>
     /// Executes JWT authentication validation for incoming requests.
     /// </summary>
@@ -35,7 +32,7 @@ internal class JwtAuthenticationMiddleware(
             || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
         )
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "Missing or invalid Authorization header - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
@@ -51,14 +48,14 @@ internal class JwtAuthenticationMiddleware(
 
         // Validate token and extract client authorizations
         (ClaimsPrincipal? principal, ClientAuthorizations? clientAuthorizations) =
-            await _jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+            await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
                 token,
                 CancellationToken.None
             );
 
         if (principal == null || clientAuthorizations == null)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "Token validation failed - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
@@ -73,7 +70,7 @@ internal class JwtAuthenticationMiddleware(
         // Update RequestInfo with client authorizations
         requestInfo.ClientAuthorizations = clientAuthorizations;
 
-        _logger.LogDebug(
+        logger.LogDebug(
             "JWT authentication successful for TokenId: {TokenId} - {TraceId}",
             clientAuthorizations.TokenId,
             requestInfo.FrontendRequest.TraceId.Value

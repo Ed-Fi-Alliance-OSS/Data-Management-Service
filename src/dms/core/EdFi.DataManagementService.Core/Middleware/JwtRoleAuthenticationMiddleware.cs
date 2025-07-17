@@ -26,8 +26,6 @@ internal class JwtRoleAuthenticationMiddleware(
     IOptions<JwtAuthenticationOptions> options
 ) : IPipelineStep
 {
-    private readonly IJwtValidationService _jwtValidationService = jwtValidationService;
-    private readonly ILogger<JwtRoleAuthenticationMiddleware> _logger = logger;
     private readonly JwtAuthenticationOptions _options = options.Value;
 
     /// <summary>
@@ -41,7 +39,7 @@ internal class JwtRoleAuthenticationMiddleware(
             || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
         )
         {
-            _logger.LogDebug(
+            logger.LogDebug(
                 "Missing or invalid Authorization header - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
@@ -56,14 +54,14 @@ internal class JwtRoleAuthenticationMiddleware(
         var token = authHeader["Bearer ".Length..];
 
         // Validate token (we only need the principal, not ClientAuthorizations)
-        var (principal, _) = await _jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+        var (principal, _) = await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
             token,
             CancellationToken.None
         );
 
         if (principal == null)
         {
-            _logger.LogWarning(
+            logger.LogWarning(
                 "Token validation failed - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
@@ -81,7 +79,7 @@ internal class JwtRoleAuthenticationMiddleware(
             var hasRequiredRole = principal.HasClaim(ClaimTypes.Role, _options.ClientRole);
             if (!hasRequiredRole)
             {
-                _logger.LogWarning(
+                logger.LogWarning(
                     "Token missing required role: {RequiredRole} - {TraceId}",
                     _options.ClientRole,
                     requestInfo.FrontendRequest.TraceId.Value
@@ -95,7 +93,7 @@ internal class JwtRoleAuthenticationMiddleware(
             }
         }
 
-        _logger.LogDebug(
+        logger.LogDebug(
             "JWT role authentication successful - {TraceId}",
             requestInfo.FrontendRequest.TraceId.Value
         );

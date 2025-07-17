@@ -10,25 +10,16 @@ namespace EdFi.DataManagementService.Core.Security;
 /// <summary>
 /// Document retriever implementation for fetching OIDC metadata
 /// </summary>
-internal class HttpDocumentRetriever : IDocumentRetriever
+internal class HttpDocumentRetriever(HttpClient httpClient) : IDocumentRetriever
 {
-    private readonly HttpClient _httpClient;
-
     /// <summary>
     /// Whether to require HTTPS for metadata endpoints
     /// </summary>
-    public bool RequireHttps { get; set; } = true;
+    public bool RequireHttps { get; init; } = true;
 
-    public HttpDocumentRetriever()
-    {
-        _httpClient = new HttpClient();
-    }
-
-    public HttpDocumentRetriever(HttpClient httpClient)
-    {
-        _httpClient = httpClient;
-    }
-
+    /// <summary>
+    /// Retrieves a document from the specified address
+    /// </summary>
     public async Task<string> GetDocumentAsync(string address, CancellationToken cancel)
     {
         if (RequireHttps && !address.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
@@ -36,8 +27,8 @@ internal class HttpDocumentRetriever : IDocumentRetriever
             throw new InvalidOperationException($"HTTPS is required but the address is not HTTPS: {address}");
         }
 
-        var response = await _httpClient.GetAsync(address, cancel);
+        var response = await httpClient.GetAsync(address, cancel);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
+        return await response.Content.ReadAsStringAsync(cancel);
     }
 }
