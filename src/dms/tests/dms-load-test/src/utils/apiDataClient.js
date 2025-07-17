@@ -6,29 +6,29 @@ import { dataStore } from './dataStore.js';
 // Custom metrics
 export const errorRate = new Rate('errors');
 
-export class ApiClient {
+export class ApiDataClient {
     constructor(baseUrl, authManager) {
-        this.baseUrl = baseUrl;
+        this.baseUrl = `${baseUrl}/data`;
         this.authManager = authManager;
     }
 
     post(endpoint, data, resourceType, tags = {}) {
         const url = `${this.baseUrl}${endpoint}`;
         const headers = this.authManager.getAuthHeaders();
-        
+
         // Validate data is an object and not a string
         if (typeof data !== 'object' || data === null) {
             console.error(`ERROR: Invalid data type for ${resourceType}. Expected object, got ${typeof data}: ${data}`);
             return { success: false, error: `Invalid data type: ${typeof data}` };
         }
-        
+
         // Remove any 'id' field from the data before sending
         const cleanData = { ...data };
         if (cleanData.id) {
             console.warn(`WARNING: Removing 'id' field from ${resourceType} data before POST`);
             delete cleanData.id;
         }
-        
+
         const params = {
             headers: headers,
             tags: { ...tags, operation: 'POST', resourceType: resourceType }
@@ -36,12 +36,12 @@ export class ApiClient {
 
         const requestBody = JSON.stringify(cleanData);
         const response = http.post(url, requestBody, params);
-        
+
         if (__ENV.DEBUG === 'true' && response.status === 400) {
             console.log(`DEBUG: Request body that caused 400 error: ${requestBody}`);
             console.log(`DEBUG: Response body: ${response.body}`);
         }
-        
+
         const success = check(response, {
             'POST status is 201 or 200': (r) => r.status === 201 || r.status === 200,
             'POST has location header or already exists': (r) => r.headers['Location'] !== undefined || r.status === 200
@@ -53,11 +53,11 @@ export class ApiClient {
             // Extract ID from location header
             const location = response.headers['Location'];
             const id = location ? location.split('/').pop() : null;
-            
+
             // Store the created resource
             const createdResource = { ...data, id: id };
             dataStore.addResource(resourceType, createdResource);
-            
+
             return { success: true, data: createdResource, response: response };
         } else {
             console.error(`POST ${endpoint} failed: ${response.status} - ${response.body}`);
@@ -68,14 +68,14 @@ export class ApiClient {
     get(endpoint, tags = {}) {
         const url = `${this.baseUrl}${endpoint}`;
         const headers = this.authManager.getAuthHeaders();
-        
+
         const params = {
             headers: headers,
             tags: { ...tags, operation: 'GET' }
         };
 
         const response = http.get(url, params);
-        
+
         const success = check(response, {
             'GET status is 200': (r) => r.status === 200
         });
@@ -93,14 +93,14 @@ export class ApiClient {
     put(endpoint, data, tags = {}) {
         const url = `${this.baseUrl}${endpoint}`;
         const headers = this.authManager.getAuthHeaders();
-        
+
         const params = {
             headers: headers,
             tags: { ...tags, operation: 'PUT' }
         };
 
         const response = http.put(url, JSON.stringify(data), params);
-        
+
         const success = check(response, {
             'PUT status is 200 or 204': (r) => r.status === 200 || r.status === 204
         });
@@ -118,14 +118,14 @@ export class ApiClient {
     delete(endpoint, tags = {}) {
         const url = `${this.baseUrl}${endpoint}`;
         const headers = this.authManager.getAuthHeaders();
-        
+
         const params = {
             headers: headers,
             tags: { ...tags, operation: 'DELETE' }
         };
 
         const response = http.del(url, null, params);
-        
+
         const success = check(response, {
             'DELETE status is 204': (r) => r.status === 204
         });
@@ -143,7 +143,7 @@ export class ApiClient {
     // Batch operations
     batch(requests) {
         const headers = this.authManager.getAuthHeaders();
-        
+
         const batchRequests = requests.map(req => {
             const url = `${this.baseUrl}${req.endpoint}`;
             const params = {
@@ -166,13 +166,13 @@ export class ApiClient {
         });
 
         const responses = http.batch(batchRequests);
-        
+
         return responses.map((response, index) => {
             const request = requests[index];
             const success = this.checkResponseStatus(response, request.method);
-            
+
             errorRate.add(!success);
-            
+
             return {
                 request: request,
                 response: response,

@@ -1,8 +1,8 @@
+import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { AuthManager } from '../config/auth.js';
 import { SharedAuthManager } from '../config/sharedAuth.js';
 import { DependencyResolver } from '../utils/dependencies.js';
-import { ApiClient } from '../utils/api.js';
+import { ApiDataClient } from '../utils/apiDataClient.js';
 
 // Test configuration
 export const options = {
@@ -27,11 +27,11 @@ const sharedAuthManager = new SharedAuthManager({
 
 export function setup() {
     console.log('🔧 Setting up smoke test...');
-    
+
     // Use shared auth manager for setup to ensure token is cached
-    const setupApiClient = new ApiClient(apiBaseUrl, sharedAuthManager);
+    const setupApiClient = new ApiDataClient(apiBaseUrl, sharedAuthManager);
     const setupDependencyResolver = new DependencyResolver(apiBaseUrl, sharedAuthManager);
-    
+
     // Pre-warm the token cache
     try {
         const token = sharedAuthManager.getToken();
@@ -51,14 +51,14 @@ export function setup() {
     }
 
     // Test OpenAPI metadata endpoint
-    const metadataResult = setupApiClient.get('/metadata/');
-    check(metadataResult.response, {
+    const swaggerResponse = http.get(`${apiBaseUrl}/metadata/specifications/resources-spec.json`);
+    check(swaggerResponse, {
         'OpenAPI metadata available': (r) => r.status === 200,
-        'OpenAPI version present': (r) => r.json('version') !== undefined
+        'OpenAPI version present': (r) => r.json('openapi') !== undefined
     });
 
-    if (metadataResult.success) {
-        console.log(`✅ OpenAPI metadata available - version ${metadataResult.data.version}`);
+    if (swaggerResponse.status === 200) {
+        console.log(`✅ OpenAPI metadata available - version ${swaggerResponse.json().openapi}`);
     } else {
         console.error('❌ OpenAPI metadata not available');
     }
@@ -71,8 +71,8 @@ export function setup() {
 
 export default function () {
     // Use shared auth manager for token caching across iterations
-    const localApiClient = new ApiClient(apiBaseUrl, sharedAuthManager);
-    
+    const localApiClient = new ApiDataClient(apiBaseUrl, sharedAuthManager);
+
     // Log token info every 10th iteration
     if (__ITER % 10 === 0) {
         const tokenInfo = sharedAuthManager.getTokenInfo();
@@ -89,15 +89,15 @@ export default function () {
 
     // Create descriptor
     const createResult = localApiClient.post('/ed-fi/gradeLevelDescriptors', descriptorData, 'gradeLevelDescriptors');
-    
+
     if (createResult.success) {
         console.log('✅ Successfully created test descriptor');
-        
+
         // Read descriptor
         const location = createResult.response.headers['Location'];
         const id = location.split('/').pop();
         const readResult = localApiClient.get(`/ed-fi/gradeLevelDescriptors/${id}`);
-        
+
         check(readResult.response, {
             'Can read created descriptor': (r) => r.status === 200,
             'Descriptor data matches': (r) => r.json('codeValue') === descriptorData.codeValue
@@ -106,14 +106,14 @@ export default function () {
         // Update descriptor
         const updatedData = { ...descriptorData, id: id, shortDescription: 'Updated Test Descriptor' };
         const updateResult = localApiClient.put(`/ed-fi/gradeLevelDescriptors/${id}`, updatedData);
-        
+
         check(updateResult.response, {
             'Can update descriptor': (r) => r.status === 204
         });
 
         // Delete descriptor
         const deleteResult = localApiClient.delete(`/ed-fi/gradeLevelDescriptors/${id}`);
-        
+
         check(deleteResult.response, {
             'Can delete descriptor': (r) => r.status === 204
         });
@@ -127,13 +127,13 @@ export default function () {
 
     // Test batch operations
     const batchRequests = [
-        { method: 'GET', endpoint: '/metadata/', tags: { name: 'batch_metadata' } },
-        { method: 'GET', endpoint: '/ed-fi/academicWeeks?limit=1', tags: { name: 'batch_list' } }
+        { method: 'GET', endpoint: '/ed-fi/academicWeeks?limit=1', tags: { name: 'batch_list' } },
+        { method: 'GET', endpoint: '/ed-fi/courses?limit=1', tags: { name: 'batch_list' } }
     ];
 
     const batchResults = localApiClient.batch(batchRequests);
     const allSuccessful = batchResults.every(result => result.success);
-    
+
     check(allSuccessful, {
         'Batch operations successful': (success) => success === true
     });
