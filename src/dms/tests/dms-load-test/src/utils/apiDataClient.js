@@ -1,6 +1,7 @@
 import http from 'k6/http';
 import { check, group } from 'k6';
 import { Rate } from 'k6/metrics';
+import exec from 'k6/execution';
 import { dataStore } from './dataStore.js';
 
 // Custom metrics
@@ -61,6 +62,18 @@ export class ApiDataClient {
             return { success: true, data: createdResource, response: response };
         } else {
             console.error(`POST ${endpoint} failed: ${response.status} - ${response.body}`);
+            
+            // Check for 4xx errors and abort if configured
+            if (response.status >= 400 && response.status < 500 && __ENV.ABORT_ON_4XX === 'true') {
+                console.error(`CRITICAL: ${response.status} error detected. Test will be aborted.`);
+                console.error(`Endpoint: ${endpoint}`);
+                console.error(`Resource Type: ${resourceType}`);
+                console.error(`Response: ${response.body}`);
+                console.error(`Request Body: ${requestBody}`);
+                
+                exec.test.abort(`Test aborted due to ${response.status} error on POST ${endpoint}: ${response.body}`);
+            }
+            
             return { success: false, error: response.body, response: response };
         }
     }
@@ -86,6 +99,16 @@ export class ApiDataClient {
             return { success: true, data: response.json(), response: response };
         } else {
             console.error(`GET ${endpoint} failed: ${response.status} - ${response.body}`);
+            
+            // Check for 4xx errors and abort if configured
+            if (response.status >= 400 && response.status < 500 && __ENV.ABORT_ON_4XX === 'true') {
+                console.error(`CRITICAL: ${response.status} error detected. Test will be aborted.`);
+                console.error(`Endpoint: ${endpoint}`);
+                console.error(`Response: ${response.body}`);
+                
+                exec.test.abort(`Test aborted due to ${response.status} error on GET ${endpoint}: ${response.body}`);
+            }
+            
             return { success: false, error: response.body, response: response };
         }
     }
@@ -111,6 +134,17 @@ export class ApiDataClient {
             return { success: true, response: response };
         } else {
             console.error(`PUT ${endpoint} failed: ${response.status} - ${response.body}`);
+            
+            // Check for 4xx errors and abort if configured
+            if (response.status >= 400 && response.status < 500 && __ENV.ABORT_ON_4XX === 'true') {
+                console.error(`CRITICAL: ${response.status} error detected. Test will be aborted.`);
+                console.error(`Endpoint: ${endpoint}`);
+                console.error(`Response: ${response.body}`);
+                console.error(`Request Body: ${JSON.stringify(data)}`);
+                
+                exec.test.abort(`Test aborted due to ${response.status} error on PUT ${endpoint}: ${response.body}`);
+            }
+            
             return { success: false, error: response.body, response: response };
         }
     }
@@ -136,6 +170,16 @@ export class ApiDataClient {
             return { success: true, response: response };
         } else {
             console.error(`DELETE ${endpoint} failed: ${response.status} - ${response.body}`);
+            
+            // Check for 4xx errors and abort if configured
+            if (response.status >= 400 && response.status < 500 && __ENV.ABORT_ON_4XX === 'true') {
+                console.error(`CRITICAL: ${response.status} error detected. Test will be aborted.`);
+                console.error(`Endpoint: ${endpoint}`);
+                console.error(`Response: ${response.body}`);
+                
+                exec.test.abort(`Test aborted due to ${response.status} error on DELETE ${endpoint}: ${response.body}`);
+            }
+            
             return { success: false, error: response.body, response: response };
         }
     }
