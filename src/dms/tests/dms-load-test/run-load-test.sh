@@ -102,6 +102,15 @@ load_profile() {
     set +a
 }
 
+# Load base environment variables from .env
+if [ -f ".env" ]; then
+    echo -e "${GREEN}📋 Loading base configuration from .env${NC}"
+    export $(grep -v '^#' .env | grep -v '^/\*' | grep -v '^\*' | xargs)
+else
+    echo -e "${RED}❌ .env not found${NC}"
+    exit 1
+fi
+
 # Check if .env.load-test exists, if not create a client
 if [ ! -f ".env.load-test" ]; then
     echo -e "${YELLOW}🔧 No load test client found. Setting up authorized client...${NC}"
@@ -113,14 +122,46 @@ if [ ! -f ".env.load-test" ]; then
     echo ""
 fi
 
-# Load base environment variables from .env.load-test
+# Load client credentials from .env.load-test (overrides CLIENT_ID and CLIENT_SECRET from .env)
 if [ -f ".env.load-test" ]; then
-    echo -e "${GREEN}📋 Loading base configuration from .env.load-test${NC}"
-    export $(grep -v '^#' .env.load-test | xargs)
+    echo -e "${GREEN}📋 Loading client credentials from .env.load-test${NC}"
+    # Only export CLIENT_ID and CLIENT_SECRET from .env.load-test
+    eval $(grep -E '^(CLIENT_ID|CLIENT_SECRET)=' .env.load-test | xargs -I {} echo "export {}")
 else
     echo -e "${RED}❌ .env.load-test not found after setup${NC}"
     exit 1
 fi
+
+# Check if credentials are valid
+echo -e "${BLUE}🔐 Checking client credentials...${NC}"
+node src/utils/checkCredentials.js > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    echo -e "${YELLOW}⚠️  Client credentials are invalid or expired. Refreshing...${NC}"
+    
+    # Remove the old credentials file
+    rm -f .env.load-test
+    
+    # Generate new credentials
+    node src/utils/setupLoadTestClient.js
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Failed to refresh client credentials${NC}"
+        exit 1
+    fi
+    
+    # Reload the new credentials
+    echo -e "${GREEN}📋 Loading refreshed client credentials from .env.load-test${NC}"
+    eval $(grep -E '^(CLIENT_ID|CLIENT_SECRET)=' .env.load-test | xargs -I {} echo "export {}")
+    
+    # Check credentials one more time
+    echo -e "${BLUE}🔐 Verifying refreshed credentials...${NC}"
+    node src/utils/checkCredentials.js > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Failed to authenticate with refreshed credentials${NC}"
+        echo -e "${RED}Please check your OAuth configuration and try again${NC}"
+        exit 1
+    fi
+fi
+echo -e "${GREEN}✅ Client credentials validated${NC}"
 
 # Load profile configuration (overrides base config)
 load_profile "$PROFILE"
