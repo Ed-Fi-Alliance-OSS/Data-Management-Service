@@ -30,7 +30,18 @@ export class DependencyResolver {
             throw new Error('Failed to fetch resource dependencies');
         }
 
-        this.dependencies = response.json();
+        const responseData = response.json();
+        
+        // Check if the response is wrapped in a 'dependencies' property
+        if (responseData.dependencies) {
+            this.dependencies = responseData.dependencies;
+        } else {
+            this.dependencies = responseData;
+        }
+        
+        console.log(`Dependencies structure:`, Object.keys(this.dependencies).slice(0, 5));
+        console.log(`First few dependencies:`, Object.entries(this.dependencies).slice(0, 5));
+        
         this.buildResourceOrder();
         return this.dependencies;
     }
@@ -84,15 +95,18 @@ export class DependencyResolver {
     // Filter resources by domain focus
     filterByDomains(domains) {
         const domainKeywords = {
-            'enrollment': ['student', 'enrollment', 'section', 'studentSection'],
-            'studentAcademicRecord': ['grade', 'gradeBook', 'studentAcademic', 'report'],
-            'teachingAndLearning': ['course', 'section', 'class', 'learningStandard', 'learningObjective'],
-            'assessment': ['assessment', 'studentAssessment', 'objectiveAssessment'],
-            'studentIdentification': ['student', 'studentIdentification', 'studentDemographic', 'contact', 'parent']
+            'enrollment': ['student', 'enrollment', 'section', 'studentsection', 'school', 'educationorganization'],
+            'studentAcademicRecord': ['grade', 'gradebook', 'studentacademic', 'report', 'academicrecord'],
+            'teachingAndLearning': ['course', 'section', 'class', 'learningstandard', 'learningobjective', 'staff', 'teacher'],
+            'assessment': ['assessment', 'studentassessment', 'objectiveassessment'],
+            'studentIdentification': ['student', 'studentidentification', 'studentdemographic', 'contact', 'parent']
         };
 
         const filteredResources = [];
         const order = this.getResourceOrder();
+        
+        console.log(`Total resources to filter: ${order.length}`);
+        console.log(`First 10 resources:`, order.slice(0, 10));
 
         for (const resource of order) {
             const resourceLower = resource.toLowerCase();
@@ -110,6 +124,9 @@ export class DependencyResolver {
         const combined = [...new Set([...descriptors, ...filteredResources])];
 
         console.log(`Filtered to ${combined.length} resources for domains: ${domains.join(', ')}`);
+        console.log(`Descriptors found: ${descriptors.length}`);
+        console.log(`Domain matches found: ${filteredResources.length}`);
+        
         return combined;
     }
 }

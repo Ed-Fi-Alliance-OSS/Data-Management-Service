@@ -33,37 +33,86 @@ const sharedAuthManager = new SharedAuthManager({
     clientId: __ENV.CLIENT_ID,
     clientSecret: __ENV.CLIENT_SECRET
 });
-const apiClient = new ApiClient(apiBaseUrl, sharedAuthManager);
-const dependencyResolver = new DependencyResolver(apiBaseUrl, sharedAuthManager);
-const dataGenerator = new DataGenerator();
+
 
 // Focus on 5 key domains
 const targetDomains = ['enrollment', 'studentAcademicRecord', 'teachingAndLearning', 'assessment', 'studentIdentification'];
-
-// Shared data for load distribution - populated in setup
-let resourceOrder = null;
 
 export function setup() {
     console.log('🏫 Setting up Austin ISD scale load test...');
     console.log(`📊 Configuration: ${__ENV.SCHOOL_COUNT || 130} schools, ${__ENV.STUDENT_COUNT || 75000} students, ${__ENV.STAFF_COUNT || 12000} staff`);
     
+    // Create instances in setup
+    const apiClient = new ApiClient(apiBaseUrl, sharedAuthManager);
+    const dependencyResolver = new DependencyResolver(apiBaseUrl, sharedAuthManager);
+    const dataGenerator = new DataGenerator();
+    
     // Fetch dependencies during setup (where HTTP requests are allowed)
     console.log('🔍 Fetching resource dependencies...');
-    const filtered = dependencyResolver.filterByDomains(targetDomains);
-    console.log(`📋 Filtered to ${filtered.length} resources for target domains`);
     
-    return {
-        authManager: sharedAuthManager,
-        apiClient,
-        dependencyResolver,
-        dataGenerator,
-        startTime: Date.now(),
-        resourceOrder: filtered  // Pass the resource order to the default function
-    };
+    try {
+        // First fetch all dependencies
+        const allDependencies = dependencyResolver.fetchDependencies();
+        console.log(`✅ Found ${Object.keys(allDependencies).length} total resources`);
+        
+        // Then filter by domains
+        const filtered = dependencyResolver.filterByDomains(targetDomains);
+        console.log(`📋 Filtered to ${filtered.length} resources for target domains`);
+        
+        if (filtered.length === 0) {
+            console.error('❌ No resources found after filtering. Check domain keywords.');
+            console.log('Available resources:', Object.keys(allDependencies).slice(0, 20).join(', '));
+            
+            // Fallback: use a hardcoded list of essential resources
+            console.log('⚠️  Using fallback resource list...');
+            const fallbackResources = [
+                'gradeLevelDescriptors',
+                'academicSubjectDescriptors',
+                'calendarTypeDescriptors',
+                'courseLevelCharacteristicDescriptors',
+                'localEducationAgencies',
+                'schools',
+                'calendars',
+                'students',
+                'parents',
+                'staffs',
+                'courses',
+                'courseOfferings',
+                'sections',
+                'studentSchoolAssociations',
+                'studentSectionAssociations',
+                'grades'
+            ];
+            
+            return {
+                authManager: sharedAuthManager,
+                apiClient: new ApiClient(apiBaseUrl, sharedAuthManager),
+                dataGenerator: new DataGenerator(),
+                startTime: Date.now(),
+                resourceOrder: fallbackResources
+            };
+        }
+        
+        return {
+            authManager: sharedAuthManager,
+            apiClient: new ApiClient(apiBaseUrl, sharedAuthManager),
+            dataGenerator: new DataGenerator(),
+            startTime: Date.now(),
+            resourceOrder: filtered  // Pass the resource order to the default function
+        };
+    } catch (error) {
+        console.error('❌ Setup failed:', error.message);
+        throw error;
+    }
 }
 
 export default function (data) {
     const { apiClient, dataGenerator, resourceOrder } = data;
+    
+    // Debug: Check what we're getting
+    console.log(`VU ${__VU}: Received data keys:`, Object.keys(data));
+    console.log(`VU ${__VU}: dataGenerator type:`, typeof dataGenerator);
+    console.log(`VU ${__VU}: resourceOrder length:`, resourceOrder ? resourceOrder.length : 'undefined');
     
     // Each VU processes a subset of resources
     const vuId = __VU;
