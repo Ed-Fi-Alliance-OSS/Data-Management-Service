@@ -29,7 +29,30 @@ public class ResourceAuthorizationHandler(
         TraceId traceId
     )
     {
-        logger.LogInformation("Entering ResourceAuthorizationHandler. TraceId:{TraceId}", traceId.Value);
+        logger.LogInformation(
+            "Entering ResourceAuthorizationHandler. OperationType:{OperationType}, AuthorizationStrategyCount:{StrategyCount} TraceId:{TraceId}",
+            operationType,
+            authorizationStrategyEvaluators.Length,
+            traceId.Value
+        );
+
+        logger.LogDebug(
+            "DocumentSecurityElements - Namespaces: {Namespaces}, EdOrgs: {EdOrgs}, Students: {Students}, Contacts: {Contacts}, Staff: {Staff}",
+            string.Join(", ", documentSecurityElements.Namespace),
+            string.Join(
+                ", ",
+                documentSecurityElements.EducationOrganization.Select(x => $"{x.PropertyName}={x.Id}")
+            ),
+            string.Join(", ", documentSecurityElements.Student.Select(x => x.Value)),
+            string.Join(", ", documentSecurityElements.Contact.Select(x => x.Value)),
+            string.Join(", ", documentSecurityElements.Staff.Select(x => x.Value))
+        );
+
+        logger.LogDebug(
+            "AuthorizationSecurableInfos: {SecurableInfos}",
+            string.Join(", ", authorizationSecurableInfos.Select(x => x.SecurableKey))
+        );
+
         List<ResourceAuthorizationResult> andResults = [];
         List<ResourceAuthorizationResult> orResults = [];
 
@@ -43,11 +66,26 @@ public class ResourceAuthorizationHandler(
                     $"Could not find authorization strategy implementation for the following strategy: '{evaluator.AuthorizationStrategyName}'."
                 );
 
+            logger.LogDebug(
+                "Using AuthorizationStrategy: {AuthorizationStrategyName} for TraceId: {TraceId}",
+                evaluator.AuthorizationStrategyName,
+                traceId.Value
+            );
+
             var authResult = await validator.ValidateAuthorization(
                 documentSecurityElements,
                 evaluator.Filters,
                 authorizationSecurableInfos,
                 operationType
+            );
+
+            logger.LogDebug(
+                "Authorization strategy '{AuthorizationStrategyName}' result: {AuthResult}, Operator: {Operator}, Filters: {Filters}, for TraceId: {TraceId}",
+                evaluator.AuthorizationStrategyName,
+                authResult.GetType().Name,
+                evaluator.Operator,
+                string.Join(", ", evaluator.Filters.Select(f => $"{f.GetType().Name}={f.Value}")),
+                traceId.Value
             );
 
             if (evaluator.Operator == FilterOperator.And)
@@ -60,6 +98,15 @@ public class ResourceAuthorizationHandler(
             }
         }
 
+        logger.LogDebug(
+            "Authorization evaluation complete. AND results: {AndResultCount} ({AndResults}), OR results: {OrResultCount} ({OrResults}) for TraceId: {TraceId}",
+            andResults.Count,
+            string.Join(", ", andResults.Select(r => r.GetType().Name)),
+            orResults.Count,
+            string.Join(", ", orResults.Select(r => r.GetType().Name)),
+            traceId.Value
+        );
+
         if (andResults.Exists(f => f is ResourceAuthorizationResult.NotAuthorized))
         {
             return CreateNotAuthorizedResult(andResults);
@@ -70,6 +117,7 @@ public class ResourceAuthorizationHandler(
             return CreateNotAuthorizedResult(orResults);
         }
 
+        logger.LogInformation("Authorization GRANTED for TraceId: {TraceId}", traceId.Value);
         return new ResourceAuthorizationResult.Authorized();
     }
 
@@ -80,6 +128,7 @@ public class ResourceAuthorizationHandler(
         string[] errors = results
             .OfType<ResourceAuthorizationResult.NotAuthorized>()
             .SelectMany(x => x.ErrorMessages)
+            .Distinct()
             .ToArray();
 
         string[] hints = results
@@ -87,8 +136,10 @@ public class ResourceAuthorizationHandler(
             .SelectMany(x => x.Hints)
             .ToArray();
 
-        return hints.Any()
+        var result = hints.Any()
             ? new ResourceAuthorizationResult.NotAuthorized.WithHint(errors, hints)
             : new ResourceAuthorizationResult.NotAuthorized(errors);
+
+        return result;
     }
 }

@@ -6377,6 +6377,9 @@ INSERT INTO dmscs.claimshierarchy(
               "authorizationStrategies": [
                 {
                   "name": "RelationshipsWithEdOrgsAndPeople"
+                },
+                {
+                  "name": "RelationshipsWithStudentsOnlyThroughResponsibility"
                 }
               ]
             },
@@ -6385,6 +6388,9 @@ INSERT INTO dmscs.claimshierarchy(
               "authorizationStrategies": [
                 {
                   "name": "RelationshipsWithEdOrgsAndPeople"
+                },
+                {
+                  "name": "RelationshipsWithStudentsOnlyThroughResponsibility"
                 }
               ]
             },
@@ -6393,6 +6399,9 @@ INSERT INTO dmscs.claimshierarchy(
               "authorizationStrategies": [
                 {
                   "name": "RelationshipsWithEdOrgsAndPeople"
+                },
+                {
+                  "name": "RelationshipsWithStudentsOnlyThroughResponsibility"
                 }
               ]
             },
@@ -6401,6 +6410,9 @@ INSERT INTO dmscs.claimshierarchy(
               "authorizationStrategies": [
                 {
                   "name": "RelationshipsWithEdOrgsAndPeople"
+                },
+                {
+                  "name": "RelationshipsWithStudentsOnlyThroughResponsibility"
                 }
               ]
             },

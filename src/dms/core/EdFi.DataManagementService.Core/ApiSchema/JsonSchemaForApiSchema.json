@@ -220,6 +220,42 @@
                         "allowIdentityUpdates": {
                             "type": "boolean"
                         },
+                        "arrayUniquenessConstraints": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        },
+                        "authorizationPathways": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "booleanJsonPaths": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "dateJsonPaths": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "dateTimeJsonPaths": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "decimalPropertyValidationInfos": {
+                            "type": "array",
+                            "items": {
+                                "type": "object"
+                            }
+                        },
                         "documentPathsMapping": {
                             "$ref": "#/definitions/documentPathsMapping"
                         },
@@ -233,6 +269,9 @@
                         "isDescriptor": {
                             "type": "boolean"
                         },
+                        "isResourceExtension": {
+                            "type": "boolean"
+                        },
                         "isSchoolYearEnumeration": {
                             "type": "boolean"
                         },
@@ -240,6 +279,15 @@
                             "type": "boolean"
                         },
                         "jsonSchemaForInsert": {
+                            "type": "object"
+                        },
+                        "numericJsonPaths": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "queryFieldMapping": {
                             "type": "object"
                         },
                         "resourceName": {
@@ -266,7 +314,10 @@
                                                 "type": "string"
                                             }
                                         },
-                                        "required": [ "jsonPath", "metaEdName" ],
+                                        "required": [
+                                            "jsonPath",
+                                            "metaEdName"
+                                        ],
                                         "additionalProperties": false
                                     }
                                 },
@@ -281,14 +332,22 @@
                                     "items": {
                                         "type": "string"
                                     }
+                                },
+                                "Staff": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
                                 }
                             },
                             "required": [
                                 "Namespace",
                                 "EducationOrganization",
                                 "Student",
-                                "Contact"
-                            ]
+                                "Contact",
+                                "Staff"
+                            ],
+                            "additionalProperties": false
                         },
                         "subclassType": {
                             "type": "string"
@@ -313,7 +372,8 @@
                         "isSubclass",
                         "jsonSchemaForInsert",
                         "resourceName"
-                    ]
+                    ],
+                    "additionalProperties": false
                 }
             },
             "additionalProperties": false

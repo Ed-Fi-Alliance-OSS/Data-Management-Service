@@ -44,6 +44,7 @@ public abstract class DatabaseTestBase
                     new("dms", "educationorganizationhierarchy"),
                     new("dms", "educationorganizationhierarchytermslookup"),
                     new("dms", "studentschoolassociationauthorization"),
+                    new("dms", "studenteducationorganizationresponsibilityauthorization"),
                     new("dms", "studentsecurabledocument"),
                     new("dms", "contactstudentschoolauthorization"),
                     new("dms", "contactsecurabledocument"),

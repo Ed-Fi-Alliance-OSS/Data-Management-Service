@@ -134,7 +134,8 @@ internal class UpsertHandler(
                 StatusCode: 403,
                 Body: ForForbidden(
                     traceId: requestData.FrontendRequest.TraceId,
-                    errors: failure.ErrorMessages
+                    errors: failure.ErrorMessages,
+                    hints: failure.Hints
                 ),
                 Headers: []
             ),

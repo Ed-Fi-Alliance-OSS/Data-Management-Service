@@ -71,8 +71,8 @@ function Get-InputFileList {
     }
 
     $SchemaPackages |
-        Where-Object { $_.extensionName -and $_.extensionName.Trim() -ne "" } |
-        ForEach-Object { $inputFileList += "$($_.extensionName)ExtensionResourceClaims.json" }
+    Where-Object { $_.extensionName -and $_.extensionName.Trim() -ne "" } |
+    ForEach-Object { $inputFileList += "$($_.extensionName)ExtensionResourceClaims.json" }
 
     return $inputFileList
 }
@@ -88,7 +88,7 @@ function Invoke-CmsHierarchyTransform {
         Write-Output "Loading extension resource claims..."
         dotnet build CmsHierarchy.csproj -c Release
 
-        dotnet run --configuration Release --project "CmsHierarchy.csproj" --no-launch-profile -- --command Transform --input $InputFileListString --outputFormat ToFile --output ../docker-compose/SecurityMetadata.json --skipAuths "RelationshipsWithEdOrgsAndPeopleInverted;RelationshipsWithStudentsOnlyThroughResponsibility;RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
+        dotnet run --configuration Release --project "CmsHierarchy.csproj" --no-launch-profile -- --command Transform --input $InputFileListString --outputFormat ToFile --output ../docker-compose/SecurityMetadata.json --skipAuths "RelationshipsWithEdOrgsAndPeopleInverted;RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
         Pop-Location
     }
     catch {
