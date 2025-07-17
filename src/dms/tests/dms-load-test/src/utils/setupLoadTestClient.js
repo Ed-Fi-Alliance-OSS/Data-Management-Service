@@ -211,23 +211,8 @@ async function saveCredentials(credentials) {
 # Generated: ${new Date().toISOString()}
 
 # API Configuration
-API_BASE_URL=http://${DMS_HOST}:${DMS_PORT}/api
-OAUTH_TOKEN_URL=http://localhost:8045/realms/edfi/protocol/openid-connect/token
 CLIENT_ID=${credentials.clientId}
 CLIENT_SECRET=${credentials.clientSecret}
-
-# Test Configuration
-VUS_LOAD_PHASE=1
-VUS_READWRITE_PHASE=1
-DURATION_LOAD_PHASE=30s
-DURATION_READWRITE_PHASE=30s
-
-# Minimal Data Scale for smoke test
-SCHOOL_COUNT=2
-STUDENT_COUNT=2
-STAFF_COUNT=2
-COURSES_PER_SCHOOL=2
-SECTIONS_PER_COURSE=2
 `;
 
     const envPath = path.join(__dirname, '../../.env.load-test');
