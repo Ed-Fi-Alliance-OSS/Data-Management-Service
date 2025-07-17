@@ -5,179 +5,107 @@
 
 window.EdFiCustomFields = function () {
 
-  // Helper function to create a styled note element using system React
-  const createNote = (text, system) => {
-    // Get React from the system parameter that Swagger UI provides
-    const React = system.React || window.React;
-    if (!React) {
-      return null;
-    }
-
-    return React.createElement(
-      "div",
-      {
-        style: {
-          marginLeft: "20px",
-          fontFamily: "monospace",
-          fontSize: "90%",
-          color: "#666",
-          borderLeft: "2px solid #ddd",
-          paddingLeft: "6px",
-          marginTop: "4px"
-        },
-      },
-      text
-    );
-  };
-
-  // Helper function to safely get values from schema
-  const safeGet = (schema, key) => {
-    if (!schema) return undefined;
-    if (typeof schema.get === 'function') {
-      return schema.get(key);
-    }
-    // Fallback for plain objects
-    return schema[key];
-  };
-
-  // Helper function to extract and display Ed-Fi custom fields
-  const extractEdFiFields = (schema, system) => {
-    if (!schema) return [];
-
-    const fields = [];
-
-    // Check for x-Ed-Fi-isIdentity
-    const isIdentity = safeGet(schema, "x-Ed-Fi-isIdentity");
-    if (isIdentity !== undefined) {
-      const element = createNote(`"x-Ed-Fi-isIdentity": ${String(isIdentity)}`, system);
-      if (element) fields.push(element);
-    }
-
-    // Check for x-Ed-Fi-isDeprecated
-    const isDeprecated = safeGet(schema, "x-Ed-Fi-isDeprecated");
-    if (isDeprecated !== undefined) {
-      const element = createNote(`"x-Ed-Fi-isDeprecated": ${String(isDeprecated)}`, system);
-      if (element) fields.push(element);
-    }
-
-    // Check for x-Ed-Fi-deprecatedReasons
-    const deprecatedReasons = safeGet(schema, "x-Ed-Fi-deprecatedReasons");
-    if (deprecatedReasons !== undefined) {
-      const reasonsText = Array.isArray(deprecatedReasons)
-        ? `[${deprecatedReasons.map(r => `"${r}"`).join(", ")}]`
-        : `"${deprecatedReasons}"`;
-      const element = createNote(`"x-Ed-Fi-deprecatedReasons": ${reasonsText}`, system);
-      if (element) fields.push(element);
-    }
-
-    // Check for x-nullable
-    const nullable = safeGet(schema, "x-nullable");
-    if (nullable !== undefined) {
-      const element = createNote(`"x-nullable": ${String(nullable)}`, system);
-      if (element) fields.push(element);
-    }
-
-    // Check for x-Ed-Fi-isUpdatable (mainly for PUT operations)
-    const isUpdatable = safeGet(schema, "x-Ed-Fi-isUpdatable");
-    if (isUpdatable !== undefined) {
-      const element = createNote(`"x-Ed-Fi-isUpdatable": ${String(isUpdatable)}`, system);
-      if (element) fields.push(element);
-    }
-
-    return fields;
-  };
-
-  return {
-    wrapComponents: {
-      // Wrapper for Model
-      Model: (Original, system) => (props) => {
+    // Helper function to create a styled note element using system React
+    const createNote = (text, system) => {
+        // Get React from the system parameter that Swagger UI provides
         const React = system.React || window.React;
-
         if (!React) {
-          return Original(props);
+            return null;
         }
 
-        const children = Original(props);
+        return React.createElement(
+            "div",
+            {
+                style: {
+                    marginLeft: "20px",
+                    fontFamily: "monospace",
+                    fontSize: "90%",
+                    color: "#666",
+                    borderLeft: "2px solid #ddd",
+                    paddingLeft: "6px",
+                    marginTop: "4px"
+                },
+            },
+            text
+        );
+    };
 
-        // Extract Ed-Fi fields from schema
-        const schema = props.schema;
-        const edFiFields = extractEdFiFields(schema, system);
+    // Helper function to safely get values from schema
+    const safeGet = (schema, key) => {
+        if (!schema) return undefined;
+        if (typeof schema.get === 'function') {
+            return schema.get(key);
+        }
+        // Fallback for plain objects
+        return schema[key];
+    };
 
-        if (edFiFields.length > 0) {
-          return React.createElement(React.Fragment, null, children, ...edFiFields);
+    // Helper function to extract and display Ed-Fi custom fields
+    const extractEdFiFields = (schema, system) => {
+        if (!schema) return [];
+
+        const fields = [];
+
+        // Check for x-Ed-Fi-isIdentity
+        const isIdentity = safeGet(schema, "x-Ed-Fi-isIdentity");
+        if (isIdentity !== undefined) {
+            const element = createNote(`x-Ed-Fi-isIdentity: ${String(isIdentity)}`, system);
+            if (element) fields.push(element);
         }
 
-        return children;
-      },
-
-      // Wrapper for Property to capture individual properties
-      Property: (Original, system) => (props) => {
-        const React = system.React || window.React;
-
-        if (!React) {
-          return Original(props);
+        // Check for x-Ed-Fi-isDeprecated
+        const isDeprecated = safeGet(schema, "x-Ed-Fi-isDeprecated");
+        if (isDeprecated !== undefined) {
+            const element = createNote(`x-Ed-Fi-isDeprecated: ${String(isDeprecated)}`, system);
+            if (element) fields.push(element);
         }
 
-        const children = Original(props);
-
-        // Extract Ed-Fi fields from property schema
-        const schema = props.schema;
-        const edFiFields = extractEdFiFields(schema, system);
-
-        if (edFiFields.length > 0) {
-          return React.createElement(React.Fragment, null, children, ...edFiFields);
+        // Check for x-Ed-Fi-deprecatedReasons
+        const deprecatedReasons = safeGet(schema, "x-Ed-Fi-deprecatedReasons");
+        if (deprecatedReasons !== undefined) {
+            const reasonsText = Array.isArray(deprecatedReasons)
+                ? `[${deprecatedReasons.map(r => `"${r}"`).join(", ")}]`
+                : `"${deprecatedReasons}"`;
+            const element = createNote(`x-Ed-Fi-deprecatedReasons: ${reasonsText}`, system);
+            if (element) fields.push(element);
         }
 
-        return children;
-      },
-
-      // Wrapper for ModelExample for responses
-      ModelExample: (Original, system) => (props) => {
-        const React = system.React || window.React;
-
-        if (!React) {
-          return Original(props);
+        // Check for x-nullable
+        const nullable = safeGet(schema, "x-nullable");
+        if (nullable !== undefined) {
+            const element = createNote(`x-nullable: ${String(nullable)}`, system);
+            if (element) fields.push(element);
         }
 
-        const children = Original(props);
+        return fields;
+    };
 
-        // Extract Ed-Fi fields from schema
-        const schema = props.schema;
-        const edFiFields = extractEdFiFields(schema, system);
+    return {
+        wrapComponents: {
 
-        if (edFiFields.length > 0) {
-          return React.createElement(React.Fragment, null, children, ...edFiFields);
+            // Wrapper for Model - inject Ed-Fi custom fields into schema
+            Model: (Original, system) => (props) => {
+                const React = system.React || window.React;
+
+                if (!React) {
+                    return Original(props);
+                }
+
+                const children = Original(props);
+
+                // Extract Ed-Fi fields from schema
+                const schema = props.schema;
+                const edFiFields = extractEdFiFields(schema, system);
+
+                if (edFiFields.length > 0) {
+                    console.log('Model createElement', edFiFields);
+                    return React.createElement(React.Fragment, null, children, ...edFiFields);
+                }
+
+                return children;
+            },
+
         }
+    };
 
-        return children;
-      },
-
-      // Wrapper for Parameters to capture query parameters
-      Parameters: (Original, system) => (props) => {
-        return Original(props);
-      },
-
-      // Wrapper for Parameter to capture individual parameters
-      Parameter: (Original, system) => (props) => {
-        const React = system.React || window.React;
-
-        if (!React) {
-          return Original(props);
-        }
-
-        const children = Original(props);
-
-        // Extract Ed-Fi fields from parameter schema
-        const param = props.param;
-        const schema = param ? param.get('schema') : null;
-        const edFiFields = extractEdFiFields(schema, system);
-
-        if (edFiFields.length > 0) {
-          return React.createElement(React.Fragment, null, children, ...edFiFields);
-        }
-
-        return children;
-      }
-    }
-  };
 };

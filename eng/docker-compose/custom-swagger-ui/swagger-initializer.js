@@ -16,10 +16,10 @@ window.onload = function () {
         plugins: [window.EdFiCustomFields],
         layout: "StandaloneLayout",
         docExpansion: "none",
-        onComplete: function() {
+        onComplete: function () {
             console.log('Swagger UI loaded successfully');
         },
-        onFailure: function(data) {
+        onFailure: function (data) {
             console.log('Swagger UI failed to load:', data);
         }
     });
