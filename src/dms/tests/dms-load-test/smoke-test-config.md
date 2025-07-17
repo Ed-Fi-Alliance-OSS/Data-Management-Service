@@ -83,6 +83,12 @@ k6 run src/scenarios/smoke.js
 - Added `id` field to request body for PUT operations
 - DMS requires the id in both the URL and the request body for updates
 
+### 5. DELETE Request Fix (src/utils/api.js)
+- Fixed http.del() call to include null body parameter
+- Changed from: `http.del(url, params)`
+- Changed to: `http.del(url, null, params)`
+- The k6 http.del() signature requires: (url, body, params)
+
 ## Solution Summary
 
 ### Authorization Issues (403 Errors) - RESOLVED

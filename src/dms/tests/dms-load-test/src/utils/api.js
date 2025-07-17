@@ -105,7 +105,7 @@ export class ApiClient {
             tags: { ...tags, operation: 'DELETE' }
         };
 
-        const response = http.del(url, params);
+        const response = http.del(url, null, params);
         
         const success = check(response, {
             'DELETE status is 204': (r) => r.status === 204
