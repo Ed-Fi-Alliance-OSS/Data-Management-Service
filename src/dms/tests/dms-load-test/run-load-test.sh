@@ -6,6 +6,7 @@
 # This script runs load tests against a DMS instance with configurable profiles and phases
 
 set -e
+set -o pipefail
 
 # Script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -126,7 +127,9 @@ fi
 if [ -f ".env.load-test" ]; then
     echo -e "${GREEN}📋 Loading client credentials from .env.load-test${NC}"
     # Only export CLIENT_ID and CLIENT_SECRET from .env.load-test
-    eval $(grep -E '^(CLIENT_ID|CLIENT_SECRET)=' .env.load-test | xargs -I {} echo "export {}")
+    while IFS='=' read -r key value; do
+        export "$key=$value"
+    done < <(grep -E '^(CLIENT_ID|CLIENT_SECRET)=' .env.load-test)
 else
     echo -e "${RED}❌ .env.load-test not found after setup${NC}"
     exit 1
@@ -134,8 +137,11 @@ fi
 
 # Check if credentials are valid
 echo -e "${BLUE}🔐 Checking client credentials...${NC}"
-node src/utils/checkCredentials.js > /dev/null 2>&1
-if [ $? -ne 0 ]; then
+set +e  # Temporarily disable error exit
+node src/utils/validateCredentials.js
+CRED_CHECK_RESULT=$?
+set -e  # Re-enable error exit
+if [ $CRED_CHECK_RESULT -ne 0 ]; then
     echo -e "${YELLOW}⚠️  Client credentials are invalid or expired. Refreshing...${NC}"
     
     # Remove the old credentials file
@@ -150,11 +156,13 @@ if [ $? -ne 0 ]; then
     
     # Reload the new credentials
     echo -e "${GREEN}📋 Loading refreshed client credentials from .env.load-test${NC}"
-    eval $(grep -E '^(CLIENT_ID|CLIENT_SECRET)=' .env.load-test | xargs -I {} echo "export {}")
+    while IFS='=' read -r key value; do
+        export "$key=$value"
+    done < <(grep -E '^(CLIENT_ID|CLIENT_SECRET)=' .env.load-test)
     
     # Check credentials one more time
     echo -e "${BLUE}🔐 Verifying refreshed credentials...${NC}"
-    node src/utils/checkCredentials.js > /dev/null 2>&1
+    node src/utils/validateCredentials.js > /dev/null 2>&1
     if [ $? -ne 0 ]; then
         echo -e "${RED}❌ Failed to authenticate with refreshed credentials${NC}"
         echo -e "${RED}Please check your OAuth configuration and try again${NC}"
