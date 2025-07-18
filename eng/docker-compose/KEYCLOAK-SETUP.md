@@ -60,7 +60,7 @@ Keycloak locally using docker-compose.
     ClientId: "DmsConfigurationService"
     ClientSecret: <value-you-copied>
     RoleClaimType: "http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role"
-    Leave the rest as-are
+    Leave the rest as-is
    ```
 
     > [!NOTE]
@@ -310,10 +310,9 @@ Please refer "Creating a Configuration Service Client" section above
        containing the client access token, which you can use to authenticate DMS
        requests to /data endpoints.
     5. To enable authorization to work in DMS, update the
-       IdentitySettings section in appsettings.json file as follows:
+       JwtAuthentication section in appsettings.json file as follows:
 
         ```js
-            "ConfigServiceRole": "cms-client",
             "ClientRole": "dms-client",
             "Authority": "http://your-keycloak-url:port/realms/<your-realm>",
             "Audience": "account",

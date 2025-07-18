@@ -35,8 +35,7 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                 .Configure<CoreAppSettings>(configuration.GetSection("AppSettings"))
                 .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
                 .Configure<ConnectionStrings>(configuration.GetSection("ConnectionStrings"))
-                .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>()
-                .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
+                .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
 
             ConfigureDatastore(configuration, services, logger);
             ConfigureQueryHandler(configuration, services, logger);
