@@ -11,12 +11,14 @@ using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Action = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Action;
@@ -40,7 +42,7 @@ public class ClaimsHierarchyModuleTests
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
-                (collection) =>
+                (ctx, collection) =>
                 {
                     collection
                         .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
@@ -49,14 +51,17 @@ public class ClaimsHierarchyModuleTests
                             _ => { }
                         );
 
+                    var identitySettings = ctx
+                        .Configuration.GetSection("IdentitySettings")
+                        .Get<IdentitySettings>()!;
                     collection.AddAuthorization(options =>
                     {
                         options.AddPolicy(
                             SecurityConstants.ServicePolicy,
                             policy =>
                                 policy.RequireClaim(
-                                    System.Security.Claims.ClaimTypes.Role,
-                                    AuthenticationConstants.Role
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
                                 )
                         );
                         AuthorizationScopePolicies.Add(options);

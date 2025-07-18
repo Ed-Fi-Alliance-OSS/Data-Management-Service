@@ -59,7 +59,7 @@ Keycloak locally using docker-compose.
     Realm: "edfi"(your realm)
     ClientId: "DmsConfigurationService"
     ClientSecret: <value-you-copied>
-    RoleClaimType: "http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role"
+    RoleClaimType: "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
     Leave the rest as-is
    ```
 
