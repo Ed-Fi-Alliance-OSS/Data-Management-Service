@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -13,12 +12,14 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -37,7 +38,7 @@ public class ApplicationModuleTests
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
-                (collection) =>
+                (ctx, collection) =>
                 {
                     collection
                         .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
@@ -46,11 +47,18 @@ public class ApplicationModuleTests
                             _ => { }
                         );
 
+                    var identitySettings = ctx
+                        .Configuration.GetSection("IdentitySettings")
+                        .Get<IdentitySettings>()!;
                     collection.AddAuthorization(options =>
                     {
                         options.AddPolicy(
                             SecurityConstants.ServicePolicy,
-                            policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            policy =>
+                                policy.RequireClaim(
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
+                                )
                         );
                         AuthorizationScopePolicies.Add(options);
                     });
@@ -86,12 +94,11 @@ public class ApplicationModuleTests
                     )
                 );
 
-            A.CallTo(
-                    () =>
-                        _applicationRepository.InsertApplication(
-                            A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientCommand>.Ignored
-                        )
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
                 .Returns(new ApplicationInsertResult.Success(1));
 
@@ -125,12 +132,11 @@ public class ApplicationModuleTests
                     )
                 );
 
-            A.CallTo(
-                    () =>
-                        _applicationRepository.UpdateApplication(
-                            A<ApplicationUpdateCommand>.Ignored,
-                            A<ApiClientCommand>.Ignored
-                        )
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
                 .Returns(new ApplicationUpdateResult.Success());
 
@@ -140,31 +146,29 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([new("1", Guid.NewGuid())]));
 
-            A.CallTo(
-                    () =>
-                        _clientRepository.CreateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
             A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
                 .Returns(new ClientResetResult.Success("SECRET"));
 
-            A.CallTo(
-                    () =>
-                        _clientRepository.UpdateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
         }
@@ -334,12 +338,11 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureNotFound());
 
-            A.CallTo(
-                    () =>
-                        _applicationRepository.UpdateApplication(
-                            A<ApplicationUpdateCommand>.Ignored,
-                            A<ApiClientCommand>.Ignored
-                        )
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
                 .Returns(new ApplicationUpdateResult.FailureNotExists());
 
@@ -397,17 +400,16 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(
-                    () =>
-                        _clientRepository.CreateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
@@ -424,12 +426,11 @@ public class ApplicationModuleTests
                     )
                 );
 
-            A.CallTo(
-                    () =>
-                        _applicationRepository.InsertApplication(
-                            A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientCommand>.Ignored
-                        )
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
                 .Returns(new ApplicationInsertResult.FailureUnknown(""));
 
@@ -442,12 +443,11 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult.FailureUnknown(""));
 
-            A.CallTo(
-                    () =>
-                        _applicationRepository.UpdateApplication(
-                            A<ApplicationUpdateCommand>.Ignored,
-                            A<ApiClientCommand>.Ignored
-                        )
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
                 .Returns(new ApplicationUpdateResult.FailureUnknown(""));
 
@@ -517,12 +517,11 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(
-                    () =>
-                        _applicationRepository.InsertApplication(
-                            A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientCommand>.Ignored
-                        )
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
                 .Returns(new ApplicationInsertResult());
 
@@ -545,12 +544,11 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
                 .Returns(new ApplicationGetResult());
 
-            A.CallTo(
-                    () =>
-                        _applicationRepository.UpdateApplication(
-                            A<ApplicationUpdateCommand>.Ignored,
-                            A<ApiClientCommand>.Ignored
-                        )
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
                 .Returns(new ApplicationUpdateResult());
 
@@ -618,49 +616,45 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(
-                    () =>
-                        _clientRepository.CreateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
 
-            A.CallTo(
-                    () =>
-                        _applicationRepository.InsertApplication(
-                            A<ApplicationInsertCommand>.Ignored,
-                            A<ApiClientCommand>.Ignored
-                        )
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
                 .Returns(new ApplicationInsertResult.FailureVendorNotFound());
 
-            A.CallTo(
-                    () =>
-                        _applicationRepository.UpdateApplication(
-                            A<ApplicationUpdateCommand>.Ignored,
-                            A<ApiClientCommand>.Ignored
-                        )
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
                 .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([new ApiClient("111", Guid.NewGuid())]));
 
-            A.CallTo(
-                    () =>
-                        _clientRepository.UpdateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
         }
@@ -766,17 +760,16 @@ public class ApplicationModuleTests
         [SetUp]
         public void SetUp()
         {
-            A.CallTo(
-                    () =>
-                        _clientRepository.CreateClientAsync(
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored,
-                            A<string>.Ignored
-                        )
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
         }

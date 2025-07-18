@@ -34,7 +34,7 @@ services:
       IDENTITY_AUTHORITY: ${IDENTITY_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
       IDENTITY_AUDIENCE: ${IDENTITY_AUDIENCE:-account}
       IDENTITY_REQUIRE_HTTPS_METADATA: ${IDENTITY_REQUIRE_HTTPS_METADATA:-false}
-      IDENTITY_ROLE_CLAIM_TYPE: ${IDENTITY_ROLE_CLAIM_TYPE:-http://schemas\\.microsoft\\.com/ws/2008/06/identity/claims/role}
+      IDENTITY_ROLE_CLAIM_TYPE: ${IDENTITY_ROLE_CLAIM_TYPE:-http://schemas.microsoft.com/ws/2008/06/identity/claims/role}
       CONFIG_SERVICE_URL: ${CONFIG_SERVICE_URL:-http://dms-config-service:8081}
       CONFIG_SERVICE_CLIENT_ID: ${CONFIG_SERVICE_CLIENT_ID:-CMSAuthMetadataReadOnlyAccess}
       CONFIG_SERVICE_CLIENT_SCOPE: ${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/authMetadata_readonly_access}

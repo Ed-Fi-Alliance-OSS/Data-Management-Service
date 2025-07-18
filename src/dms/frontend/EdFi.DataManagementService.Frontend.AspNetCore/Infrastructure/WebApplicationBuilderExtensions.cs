@@ -216,7 +216,7 @@ public static class WebApplicationBuilderExtensions
         webAppBuilder.Services.AddAuthorization(options =>
             options.AddPolicy(
                 SecurityConstants.ServicePolicy,
-                policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ClientRole)
+                policy => policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ClientRole)
             )
         );
     }

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Security.Claims;
 using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -13,6 +12,7 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -37,7 +38,7 @@ public class VendorModuleTests
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
-                (collection) =>
+                (ctx, collection) =>
                 {
                     collection
                         .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
@@ -46,11 +47,18 @@ public class VendorModuleTests
                             _ => { }
                         );
 
+                    var identitySettings = ctx
+                        .Configuration.GetSection("IdentitySettings")
+                        .Get<IdentitySettings>()!;
                     collection.AddAuthorization(options =>
                     {
                         options.AddPolicy(
                             SecurityConstants.ServicePolicy,
-                            policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            policy =>
+                                policy.RequireClaim(
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
+                                )
                         );
                         AuthorizationScopePolicies.Add(options);
                     });
@@ -227,7 +235,7 @@ public class VendorModuleTests
                     "NamespacePrefixes": [
                       "Each NamespacePrefix length must be 128 characters or fewer."
                     ]
-                  }, 
+                  },
                   "errors": []
                 }
                 """.Replace("{correlationId}", actualPostResponse!["correlationId"]!.GetValue<string>())
@@ -255,7 +263,7 @@ public class VendorModuleTests
                     "NamespacePrefixes": [
                       "Each NamespacePrefix length must be 128 characters or fewer."
                     ]
-                  }, 
+                  },
                   "errors": []
                 }
                 """.Replace("{correlationId}", actualPutResponse!["correlationId"]!.GetValue<string>())

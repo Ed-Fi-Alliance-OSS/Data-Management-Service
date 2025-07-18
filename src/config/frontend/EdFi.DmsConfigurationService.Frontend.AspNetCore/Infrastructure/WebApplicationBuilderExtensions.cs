@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
-using System.Security.Claims;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Deploy;
@@ -181,7 +181,8 @@ public static class WebApplicationBuilderExtensions
         {
             options.AddPolicy(
                 SecurityConstants.ServicePolicy,
-                policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ConfigServiceRole)
+                policy =>
+                    policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
             );
 
             AuthorizationScopePolicies.Add(options);
@@ -201,7 +202,7 @@ public static class WebApplicationBuilderExtensions
                 identitySettings.Authority,
                 identitySettings.ClientId,
                 identitySettings.ClientSecret,
-                identitySettings.RoleClaimType
+                Regex.Escape(identitySettings.RoleClaimType) // Escape the claim type for regex usage
             );
         }
     }
