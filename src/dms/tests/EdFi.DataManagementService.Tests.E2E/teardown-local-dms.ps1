@@ -130,8 +130,14 @@ try {
     # Stop all containers using docker-compose
     Write-Host "`nStopping all containers..." -ForegroundColor Yellow
     try {
-        # Run docker compose and filter out SCHEMA_PACKAGES warning
-        $output = docker compose $existingComposeFiles -p dms-local down 2>&1
+        # Use the same environment file that was used during setup
+        $envFile = "./.env.e2e"
+        if (-not (Test-Path $envFile)) {
+            $envFile = "./.env"
+        }
+        
+        # Run docker compose with environment file and filter out SCHEMA_PACKAGES warning
+        $output = docker compose $existingComposeFiles --env-file $envFile -p dms-local down -v 2>&1
         
         # Filter out the SCHEMA_PACKAGES warning from output
         $filteredOutput = $output | Where-Object { 
@@ -148,6 +154,16 @@ try {
     }
     catch {
         Write-Warning "Error stopping containers: $_"
+    }
+    
+    # Force stop any remaining containers with dms or kafka in the name
+    Write-Host "`nForce stopping any remaining containers..." -ForegroundColor Yellow
+    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka)" }
+    if ($remainingContainers) {
+        foreach ($container in $remainingContainers) {
+            Write-Host "- Force removing container: $container" -ForegroundColor Gray
+            docker rm -f $container 2>&1 | Out-Null
+        }
     }
 
     # Remove volumes
@@ -301,7 +317,81 @@ try {
         Write-Warning "  $_"
     }
 
-    Write-Host "`nTeardown complete!" -ForegroundColor Green
+    # Verification step - check that everything was removed
+    Write-Host "`nVerifying cleanup..." -ForegroundColor Yellow
+    $verificationFailed = $false
+    
+    # Check for any remaining containers
+    $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka)" }
+    if ($remainingContainers) {
+        Write-Warning "Found remaining containers that were not removed:"
+        foreach ($container in $remainingContainers) {
+            Write-Warning "  - $container"
+        }
+        $verificationFailed = $true
+    }
+    else {
+        Write-Host "✓ All containers removed" -ForegroundColor Green
+    }
+    
+    # Check for any remaining volumes
+    $remainingVolumes = docker volume ls --format "{{.Name}}" | Where-Object { $_ -match "^dms-local_" }
+    if ($remainingVolumes) {
+        Write-Warning "Found remaining volumes that were not removed:"
+        foreach ($volume in $remainingVolumes) {
+            Write-Warning "  - $volume"
+        }
+        $verificationFailed = $true
+    }
+    else {
+        Write-Host "✓ All volumes removed" -ForegroundColor Green
+    }
+    
+    # Check for any remaining images
+    $remainingImages = @()
+    foreach ($imageName in @("dms", "config")) {
+        $imageVariants = @(
+            "dms-local-$imageName",
+            "dms-local_$imageName"
+        )
+        foreach ($imageVariant in $imageVariants) {
+            if (docker images -q $imageVariant 2>$null) {
+                $remainingImages += $imageVariant
+            }
+        }
+    }
+    
+    if ($remainingImages) {
+        Write-Warning "Found remaining images that were not removed:"
+        foreach ($image in $remainingImages) {
+            Write-Warning "  - $image"
+        }
+        $verificationFailed = $true
+    }
+    else {
+        Write-Host "✓ All locally-built images removed" -ForegroundColor Green
+    }
+    
+    # Check if network was removed
+    $networkExists = docker network ls --format "{{.Name}}" | Where-Object { $_ -eq "dms" }
+    if ($networkExists) {
+        Write-Warning "The 'dms' network still exists"
+        $verificationFailed = $true
+    }
+    else {
+        Write-Host "✓ Network removed" -ForegroundColor Green
+    }
+    
+    if ($verificationFailed) {
+        Write-Host "`nTeardown completed with warnings!" -ForegroundColor Yellow
+        Write-Host "Some resources may need manual cleanup." -ForegroundColor Yellow
+        exit 1
+    }
+    else {
+        Write-Host "`nTeardown complete!" -ForegroundColor Green
+        Write-Host "All resources have been successfully removed." -ForegroundColor Green
+    }
+    
     Write-Host "To setup this environment again, run: ./setup-local-dms.ps1" -ForegroundColor Cyan
 }
 finally {

@@ -112,7 +112,6 @@ The framework uses the `E2E-NoFurtherAuthRequiredClaimSet` for testing, which pr
 
 1. **Automatic Client Setup**: The `setupLoadTestClient.js` script creates a properly configured client
 2. **Token Management**: `SharedAuthManager` ensures efficient token sharing across virtual users
-3. **No Token Exhaustion**: Unlike regular `AuthManager`, tokens are cached and reused
 
 ## Results and Analysis
 

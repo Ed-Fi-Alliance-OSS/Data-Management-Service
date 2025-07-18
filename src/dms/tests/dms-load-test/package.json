@@ -1,5 +1,5 @@
 {
-  "name": "edfi-dms-load-test",
+  "name": "dms-load-test",
   "version": "1.0.0",
   "description": "Ed-Fi Data Management Service load testing tool using k6",
   "type": "module",
@@ -8,22 +8,13 @@
     "test:load": "node src/run-k6.js run src/scenarios/load.js",
     "test:readwrite": "node src/run-k6.js run src/scenarios/readwrite.js",
     "test:full": "npm run test:smoke && npm run test:load && npm run test:readwrite",
-    "generate:data": "node src/utils/dataGenerator.js",
     "format": "prettier --write src/"
   },
-  "keywords": [
-    "edfi",
-    "load-testing",
-    "k6",
-    "performance"
-  ],
-  "author": "Ed-Fi Alliance",
-  "license": "Apache-2.0",
   "dependencies": {
-    "@faker-js/faker": "^8.4.1",
     "dotenv": "^16.4.1"
   },
   "devDependencies": {
-    "prettier": "^3.2.4"
+    "prettier": "^3.2.4",
+    "ts-node": "^10.9.2"
   }
 }
