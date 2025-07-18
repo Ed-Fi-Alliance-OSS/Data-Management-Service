@@ -47,8 +47,7 @@
 #        "Scope": "edfi_admin_api/full_access",
 #        "CacheExpirationMinutes": 10
 #    },
-#    "IdentitySettings": {
-#        "EnforceAuthorization": "true",
+#    "JwtAuthentication": {
 #        "ClientRole": "dms-client",
 #        "Authority": "http://localhost:8045/realms/edfi",
 #        "Audience": "account",

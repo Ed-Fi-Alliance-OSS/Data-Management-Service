@@ -16,17 +16,17 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class CoerceDateFormatMiddleware(ILogger logger) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
             "Entering CoerceDateFormatMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         // Paths for Date only
-        foreach (string path in requestData.ResourceSchema.DateJsonPaths.Select(path => path.Value))
+        foreach (string path in requestInfo.ResourceSchema.DateJsonPaths.Select(path => path.Value))
         {
-            IEnumerable<JsonNode?> jsonNodes = requestData.ParsedBody.SelectNodesFromArrayPath(path, logger);
+            IEnumerable<JsonNode?> jsonNodes = requestInfo.ParsedBody.SelectNodesFromArrayPath(path, logger);
             foreach (JsonNode? jsonNode in jsonNodes)
             {
                 jsonNode?.TryCoerceSlashDateToIso8601();
@@ -34,9 +34,9 @@ internal class CoerceDateFormatMiddleware(ILogger logger) : IPipelineStep
         }
 
         // Paths for DateTime
-        foreach (string path in requestData.ResourceSchema.DateTimeJsonPaths.Select(path => path.Value))
+        foreach (string path in requestInfo.ResourceSchema.DateTimeJsonPaths.Select(path => path.Value))
         {
-            IEnumerable<JsonNode?> jsonNodes = requestData.ParsedBody.SelectNodesFromArrayPath(path, logger);
+            IEnumerable<JsonNode?> jsonNodes = requestInfo.ParsedBody.SelectNodesFromArrayPath(path, logger);
             foreach (JsonNode? jsonNode in jsonNodes)
             {
                 jsonNode?.TryCoerceSlashDateToIso8601();

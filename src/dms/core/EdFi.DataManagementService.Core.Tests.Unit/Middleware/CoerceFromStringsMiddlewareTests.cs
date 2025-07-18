@@ -78,9 +78,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             return new CoerceFromStringsMiddleware(NullLogger.Instance);
         }
 
-        internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
+        internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData _context = new(frontendRequest, method)
+            RequestInfo _requestInfo = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 PathComponents = new(
@@ -89,24 +89,24 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     DocumentUuid: No.DocumentUuid
                 ),
             };
-            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            _requestInfo.ProjectSchema = _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
                 new("ed-fi")
             )!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
 
-            if (_context.FrontendRequest.Body != null)
+            if (_requestInfo.FrontendRequest.Body != null)
             {
-                var body = JsonNode.Parse(_context.FrontendRequest.Body);
+                var body = JsonNode.Parse(_requestInfo.FrontendRequest.Body);
                 if (body != null)
                 {
-                    _context.ParsedBody = body;
+                    _requestInfo.ParsedBody = body;
                 }
             }
 
-            return _context;
+            return _requestInfo;
         }
 
         [TestFixture]
@@ -114,7 +114,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         public class Given_A_Request_With_Boolean_And_Numeric_Property_As_String
             : CoerceFromStringsMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -123,30 +123,24 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     """{"schoolId": "1","yearsOld": "1","gradeLevels":[{"gradeLevelDescriptor": "grade1", "isSecondary": "false"}],"nameOfInstitution":"school12"}""";
 
                 var frontEndRequest = new FrontendRequest(
-                    "ed-fi/schools",
+                    Path: "ed-fi/schools",
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    new TraceId("traceId"),
-                    new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
-                _context = Context(frontEndRequest, RequestMethod.POST);
-                await Middleware().Execute(_context, Next());
+                _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+                await Middleware().Execute(_requestInfo, Next());
             }
 
             [Test]
             public void It_coerces_numbers()
             {
-                var paths = _context.ResourceSchema.NumericJsonPaths.Select(s => s.Value).ToList();
+                var paths = _requestInfo.ResourceSchema.NumericJsonPaths.Select(s => s.Value).ToList();
                 paths.Count.Should().BeGreaterThan(0);
                 foreach (string path in paths)
                 {
-                    _context
+                    _requestInfo
                         .ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!
                         .AsValue()
                         .GetValueKind()
@@ -158,13 +152,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             [Test]
             public void It_coerces_decimals()
             {
-                var paths = _context
+                var paths = _requestInfo
                     .ResourceSchema.DecimalPropertyValidationInfos.Select(s => s.Path.Value)
                     .ToList();
                 paths.Count.Should().BeGreaterThan(0);
                 foreach (string path in paths)
                 {
-                    _context
+                    _requestInfo
                         .ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!
                         .AsValue()
                         .GetValueKind()
@@ -176,11 +170,11 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             [Test]
             public void It_coerces_booleans()
             {
-                var paths = _context.ResourceSchema.BooleanJsonPaths.Select(s => s.Value).ToList();
+                var paths = _requestInfo.ResourceSchema.BooleanJsonPaths.Select(s => s.Value).ToList();
                 paths.Count.Should().BeGreaterThan(0);
                 foreach (string path in paths)
                 {
-                    _context
+                    _requestInfo
                         .ParsedBody.SelectNodeFromPath(path, NullLogger.Instance)!
                         .AsValue()
                         .GetValueKind()

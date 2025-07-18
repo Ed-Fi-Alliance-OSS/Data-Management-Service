@@ -73,18 +73,18 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider apiSchemaProvider, 
         );
 
     /// <summary>
-    /// Provides the merged API schema documents to the requestData.
+    /// Provides the merged API schema documents to the requestInfo.
     /// This makes the unified schema available to all subsequent
     /// pipeline steps for request processing and validation.
     /// </summary>
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
             "Entering ProvideApiSchemaMiddleware- {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        requestData.ApiSchemaDocuments = _apiSchemaDocuments.Value;
+        requestInfo.ApiSchemaDocuments = _apiSchemaDocuments.Value;
         await next();
     }
 

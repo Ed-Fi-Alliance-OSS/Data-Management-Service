@@ -30,7 +30,7 @@ public class ExtractDocumentInfoMiddlewareTests
     public class Given_a_school_that_is_a_subclass_with_no_outbound_references
         : ExtractDocumentInfoMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -55,19 +55,13 @@ public class ExtractDocumentInfoMiddlewareTests
 
             string body = """{"schoolId": "123"}""";
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/schools",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -76,25 +70,25 @@ public class ExtractDocumentInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_no_document_references()
         {
-            requestData.DocumentInfo.DocumentReferences.Should().HaveCount(0);
+            requestInfo.DocumentInfo.DocumentReferences.Should().HaveCount(0);
         }
 
         [Test]
         public void It_has_no_descriptor_references()
         {
-            requestData.DocumentInfo.DescriptorReferences.Should().HaveCount(0);
+            requestInfo.DocumentInfo.DescriptorReferences.Should().HaveCount(0);
         }
 
         [Test]
         public void It_has_built_the_document_identity()
         {
-            var identityElements = requestData.DocumentInfo.DocumentIdentity.DocumentIdentityElements;
+            var identityElements = requestInfo.DocumentInfo.DocumentIdentity.DocumentIdentityElements;
             identityElements.Should().HaveCount(1);
             identityElements[0].IdentityJsonPath.Value.Should().Be("$.schoolId");
             identityElements[0].IdentityValue.Should().Be("123");
@@ -102,7 +96,7 @@ public class ExtractDocumentInfoMiddlewareTests
 
         public void It_has_derived_the_superclass_identity()
         {
-            var superclassIdentityElements = requestData
+            var superclassIdentityElements = requestInfo
                 .DocumentInfo
                 .SuperclassIdentity!
                 .DocumentIdentity
@@ -115,7 +109,7 @@ public class ExtractDocumentInfoMiddlewareTests
         [Test]
         public void It_has_derived_the_superclass_resource_info()
         {
-            var superclassResourceInfo = requestData.DocumentInfo.SuperclassIdentity!.ResourceInfo;
+            var superclassResourceInfo = requestInfo.DocumentInfo.SuperclassIdentity!.ResourceInfo;
 
             superclassResourceInfo.IsDescriptor.Should().Be(false);
             superclassResourceInfo.ProjectName.Value.Should().Be("Ed-Fi");

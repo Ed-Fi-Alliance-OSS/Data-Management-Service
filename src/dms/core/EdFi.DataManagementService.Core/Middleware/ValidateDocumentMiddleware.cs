@@ -18,14 +18,14 @@ namespace EdFi.DataManagementService.Core.Middleware;
 internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _documentValidator)
     : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ValidateDocumentMiddleware- {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        var (errors, validationErrors) = _documentValidator.Validate(requestData);
+        var (errors, validationErrors) = _documentValidator.Validate(requestInfo);
 
         if (errors.Length == 0 && validationErrors.Count == 0)
         {
@@ -39,7 +39,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
             {
                 failureResponse = FailureResponse.ForBadRequest(
                     "The request could not be processed. See 'errors' for details.",
-                    requestData.FrontendRequest.TraceId,
+                    requestInfo.FrontendRequest.TraceId,
                     validationErrors,
                     errors
                 );
@@ -48,7 +48,7 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
             {
                 failureResponse = FailureResponse.ForDataValidation(
                     "Data validation failed. See 'validationErrors' for details.",
-                    requestData.FrontendRequest.TraceId,
+                    requestInfo.FrontendRequest.TraceId,
                     validationErrors,
                     errors
                 );
@@ -57,11 +57,11 @@ internal class ValidateDocumentMiddleware(ILogger _logger, IDocumentValidator _d
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
-                requestData.PathComponents.EndpointName,
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.PathComponents.EndpointName,
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.FrontendResponse = new FrontendResponse(
+            requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: failureResponse,
                 Headers: []

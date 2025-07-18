@@ -51,9 +51,9 @@ public class ValidateEqualityConstraintMiddlewareTests
         return new ValidateEqualityConstraintMiddleware(NullLogger.Instance, equalityConstraintValidator);
     }
 
-    internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
+    internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
     {
-        RequestData _context = new(frontendRequest, method)
+        RequestInfo _requestInfo = new(frontendRequest, method)
         {
             ApiSchemaDocuments = SchemaDocuments(),
             PathComponents = new(
@@ -62,21 +62,21 @@ public class ValidateEqualityConstraintMiddlewareTests
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+        _requestInfo.ProjectSchema = _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
             new("ed-fi")
         )!;
-        _context.ResourceSchema = new ResourceSchema(
-            _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("bellSchedules"))
+        _requestInfo.ResourceSchema = new ResourceSchema(
+            _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("bellSchedules"))
                 ?? new JsonObject()
         );
-        return _context;
+        return _requestInfo;
     }
 
     [TestFixture]
     [Parallelizable]
     public class Given_A_Valid_Body : ValidateEqualityConstraintMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -113,22 +113,16 @@ public class ValidateEqualityConstraintMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_provides_no_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -136,7 +130,7 @@ public class ValidateEqualityConstraintMiddlewareTests
     [Parallelizable]
     public class Given_An_Invalid_Body_With_Not_Equal_School_Ids : ValidateEqualityConstraintMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -173,40 +167,34 @@ public class ValidateEqualityConstraintMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
 
-            if (_context.FrontendRequest.Body != null)
+            if (_requestInfo.FrontendRequest.Body != null)
             {
-                var body = JsonNode.Parse(_context.FrontendRequest.Body);
+                var body = JsonNode.Parse(_requestInfo.FrontendRequest.Body);
                 if (body != null)
                 {
-                    _context.ParsedBody = body;
+                    _requestInfo.ParsedBody = body;
                 }
             }
 
-            await Middleware().Execute(_context, Next());
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_failures()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
 
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+            string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
 
             response
                 .Should()

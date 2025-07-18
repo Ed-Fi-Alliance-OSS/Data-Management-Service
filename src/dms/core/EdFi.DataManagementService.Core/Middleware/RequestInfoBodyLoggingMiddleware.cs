@@ -9,40 +9,40 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal class RequestDataBodyLoggingMiddleware(ILogger _logger, bool _maskRequestBodyInLogs) : IPipelineStep
+internal class RequestInfoBodyLoggingMiddleware(ILogger _logger, bool _maskRequestBodyInLogs) : IPipelineStep
 {
     private const string MessageBody =
         "Incoming {Method} request to {Path} with body structure: {Body} - {TraceId}";
 
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrEmpty(requestData.FrontendRequest.Body))
+        if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
         {
             _logger.LogDebug(
-                "Entering RequestDataBodyLoggingMiddleware - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                "Entering RequestInfoBodyLoggingMiddleware - {TraceId}",
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            string body = UtilityService.MinifyRegex().Replace(requestData.FrontendRequest.Body, "$1");
+            string body = UtilityService.MinifyRegex().Replace(requestInfo.FrontendRequest.Body, "$1");
 
             if (!_maskRequestBodyInLogs)
             {
                 _logger.LogDebug(
                     MessageBody,
-                    requestData.Method,
-                    requestData.FrontendRequest.Path,
+                    requestInfo.Method,
+                    requestInfo.FrontendRequest.Path,
                     body,
-                    requestData.FrontendRequest.TraceId.Value
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
             }
             else
             {
                 _logger.LogDebug(
                     MessageBody,
-                    requestData.Method,
-                    requestData.FrontendRequest.Path,
+                    requestInfo.Method,
+                    requestInfo.FrontendRequest.Path,
                     MaskRequestBody(body, _logger),
-                    requestData.FrontendRequest.TraceId.Value
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
             }
         }

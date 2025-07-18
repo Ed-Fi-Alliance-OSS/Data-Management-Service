@@ -30,7 +30,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_An_Empty_Path : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -40,28 +40,22 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_404()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(404);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(404);
         }
     }
 
@@ -69,7 +63,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_An_Invalid_Path : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -79,28 +73,22 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "badpath",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_404()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(404);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(404);
         }
     }
 
@@ -108,7 +96,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Path_Without_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -118,31 +106,25 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_provides_no_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
         public void It_provides_correct_path_components()
         {
-            _context?.PathComponents.Should().NotBe(No.PathComponents);
+            _requestInfo?.PathComponents.Should().NotBe(No.PathComponents);
 
-            _context?.PathComponents.ProjectNamespace.Value.Should().Be("ed-fi");
-            _context?.PathComponents.EndpointName.Value.Should().Be("endpointName");
+            _requestInfo?.PathComponents.ProjectNamespace.Value.Should().Be("ed-fi");
+            _requestInfo?.PathComponents.EndpointName.Value.Should().Be("endpointName");
         }
     }
 
@@ -150,7 +132,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Path_With_Valid_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
         private readonly string documentUuid = "7825fba8-0b3d-4fc9-ae72-5ad8194d3ce2";
 
         [SetUp]
@@ -161,32 +143,26 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: $"/ed-fi/endpointName/{documentUuid}",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.PUT);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.PUT);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_provides_no_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
         public void It_provides_correct_path_components()
         {
-            _context?.PathComponents.Should().NotBe(No.PathComponents);
+            _requestInfo?.PathComponents.Should().NotBe(No.PathComponents);
 
-            _context?.PathComponents.ProjectNamespace.Value.Should().Be("ed-fi");
-            _context?.PathComponents.EndpointName.Value.Should().Be("endpointName");
-            _context?.PathComponents.DocumentUuid.Value.Should().Be(documentUuid);
+            _requestInfo?.PathComponents.ProjectNamespace.Value.Should().Be("ed-fi");
+            _requestInfo?.PathComponents.EndpointName.Value.Should().Be("endpointName");
+            _requestInfo?.PathComponents.DocumentUuid.Value.Should().Be(documentUuid);
         }
     }
 
@@ -194,7 +170,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Valid_Path_With_Invalid_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -204,34 +180,28 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName/invalidId",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_invalid_Id_message()
         {
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+            string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
 
             response
                 .Should()
@@ -243,7 +213,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_With_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -253,34 +223,28 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: $"/ed-fi/endpointName/{Guid.NewGuid()}",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_405()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(405);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(405);
         }
 
         [Test]
         public void It_returns_method_not_allowed_message()
         {
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+            string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
 
             response.Should().Contain("Method Not Allowed");
         }
@@ -290,7 +254,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Put_With_Missing_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -300,34 +264,28 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.PUT);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.PUT);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_405()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(405);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(405);
         }
 
         [Test]
         public void It_returns_method_not_allowed_message()
         {
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+            string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
 
             response.Should().Contain("Method Not Allowed");
         }
@@ -337,7 +295,7 @@ public class ParsePathMiddlewareTests
     [Parallelizable]
     public class Given_A_Delete_With_Missing_ResourceId : ParsePathMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -347,34 +305,28 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.DELETE);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.DELETE);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_405()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(405);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(405);
         }
 
         [Test]
         public void It_returns_method_not_allowed_message()
         {
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+            string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
 
             response.Should().Contain("Method Not Allowed");
         }

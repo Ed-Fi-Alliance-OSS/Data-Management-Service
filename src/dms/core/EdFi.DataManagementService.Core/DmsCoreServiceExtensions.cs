@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
@@ -15,6 +16,8 @@ using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Telemetry;
@@ -198,5 +201,59 @@ public static class DmsCoreServiceExtensions
                 )
                 .Build();
         }
+    }
+
+    /// <summary>
+    /// Adds JWT authentication services to the DMS Core
+    /// </summary>
+    public static IServiceCollection AddJwtAuthentication(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
+    {
+        // Configure JWT authentication options
+        services.Configure<JwtAuthenticationOptions>(configuration.GetSection("JwtAuthentication"));
+
+        // Register HttpClient for OIDC metadata retrieval
+        services.AddHttpClient();
+
+        // Register singleton ConfigurationManager for OIDC metadata caching
+        services.AddSingleton<IConfigurationManager<OpenIdConnectConfiguration>>(serviceProvider =>
+        {
+            var options = serviceProvider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<JwtAuthenticationOptions>>()
+                .Value;
+
+            if (string.IsNullOrEmpty(options.MetadataAddress))
+            {
+                throw new InvalidOperationException(
+                    "JwtAuthentication:MetadataAddress must be configured for JWT authentication"
+                );
+            }
+
+            var httpClientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();
+            HttpClient httpClient = httpClientFactory.CreateClient();
+
+            ConfigurationManager<OpenIdConnectConfiguration> configManager = new(
+                options.MetadataAddress,
+                new OpenIdConnectConfigurationRetriever(),
+                new Security.HttpDocumentRetriever(httpClient) { RequireHttps = options.RequireHttpsMetadata }
+            )
+            {
+                RefreshInterval = TimeSpan.FromMinutes(options.RefreshIntervalMinutes),
+                AutomaticRefreshInterval = TimeSpan.FromHours(options.AutomaticRefreshIntervalHours),
+            };
+
+            // Warm up the cache on startup
+            _ = configManager.GetConfigurationAsync(CancellationToken.None);
+
+            return configManager;
+        });
+
+        services.AddSingleton<IJwtValidationService, JwtValidationService>();
+        services.AddTransient<JwtAuthenticationMiddleware>();
+        services.AddTransient<JwtRoleAuthenticationMiddleware>();
+
+        return services;
     }
 }

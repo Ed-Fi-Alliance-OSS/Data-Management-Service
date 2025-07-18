@@ -29,9 +29,9 @@ internal class UpsertHandler(
     IAuthorizationServiceFactory authorizationServiceFactory
 ) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        _logger.LogDebug("Entering UpsertHandler - {TraceId}", requestData.FrontendRequest.TraceId.Value);
+        _logger.LogDebug("Entering UpsertHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
 
         var upsertResult = await _resiliencePipeline.ExecuteAsync(async t =>
         {
@@ -42,21 +42,21 @@ internal class UpsertHandler(
 
             return await _documentStoreRepository.UpsertDocument(
                 new UpsertRequest(
-                    ResourceInfo: requestData.ResourceInfo,
-                    DocumentInfo: requestData.DocumentInfo,
-                    EdfiDoc: requestData.ParsedBody,
-                    Headers: requestData.FrontendRequest.Headers,
-                    TraceId: requestData.FrontendRequest.TraceId,
+                    ResourceInfo: requestInfo.ResourceInfo,
+                    DocumentInfo: requestInfo.DocumentInfo,
+                    EdfiDoc: requestInfo.ParsedBody,
+                    Headers: requestInfo.FrontendRequest.Headers,
+                    TraceId: requestInfo.FrontendRequest.TraceId,
                     DocumentUuid: candidateDocumentUuid,
-                    DocumentSecurityElements: requestData.DocumentSecurityElements,
+                    DocumentSecurityElements: requestInfo.DocumentSecurityElements,
                     UpdateCascadeHandler: updateCascadeHandler,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                        requestData.AuthorizationStrategyEvaluators,
-                        requestData.AuthorizationSecurableInfo,
+                        requestInfo.AuthorizationStrategyEvaluators,
+                        requestInfo.AuthorizationSecurableInfo,
                         authorizationServiceFactory,
                         _logger
                     ),
-                    ResourceAuthorizationPathways: requestData.AuthorizationPathways
+                    ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
                 )
             );
         });
@@ -64,32 +64,26 @@ internal class UpsertHandler(
         _logger.LogDebug(
             "Document store UpsertDocument returned {UpsertResult}- {TraceId}",
             upsertResult.GetType().FullName,
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        requestData.FrontendResponse = upsertResult switch
+        requestInfo.FrontendResponse = upsertResult switch
         {
             InsertSuccess insertSuccess => new FrontendResponse(
                 StatusCode: 201,
                 Body: null,
-                Headers: new Dictionary<string, string>()
-                {
-                    { "etag", requestData.ParsedBody["_etag"]?.ToString() ?? "" },
-                },
+                Headers: new() { ["etag"] = requestInfo.ParsedBody["_etag"]?.ToString() ?? "" },
                 LocationHeaderPath: PathComponents.ToResourcePath(
-                    requestData.PathComponents,
+                    requestInfo.PathComponents,
                     insertSuccess.NewDocumentUuid
                 )
             ),
             UpdateSuccess updateSuccess => new(
                 StatusCode: 200,
                 Body: null,
-                Headers: new Dictionary<string, string>()
-                {
-                    { "etag", requestData.ParsedBody["_etag"]?.ToString() ?? "" },
-                },
+                Headers: new() { ["etag"] = requestInfo.ParsedBody["_etag"]?.ToString() ?? "" },
                 LocationHeaderPath: PathComponents.ToResourcePath(
-                    requestData.PathComponents,
+                    requestInfo.PathComponents,
                     updateSuccess.ExistingDocumentUuid
                 )
             ),
@@ -97,7 +91,7 @@ internal class UpsertHandler(
                 StatusCode: 400,
                 Body: ForBadRequest(
                     "Data validation failed. See 'validationErrors' for details.",
-                    traceId: requestData.FrontendRequest.TraceId,
+                    traceId: requestInfo.FrontendRequest.TraceId,
                     failure.InvalidDescriptorReferences.ToDictionary(
                         d => d.Path.Value,
                         d =>
@@ -114,7 +108,7 @@ internal class UpsertHandler(
                 StatusCode: 409,
                 Body: ForInvalidReferences(
                     failure.ResourceNames,
-                    traceId: requestData.FrontendRequest.TraceId
+                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),
@@ -125,7 +119,7 @@ internal class UpsertHandler(
                         $"A natural key conflict occurred when attempting to create a new resource {failure.ResourceName.Value} with a duplicate key. "
                             + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}",
                     ],
-                    traceId: requestData.FrontendRequest.TraceId
+                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),
@@ -133,7 +127,7 @@ internal class UpsertHandler(
             UpsertFailureNotAuthorized failure => new(
                 StatusCode: 403,
                 Body: ForForbidden(
-                    traceId: requestData.FrontendRequest.TraceId,
+                    traceId: requestInfo.FrontendRequest.TraceId,
                     errors: failure.ErrorMessages,
                     hints: failure.Hints
                 ),
@@ -141,12 +135,12 @@ internal class UpsertHandler(
             ),
             UnknownFailure failure => new(
                 StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestData.FrontendRequest.TraceId),
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
             _ => new(
                 StatusCode: 500,
-                Body: ToJsonError("Unknown UpsertResult", requestData.FrontendRequest.TraceId),
+                Body: ToJsonError("Unknown UpsertResult", requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
         };

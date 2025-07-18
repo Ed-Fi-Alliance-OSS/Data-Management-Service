@@ -20,18 +20,18 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
     private const string TestForDuplicateObjectKeyWorkaround = "x";
     private const string Pattern = @"Key: (.*?) \((.*?)\)\.(.*?)$";
 
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
             "Entering DuplicatePropertiesMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        if (requestData.FrontendRequest.Body != null)
+        if (requestInfo.FrontendRequest.Body != null)
         {
             try
             {
-                JsonNode? node = JsonNode.Parse(requestData.FrontendRequest.Body);
+                JsonNode? node = JsonNode.Parse(requestInfo.FrontendRequest.Body);
 
                 if (node is JsonObject jsonObject)
                 {
@@ -74,14 +74,14 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                 logger.LogDebug(
                     ae,
                     "Duplicate key found - {TraceId}",
-                    requestData.FrontendRequest.TraceId.Value
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
 
-                requestData.FrontendResponse = new FrontendResponse(
+                requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
                     Body: ForDataValidation(
                         "Data validation failed. See 'validationErrors' for details.",
-                        traceId: requestData.FrontendRequest.TraceId,
+                        traceId: requestInfo.FrontendRequest.TraceId,
                         validationErrors,
                         []
                     ),
@@ -94,7 +94,7 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                 logger.LogDebug(
                     e,
                     "Unable to evaluate the request body - {TraceId}",
-                    requestData.FrontendRequest.TraceId.Value
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
                 return;
             }

@@ -15,15 +15,15 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <param name="_logger"></param>
 internal class ProvideAuthorizationSecurableInfoMiddleware(ILogger _logger) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ProvideAuthorizationSecurableInfoMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        requestData.AuthorizationSecurableInfo =
-            requestData.ResourceSchema.ExtractAuthorizationSecurableInfo();
+        requestInfo.AuthorizationSecurableInfo =
+            requestInfo.ResourceSchema.ExtractAuthorizationSecurableInfo();
         await next();
     }
 }

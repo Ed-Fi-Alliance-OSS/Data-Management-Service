@@ -42,7 +42,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         return result;
     }
 
-    internal static async Task<RequestData> CreateContextAndExecute(
+    internal static async Task<RequestInfo> CreateContextAndExecute(
         ApiSchemaDocuments apiSchema,
         string jsonBody,
         string endpointName,
@@ -54,16 +54,10 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
             Body: jsonBody,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId(""),
-            new ClientAuthorizations(
-                TokenId: "",
-                ClaimSetName: "",
-                EducationOrganizationIds: [],
-                NamespacePrefixes: []
-            )
+            TraceId: new TraceId("")
         );
 
-        RequestData requestData = new(frontEndRequest, method)
+        RequestInfo requestInfo = new(frontEndRequest, method)
         {
             ApiSchemaDocuments = apiSchema,
             PathComponents = new(
@@ -72,24 +66,24 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        requestData.ProjectSchema = requestData.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+        requestInfo.ProjectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
             new("ed-fi")
         )!;
-        requestData.ResourceSchema = new ResourceSchema(
-            requestData.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
+        requestInfo.ResourceSchema = new ResourceSchema(
+            requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new(endpointName))
                 ?? new JsonObject()
         );
 
-        var body = JsonNode.Parse(requestData.FrontendRequest.Body!);
+        var body = JsonNode.Parse(requestInfo.FrontendRequest.Body!);
         if (body != null)
         {
-            requestData.ParsedBody = body;
+            requestInfo.ParsedBody = body;
         }
 
-        await BuildResourceInfo().Execute(requestData, NullNext);
-        await ExtractDocument().Execute(requestData, NullNext);
-        await Middleware().Execute(requestData, NullNext);
-        return requestData;
+        await BuildResourceInfo().Execute(requestInfo, NullNext);
+        await ExtractDocument().Execute(requestInfo, NullNext);
+        await Middleware().Execute(requestInfo, NullNext);
+        return requestInfo;
     }
 
     internal static BuildResourceInfoMiddleware BuildResourceInfo()
@@ -111,7 +105,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     [Parallelizable]
     public class Given_Document_With_Duplicate_References : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -142,7 +136,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(
+            _requestInfo = await CreateContextAndExecute(
                 BellScheduleApiSchema(),
                 jsonBody,
                 "bellschedules",
@@ -153,15 +147,15 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_validation_error_with_duplicated_document_reference()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
 
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain(
@@ -176,7 +170,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     [Parallelizable]
     public class Given_Document_With_Unique_References : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -207,7 +201,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(
+            _requestInfo = await CreateContextAndExecute(
                 BellScheduleApiSchema(),
                 jsonBody,
                 "bellschedules",
@@ -218,7 +212,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         [Test]
         public void It_continues_to_next_middleware()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -226,7 +220,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     [Parallelizable]
     public class Given_Document_With_Single_Reference : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -251,7 +245,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(
+            _requestInfo = await CreateContextAndExecute(
                 BellScheduleApiSchema(),
                 jsonBody,
                 "bellschedules",
@@ -262,7 +256,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         [Test]
         public void It_continues_to_next_middleware()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -270,7 +264,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
     [Parallelizable]
     public class Given_Document_With_No_Reference_Arrays : ReferenceArrayUniquenessValidationMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -285,7 +279,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
                 }
                 """;
 
-            _context = await CreateContextAndExecute(
+            _requestInfo = await CreateContextAndExecute(
                 BellScheduleApiSchema(),
                 jsonBody,
                 "bellschedules",
@@ -296,7 +290,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         [Test]
         public void It_continues_to_next_middleware()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

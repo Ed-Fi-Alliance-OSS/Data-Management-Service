@@ -35,13 +35,10 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
                 .Configure<CoreAppSettings>(configuration.GetSection("AppSettings"))
                 .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
                 .Configure<ConnectionStrings>(configuration.GetSection("ConnectionStrings"))
-                .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>()
-                .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
+                .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
 
             ConfigureDatastore(configuration, services, logger);
             ConfigureQueryHandler(configuration, services, logger);
-            services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
-            services.AddTransient<IClaimSetCacheService, ClaimSetCacheService>();
 
             services.Configure<ConfigurationServiceSettings>(
                 configuration.GetSection("ConfigurationServiceSettings")
@@ -98,8 +95,17 @@ namespace EdFi.DataManagementService.Frontend.SchoolYearLoader
             });
 
             services.AddTransient<IConfigurationServiceTokenHandler, ConfigurationServiceTokenHandler>();
-            services.AddTransient<ISecurityMetadataProvider, SecurityMetadataProvider>();
-            services.AddTransient<IClaimSetCacheService, ClaimSetCacheService>();
+
+            // Register the inner claim set provider by its concrete type
+            services.AddSingleton<ConfigurationServiceClaimSetProvider>();
+
+            // Register the cache decorator using a factory
+            services.AddSingleton<IClaimSetProvider>(provider =>
+            {
+                var innerProvider = provider.GetRequiredService<ConfigurationServiceClaimSetProvider>();
+                var claimSetsCache = provider.GetRequiredService<ClaimSetsCache>();
+                return new CachedClaimSetProvider(innerProvider, claimSetsCache);
+            });
 
             Serilog.ILogger ConfigureLogging(IConfiguration config)
             {

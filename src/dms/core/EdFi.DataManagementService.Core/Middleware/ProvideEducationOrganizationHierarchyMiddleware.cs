@@ -14,88 +14,88 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// <summary>
 /// This middleware determines if the resource in the request is a type of
 /// EducationOrganization, and if so it provides the EdOrg id and any parent
-/// EdOrg ids from the payload to the requestData EducationOrganizationHierarchyInfo
+/// EdOrg ids from the payload to the requestInfo EducationOrganizationHierarchyInfo
 /// for authorization challenges later in the request pipeline.
 /// </summary>
 internal class ProvideEducationOrganizationHierarchyMiddleware(ILogger _logger) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ProvideEducationOrganizationHierarchyMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         // Skip this logic if the path contains "homograph/schools"
-        if (requestData.FrontendRequest.Path.Contains("homograph/schools"))
+        if (requestInfo.FrontendRequest.Path.Contains("homograph/schools"))
         {
             _logger.LogDebug(
                 "Skipping Provide EducationOrganization Hierarchy Middleware for /homograph/schools Resource  - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
         }
         else
         {
-            requestData.EducationOrganizationHierarchyInfo = GetHierarchyInfo(requestData);
+            requestInfo.EducationOrganizationHierarchyInfo = GetHierarchyInfo(requestInfo);
         }
 
         await next();
     }
 
-    private EducationOrganizationHierarchyInfo GetHierarchyInfo(RequestData requestData)
+    private EducationOrganizationHierarchyInfo GetHierarchyInfo(RequestInfo requestInfo)
     {
-        bool isEdOrgHierarchy = requestData.ProjectSchema.EducationOrganizationTypes.Contains(
-            requestData.ResourceSchema.ResourceName
+        bool isEdOrgHierarchy = requestInfo.ProjectSchema.EducationOrganizationTypes.Contains(
+            requestInfo.ResourceSchema.ResourceName
         );
 
         if (!isEdOrgHierarchy)
         {
             _logger.LogDebug(
                 "Resource {ResourceName} IS NOT in EducationOrganizationHierarchy - {TraceId}",
-                requestData.ResourceSchema.ResourceName,
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.ResourceSchema.ResourceName,
+                requestInfo.FrontendRequest.TraceId.Value
             );
             return new EducationOrganizationHierarchyInfo(false, default, default);
         }
 
-        long educationOrganizationId = ExtractEducationOrganizationId(requestData);
-        long? parentId = FindParentEducationOrganizationId(requestData);
+        long educationOrganizationId = ExtractEducationOrganizationId(requestInfo);
+        long? parentId = FindParentEducationOrganizationId(requestInfo);
 
         _logger.LogDebug(
             "Resource {ResourceName} with Id: {Id} IS in EducationOrganizationHierarchy and has parentId: [{ParentIds}] - {TraceId}",
-            requestData.ResourceSchema.ResourceName.Value,
+            requestInfo.ResourceSchema.ResourceName.Value,
             educationOrganizationId,
             string.Join(',', parentId),
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         return new EducationOrganizationHierarchyInfo(true, educationOrganizationId, parentId);
     }
 
-    private long ExtractEducationOrganizationId(RequestData requestData)
+    private long ExtractEducationOrganizationId(RequestInfo requestInfo)
     {
-        (DocumentIdentity documentIdentity, _) = requestData.ResourceSchema.ExtractIdentities(
-            requestData.ParsedBody,
+        (DocumentIdentity documentIdentity, _) = requestInfo.ResourceSchema.ExtractIdentities(
+            requestInfo.ParsedBody,
             logger: _logger
         );
 
         return long.Parse(documentIdentity.DocumentIdentityElements[0].IdentityValue);
     }
 
-    private long? FindParentEducationOrganizationId(RequestData requestData)
+    private long? FindParentEducationOrganizationId(RequestInfo requestInfo)
     {
-        if (requestData.DocumentSecurityElements?.EducationOrganization == null)
+        if (requestInfo.DocumentSecurityElements?.EducationOrganization == null)
         {
             return default;
         }
 
-        var parentPaths = requestData.ProjectSchema.EducationOrganizationHierarchy[
-            requestData.ResourceSchema.ResourceName
+        var parentPaths = requestInfo.ProjectSchema.EducationOrganizationHierarchy[
+            requestInfo.ResourceSchema.ResourceName
         ];
 
         return parentPaths
             .SelectMany(parentPath =>
-                requestData
+                requestInfo
                     .ParsedBody.SelectNodesFromArrayPathCoerceToStrings(parentPath, _logger)
                     .Select(long.Parse)
             )

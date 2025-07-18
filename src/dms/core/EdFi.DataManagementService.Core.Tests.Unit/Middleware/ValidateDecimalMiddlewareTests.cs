@@ -43,9 +43,9 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 .ToApiSchemaDocuments();
         }
 
-        internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
+        internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
         {
-            RequestData _context = new(frontendRequest, method)
+            RequestInfo _requestInfo = new(frontendRequest, method)
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 PathComponents = new(
@@ -54,20 +54,21 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     DocumentUuid: No.DocumentUuid
                 ),
             };
-            _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+            _requestInfo.ProjectSchema = _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
                 new("ed-fi")
             )!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("staffs")) ?? new JsonObject()
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("staffs"))
+                    ?? new JsonObject()
             );
-            return _context;
+            return _requestInfo;
         }
 
         [TestFixture]
         [Parallelizable]
         public class Given_A_Valid_Body : ValidateDecimalMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -89,29 +90,23 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
-                _context = Context(frontEndRequest, RequestMethod.POST);
-                _context.ParsedBody = JsonNode.Parse(_context.FrontendRequest.Body!)!;
-                await Middleware().Execute(_context, () => Task.CompletedTask);
+                _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+                _requestInfo.ParsedBody = JsonNode.Parse(_requestInfo.FrontendRequest.Body!)!;
+                await Middleware().Execute(_requestInfo, () => Task.CompletedTask);
             }
 
             [Test]
             public void It_provides_no_response()
             {
-                _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+                _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
             }
         }
 
         public class Given_An_Invalid_Decimal : ValidateDecimalMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -133,25 +128,19 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: jsonData,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
-                _context = Context(frontEndRequest, RequestMethod.POST);
-                _context.ParsedBody = JsonNode.Parse(_context.FrontendRequest.Body!)!;
-                await Middleware().Execute(_context, () => Task.CompletedTask);
+                _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+                _requestInfo.ParsedBody = JsonNode.Parse(_requestInfo.FrontendRequest.Body!)!;
+                await Middleware().Execute(_requestInfo, () => Task.CompletedTask);
             }
 
             [Test]
             public void It_provides_error_response()
             {
-                _context.FrontendResponse.StatusCode.Should().Be(400);
-                _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
-                _context
+                _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+                _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Data Validation Failed");
+                _requestInfo
                     .FrontendResponse.Body?.ToJsonString()
                     .Should()
                     .Contain("yearsOfPriorProfessionalExperience must be between -999.99 and 999.99.");

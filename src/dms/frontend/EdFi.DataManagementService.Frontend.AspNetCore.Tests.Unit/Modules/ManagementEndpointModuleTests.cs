@@ -35,7 +35,7 @@ internal static class TestFrontendResponse
         var response = A.Fake<IFrontendResponse>();
         A.CallTo(() => response.StatusCode).Returns(statusCode);
         A.CallTo(() => response.Body).Returns(body);
-        A.CallTo(() => response.Headers).Returns(headers ?? new Dictionary<string, string>());
+        A.CallTo(() => response.Headers).Returns(headers ?? []);
         return response;
     }
 }

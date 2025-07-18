@@ -69,7 +69,7 @@ public abstract class ContainerSetupBase
             .WithEnvironment("MINIMUM_THROUGHPUT", "2")
             .WithEnvironment("BREAK_DURATION_SECONDS", "30")
             .WithEnvironment("OPENSEARCH_URL", openSearchURl)
-            .WithEnvironment("ENABLE_MANAGEMENT_ENDPOINTS", "true")
+            .WithEnvironment("DMS_ENABLE_MANAGEMENT_ENDPOINTS", "true")
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r.ForPort(HttpPort)))
             .WithNetwork(network)
             .WithLogger(loggerFactory!.CreateLogger("apiContainer"))

@@ -94,9 +94,9 @@ public class ValidateDocumentMiddlewareTests
         return new ValidateDocumentMiddleware(NullLogger.Instance, documentValidator);
     }
 
-    internal RequestData Context(FrontendRequest frontendRequest, RequestMethod method)
+    internal RequestInfo Context(FrontendRequest frontendRequest, RequestMethod method)
     {
-        RequestData _context = new(frontendRequest, method)
+        RequestInfo _requestInfo = new(frontendRequest, method)
         {
             ApiSchemaDocuments = SchemaDocuments(),
             PathComponents = new(
@@ -105,30 +105,31 @@ public class ValidateDocumentMiddlewareTests
                 DocumentUuid: No.DocumentUuid
             ),
         };
-        _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+        _requestInfo.ProjectSchema = _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
             new("ed-fi")
         )!;
-        _context.ResourceSchema = new ResourceSchema(
-            _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools")) ?? new JsonObject()
+        _requestInfo.ResourceSchema = new ResourceSchema(
+            _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+                ?? new JsonObject()
         );
 
-        if (_context.FrontendRequest.Body != null)
+        if (_requestInfo.FrontendRequest.Body != null)
         {
-            var body = JsonNode.Parse(_context.FrontendRequest.Body);
+            var body = JsonNode.Parse(_requestInfo.FrontendRequest.Body);
             if (body != null)
             {
-                _context.ParsedBody = body;
+                _requestInfo.ParsedBody = body;
             }
         }
 
-        return _context;
+        return _requestInfo;
     }
 
     [TestFixture]
     [Parallelizable]
     public class Given_A_Request_With_Overposted_Property : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -141,22 +142,16 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_should_not_have_response()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -164,7 +159,7 @@ public class ValidateDocumentMiddlewareTests
     [Parallelizable]
     public class Given_A_Request_With_Overposted_Nested_Property : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -177,22 +172,16 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_should_not_have_response()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -200,7 +189,7 @@ public class ValidateDocumentMiddlewareTests
     [Parallelizable]
     public class Given_A_Request_With_Overposted_Object_Property : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -213,34 +202,28 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_should_not_have_response()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
 
         [Test]
         public void It_should_not_be_equal_than_parsed_body()
         {
-            _context.FrontendRequest.Body.Should().NotBe(_context.ParsedBody.ToJsonString());
+            _requestInfo.FrontendRequest.Body.Should().NotBe(_requestInfo.ParsedBody.ToJsonString());
         }
 
         [Test]
         public void It_should_not_contain_objectOverpost()
         {
-            _context
+            _requestInfo
                 .ParsedBody.ToJsonString()
                 .Should()
                 .NotContain("\"objectOverpost\": { \"x\": \"overPostedValue\"}");
@@ -249,7 +232,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_contain_objectOverpost()
         {
-            _context
+            _requestInfo
                 .FrontendRequest.Body.Should()
                 .Contain(""""objectOverpost": { "x": "overPostedValue"}"""");
         }
@@ -257,7 +240,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_be_correct_parsed_body()
         {
-            _context
+            _requestInfo
                 .ParsedBody.ToJsonString()
                 .Should()
                 .Be(
@@ -268,7 +251,7 @@ public class ValidateDocumentMiddlewareTests
         [Test]
         public void It_should_not_contain_newOverposted_in_educationOrganizationCategories()
         {
-            _context
+            _requestInfo
                 .ParsedBody.ToJsonString()
                 .Should()
                 .Contain(
@@ -281,7 +264,7 @@ public class ValidateDocumentMiddlewareTests
     [Parallelizable]
     public class Given_A_Request_With_Null_Property : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -294,22 +277,16 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_should_not_have_response()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -317,7 +294,7 @@ public class ValidateDocumentMiddlewareTests
     [Parallelizable]
     public class Given_A_Request_With_Null_Nested_Property : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -330,22 +307,16 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_should_not_have_response()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -353,7 +324,7 @@ public class ValidateDocumentMiddlewareTests
     [Parallelizable]
     public class Given_A_Request_With_No_Required_Property : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -366,34 +337,28 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("is required", "schoolId");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().ContainAll("is required", "schoolId");
         }
     }
 
@@ -401,7 +366,7 @@ public class ValidateDocumentMiddlewareTests
     [Parallelizable]
     public class Given_A_Request_With_Wrong_Type_Property_Value : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -414,34 +379,28 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_wrong_data_type_validation_error()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .ContainAll("schoolId Value is", "integer");
@@ -452,7 +411,7 @@ public class ValidateDocumentMiddlewareTests
     [Parallelizable]
     public class Given_A_Update_Request_With_No_Id_Property : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -465,34 +424,28 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.PUT);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.PUT);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().ContainAll("is required", "id");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().ContainAll("is required", "id");
         }
     }
 
@@ -501,7 +454,7 @@ public class ValidateDocumentMiddlewareTests
     public class Given_An_Insert_Request_With_Required_String_Property_Value_Contains_Only_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -514,34 +467,28 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .ContainAll("nameOfInstitution", "cannot contain leading or trailing spaces");
@@ -553,7 +500,7 @@ public class ValidateDocumentMiddlewareTests
     public class Given_An_Insert_Request_With_Required_String_Property_Value_Is_Null
         : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -566,34 +513,28 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .ContainAll("nameOfInstitution", "nameOfInstitution is required");
@@ -605,7 +546,7 @@ public class ValidateDocumentMiddlewareTests
     public class Given_An_Insert_Request_With_Required_String_Property_Value_Contains_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -618,22 +559,16 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_should_not_have_response()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -642,7 +577,7 @@ public class ValidateDocumentMiddlewareTests
     public class Given_An_Insert_Request_With_Identity_String_Property_Value_Contains_Only_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -655,34 +590,28 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .ContainAll("identityProperty", "cannot contain leading or trailing spaces");
@@ -694,7 +623,7 @@ public class ValidateDocumentMiddlewareTests
     public class Given_An_Insert_Request_With_Identity_String_Property_Value_Contains_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -707,34 +636,28 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .ContainAll("identityProperty", "cannot contain leading or trailing spaces", "traceId");
@@ -745,7 +668,7 @@ public class ValidateDocumentMiddlewareTests
     [Parallelizable]
     public class Given_An_Insert_Request_With_Empty_Identity_String_Property : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -758,34 +681,28 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_required_validation_error()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .ContainAll("identityProperty", "is required and should not be left empty.", "traceId");
@@ -797,7 +714,7 @@ public class ValidateDocumentMiddlewareTests
     public class Given_An_Insert_Request_With_Optional_String_Property_Value_Contains_Whitespaces
         : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -810,22 +727,16 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
         public void It_should_not_have_response()
         {
-            _context.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -833,7 +744,7 @@ public class ValidateDocumentMiddlewareTests
     [Parallelizable]
     public class Given_An_Insert_Request_With_Empty_NonRequired_Collection : ValidateDocumentMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -846,16 +757,10 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("traceId")
             );
-            _context = Context(frontEndRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, Next());
+            _requestInfo = Context(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, Next());
         }
 
         [Test]
@@ -867,13 +772,7 @@ public class ValidateDocumentMiddlewareTests
                     Body: null,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 ),
                 RequestMethod.GET
             );

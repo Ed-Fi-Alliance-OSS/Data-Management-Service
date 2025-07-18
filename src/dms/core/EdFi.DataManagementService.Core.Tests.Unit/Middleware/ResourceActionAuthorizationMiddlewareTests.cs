@@ -27,13 +27,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ResourceActionAuthorizationMiddlewareTests
 {
-    private RequestData _context = No.RequestData();
+    private RequestInfo _requestInfo = No.RequestInfo();
 
     internal static IPipelineStep Middleware()
     {
         var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
-        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-        A.CallTo(() => claimSetCacheService.GetClaimSets())
+        var claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => claimSetProvider.GetAllClaimSets())
             .Returns(
                 [
                     new ClaimSet(
@@ -49,7 +49,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ),
                 ]
             );
-        return new ResourceActionAuthorizationMiddleware(claimSetCacheService, NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
     internal static ApiSchemaDocuments ApiSchemaDocument(string resourceName)
@@ -65,8 +65,8 @@ public class ResourceActionAuthorizationMiddlewareTests
 
     internal static IPipelineStep NoAuthStrategyMiddleware()
     {
-        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-        A.CallTo(() => claimSetCacheService.GetClaimSets())
+        var claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => claimSetProvider.GetAllClaimSets())
             .Returns(
                 [
                     new ClaimSet(
@@ -82,7 +82,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                     ),
                 ]
             );
-        return new ResourceActionAuthorizationMiddleware(claimSetCacheService, NullLogger.Instance);
+        return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
     [TestFixture]
@@ -97,32 +97,32 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
             };
-            _context.ProjectSchema = ApiSchemaDocument("School")
+            _requestInfo.ProjectSchema = ApiSchemaDocument("School")
                 .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
 
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_No_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -138,37 +138,37 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "NO-MATCH", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "NO-MATCH", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
             };
-            _context.ProjectSchema = ApiSchemaDocument("School")
+            _requestInfo.ProjectSchema = ApiSchemaDocument("School")
                 .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_has_forbidden_response()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(403);
         }
     }
 
@@ -184,37 +184,37 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("stateDescriptor"),
                     new DocumentUuid()
                 ),
             };
-            _context.ProjectSchema = ApiSchemaDocument("StateDescriptor")
+            _requestInfo.ProjectSchema = ApiSchemaDocument("StateDescriptor")
                 .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("stateDescriptors"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("stateDescriptors"))
                     ?? new JsonObject()
             );
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_has_forbidden_response()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(403);
         }
     }
 
@@ -230,31 +230,31 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
             };
-            _context.ProjectSchema = ApiSchemaDocument("School")
+            _requestInfo.ProjectSchema = ApiSchemaDocument("School")
                 .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -270,45 +270,45 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.PUT)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
             };
-            _context.ProjectSchema = ApiSchemaDocument("School")
+            _requestInfo.ProjectSchema = ApiSchemaDocument("School")
                 .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_has_forbidden_response()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(403);
         }
 
         [Test]
         public void It_returns_message_body_with_failures()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
 
-            string response = JsonSerializer.Serialize(_context.FrontendResponse.Body, SerializerOptions);
+            string response = JsonSerializer.Serialize(_requestInfo.FrontendResponse.Body, SerializerOptions);
 
             response
                 .Should()
@@ -325,13 +325,13 @@ public class ResourceActionAuthorizationMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
-            var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-            A.CallTo(() => claimSetCacheService.GetClaimSets())
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets())
                 .Returns(
                     [new ClaimSet(Name: "SIS-Vendor", ResourceClaims: [new ResourceClaim("schools", "", [])])]
                 );
             var authMiddleware = new ResourceActionAuthorizationMiddleware(
-                claimSetCacheService,
+                claimSetProvider,
                 NullLogger.Instance
             );
 
@@ -340,37 +340,37 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.PUT)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("stateDescriptor"),
                     new DocumentUuid()
                 ),
             };
-            _context.ProjectSchema = ApiSchemaDocument("School")
+            _requestInfo.ProjectSchema = ApiSchemaDocument("School")
                 .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
-            await authMiddleware.Execute(_context, NullNext);
+            await authMiddleware.Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_has_forbidden_response()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(403);
         }
     }
 
@@ -387,31 +387,31 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
             };
-            _context.ProjectSchema = ApiSchemaDocument("School")
+            _requestInfo.ProjectSchema = ApiSchemaDocument("School")
                 .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
-            await Middleware().Execute(_context, NullNext);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 
@@ -428,46 +428,46 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId"),
-                ClientAuthorizations: new ClientAuthorizations("", "SIS-Vendor", [], [])
+                TraceId: new TraceId("traceId")
             );
 
-            _context = new RequestData(frontEndRequest, RequestMethod.POST)
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
+                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new ProjectNamespace("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
             };
-            _context.ProjectSchema = ApiSchemaDocument("School")
+            _requestInfo.ProjectSchema = ApiSchemaDocument("School")
                 .FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
-            _context.ResourceSchema = new ResourceSchema(
-                _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
+            _requestInfo.ResourceSchema = new ResourceSchema(
+                _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("schools"))
                     ?? new JsonObject()
             );
-            await NoAuthStrategyMiddleware().Execute(_context, NullNext);
+            await NoAuthStrategyMiddleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_has_forbidden_response()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(403);
         }
 
         [Test]
         public void It_returns_message_body_with_failures()
         {
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Authorization Denied");
 
             string response = JsonSerializer.Serialize(
-                _context.FrontendResponse.Body,
+                _requestInfo.FrontendResponse.Body,
                 UtilityService.SerializerOptions
             );
 
