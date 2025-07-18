@@ -181,7 +181,8 @@ public static class WebApplicationBuilderExtensions
         {
             options.AddPolicy(
                 SecurityConstants.ServicePolicy,
-                policy => policy.RequireClaim(ClaimTypes.Role, identitySettings.ConfigServiceRole)
+                policy =>
+                    policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
             );
 
             AuthorizationScopePolicies.Add(options);

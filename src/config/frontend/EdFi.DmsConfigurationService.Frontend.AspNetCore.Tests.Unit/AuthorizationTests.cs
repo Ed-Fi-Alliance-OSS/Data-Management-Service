@@ -5,7 +5,6 @@
 
 using System.Data.Common;
 using System.Net;
-using System.Security.Claims;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -14,6 +13,7 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using Action = EdFi.DmsConfigurationService.Backend.AuthorizationMetadata.ClaimSetMetadata.Action;
@@ -50,7 +51,7 @@ public class AuthorizationTests
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
-                (collection) =>
+                (ctx, collection) =>
                 {
                     collection
                         .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
@@ -58,11 +59,19 @@ public class AuthorizationTests
                             AuthenticationConstants.AuthenticationSchema,
                             _ => { }
                         );
+
+                    var identitySettings = ctx
+                        .Configuration.GetSection("IdentitySettings")
+                        .Get<IdentitySettings>()!;
                     collection.AddAuthorization(options =>
                     {
                         options.AddPolicy(
                             SecurityConstants.ServicePolicy,
-                            policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                            policy =>
+                                policy.RequireClaim(
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
+                                )
                         );
                         AuthorizationScopePolicies.Add(options);
                     });

@@ -5,6 +5,7 @@
 
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 
@@ -13,7 +14,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
 public class TestAuthHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     Microsoft.Extensions.Logging.ILoggerFactory loggerFactory,
-    UrlEncoder encoder
+    UrlEncoder encoder,
+    IOptions<IdentitySettings> identitySettings
 ) : AuthenticationHandler<AuthenticationSchemeOptions>(options, loggerFactory, encoder)
 {
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -27,8 +29,8 @@ public class TestAuthHandler(
 
         var claims = new[]
         {
-            new Claim("client_id", AuthenticationConstants.Client_Id),
-            new Claim(ClaimTypes.Role, AuthenticationConstants.Role),
+            new Claim("client_id", identitySettings.Value.ClientId),
+            new Claim(identitySettings.Value.RoleClaimType, identitySettings.Value.ConfigServiceRole),
             new Claim("scope", scopeHeader),
         };
 
