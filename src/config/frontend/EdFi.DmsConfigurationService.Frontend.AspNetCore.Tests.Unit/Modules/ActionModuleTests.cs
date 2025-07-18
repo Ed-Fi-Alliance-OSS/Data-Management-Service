@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Security.Claims;
 using System.Text.Json;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
@@ -142,7 +141,7 @@ public class RegisterActionEndpointTests
             {
                 builder.UseEnvironment("Test");
                 builder.ConfigureServices(
-                    (collection) =>
+                    (ctx, collection) =>
                     {
                         collection
                             .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
@@ -151,10 +150,13 @@ public class RegisterActionEndpointTests
                                 _ => { }
                             );
 
+                        var identitySettings = ctx
+                            .Configuration.GetSection("IdentitySettings")
+                            .Get<IdentitySettings>()!;
                         collection.AddAuthorization(options =>
                             options.AddPolicy(
                                 SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")
+                                policy => policy.RequireClaim(identitySettings.RoleClaimType, "invalid-role")
                             )
                         );
                     }

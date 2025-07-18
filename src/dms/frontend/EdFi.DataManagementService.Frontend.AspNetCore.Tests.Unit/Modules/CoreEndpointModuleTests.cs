@@ -4,17 +4,18 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Security.Claims;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
@@ -41,7 +42,7 @@ public class CoreEndpointModuleTests
             {
                 builder.UseEnvironment("Test");
                 builder.ConfigureServices(
-                    (collection) =>
+                    (ctx, collection) =>
                     {
                         collection.AddTransient((x) => apiService);
                         collection.AddTransient((x) => claimSetCacheService);
@@ -52,10 +53,17 @@ public class CoreEndpointModuleTests
                                 options => { }
                             );
 
+                        var identitySettings = ctx
+                            .Configuration.GetSection("IdentitySettings")
+                            .Get<IdentitySettings>()!;
                         collection.AddAuthorization(options =>
                             options.AddPolicy(
                                 SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, AuthenticationConstants.Role)
+                                policy =>
+                                    policy.RequireClaim(
+                                        identitySettings.RoleClaimType,
+                                        identitySettings.ClientRole
+                                    )
                             )
                         );
                     }
@@ -95,7 +103,7 @@ public class CoreEndpointModuleTests
             {
                 builder.UseEnvironment("Test");
                 builder.ConfigureServices(
-                    (collection) =>
+                    (ctx, collection) =>
                     {
                         collection
                             .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
@@ -104,10 +112,13 @@ public class CoreEndpointModuleTests
                                 options => { }
                             );
 
+                        var identitySettings = ctx
+                            .Configuration.GetSection("IdentitySettings")
+                            .Get<IdentitySettings>()!;
                         collection.AddAuthorization(options =>
                             options.AddPolicy(
                                 SecurityConstants.ServicePolicy,
-                                policy => policy.RequireClaim(ClaimTypes.Role, "invalid-role")
+                                policy => policy.RequireClaim(identitySettings.RoleClaimType, "invalid-role")
                             )
                         );
                         collection.AddTransient((x) => claimSetCacheService);
