@@ -3,7 +3,8 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-CREATE TABLE dms.StudentSchoolAssociationAuthorization(
+-- Create table if not exists
+CREATE TABLE IF NOT EXISTS dms.StudentSchoolAssociationAuthorization(
     Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     StudentUniqueId VARCHAR(32) NOT NULL,
     HierarchySchoolId BIGINT NOT NULL REFERENCES dms.EducationOrganizationHierarchy(EducationOrganizationId) ON DELETE CASCADE,
@@ -14,5 +15,5 @@ CREATE TABLE dms.StudentSchoolAssociationAuthorization(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
 
-CREATE INDEX IX_StudentSchoolAssociationAuthorization_StudentUniqueId
+CREATE INDEX IF NOT EXISTS IX_StudentSchoolAssociationAuthorization_StudentUniqueId
 ON dms.StudentSchoolAssociationAuthorization(StudentUniqueId);

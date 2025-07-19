@@ -3,7 +3,7 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-CREATE TABLE dmscs.Application (
+CREATE TABLE IF NOT EXISTS dmscs.Application (
     Id BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
     ApplicationName VARCHAR(256) NOT NULL,
     VendorId BIGINT NOT NULL,
@@ -16,7 +16,7 @@ COMMENT ON COLUMN dmscs.Application.ApplicationName IS 'Application name';
 COMMENT ON COLUMN dmscs.Application.VendorId IS 'Vendor or company id';
 COMMENT ON COLUMN dmscs.Application.ClaimSetName IS 'Claim set name';
 
-CREATE TABLE dmscs.ApplicationEducationOrganization (
+CREATE TABLE IF NOT EXISTS dmscs.ApplicationEducationOrganization (
     ApplicationId BIGINT NOT NULL,
     EducationOrganizationId BIGINT NOT NULL,
     CONSTRAINT pk_applicationEducationOrganization PRIMARY KEY (ApplicationId, EducationOrganizationId),
