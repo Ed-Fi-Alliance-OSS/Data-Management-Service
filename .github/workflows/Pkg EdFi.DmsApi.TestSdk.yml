@@ -9,7 +9,8 @@ on:
     types:
       - released
   workflow_dispatch:
-
+  push:
+    branches: [ "DMS-757" ]
 env:
   STANDARD_VERSION: "5.2.0"
   SDK_PACKAGE_NAME: "EdFi.DmsApi.TestSdk"
