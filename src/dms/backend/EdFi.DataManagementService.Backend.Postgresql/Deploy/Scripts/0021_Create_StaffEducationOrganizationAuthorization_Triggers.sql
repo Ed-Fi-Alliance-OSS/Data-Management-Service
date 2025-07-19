@@ -183,4 +183,3 @@ AFTER DELETE ON dms.Document
     FOR EACH ROW
     WHEN (OLD.ProjectName = 'Ed-Fi' AND (OLD.ResourceName = 'StaffEducationOrganizationEmploymentAssociation' OR OLD.ResourceName = 'StaffEducationOrganizationAssignmentAssociation'))
     EXECUTE PROCEDURE dms.StaffEducationOrganizationAuthorizationDeleteFunction();
-

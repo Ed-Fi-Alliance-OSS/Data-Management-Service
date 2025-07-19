@@ -120,9 +120,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS EducationOrganizationHierarchyTrigger ON dms.educationorganizationhierarchy;
-
 CREATE TRIGGER EducationOrganizationHierarchyTrigger
 AFTER INSERT OR UPDATE OR DELETE ON dms.EducationOrganizationHierarchy
     FOR EACH ROW
     EXECUTE PROCEDURE dms.EducationOrganizationHierarchyTriggerFunction();
-

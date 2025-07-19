@@ -1,3 +1,7 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Licensed to the Ed-Fi Alliance under one or more agreements.
+-- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+-- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE IF NOT EXISTS dmscs.ClaimSet
 (
@@ -7,7 +11,7 @@ CREATE TABLE IF NOT EXISTS dmscs.ClaimSet
     CONSTRAINT claimset_pkey PRIMARY KEY (id)
 );
 
-CREATE UNIQUE INDEX idx_ClaimSetName ON dmscs.ClaimSet (ClaimSetName);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ClaimSetName ON dmscs.ClaimSet (ClaimSetName);
 
 COMMENT ON COLUMN dmscs.claimset.id
     IS 'ClaimSet id';

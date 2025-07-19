@@ -3,9 +3,10 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-INSERT INTO dmscs.claimshierarchy(
-	 hierarchy)
-	VALUES ('[
+INSERT INTO dmscs.claimshierarchy(hierarchy)
+SELECT v.hierarchy::jsonb FROM (
+    VALUES (
+        '[
   {
     "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
     "defaultAuthorization": {
@@ -2849,6 +2850,15 @@ INSERT INTO dmscs.claimshierarchy(
             "name": "http://ed-fi.org/identity/claims/tpdm/rubricRatingLevelDescriptor"
           }
         ]
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/artMediumDescriptor"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/favoriteBookCategoryDescriptor"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/membershipTypeDescriptor"
       }
     ]
   },
@@ -6462,6 +6472,12 @@ INSERT INTO dmscs.claimshierarchy(
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/studentEducationOrganizationAssessmentAccommodationGeneralAccommodation"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/studentArtProgramAssociation"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/studentGraduationPlanAssociation"
       }
     ]
   },
@@ -8597,5 +8613,179 @@ INSERT INTO dmscs.claimshierarchy(
         ]
       }
     ]
+  },
+  {
+    "name": "http://ed-fi.org/identity/claims/domains/sample",
+    "defaultAuthorization": {
+      "actions": [
+        {
+          "name": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Delete",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    "claimSets": [
+      {
+        "name": "EdFiSandbox",
+        "actions": [
+          {
+            "name": "Create"
+          },
+          {
+            "name": "Read"
+          },
+          {
+            "name": "Update"
+          },
+          {
+            "name": "Delete"
+          },
+          {
+            "name": "ReadChanges"
+          }
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/bus"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/busRoute"
+      }
+    ]
+  },
+  {
+    "name": "http://ed-fi.org/identity/claims/domains/homograph",
+    "defaultAuthorization": {
+      "actions": [
+        {
+          "name": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Delete",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    "claimSets": [
+      {
+        "name": "EdFiSandbox",
+        "actions": [
+          {
+            "name": "Create"
+          },
+          {
+            "name": "Read"
+          },
+          {
+            "name": "Update"
+          },
+          {
+            "name": "Delete"
+          },
+          {
+            "name": "ReadChanges"
+          }
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/name"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/school"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/contact"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/student"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/staff"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/schoolYearType"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/studentSchoolAssociation"
+      }
+    ]
   }
-]'::jsonb);
+]'
+    )
+) AS v(hierarchy)
+WHERE NOT EXISTS (
+    SELECT 1 FROM dmscs.claimshierarchy s WHERE s.hierarchy = v.hierarchy::jsonb
+);

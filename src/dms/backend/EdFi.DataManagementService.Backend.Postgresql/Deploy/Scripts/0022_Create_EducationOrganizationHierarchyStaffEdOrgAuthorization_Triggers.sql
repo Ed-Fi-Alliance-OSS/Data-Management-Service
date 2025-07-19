@@ -84,6 +84,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Drop and recreate trigger
 DROP TRIGGER IF EXISTS EducationOrganizationHierarchy_StaffEdOrgAuthorizationTrigger ON dms.EducationOrganizationHierarchy;
 
 CREATE TRIGGER EducationOrganizationHierarchy_StaffEdOrgAuthorizationTrigger

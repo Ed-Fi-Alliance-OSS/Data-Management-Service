@@ -4,13 +4,13 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 -- To improve GetByQuery requests performance
-CREATE INDEX IX_Document_ResourceName_CreatedAt ON dms.Document (ResourceName, CreatedAt);
+CREATE INDEX IF NOT EXISTS IX_Document_ResourceName_CreatedAt ON dms.Document (ResourceName, CreatedAt);
 
 -- To improve GetByQuery authorization performance
-CREATE INDEX IX_Document_StudentSchoolAuthorizationEdOrgIds ON dms.Document USING GIN (StudentSchoolAuthorizationEdOrgIds);
-CREATE INDEX IX_Document_ContactStudentSchoolAuthorizationEdOrgIds ON dms.Document USING GIN (ContactStudentSchoolAuthorizationEdOrgIds);
-CREATE INDEX IX_Document_StaffEducationOrganizationAuthorizationEdOrgIds ON dms.Document USING GIN (StaffEducationOrganizationAuthorizationEdOrgIds);
-CREATE INDEX IX_Document_StudentEdOrgResponsibilityAuthorizationIds ON dms.Document USING GIN (StudentEdOrgResponsibilityAuthorizationIds);
+CREATE INDEX IF NOT EXISTS IX_Document_StudentSchoolAuthorizationEdOrgIds ON dms.Document USING GIN (StudentSchoolAuthorizationEdOrgIds);
+CREATE INDEX IF NOT EXISTS IX_Document_ContactStudentSchoolAuthorizationEdOrgIds ON dms.Document USING GIN (ContactStudentSchoolAuthorizationEdOrgIds);
+CREATE INDEX IF NOT EXISTS IX_Document_StaffEducationOrganizationAuthorizationEdOrgIds ON dms.Document USING GIN (StaffEducationOrganizationAuthorizationEdOrgIds);
+CREATE INDEX IF NOT EXISTS IX_Document_StudentEdOrgResponsibilityAuthorizationIds ON dms.Document USING GIN (StudentEdOrgResponsibilityAuthorizationIds);
 
-CREATE INDEX IX_Document_SecurityElements_EducationOrganization ON dms.Document USING GIN ((SecurityElements -> 'EducationOrganization'));
-CREATE INDEX IX_Document_SecurityElements_Namespace ON dms.Document USING GIN ((SecurityElements -> 'Namespace'));
+CREATE INDEX IF NOT EXISTS IX_Document_SecurityElements_EducationOrganization ON dms.Document USING GIN ((SecurityElements -> 'EducationOrganization'));
+CREATE INDEX IF NOT EXISTS IX_Document_SecurityElements_Namespace ON dms.Document USING GIN ((SecurityElements -> 'Namespace'));
