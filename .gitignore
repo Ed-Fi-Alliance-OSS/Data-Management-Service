@@ -441,3 +441,7 @@ src/dms/EdFi.DataStandard52.ApiSchema/
 # Local Claude configuration files
 CLAUDE.local.md
 .mcp.json
+
+# SDK generation artifacts
+/eng/sdkGen/*
+openApi-codegen-cli.jar
