@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: EdFi.Dms.Minimal.Template.PostgreSQL
+name: Pkg EdFi.Dms.Minimal.Template.PostgreSQL
 on:
   release:
     types:
@@ -14,6 +14,7 @@ env:
   STANDARD_VERSION: "5.2.0"
   PACKAGE_NAME: "EdFi.Dms.Minimal.Template.PostgreSQL.5.2.0"
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
+  PROVENANCE_FILE: "minimal.template.intoto.jsonl"
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
   ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
@@ -97,19 +98,40 @@ jobs:
                   -PackageVersion $packageVersion
         working-directory: eng/DatabaseTemplates/
 
-      - name: Generate hash for NuGet package
-        id: hash-code
-        run: |
-          "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-        working-directory: eng/DatabaseTemplates/
-
-      - name: Upload Logs
+      - name: Upload Bulk Load Logs
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
           name: Bulkload-logs
           path: ${{ github.workspace }}/eng/DatabaseTemplates/.packages/**/logfile.txt
           retention-days: 10
+
+      - name: Export Docker Logs
+        if: failure()
+        run: |
+          $logDir = "${{ github.workspace }}/logs"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          docker ps --format "{{.Names}}" | ForEach-Object {
+              $container = $_
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath
+          }
+        shell: pwsh
+
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: Docker-Logs
+          path: ${{ github.workspace }}/logs
+          retention-days: 10
+
+      - name: Generate hash for NuGet package
+        id: hash-code
+        run: |
+          "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        working-directory: eng/DatabaseTemplates/
 
       - name: Upload Minimal Template Package as Artifact
         if: success()
@@ -130,7 +152,7 @@ jobs:
     outputs:
       sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
     steps:
-      - name: Get Minimal TemplatePackage Artifacts
+      - name: Get Minimal Template Package Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: ${{ env.PACKAGE_NAME }}-NuGet
@@ -183,7 +205,7 @@ jobs:
     uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
     with:
       base64-subjects: ${{ needs.build-template.outputs.hash-code }}
-      provenance-name: minimal.template.intoto.jsonl
+      provenance-name: minimal.template.intoto.jsonl # env.PROVENANCE_FILE cannot be used in this context
       upload-assets: true
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
       compile-generator: true
@@ -223,7 +245,7 @@ jobs:
              ./build-dms.ps1 Push @arguments
           }
 
-      - name: Promote Minimal TemplateAzure  Package
+      - name: Promote Minimal Template Azure Package
         if: ${{ github.event_name == 'release' }}
         run: |
           $arguments = @{
@@ -258,7 +280,7 @@ jobs:
       - name: Download Provenance Artifact
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
-          name: minimal.template.intoto.jsonl
+          name: ${{ env.PROVENANCE_FILE }}
 
       - name: Attach SBOM to Release
         shell: pwsh
@@ -291,8 +313,8 @@ jobs:
           $release = "${{ github.ref_name }}"
           $repo = "${{ github.repository }}"
           $token = "${{ secrets.GITHUB_TOKEN }}"
-          $file = "minimal.template.intoto.jsonl"
-          $uploadName = "minimal.template.intoto.jsonl"
+          $file = "${{ env.PROVENANCE_FILE }}"
+          $uploadName = "${{ env.PROVENANCE_FILE }}"
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
