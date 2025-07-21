@@ -20,9 +20,8 @@ public class ClaimSetCacheServiceTests
     public class Given_Service_Receives_Expected_Data : ClaimSetCacheServiceTests
     {
         private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();
-        private readonly ISecurityMetadataProvider _securityMetadataProvider =
-            A.Fake<ISecurityMetadataProvider>();
-        private ClaimSetCacheService? _service;
+        private readonly IClaimSetProvider _securityMetadataProvider = A.Fake<IClaimSetProvider>();
+        private CachedClaimSetProvider? _service;
         private IList<ClaimSet>? _claims;
         private IList<ClaimSet>? _expectedClaims;
 
@@ -37,8 +36,8 @@ public class ClaimSetCacheServiceTests
 
             var claimSetCache = new ClaimSetsCache(_memoryCache, TimeSpan.FromMinutes(10));
 
-            _service = new ClaimSetCacheService(_securityMetadataProvider, claimSetCache);
-            _claims = await _service.GetClaimSets();
+            _service = new CachedClaimSetProvider(_securityMetadataProvider, claimSetCache);
+            _claims = await _service.GetAllClaimSets();
         }
 
         [Test]
@@ -57,9 +56,8 @@ public class ClaimSetCacheServiceTests
     public class Given_Cache_Has_Claims : ClaimSetCacheServiceTests
     {
         private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();
-        private readonly ISecurityMetadataProvider _securityMetadataProvider =
-            A.Fake<ISecurityMetadataProvider>();
-        private ClaimSetCacheService? _service;
+        private readonly IClaimSetProvider _securityMetadataProvider = A.Fake<IClaimSetProvider>();
+        private CachedClaimSetProvider? _service;
         private IList<ClaimSet>? _claims;
         private IList<ClaimSet>? _expectedClaims;
 
@@ -74,8 +72,8 @@ public class ClaimSetCacheServiceTests
 
             var claimSetCache = new ClaimSetsCache(_memoryCache, TimeSpan.FromMinutes(10));
 
-            _service = new ClaimSetCacheService(_securityMetadataProvider, claimSetCache);
-            _claims = await _service.GetClaimSets();
+            _service = new CachedClaimSetProvider(_securityMetadataProvider, claimSetCache);
+            _claims = await _service.GetAllClaimSets();
         }
 
         [Test]
@@ -94,9 +92,8 @@ public class ClaimSetCacheServiceTests
     public class Given_Backend_Throws_Error : ConfigurationServiceTokenHandlerTests
     {
         private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();
-        private readonly ISecurityMetadataProvider _securityMetadataProvider =
-            A.Fake<ISecurityMetadataProvider>();
-        private ClaimSetCacheService? _service;
+        private readonly IClaimSetProvider _securityMetadataProvider = A.Fake<IClaimSetProvider>();
+        private CachedClaimSetProvider? _service;
 
         [Test]
         public void Should_Throw_Exception_For_BadRequest()
@@ -105,7 +102,7 @@ public class ClaimSetCacheServiceTests
             SetClaimSetCacheService(HttpStatusCode.BadRequest);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetAllClaimSets());
         }
 
         [Test]
@@ -115,7 +112,7 @@ public class ClaimSetCacheServiceTests
             SetClaimSetCacheService(HttpStatusCode.Unauthorized);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetAllClaimSets());
         }
 
         [Test]
@@ -125,7 +122,7 @@ public class ClaimSetCacheServiceTests
             SetClaimSetCacheService(HttpStatusCode.NotFound);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetAllClaimSets());
         }
 
         [Test]
@@ -135,7 +132,7 @@ public class ClaimSetCacheServiceTests
             SetClaimSetCacheService(HttpStatusCode.Forbidden);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetAllClaimSets());
         }
 
         [Test]
@@ -145,7 +142,7 @@ public class ClaimSetCacheServiceTests
             SetClaimSetCacheService(HttpStatusCode.InternalServerError);
 
             // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetClaimSets());
+            Assert.ThrowsAsync<HttpRequestException>(async () => await _service!.GetAllClaimSets());
         }
 
         private void SetClaimSetCacheService(HttpStatusCode statusCode)
@@ -162,7 +159,7 @@ public class ClaimSetCacheServiceTests
 
             var claimSetCache = new ClaimSetsCache(_memoryCache, TimeSpan.FromMinutes(10));
 
-            _service = new ClaimSetCacheService(_securityMetadataProvider, claimSetCache);
+            _service = new CachedClaimSetProvider(_securityMetadataProvider, claimSetCache);
         }
     }
 }

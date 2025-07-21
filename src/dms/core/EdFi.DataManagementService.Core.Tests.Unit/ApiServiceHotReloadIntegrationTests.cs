@@ -9,12 +9,14 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -62,9 +64,19 @@ public class ApiServiceHotReloadIntegrationTests
         );
 
         // Create ApiService with minimal fakes for other dependencies
-        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var services = new ServiceCollection();
+
+        // Register JWT authentication services
+        services.Configure<JwtAuthenticationOptions>(options => { });
+        services.AddTransient<JwtAuthenticationMiddleware>();
+        services.AddTransient<IJwtValidationService>(sp => A.Fake<IJwtValidationService>());
+        services.AddTransient<ILogger<JwtAuthenticationMiddleware>>(_ =>
+            NullLogger<JwtAuthenticationMiddleware>.Instance
+        );
+
+        var serviceProvider = services.BuildServiceProvider();
         var documentStoreRepository = A.Fake<IDocumentStoreRepository>();
-        var claimSetCacheService = new NoClaimsClaimSetCacheService(NullLogger.Instance);
+        var claimSetProvider = new NoClaimsClaimSetProvider(NullLogger.Instance);
         var documentValidator = new DocumentValidator();
         var queryHandler = A.Fake<IQueryHandler>();
         var matchingDocumentUuidsValidator = new MatchingDocumentUuidsValidator();
@@ -83,7 +95,7 @@ public class ApiServiceHotReloadIntegrationTests
         _apiService = new ApiService(
             _apiSchemaFileLoader,
             documentStoreRepository,
-            claimSetCacheService,
+            claimSetProvider,
             documentValidator,
             queryHandler,
             matchingDocumentUuidsValidator,
@@ -94,7 +106,8 @@ public class ApiServiceHotReloadIntegrationTests
             authorizationServiceFactory,
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
-            apiSchemaUploadService
+            apiSchemaUploadService,
+            serviceProvider
         );
     }
 
@@ -331,7 +344,7 @@ public class ApiServiceHotReloadIntegrationTests
             var apiServiceWithDisabledEndpoints = new ApiService(
                 _apiSchemaFileLoader,
                 A.Fake<IDocumentStoreRepository>(),
-                new NoClaimsClaimSetCacheService(NullLogger.Instance),
+                new NoClaimsClaimSetProvider(NullLogger.Instance),
                 new DocumentValidator(),
                 A.Fake<IQueryHandler>(),
                 new MatchingDocumentUuidsValidator(),
@@ -347,7 +360,8 @@ public class ApiServiceHotReloadIntegrationTests
                     [],
                     NullLogger<ResourceLoadOrderCalculator>.Instance
                 ),
-                apiSchemaUploadService
+                apiSchemaUploadService,
+                new ServiceCollection().BuildServiceProvider()
             );
 
             await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Student", "5.0.0"));
@@ -373,13 +387,7 @@ public class ApiServiceHotReloadIntegrationTests
             Body: body,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("test-trace-id"),
-            ClientAuthorizations: new ClientAuthorizations(
-                TokenId: "test-token",
-                ClaimSetName: "test-claim-set",
-                EducationOrganizationIds: [],
-                NamespacePrefixes: []
-            )
+            TraceId: new TraceId("test-trace-id")
         );
     }
 

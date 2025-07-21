@@ -7,6 +7,9 @@ Feature: Query String handling for GET requests for Descriptor Queries
             Given the system has these descriptors
                   | descriptorValue                                           |
                   | uri://ed-fi.org/AbsenceEventCategoryDescriptor#Sick Leave |
+              And the system has these "calendarEventDescriptors"
+                  | codeValue | description | namespace                               | shortDescription | effectiveBeginDate | effectiveEndDate |
+                  | Fake      | Fake        | uri://ed-fi.org/CalendarEventDescriptor | Fake             | 2020-01-01         | 2020-12-31       |
 
         @API-115
         Scenario: 01 Verify existing descriptors can be retrieved successfully
@@ -75,4 +78,45 @@ Feature: Query String handling for GET requests for Descriptor Queries
               And the response body is
                   """
                   []
+                  """
+
+        Scenario: 09 Ensure clients can query by effectiveBeginDate and effectiveEndDate
+             When a GET request is made to "/ed-fi/calendarEventDescriptors?effectiveBeginDate=2020-01-01"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "id": "{id}",
+                        "codeValue": "Fake",
+                        "description": "Fake",
+                        "namespace": "uri://ed-fi.org/CalendarEventDescriptor",
+                        "shortDescription": "Fake",
+                        "effectiveBeginDate": "2020-01-01",
+                        "effectiveEndDate": "2020-12-31"
+                    }
+                  ]
+                  """
+             When a GET request is made to "/ed-fi/calendarEventDescriptors?effectiveEndDate=2020-12-31"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                    {
+                        "id": "{id}",
+                        "codeValue": "Fake",
+                        "description": "Fake",
+                        "namespace": "uri://ed-fi.org/CalendarEventDescriptor",
+                        "shortDescription": "Fake",
+                        "effectiveBeginDate": "2020-01-01",
+                        "effectiveEndDate": "2020-12-31"
+                    }
+                  ]
+                  """
+             When a GET request is made to "/ed-fi/calendarEventDescriptors?effectiveEndDate=1920-12-31"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [
+                  ]
                   """

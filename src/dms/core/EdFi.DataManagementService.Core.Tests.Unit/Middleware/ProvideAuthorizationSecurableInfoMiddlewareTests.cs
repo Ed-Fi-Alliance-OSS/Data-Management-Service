@@ -30,7 +30,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     [Parallelizable]
     public class Given_a_document_with_a_StudentUniqueId : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -53,19 +53,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"studentUniqueId": "12345"}""";
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/students",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -74,13 +68,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_StudentUniqueId_as_securable_key()
         {
-            requestData
+            requestInfo
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StudentUniqueId);
@@ -92,7 +86,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     public class Given_a_document_without_StudentAuthorizationSecurablePaths
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -115,19 +109,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"studentUniqueId": "12345"}""";
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/students",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -136,13 +124,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_does_not_have_securable_key()
         {
-            requestData.AuthorizationSecurableInfo.Should().BeEmpty();
+            requestInfo.AuthorizationSecurableInfo.Should().BeEmpty();
         }
     }
 
@@ -151,7 +139,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     public class Given_a_document_with_ContactReference_and_StudentUniqueId
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -190,19 +178,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 }
                 """;
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/StudentContactAssociations",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -211,18 +193,18 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_StudentUniqueId_as_securable_key()
         {
-            requestData.AuthorizationSecurableInfo.Length.Should().Be(2);
-            requestData
+            requestInfo.AuthorizationSecurableInfo.Length.Should().Be(2);
+            requestInfo
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StudentUniqueId);
-            requestData
+            requestInfo
                 .AuthorizationSecurableInfo[1]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.ContactUniqueId);
@@ -233,7 +215,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     [Parallelizable]
     public class Given_a_document_with_a_ContactUniqueId : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -256,19 +238,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"contactUniqueId": "12345"}""";
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/contacts",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -277,13 +253,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_ContactUniqueId_as_securable_key()
         {
-            requestData
+            requestInfo
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.ContactUniqueId);
@@ -295,7 +271,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     public class Given_a_document_without_ContactAuthorizationSecurablePaths
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -318,19 +294,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"contactUniqueId": "12345"}""";
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/Contacts",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -339,13 +309,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_does_not_have_securable_key()
         {
-            requestData.AuthorizationSecurableInfo.Should().BeEmpty();
+            requestInfo.AuthorizationSecurableInfo.Should().BeEmpty();
         }
     }
 
@@ -353,7 +323,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     [Parallelizable]
     public class Given_a_document_with_a_StaffUniqueId : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -376,19 +346,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"staffUniqueId": "S12345"}""";
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/staffs",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -397,13 +361,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_StaffUniqueId_as_securable_key()
         {
-            requestData
+            requestInfo
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StaffUniqueId);
@@ -415,7 +379,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     public class Given_a_document_without_StaffAuthorizationSecurablePaths
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -438,19 +402,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             string body = """{"staffUniqueId": "S12345"}""";
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/staffs",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -459,13 +417,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_does_not_have_securable_key()
         {
-            requestData.AuthorizationSecurableInfo.Should().BeEmpty();
+            requestInfo.AuthorizationSecurableInfo.Should().BeEmpty();
         }
     }
 
@@ -474,7 +432,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
     public class Given_a_document_with_StaffReference_and_StudentUniqueId
         : ProvideAuthorizationSecurableInfoMiddlewareTests
     {
-        private RequestData requestData = No.RequestData();
+        private RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -512,19 +470,13 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 }
                 """;
 
-            requestData = new(
+            requestInfo = new(
                 new(
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/StudentStaffAssociations",
-                    TraceId: new TraceId("123"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("123")
                 ),
                 RequestMethod.POST
             )
@@ -533,18 +485,18 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 ParsedBody = JsonNode.Parse(body)!,
             };
 
-            await BuildMiddleware().Execute(requestData, NullNext);
+            await BuildMiddleware().Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_StudentUniqueId_and_StaffUniqueId_as_securable_keys()
         {
-            requestData.AuthorizationSecurableInfo.Length.Should().Be(2);
-            requestData
+            requestInfo.AuthorizationSecurableInfo.Length.Should().Be(2);
+            requestInfo
                 .AuthorizationSecurableInfo[0]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StudentUniqueId);
-            requestData
+            requestInfo
                 .AuthorizationSecurableInfo[1]
                 .SecurableKey.Should()
                 .Be(SecurityElementNameConstants.StaffUniqueId);

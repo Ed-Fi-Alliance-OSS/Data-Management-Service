@@ -28,7 +28,7 @@ public class RejectResourceIdentifierMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_Payload_With_ResourceId : RejectResourceIdentifierMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -38,39 +38,33 @@ public class RejectResourceIdentifierMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/students",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_a_response()
         {
-            _context?.FrontendResponse.Should().NotBe(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().NotBe(No.FrontendResponse);
         }
 
         [Test]
         public void It_returns_status_400()
         {
-            _context?.FrontendResponse.StatusCode.Should().Be(400);
+            _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
         }
 
         [Test]
         public void It_returns_message_body_with_resource_identifiers_validation_error()
         {
-            _context
+            _requestInfo
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("Resource identifiers cannot be assigned by the client");
 
-            _context.FrontendResponse.Body?.ToJsonString().Should().Contain("id");
+            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("id");
         }
     }
 
@@ -78,7 +72,7 @@ public class RejectResourceIdentifierMiddlewareTests
     [Parallelizable]
     public class Given_A_Post_Request_Payload_Without_ResourceId : RejectResourceIdentifierMiddlewareTests
     {
-        private RequestData _context = No.RequestData();
+        private RequestInfo _requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
@@ -88,22 +82,16 @@ public class RejectResourceIdentifierMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/students",
                 QueryParameters: [],
-                TraceId: new TraceId(""),
-                ClientAuthorizations: new ClientAuthorizations(
-                    TokenId: "",
-                    ClaimSetName: "",
-                    EducationOrganizationIds: [],
-                    NamespacePrefixes: []
-                )
+                TraceId: new TraceId("")
             );
-            _context = new(frontendRequest, RequestMethod.POST);
-            await Middleware().Execute(_context, NullNext);
+            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, NullNext);
         }
 
         [Test]
         public void It_provides_no_response()
         {
-            _context?.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo?.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

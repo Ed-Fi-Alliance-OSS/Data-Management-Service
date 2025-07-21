@@ -11,16 +11,16 @@ namespace EdFi.DataManagementService.Core.Middleware
 {
     internal class InjectVersionMetadataToEdFiDocumentMiddleware(ILogger _logger) : IPipelineStep
     {
-        public async Task Execute(RequestData requestData, Func<Task> next)
+        public async Task Execute(RequestInfo requestInfo, Func<Task> next)
         {
             _logger.LogDebug(
                 "Entering InjectPropertiesToEdFiDocumentMiddleware - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.ParsedBody["_etag"] = GenerateContentHash(requestData.ParsedBody);
+            requestInfo.ParsedBody["_etag"] = GenerateContentHash(requestInfo.ParsedBody);
 
-            requestData.ParsedBody["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString(
+            requestInfo.ParsedBody["_lastModifiedDate"] = DateTimeOffset.UtcNow.ToString(
                 "yyyy-MM-ddTHH:mm:ssZ"
             );
 

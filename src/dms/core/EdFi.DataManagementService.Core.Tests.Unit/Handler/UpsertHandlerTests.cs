@@ -46,22 +46,22 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(requestData, NullNext);
+            await upsertHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(200);
-            requestData.FrontendResponse.Body.Should().BeNull();
-            requestData.FrontendResponse.Headers.Count.Should().Be(1);
-            requestData.FrontendResponse.LocationHeaderPath.Should().NotBeNullOrEmpty();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo.FrontendResponse.Body.Should().BeNull();
+            requestInfo.FrontendResponse.Headers.Count.Should().Be(1);
+            requestInfo.FrontendResponse.LocationHeaderPath.Should().NotBeNullOrEmpty();
         }
     }
 
@@ -82,20 +82,20 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(requestData, NullNext);
+            await upsertHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(409);
-            requestData
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            requestInfo
                 .FrontendResponse.Body?.AsJsonString()
                 .Should()
                 .Be(
@@ -103,8 +103,8 @@ public class UpsertHandlerTests
                     {"detail":"The referenced BadResourceName1, BadResourceName2 item(s) do not exist.","type":"urn:ed-fi:api:data-conflict:unresolved-reference","title":"Unresolved Reference","status":409,"correlationId":"","validationErrors":{},"errors":[]}
                     """
                 );
-            requestData.FrontendResponse.Headers.Should().BeEmpty();
-            requestData.FrontendResponse.LocationHeaderPath.Should().BeNull();
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -127,22 +127,22 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(requestData, NullNext);
+            await upsertHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(409);
-            requestData.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
-            requestData.FrontendResponse.Headers.Should().BeEmpty();
-            requestData.FrontendResponse.LocationHeaderPath.Should().BeNull();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("key = value");
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -158,21 +158,21 @@ public class UpsertHandlerTests
             }
         }
 
-        private readonly RequestData requestData = No.RequestData();
+        private readonly RequestInfo requestInfo = No.RequestInfo();
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(requestData, NullNext);
+            await upsertHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(409);
-            requestData.FrontendResponse.Headers.Should().BeEmpty();
-            requestData.FrontendResponse.LocationHeaderPath.Should().BeNull();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
     }
 
@@ -191,19 +191,19 @@ public class UpsertHandlerTests
         }
 
         private static readonly string _traceId = "xyz";
-        private readonly RequestData requestData = No.RequestData(_traceId);
+        private readonly RequestInfo requestInfo = No.RequestInfo(_traceId);
 
         [SetUp]
         public async Task Setup()
         {
             IPipelineStep upsertHandler = Handler(new Repository());
-            await upsertHandler.Execute(requestData, NullNext);
+            await upsertHandler.Execute(requestInfo, NullNext);
         }
 
         [Test]
         public void It_has_the_correct_response()
         {
-            requestData.FrontendResponse.StatusCode.Should().Be(500);
+            requestInfo.FrontendResponse.StatusCode.Should().Be(500);
 
             var expected = $$"""
 {
@@ -212,15 +212,15 @@ public class UpsertHandlerTests
 }
 """;
 
-            requestData.FrontendResponse.Body.Should().NotBeNull();
+            requestInfo.FrontendResponse.Body.Should().NotBeNull();
             JsonNode
-                .DeepEquals(requestData.FrontendResponse.Body, JsonNode.Parse(expected))
+                .DeepEquals(requestInfo.FrontendResponse.Body, JsonNode.Parse(expected))
                 .Should()
                 .BeTrue(
                     $"""
 expected: {expected}
 
-actual: {requestData.FrontendResponse.Body}
+actual: {requestInfo.FrontendResponse.Body}
 """
                 );
         }

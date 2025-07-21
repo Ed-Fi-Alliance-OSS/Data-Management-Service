@@ -11,13 +11,9 @@ public class CoreEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/data/{**dmsPath}", Upsert).RequireAuthorization(SecurityConstants.ServicePolicy);
-        endpoints.MapGet("/data/{**dmsPath}", Get).RequireAuthorization(SecurityConstants.ServicePolicy);
-        endpoints
-            .MapPut("/data/{**dmsPath}", UpdateById)
-            .RequireAuthorization(SecurityConstants.ServicePolicy);
-        endpoints
-            .MapDelete("/data/{**dmsPath}", DeleteById)
-            .RequireAuthorization(SecurityConstants.ServicePolicy);
+        endpoints.MapPost("/data/{**dmsPath}", Upsert);
+        endpoints.MapGet("/data/{**dmsPath}", Get);
+        endpoints.MapPut("/data/{**dmsPath}", UpdateById);
+        endpoints.MapDelete("/data/{**dmsPath}", DeleteById);
     }
 }

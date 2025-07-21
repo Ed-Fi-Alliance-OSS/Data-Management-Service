@@ -26,7 +26,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class XsdMetaDataModuleTests
 {
     private IApiService? _apiService;
-    private IClaimSetCacheService? _claimSetCacheService;
+    private IClaimSetProvider? _claimSetProvider;
     private IContentProvider? _contentProvider;
 
     [SetUp]
@@ -55,8 +55,8 @@ public class XsdMetaDataModuleTests
         A.CallTo(() => _apiService.GetDataModelInfo())
             .Returns(new[] { expectededfiModel, expectedtpdmModel });
 
-        _claimSetCacheService = A.Fake<IClaimSetCacheService>();
-        A.CallTo(() => _claimSetCacheService.GetClaimSets()).Returns([]);
+        _claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets()).Returns([]);
 
         var files = new List<string> { "file1.xsd", "file2.xsd", "file3.xsd" };
 
@@ -75,7 +75,7 @@ public class XsdMetaDataModuleTests
                 (collection) =>
                 {
                     collection.AddTransient((x) => _apiService!);
-                    collection.AddTransient((x) => _claimSetCacheService!);
+                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });
@@ -108,7 +108,7 @@ public class XsdMetaDataModuleTests
                 {
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
-                    collection.AddTransient((x) => _claimSetCacheService!);
+                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });
@@ -136,7 +136,7 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => _claimSetCacheService!);
+                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });
@@ -161,7 +161,7 @@ public class XsdMetaDataModuleTests
                 {
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
-                    collection.AddTransient((x) => _claimSetCacheService!);
+                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });
@@ -198,7 +198,7 @@ public class XsdMetaDataModuleTests
                 {
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
-                    collection.AddTransient((x) => _claimSetCacheService!);
+                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });
@@ -228,7 +228,7 @@ public class XsdMetaDataModuleTests
                 {
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
-                    collection.AddTransient((x) => _claimSetCacheService!);
+                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });

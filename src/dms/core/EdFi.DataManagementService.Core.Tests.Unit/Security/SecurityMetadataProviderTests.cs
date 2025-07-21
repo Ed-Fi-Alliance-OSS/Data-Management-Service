@@ -19,7 +19,7 @@ public class SecurityMetadataProviderTests
     [Parallelizable]
     public class Given_Valid_Request : SecurityMetadataProviderTests
     {
-        private SecurityMetadataProvider? _metadataProvider;
+        private ConfigurationServiceClaimSetProvider? _metadataProvider;
         private IList<ClaimSet>? _claims;
         private TestHttpMessageHandler? _handler = null;
 
@@ -103,7 +103,7 @@ public class SecurityMetadataProviderTests
             var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
             A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope)).Returns(expectedToken);
 
-            _metadataProvider = new SecurityMetadataProvider(
+            _metadataProvider = new ConfigurationServiceClaimSetProvider(
                 configServiceApiClient,
                 tokenHandler,
                 configContext
@@ -135,7 +135,7 @@ public class SecurityMetadataProviderTests
     [Parallelizable]
     public class Given_Error_Response_From_Api : ConfigurationServiceTokenHandlerTests
     {
-        private SecurityMetadataProvider? _metadataProvider;
+        private ConfigurationServiceClaimSetProvider? _metadataProvider;
         private TestHttpMessageHandler? _handler = null;
 
         [Test]
@@ -220,7 +220,7 @@ public class SecurityMetadataProviderTests
             var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
             A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope)).Returns(expectedToken);
 
-            _metadataProvider = new SecurityMetadataProvider(
+            _metadataProvider = new ConfigurationServiceClaimSetProvider(
                 _configServiceApiClient,
                 tokenHandler,
                 configContext

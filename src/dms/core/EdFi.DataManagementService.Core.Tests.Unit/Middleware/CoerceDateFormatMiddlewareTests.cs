@@ -76,7 +76,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Slash_Formatted_Dates : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -102,16 +102,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
-                _context = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -122,29 +116,28 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ),
                 };
 
-                _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                    new("ed-fi")
-                )!;
-                _context.ResourceSchema = new ResourceSchema(
-                    _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                _requestInfo.ProjectSchema =
+                    _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+                _requestInfo.ResourceSchema = new ResourceSchema(
+                    _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
                         ?? new JsonObject()
                 );
 
-                await Middleware().Execute(_context, _next);
+                await Middleware().Execute(_requestInfo, _next);
             }
 
             [Test]
             public void Should_Convert_Top_Level_Date_Fields_To_ISO8601_Format()
             {
                 // Verify beginDate was converted from "5/1/2009" to "2009-05-01"
-                var beginDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var beginDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.beginDate",
                     NullLogger.Instance
                 );
                 beginDate!.GetValue<string>().Should().Be("2009-05-01");
 
                 // Verify endDate was converted from "5/7/2009" to "2009-05-07"
-                var endDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var endDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.endDate",
                     NullLogger.Instance
                 );
@@ -155,13 +148,13 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             public void Should_Convert_Array_Date_Fields_To_ISO8601_Format()
             {
                 // Verify array event dates were converted
-                var firstEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var firstEventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[0].eventDate",
                     NullLogger.Instance
                 );
                 firstEventDate!.GetValue<string>().Should().Be("2009-05-03");
 
-                var secondEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var secondEventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[1].eventDate",
                     NullLogger.Instance
                 );
@@ -172,7 +165,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             public void Should_Not_Modify_Non_Date_Fields()
             {
                 // Verify non-date fields remain unchanged
-                var weekIdentifier = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var weekIdentifier = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.weekIdentifier",
                     NullLogger.Instance
                 );
@@ -184,7 +177,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Mixed_Date_Formats : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -207,16 +200,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
-                _context = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -227,36 +214,35 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ),
                 };
 
-                _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                    new("ed-fi")
-                )!;
-                _context.ResourceSchema = new ResourceSchema(
-                    _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                _requestInfo.ProjectSchema =
+                    _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+                _requestInfo.ResourceSchema = new ResourceSchema(
+                    _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
                         ?? new JsonObject()
                 );
 
-                await Middleware().Execute(_context, _next);
+                await Middleware().Execute(_requestInfo, _next);
             }
 
             [Test]
             public void Should_Convert_Only_Slash_Formatted_Dates()
             {
                 // ISO-8601 format should remain unchanged
-                var beginDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var beginDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.beginDate",
                     NullLogger.Instance
                 );
                 beginDate!.GetValue<string>().Should().Be("2009-05-01");
 
                 // Slash format should be converted
-                var endDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var endDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.endDate",
                     NullLogger.Instance
                 );
                 endDate!.GetValue<string>().Should().Be("2009-05-07");
 
                 // ISO-8601 in array should remain unchanged
-                var eventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var eventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[0].eventDate",
                     NullLogger.Instance
                 );
@@ -268,7 +254,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Various_Slash_Date_Formats : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -291,16 +277,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
-                _context = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -311,36 +291,35 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ),
                 };
 
-                _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                    new("ed-fi")
-                )!;
-                _context.ResourceSchema = new ResourceSchema(
-                    _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                _requestInfo.ProjectSchema =
+                    _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+                _requestInfo.ResourceSchema = new ResourceSchema(
+                    _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
                         ?? new JsonObject()
                 );
 
-                await Middleware().Execute(_context, _next);
+                await Middleware().Execute(_requestInfo, _next);
             }
 
             [Test]
             public void Should_Convert_Different_Slash_Date_Formats()
             {
                 // MM/dd/yyyy format
-                var beginDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var beginDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.beginDate",
                     NullLogger.Instance
                 );
                 beginDate!.GetValue<string>().Should().Be("2009-05-01");
 
                 // M/d/yy format - assuming 09 means 2009
-                var endDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var endDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.endDate",
                     NullLogger.Instance
                 );
                 endDate!.GetValue<string>().Should().Be("2009-05-07");
 
                 // M/dd/yyyy format
-                var eventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var eventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[0].eventDate",
                     NullLogger.Instance
                 );
@@ -352,7 +331,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Invalid_Date_Values : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -375,16 +354,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
-                _context = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -395,34 +368,33 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ),
                 };
 
-                _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                    new("ed-fi")
-                )!;
-                _context.ResourceSchema = new ResourceSchema(
-                    _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                _requestInfo.ProjectSchema =
+                    _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+                _requestInfo.ResourceSchema = new ResourceSchema(
+                    _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
                         ?? new JsonObject()
                 );
 
-                await Middleware().Execute(_context, _next);
+                await Middleware().Execute(_requestInfo, _next);
             }
 
             [Test]
             public void Should_Leave_Invalid_Date_Values_Unchanged()
             {
                 // Invalid date formats should remain unchanged for downstream validation to handle
-                var beginDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var beginDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.beginDate",
                     NullLogger.Instance
                 );
                 beginDate!.GetValue<string>().Should().Be("invalid/date/format");
 
-                var endDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var endDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.endDate",
                     NullLogger.Instance
                 );
                 endDate!.GetValue<string>().Should().Be("13/45/2009");
 
-                var eventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var eventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[0].eventDate",
                     NullLogger.Instance
                 );
@@ -434,7 +406,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Slash_Formatted_DateTimes : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -460,16 +432,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
-                _context = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -480,28 +446,27 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ),
                 };
 
-                _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                    new("ed-fi")
-                )!;
-                _context.ResourceSchema = new ResourceSchema(
-                    _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                _requestInfo.ProjectSchema =
+                    _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+                _requestInfo.ResourceSchema = new ResourceSchema(
+                    _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
                         ?? new JsonObject()
                 );
 
-                await Middleware().Execute(_context, _next);
+                await Middleware().Execute(_requestInfo, _next);
             }
 
             [Test]
             public void Should_Convert_DateTime_Date_Portion_To_Dash_Format()
             {
                 // Verify datetime dates were converted, preserving time portions
-                var firstEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var firstEventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[0].eventDate",
                     NullLogger.Instance
                 );
                 firstEventDate!.GetValue<string>().Should().Be("2009-05-03 10:30:00 AM");
 
-                var secondEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var secondEventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[1].eventDate",
                     NullLogger.Instance
                 );
@@ -512,7 +477,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             public void Should_Still_Convert_Date_Only_Fields()
             {
                 // Verify date-only fields still work
-                var beginDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var beginDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.beginDate",
                     NullLogger.Instance
                 );
@@ -524,7 +489,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         [Parallelizable]
         public class Given_A_Request_With_Mixed_DateTime_Formats : CoerceDateFormatMiddlewareTests
         {
-            private RequestData _context = No.RequestData();
+            private RequestInfo _requestInfo = No.RequestInfo();
 
             [SetUp]
             public async Task Setup()
@@ -553,16 +518,10 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId"),
-                    ClientAuthorizations: new ClientAuthorizations(
-                        TokenId: "",
-                        ClaimSetName: "",
-                        EducationOrganizationIds: [],
-                        NamespacePrefixes: []
-                    )
+                    TraceId: new TraceId("traceId")
                 );
 
-                _context = new(frontEndRequest, RequestMethod.POST)
+                _requestInfo = new(frontEndRequest, RequestMethod.POST)
                 {
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
@@ -573,36 +532,35 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ),
                 };
 
-                _context.ProjectSchema = _context.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-                    new("ed-fi")
-                )!;
-                _context.ResourceSchema = new ResourceSchema(
-                    _context.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
+                _requestInfo.ProjectSchema =
+                    _requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(new("ed-fi"))!;
+                _requestInfo.ResourceSchema = new ResourceSchema(
+                    _requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("academicWeeks"))
                         ?? new JsonObject()
                 );
 
-                await Middleware().Execute(_context, _next);
+                await Middleware().Execute(_requestInfo, _next);
             }
 
             [Test]
             public void Should_Convert_Only_Slash_Formatted_DateTime_Portions()
             {
                 // ISO datetime should remain unchanged
-                var firstEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var firstEventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[0].eventDate",
                     NullLogger.Instance
                 );
                 firstEventDate!.GetValue<string>().Should().Be("2009-05-03T14:30:00Z");
 
                 // Slash datetime should have date portion converted
-                var secondEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var secondEventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[1].eventDate",
                     NullLogger.Instance
                 );
                 secondEventDate!.GetValue<string>().Should().Be("2009-05-05 11:15 AM");
 
                 // Different slash format with time
-                var thirdEventDate = _context.ParsedBody.SelectRequiredNodeFromPath(
+                var thirdEventDate = _requestInfo.ParsedBody.SelectRequiredNodeFromPath(
                     "$.events[2].eventDate",
                     NullLogger.Instance
                 );

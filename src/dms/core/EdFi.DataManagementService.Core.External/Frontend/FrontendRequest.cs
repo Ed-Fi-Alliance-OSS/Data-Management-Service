@@ -21,7 +21,7 @@ public record FrontendRequest(
     /// </summary>
     string? Body,
     /// <summary>
-    /// Request Header provided by the frontend service as a dictionary
+    /// Request Headers provided by the frontend service as a **case-insensitive** dictionary
     /// </summary>
     Dictionary<string, string> Headers,
     /// <summary>
@@ -31,9 +31,5 @@ public record FrontendRequest(
     /// <summary>
     /// A request identifier provided by the frontend service, used for log tracing
     /// </summary>
-    TraceId TraceId,
-    /// <summary>
-    /// ApiDetails retrieved from the token, used for resource authorization
-    /// </summary>
-    ClientAuthorizations ClientAuthorizations
+    TraceId TraceId
 );

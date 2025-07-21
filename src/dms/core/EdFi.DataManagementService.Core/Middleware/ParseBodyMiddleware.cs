@@ -46,45 +46,45 @@ namespace EdFi.DataManagementService.Core.Middleware
             return response;
         }
 
-        public async Task Execute(RequestData requestData, Func<Task> next)
+        public async Task Execute(RequestInfo requestInfo, Func<Task> next)
         {
             _logger.LogDebug(
                 "Entering ParseBodyMiddleware - {TraceId}",
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
             try
             {
-                if (string.IsNullOrWhiteSpace(requestData.FrontendRequest.Body))
+                if (string.IsNullOrWhiteSpace(requestInfo.FrontendRequest.Body))
                 {
-                    requestData.FrontendResponse = new FrontendResponse(
+                    requestInfo.FrontendResponse = new FrontendResponse(
                         StatusCode: 400,
                         GenerateFrontendErrorResponse(
                             "A non-empty request body is required.",
-                            requestData.FrontendRequest.TraceId
+                            requestInfo.FrontendRequest.TraceId
                         ),
                         Headers: []
                     );
                     return;
                 }
 
-                JsonNode? body = JsonNode.Parse(requestData.FrontendRequest.Body);
+                JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
 
                 Trace.Assert(body != null, "Unable to parse JSON");
 
-                requestData.ParsedBody = body;
+                requestInfo.ParsedBody = body;
             }
             catch (Exception ex)
             {
                 _logger.LogDebug(
                     ex,
                     "Unable to parse the request body as JSON - {TraceId}",
-                    requestData.FrontendRequest.TraceId.Value
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
 
-                requestData.FrontendResponse = new FrontendResponse(
+                requestInfo.FrontendResponse = new FrontendResponse(
                     StatusCode: 400,
-                    GenerateFrontendValidationErrorResponse(ex.Message, requestData.FrontendRequest.TraceId),
+                    GenerateFrontendValidationErrorResponse(ex.Message, requestInfo.FrontendRequest.TraceId),
                     Headers: []
                 );
 

@@ -26,29 +26,29 @@ internal class DeleteByIdHandler(
     IAuthorizationServiceFactory authorizationServiceFactory
 ) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", requestData.FrontendRequest.TraceId.Value);
+        _logger.LogDebug("Entering DeleteByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
 
         var deleteResult = await _resiliencePipeline.ExecuteAsync(async t =>
             await _documentStoreRepository.DeleteDocumentById(
                 new DeleteRequest(
-                    DocumentUuid: requestData.PathComponents.DocumentUuid,
-                    ResourceInfo: requestData.ResourceInfo,
-                    TraceId: requestData.FrontendRequest.TraceId,
+                    DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                    ResourceInfo: requestInfo.ResourceInfo,
+                    TraceId: requestInfo.FrontendRequest.TraceId,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                        requestData.AuthorizationStrategyEvaluators,
-                        requestData.AuthorizationSecurableInfo,
+                        requestInfo.AuthorizationStrategyEvaluators,
+                        requestInfo.AuthorizationSecurableInfo,
                         authorizationServiceFactory,
                         _logger
                     ),
-                    ResourceAuthorizationPathways: requestData.AuthorizationPathways,
+                    ResourceAuthorizationPathways: requestInfo.AuthorizationPathways,
                     DeleteInEdOrgHierarchy: (
-                        requestData.ProjectSchema.EducationOrganizationTypes.Contains(
-                            requestData.ResourceSchema.ResourceName
+                        requestInfo.ProjectSchema.EducationOrganizationTypes.Contains(
+                            requestInfo.ResourceSchema.ResourceName
                         )
                     ),
-                    Headers: requestData.FrontendRequest.Headers
+                    Headers: requestInfo.FrontendRequest.Headers
                 )
             )
         );
@@ -56,17 +56,17 @@ internal class DeleteByIdHandler(
         _logger.LogDebug(
             "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",
             deleteResult.GetType().FullName,
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
-        requestData.FrontendResponse = deleteResult switch
+        requestInfo.FrontendResponse = deleteResult switch
         {
             DeleteSuccess => new FrontendResponse(StatusCode: 204, Body: null, Headers: []),
             DeleteFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
             DeleteFailureNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(
-                    traceId: requestData.FrontendRequest.TraceId,
+                    traceId: requestInfo.FrontendRequest.TraceId,
                     errors: notAuthorized.ErrorMessages
                 ),
                 Headers: []
@@ -75,7 +75,7 @@ internal class DeleteByIdHandler(
                 StatusCode: 409,
                 Body: FailureResponse.ForDataConflict(
                     failure.ReferencingDocumentResourceNames,
-                    traceId: requestData.FrontendRequest.TraceId
+                    traceId: requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
             ),
@@ -84,7 +84,7 @@ internal class DeleteByIdHandler(
                 StatusCode: 412,
                 Body: FailureResponse.ForETagMisMatch(
                     "The item has been modified by another user.",
-                    traceId: requestData.FrontendRequest.TraceId,
+                    traceId: requestInfo.FrontendRequest.TraceId,
                     errors: new[]
                     {
                         "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
@@ -94,12 +94,12 @@ internal class DeleteByIdHandler(
             ),
             UnknownFailure failure => new(
                 StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestData.FrontendRequest.TraceId),
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
             _ => new(
                 StatusCode: 500,
-                Body: ToJsonError("Unknown DeleteResult", requestData.FrontendRequest.TraceId),
+                Body: ToJsonError("Unknown DeleteResult", requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
         };

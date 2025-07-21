@@ -22,8 +22,8 @@ public class EndpointsTests
     public async Task TestHealthEndpoint()
     {
         // Arrange
-        var claimSetCacheService = A.Fake<IClaimSetCacheService>();
-        A.CallTo(() => claimSetCacheService.GetClaimSets()).Returns([]);
+        var claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             // This environment has an extreme rate limit
@@ -31,7 +31,7 @@ public class EndpointsTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => claimSetCacheService);
+                    collection.AddTransient((x) => claimSetProvider);
                 }
             );
         });

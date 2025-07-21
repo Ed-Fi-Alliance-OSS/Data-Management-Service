@@ -16,16 +16,16 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ValidateDecimalMiddleware(ILogger _logger, IDecimalValidator _decimalValidator) : IPipelineStep
 {
-    public async Task Execute(RequestData requestData, Func<Task> next)
+    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug(
             "Entering ValidateDecimalMiddleware - {TraceId}",
-            requestData.FrontendRequest.TraceId.Value
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         Dictionary<string, string[]> validationErrors = _decimalValidator.Validate(
-            requestData.ParsedBody,
-            requestData.ResourceSchema.DecimalPropertyValidationInfos
+            requestInfo.ParsedBody,
+            requestInfo.ResourceSchema.DecimalPropertyValidationInfos
         );
 
         if (validationErrors.Count == 0)
@@ -36,7 +36,7 @@ internal class ValidateDecimalMiddleware(ILogger _logger, IDecimalValidator _dec
         {
             var failureResponse = FailureResponse.ForDataValidation(
                 "Data validation failed. See 'validationErrors' for details.",
-                requestData.FrontendRequest.TraceId,
+                requestInfo.FrontendRequest.TraceId,
                 validationErrors,
                 []
             );
@@ -44,11 +44,11 @@ internal class ValidateDecimalMiddleware(ILogger _logger, IDecimalValidator _dec
             _logger.LogDebug(
                 "'{Status}'.'{EndpointName}' - {TraceId}",
                 "400",
-                requestData.PathComponents.EndpointName,
-                requestData.FrontendRequest.TraceId.Value
+                requestInfo.PathComponents.EndpointName,
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
-            requestData.FrontendResponse = new FrontendResponse(
+            requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: failureResponse,
                 Headers: []
