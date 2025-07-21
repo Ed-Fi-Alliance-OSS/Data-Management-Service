@@ -121,7 +121,7 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Grand Bend Loader",
     "claimSetName": "EdFiSandbox",
-    "educationOrganizationIds": [255901]
+    "educationOrganizationIds": [255901,19255901,2559011,200000,100000,300000,255901044,255901001,255901107,51,54]
 }
 
 ###
