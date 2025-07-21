@@ -52,9 +52,7 @@ function LoadSeedData {
             }
         }
         else {
-            Write-Error "Failed to execute the database script file."
+           Write-Host "PostgreSQL Data Seed Load failed: existing volumes were detected. Please remove them before proceeding."
         }
-    } else {
-        Write-Error "PostgreSQL Data Seed Load failed: existing volumes were detected. Please remove them before proceeding."
     }
 }

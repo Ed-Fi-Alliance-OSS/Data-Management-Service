@@ -135,13 +135,13 @@ function AddExtensionSecurityMetadata {
         # Define the new SQL with DO block
         $sqlStatement = @(
             "",
-            "DO $$",
+            'DO $$',
             "DECLARE",
             "    hierarchy_json JSONB;",
             "BEGIN",
             "    hierarchy_json := '$escapedJson'::JSONB;",
-            "",
             "    -- Check if a claimshierarchy with ID 1 exists",
+            "",
             "    IF EXISTS (SELECT 1 FROM dmscs.claimshierarchy WHERE id = 1) THEN",
             "        -- Update the existing record",
             "        UPDATE dmscs.claimshierarchy",
@@ -149,11 +149,11 @@ function AddExtensionSecurityMetadata {
             "        WHERE id = 1;",
             "    ELSE",
             "        -- Insert a new record",
-            "        INSERT INTO dmscs.claimshierarchy(id, hierarchy)",
-            "        VALUES (1, hierarchy_json);",
+            "        INSERT INTO dmscs.claimshierarchy(hierarchy)",
+            "        VALUES (hierarchy_json);",
             "    END IF;",
             "END",
-            "$$;"
+            '$$;'
         ) -join "`n"
 
         # Combine comments and new SQL
