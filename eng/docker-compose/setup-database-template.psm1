@@ -52,7 +52,7 @@ function LoadSeedData {
             }
         }
         else {
-           Write-Host "PostgreSQL Data Seed Load failed: existing volumes were detected. Please remove them before proceeding."
+           Write-Warning "PostgreSQL Data Seed Load failed: existing volumes were detected with data loaded. Please remove them before proceeding."
         }
     }
 }
