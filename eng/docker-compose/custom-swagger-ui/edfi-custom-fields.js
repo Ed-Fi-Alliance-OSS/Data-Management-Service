@@ -98,7 +98,6 @@ window.EdFiCustomFields = function () {
                 const edFiFields = extractEdFiFields(schema, system);
 
                 if (edFiFields.length > 0) {
-                    console.log('Model createElement', edFiFields);
                     return React.createElement(React.Fragment, null, children, ...edFiFields);
                 }
 
