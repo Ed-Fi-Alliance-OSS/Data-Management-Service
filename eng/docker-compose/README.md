@@ -143,12 +143,12 @@ USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
  API_SCHEMA_PATH=/app/ApiSchema
  SCHEMA_PACKAGES='[
   {
-    "version": "1.0.245",
+    "version": "1.0.285",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.245",
+    "version": "1.0.285",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.Sample.ApiSchema",
     "extensionName": "Sample"
