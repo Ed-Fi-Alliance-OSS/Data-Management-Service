@@ -49,7 +49,7 @@ jobs:
             $release_list = Invoke-RestMethod $url -Headers $gh_headers
 
             $release_list | ForEach-Object {
-                if ($_.tag_name -like "Pre-Release-*" -and $_.prerelease) {
+                if ($_.tag_name -like "*-pre-*-alpha*" -and $_.prerelease) {
                     "Deleting pre-release $($_.tag_name)" | Write-Output
                     Invoke-RestMethod -Method Delete -Uri $_.url -Headers $gh_headers
                 }
@@ -90,36 +90,6 @@ jobs:
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
             PackageName = "EdFi.DmsConfigurationService"
-          }
-
-          Import-Module ./package-helpers.psm1
-          Invoke-Promote @arguments
-
-      - name: Promote EdFi.DmsApi.Sdk Package
-        shell: pwsh
-        run: |
-          $arguments = @{
-            PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
-            ViewId      = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "EdFi.DmsApi.Sdk.Standard.5.2.0"
-          }
-
-          Import-Module ./package-helpers.psm1
-          Invoke-Promote @arguments
-
-      - name: Promote EdFi.Dms.Populated.Template.PostgreSql Package
-        shell: pwsh
-        run: |
-          $arguments = @{
-            PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
-            ViewId      = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "EdFi.Dms.Populated.Template.PostgreSql.5.2.0"
           }
 
           Import-Module ./package-helpers.psm1
