@@ -112,6 +112,39 @@ Content-Type: application/json
 }
 
 ###
+POST {{dataApi}}/ed-fi/schoolYearTypes
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolYear": "2023",
+    "currentSchoolYear": false,
+    "schoolYearDescription": "2022-2023"
+}
+
+###
+POST {{dataApi}}/ed-fi/schoolYearTypes
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolYear": "2024",
+    "currentSchoolYear": false,
+    "schoolYearDescription": "2022-2023"
+}
+
+###
+POST {{dataApi}}/ed-fi/schoolYearTypes
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolYear": "2025",
+    "currentSchoolYear": false,
+    "schoolYearDescription": "2022-2023"
+}
+
+###
 # @name createSandboxApplication
 POST http://localhost:{{configPort}}/v2/applications
 Content-Type: application/json
