@@ -235,6 +235,80 @@ jobs:
              ./build-dms.ps1 Push @arguments
           }
 
+  attach-dms-artifacts-to-release:
+    name: Attach DMS Artifacts to GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - pack-dms
+      - sbom-create-dms
+      - provenance-create-dms
+    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
+    permissions:
+      contents: write
+    steps:
+      - name: Prepare release version
+        id: prepare-version
+        run: |
+          TAG_NAME="${{ github.event.release.tag_name }}"
+
+          # Remove dms-v prefix and keep only semver
+          SEMVER=${TAG_NAME#dms-}
+
+          echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          echo "Release version: $SEMVER"
+
+      - name: Download DMS SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.DMS_PACKAGE_NAME }}-SBOM"
+          path: ${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create-dms.outputs.sbom-hash-code }}"
+
+      - name: Download DMS Provenance
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dmsApi.intoto.jsonl
+
+      - name: Attach DMS SBOM and Provenance to release
+        shell: pwsh
+        run: |
+          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $repo = "${{ github.repository }}"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+
+          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer $token"
+          }
+          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
+          $releaseId = $response.id
+
+          # Upload SBOM
+          $sbomFile = "${{ env.MANIFEST_FILE }}"
+          $sbomUploadName = "${{ env.DMS_PACKAGE_NAME }}-SBOM.zip"
+
+          Compress-Archive $sbomFile -DestinationPath $sbomUploadName
+
+          $uploadUrl = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
+          $gh_headers["Content-Type"] = "application/octet-stream"
+
+          Write-Host "Uploading SBOM as $sbomUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($sbomUploadName)" `
+              -Headers $gh_headers `
+              -InFile $sbomUploadName
+
+          # Upload Provenance
+          $provenanceFile = "dmsApi.intoto.jsonl"
+          $provenanceUploadName = "dmsApi.intoto.jsonl"
+
+          Write-Host "Uploading Provenance as $provenanceUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($provenanceUploadName)" `
+              -Headers $gh_headers `
+              -InFile $provenanceFile
+
   docker-publish-dms:
     name: Publish DMS to Docker Hub
     runs-on: ubuntu-latest
@@ -503,6 +577,80 @@ jobs:
              $arguments.PackageFile = $_
              ./build-config.ps1 Push @arguments
           }
+
+  attach-cs-artifacts-to-release:
+    name: Attach Config Artifacts to GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - pack-cs
+      - sbom-create-cs
+      - provenance-create-cs
+    if: ${{ startsWith(github.event.release.tag_name, 'cs-') && !contains(github.event.release.tag_name, 'alpha') }}
+    permissions:
+      contents: write
+    steps:
+      - name: Prepare release version
+        id: prepare-version
+        run: |
+          TAG_NAME="${{ github.event.release.tag_name }}"
+
+          # Remove cs-v prefix and keep only semver
+          SEMVER=${TAG_NAME#cd-}
+
+          echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          echo "Release version: $SEMVER"
+
+      - name: Download CS SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.CS_PACKAGE_NAME }}-SBOM"
+          path: ${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create-cs.outputs.sbom-hash-code }}"
+
+      - name: Download CS Provenance
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: dmsCSApi.intoto.jsonl
+
+      - name: Attach CS SBOM and Provenance to release
+        shell: pwsh
+        run: |
+          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $repo = "${{ github.repository }}"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+
+          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer $token"
+          }
+          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
+          $releaseId = $response.id
+
+          # Upload SBOM
+          $sbomFile = "${{ env.MANIFEST_FILE }}"
+          $sbomUploadName = "${{ env.CS_PACKAGE_NAME }}-SBOM.zip"
+
+          Compress-Archive $sbomFile -DestinationPath $sbomUploadName
+
+          $uploadUrl = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
+          $gh_headers["Content-Type"] = "application/octet-stream"
+
+          Write-Host "Uploading SBOM as $sbomUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($sbomUploadName)" `
+              -Headers $gh_headers `
+              -InFile $sbomUploadName
+
+          # Upload Provenance
+          $provenanceFile = "dmsCSApi.intoto.jsonl"
+          $provenanceUploadName = "dmsCSApi.intoto.jsonl"
+
+          Write-Host "Uploading Provenance as $provenanceUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($provenanceUploadName)" `
+              -Headers $gh_headers `
+              -InFile $provenanceFile
 
   docker-publish-cs:
     name: Publish Config to Docker Hub
