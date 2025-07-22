@@ -54,5 +54,7 @@ function LoadSeedData {
         else {
            Write-Warning "PostgreSQL Data Seed Load failed: existing volumes were detected with data loaded. Please remove them before proceeding."
         }
+    } else {
+        Write-Error "PostgreSQL server is not running or unreachable."
     }
 }

@@ -12,5 +12,5 @@ CREATE TABLE IF NOT EXISTS dms.EducationOrganizationHierarchyTermsLookup(
 );
 
 -- Set REPLICA IDENTITY FULL so all columns are available through replication
-ALTER TABLE IF EXISTS dms.EducationOrganizationHierarchyTermsLookup REPLICA IDENTITY FULL;
+ALTER TABLE dms.EducationOrganizationHierarchyTermsLookup REPLICA IDENTITY FULL;
 

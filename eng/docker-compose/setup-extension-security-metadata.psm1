@@ -185,27 +185,7 @@ function UpdateExtensionSecurityMetadata {
         Remove-Item -Path $updatedAuthorizationHierarchyFilePath -ErrorAction SilentlyContinue
 
         # Define the UPDATE SQL with DO block
-        $updateStatement = @"
-DO `$`$
-DECLARE
-    hierarchy_json JSONB;
-BEGIN
-    hierarchy_json := '$escapedJson'::JSONB;
-
-    -- Check if a claimshierarchy with ID 1 exists
-    IF EXISTS (SELECT 1 FROM dmscs.claimshierarchy WHERE id = 1) THEN
-        -- Update the existing record
-        UPDATE dmscs.claimshierarchy
-        SET hierarchy = hierarchy_json
-        WHERE id = 1;
-    ELSE
-        -- Insert a new record
-        INSERT INTO dmscs.claimshierarchy(id, hierarchy)
-        VALUES (1, hierarchy_json);
-    END IF;
-END
-`$`$;
-"@
+        $updateStatement = "UPDATE dmscs.claimshierarchy SET hierarchy = '$escapedJson'::jsonb;"
 
         $envValues = ReadValuesFromEnvFile $EnvironmentFile
         $database = $envValues["POSTGRES_DB_NAME"]
