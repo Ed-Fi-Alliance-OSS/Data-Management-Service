@@ -212,7 +212,7 @@ function E2ETests {
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e"
+            ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r
         }
         finally {
             Pop-Location
