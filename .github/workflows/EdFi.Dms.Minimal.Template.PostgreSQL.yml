@@ -229,8 +229,10 @@ jobs:
         with:
           name: ${{ env.PACKAGE_NAME }}-NuGet
 
-      - name: Install-credential-handler DMS
-        run: iex "& { $(irm https://aka.ms/install-artifacts-credprovider.ps1) } -InstallNet8"
+      - name: Install-credential-handler
+        run: |
+            Import-Module ./package-helpers.psm1
+            InstallCredentialHandler
 
       - name: Push Minimal Template Package to Azure
         run: |
