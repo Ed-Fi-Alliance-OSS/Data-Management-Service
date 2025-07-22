@@ -125,6 +125,22 @@ else {
     Import-Module ./env-utility.psm1
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
 
+    Write-Output "Starting Postgresql..."
+    docker compose -f postgresql.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start Postgresql. Exit code $LASTEXITCODE"
+    }
+    Start-Sleep 20
+    if($LoadSeedData)
+    {
+        Import-Module ./setup-database-template.psm1 -Force
+        Write-Output "Loading initial data from the database template..."
+        LoadSeedData -EnvironmentFile $EnvironmentFile
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to load initial data, with exit code $LASTEXITCODE."
+        }
+    }
     Write-Output "Starting locally-built DMS"
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
 
@@ -133,16 +149,6 @@ else {
     }
 
     Start-Sleep 20
-
-    if($LoadSeedData)
-    {
-        Import-Module ./setup-database-template.psm1 -Force
-        Write-Output "Loading initial data from the database template..."
-        LoadSeedData -EnvironmentFile $EnvironmentFile
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to load initial data, with exit code $LASTEXITCODE."
-        }
-    }
 
     Start-Sleep 10
 
