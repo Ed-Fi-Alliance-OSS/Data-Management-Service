@@ -164,7 +164,6 @@ jobs:
           $release = "${{ github.ref_name }}"
           $repo = "${{ github.repository }}"
           $token = "${{ secrets.GITHUB_TOKEN }}"
-
           $file = "${{ env.MANIFEST_FILE }}"
           $uploadName = "${{ env.DMS_PACKAGE_NAME }}-SBOM.zip"
 
