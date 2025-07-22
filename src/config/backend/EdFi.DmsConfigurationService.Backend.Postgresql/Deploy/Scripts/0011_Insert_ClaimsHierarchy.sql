@@ -2851,15 +2851,6 @@ BEGIN
             "name": "http://ed-fi.org/identity/claims/tpdm/rubricRatingLevelDescriptor"
           }
         ]
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/sample/artMediumDescriptor"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/sample/favoriteBookCategoryDescriptor"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/sample/membershipTypeDescriptor"
       }
     ]
   },
@@ -6473,12 +6464,6 @@ BEGIN
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/studentEducationOrganizationAssessmentAccommodationGeneralAccommodation"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/sample/studentArtProgramAssociation"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/sample/studentGraduationPlanAssociation"
       }
     ]
   },
@@ -8612,175 +8597,6 @@ BEGIN
             ]
           }
         ]
-      }
-    ]
-  },
-  {
-    "name": "http://ed-fi.org/identity/claims/domains/sample",
-    "defaultAuthorization": {
-      "actions": [
-        {
-          "name": "Create",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "name": "Read",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "name": "Update",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "name": "Delete",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "name": "ReadChanges",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        }
-      ]
-    },
-    "claimSets": [
-      {
-        "name": "EdFiSandbox",
-        "actions": [
-          {
-            "name": "Create"
-          },
-          {
-            "name": "Read"
-          },
-          {
-            "name": "Update"
-          },
-          {
-            "name": "Delete"
-          },
-          {
-            "name": "ReadChanges"
-          }
-        ]
-      }
-    ],
-    "claims": [
-      {
-        "name": "http://ed-fi.org/identity/claims/sample/bus"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/sample/busRoute"
-      }
-    ]
-  },
-  {
-    "name": "http://ed-fi.org/identity/claims/domains/homograph",
-    "defaultAuthorization": {
-      "actions": [
-        {
-          "name": "Create",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "name": "Read",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "name": "Update",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "name": "Delete",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        },
-        {
-          "name": "ReadChanges",
-          "authorizationStrategies": [
-            {
-              "name": "NoFurtherAuthorizationRequired"
-            }
-          ]
-        }
-      ]
-    },
-    "claimSets": [
-      {
-        "name": "EdFiSandbox",
-        "actions": [
-          {
-            "name": "Create"
-          },
-          {
-            "name": "Read"
-          },
-          {
-            "name": "Update"
-          },
-          {
-            "name": "Delete"
-          },
-          {
-            "name": "ReadChanges"
-          }
-        ]
-      }
-    ],
-    "claims": [
-      {
-        "name": "http://ed-fi.org/identity/claims/homograph/name"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/homograph/school"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/homograph/contact"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/homograph/student"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/homograph/staff"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/homograph/schoolYearType"
-      },
-      {
-        "name": "http://ed-fi.org/identity/claims/homograph/studentSchoolAssociation"
       }
     ]
   }
