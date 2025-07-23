@@ -251,8 +251,8 @@ jobs:
         run: |
           TAG_NAME="${{ github.event.release.tag_name }}"
 
-          # Remove dms-v prefix and keep only semver
-          SEMVER=${TAG_NAME#dms-}
+          # Remove 'dms-pre-' prefix and add 'v' to match release format
+          SEMVER="v${TAG_NAME#dms-pre-}"
 
           echo "semver=$SEMVER" >> $GITHUB_OUTPUT
           echo "Release version: $SEMVER"
@@ -594,8 +594,8 @@ jobs:
         run: |
           TAG_NAME="${{ github.event.release.tag_name }}"
 
-          # Remove cs- prefix and keep only semver
-          SEMVER=${TAG_NAME#cs-}
+          # Remove 'cs-pre-' prefix and add 'v' to match release format
+          SEMVER="v${TAG_NAME#cs-pre-}"
 
           echo "semver=$SEMVER" >> $GITHUB_OUTPUT
           echo "Release version: $SEMVER"
