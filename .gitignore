@@ -443,5 +443,5 @@ CLAUDE.local.md
 .mcp.json
 
 # SDK generation artifacts
-/eng/sdkGen/*
+/eng/sdkGen/csharp/*
 openApi-codegen-cli.jar
