@@ -192,7 +192,7 @@ jobs:
     with:
       base64-subjects: ${{ needs.build-sdk.outputs.hash-code }}
       provenance-name: core.sdk.intoto.jsonl # env.PROVENANCE_FILE cannot be used in this context
-      upload-assets: true
+      upload-assets: false
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
       compile-generator: true
 
@@ -235,7 +235,7 @@ jobs:
 
   promote-azure-package:
     name: Promote Azure Package
-    if: ${{ github.event_name != 'release' }}
+    if: ${{ github.event_name == 'release' }}
     runs-on: ubuntu-latest
     steps:
       - name: Promote Core SDK Azure Package

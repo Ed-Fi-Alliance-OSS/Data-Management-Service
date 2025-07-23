@@ -210,7 +210,7 @@ jobs:
     with:
       base64-subjects: ${{ needs.build-template.outputs.hash-code }}
       provenance-name: minimal.template.intoto.jsonl # env.PROVENANCE_FILE cannot be used in this context
-      upload-assets: true
+      upload-assets: false
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
       compile-generator: true
 
