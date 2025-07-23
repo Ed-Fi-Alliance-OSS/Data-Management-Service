@@ -8,7 +8,9 @@ on:
   release:
     types:
       - released
-      - prereleased
+  push:
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
 
 env:
@@ -27,7 +29,7 @@ permissions: read-all
 jobs:
   build-template:
     name: Build Minimal Template Package
-    if: ${{ github.event.action != 'released' }}
+    if: ${{ github.event_name != 'release' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -251,7 +253,7 @@ jobs:
 
   promote-azure-package:
     name: Promote Azure Package
-    if: ${{ github.event.action == 'released' }}
+    if: ${{ github.event_name == 'release'  }}
     runs-on: ubuntu-latest
     steps:
       - name: Promote Minimal Template Azure Package
@@ -274,7 +276,7 @@ jobs:
     needs:
       - generate-package-sbom
       - generate-package-provenance
-    if: ${{ github.event.action == 'prereleased' && !startsWith(github.ref_name, 'cs-') && !startsWith(github.ref_name, 'dms-')}}
+    if: ${{ github.event_name == 'push' }}
     permissions:
       contents: write
     steps:
