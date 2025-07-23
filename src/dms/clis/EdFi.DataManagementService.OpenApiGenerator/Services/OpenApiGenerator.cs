@@ -43,7 +43,7 @@ public class OpenApiGenerator(ILogger<OpenApiGenerator> _logger)
         OpenApiDocument openApiDocument = new(_logger);
         JsonNode combinedSchema = openApiDocument.CreateDocument(
             new(coreSchema, extensionSchemas),
-            OpenApiDocument.DocumentSection.Resource
+            OpenApiDocument.OpenApiDocumentType.Resource
         );
 
         _logger.LogInformation("OpenAPI generation completed successfully.");

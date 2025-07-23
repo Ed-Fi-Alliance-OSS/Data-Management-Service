@@ -342,11 +342,11 @@ public class OpenApiDocumentTests
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
             openApiResourcesResult = openApiDocument.CreateDocument(
                 new(coreSchemaRootNode, []),
-                OpenApiDocument.DocumentSection.Resource
+                OpenApiDocument.OpenApiDocumentType.Resource
             );
             openApiDescriptorsResult = openApiDocument.CreateDocument(
                 new(coreSchemaRootNode, []),
-                OpenApiDocument.DocumentSection.Descriptor
+                OpenApiDocument.OpenApiDocumentType.Descriptor
             );
         }
 
@@ -506,11 +506,11 @@ public class OpenApiDocumentTests
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
             openApiResourcesResult = openApiDocument.CreateDocument(
                 new(coreSchemaRootNode, extensionSchemaRootNodes),
-                OpenApiDocument.DocumentSection.Resource
+                OpenApiDocument.OpenApiDocumentType.Resource
             );
             openApiDescriptorsResult = openApiDocument.CreateDocument(
                 new(coreSchemaRootNode, extensionSchemaRootNodes),
-                OpenApiDocument.DocumentSection.Descriptor
+                OpenApiDocument.OpenApiDocumentType.Descriptor
             );
         }
 
