@@ -27,7 +27,7 @@ permissions: read-all
 jobs:
   build-template:
     name: Build Populated Template Package
-    if: ${{ github.event_name != 'release' }}
+    if: ${{ github.event.action != 'released' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -255,7 +255,7 @@ jobs:
 
   promote-azure-package:
     name: Promote Azure Package
-    if: ${{ github.event_name == 'release' }}
+    if: ${{ github.event.action == 'released' }}
     runs-on: ubuntu-latest
     steps:
       - name: Promote Populated Template Azure Package
@@ -278,7 +278,7 @@ jobs:
     needs:
       - generate-package-sbom
       - generate-package-provenance
-    if: ${{ github.event_name == 'prerelease' && !startsWith(github.ref_name, 'cs-') && !startsWith(github.ref_name, 'dms-')}}
+    if: ${{ github.event.action == 'prereleased' && !startsWith(github.ref_name, 'cs-') && !startsWith(github.ref_name, 'dms-')}}
     permissions:
       contents: write
     steps:
