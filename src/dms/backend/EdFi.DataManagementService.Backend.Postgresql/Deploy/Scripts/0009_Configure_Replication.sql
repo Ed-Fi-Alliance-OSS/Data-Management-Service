@@ -5,4 +5,4 @@
 
 -- Ensure publication is dropped before creating
 DROP PUBLICATION IF EXISTS to_debezium;
-CREATE PUBLICATION IF NOT EXISTS to_debezium FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup WITH (publish = 'insert, update, delete, truncate', publish_via_partition_root = true);
+CREATE PUBLICATION to_debezium FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup WITH (publish = 'insert, update, delete, truncate', publish_via_partition_root = true);

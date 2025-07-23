@@ -22,7 +22,7 @@ DECLARE
     partition_name TEXT;
 BEGIN
     FOR i IN 0..15 LOOP
-        partition_name := format('reference_%02s', i);
+        partition_name := 'reference_' || to_char(i, 'FM00');
         EXECUTE format(
             'CREATE TABLE IF NOT EXISTS dms.%I PARTITION OF dms.Reference FOR VALUES WITH (MODULUS 16, REMAINDER %s);',
             partition_name, i

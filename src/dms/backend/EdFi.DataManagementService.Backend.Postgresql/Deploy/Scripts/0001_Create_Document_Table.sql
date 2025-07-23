@@ -30,7 +30,7 @@ DECLARE
     partition_name TEXT;
 BEGIN
     FOR i IN 0..15 LOOP
-        partition_name := format('document_%02s', i);
+        partition_name := 'document_' || to_char(i, 'FM00');
         EXECUTE format(
             'CREATE TABLE IF NOT EXISTS dms.%I PARTITION OF dms.Document FOR VALUES WITH (MODULUS 16, REMAINDER %s);',
             partition_name, i
@@ -50,7 +50,7 @@ DECLARE
 BEGIN
     EXECUTE 'ALTER TABLE IF EXISTS dms.Document REPLICA IDENTITY FULL;';
     FOR i IN 0..15 LOOP
-        partition_name := format('document_%02s', i);
+        partition_name := 'document_' || to_char(i, 'FM00');
         EXECUTE format('ALTER TABLE IF EXISTS dms.%I REPLICA IDENTITY FULL;', partition_name);
     END LOOP;
 END$$;
