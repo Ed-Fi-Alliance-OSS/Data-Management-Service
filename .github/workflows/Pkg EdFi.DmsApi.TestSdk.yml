@@ -8,6 +8,7 @@ on:
   release:
     types:
       - released
+      - prereleased
   workflow_dispatch:
 
 env:
@@ -26,6 +27,7 @@ permissions: read-all
 jobs:
   build-sdk:
     name: Build Test SDK Package
+    if: ${{ github.event_name != 'release' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -226,8 +228,12 @@ jobs:
              ./build-sdk.ps1 Push @arguments
           }
 
+  promote-azure-package:
+    name: Promote Azure Package
+    if: ${{ github.event_name == 'release' }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Promote Test SDK Azure Package
-        if: ${{ github.event_name == 'release' }}
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
@@ -247,7 +253,7 @@ jobs:
     needs:
       - generate-package-sbom
       - generate-package-provenance
-    if: ${{ github.event_name == 'release' }}
+    if: ${{ github.event_name == 'prerelease' && !startsWith(github.ref_name, 'cs-') && !startsWith(github.ref_name, 'dms-')}}
     permissions:
       contents: write
     steps:
