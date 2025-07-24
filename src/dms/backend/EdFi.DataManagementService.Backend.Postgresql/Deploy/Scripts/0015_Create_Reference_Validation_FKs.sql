@@ -5,6 +5,14 @@
 
 -- Reference validation enforcement occurs via this constraint
 -- Omitting this FK effectively disables reference validation
-ALTER TABLE dms.Reference
-ADD CONSTRAINT FK_Reference_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, ReferentialId)
-REFERENCES dms.Alias (ReferentialPartitionKey, ReferentialId) ON DELETE RESTRICT ON UPDATE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_schema = 'dms' AND table_name = 'reference' AND constraint_name = 'fk_reference_referencedalias'
+    ) THEN
+        ALTER TABLE dms.Reference
+        ADD CONSTRAINT FK_Reference_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, ReferentialId)
+        REFERENCES dms.Alias (ReferentialPartitionKey, ReferentialId) ON DELETE RESTRICT ON UPDATE CASCADE;
+    END IF;
+END$$;

@@ -3,9 +3,11 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-INSERT INTO dmscs.claimshierarchy(
-	 hierarchy)
-	VALUES ('[
+DO $$
+DECLARE
+    hierarchy_json JSONB;
+BEGIN
+    hierarchy_json := '[
   {
     "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
     "defaultAuthorization": {
@@ -8598,4 +8600,18 @@ INSERT INTO dmscs.claimshierarchy(
       }
     ]
   }
-]'::jsonb);
+]'::JSONB;
+
+    -- Check if a claimshierarchy with ID 1 exists
+    IF EXISTS (SELECT 1 FROM dmscs.claimshierarchy WHERE id = 1) THEN
+        -- Update the existing record
+        UPDATE dmscs.claimshierarchy
+        SET hierarchy = hierarchy_json
+        WHERE id = 1;
+    ELSE
+        -- Insert a new record
+        INSERT INTO dmscs.claimshierarchy(hierarchy)
+        VALUES (hierarchy_json);
+    END IF;
+END
+$$;

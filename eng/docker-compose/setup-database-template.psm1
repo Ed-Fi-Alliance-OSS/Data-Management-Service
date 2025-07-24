@@ -39,14 +39,20 @@ function LoadSeedData {
 
     if ($LASTEXITCODE -eq 0) {
         Write-Host "PostgreSQL is running. Proceeding with bootstrap..."
+        $schemaName = "dms"
+        $schemaExists = docker exec dms-postgresql psql -U $User -d $Database -tAc "SELECT 1 FROM pg_namespace WHERE nspname = '$schemaName';"
+        if (-not $schemaExists) {
+            docker cp $sqlPath "dms-postgresql:/tmp/restore.sql"
+            docker exec dms-postgresql psql -U postgres -d $database -f /tmp/restore.sql
 
-        docker cp $sqlPath "dms-postgresql:/tmp/restore.sql"
-        docker exec dms-postgresql psql -U postgres -d $database -f /tmp/restore.sql
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Template data loaded successfully."
-        } else {
-            Write-Error "Failed to execute the database script file."
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "Template data loaded successfully."
+            } else {
+                Write-Error "Failed to execute the database script file."
+            }
+        }
+        else {
+           Write-Warning "PostgreSQL Data Seed Load failed: existing volumes were detected with data loaded. Please remove them before proceeding."
         }
     } else {
         Write-Error "PostgreSQL server is not running or unreachable."

@@ -132,15 +132,32 @@ function AddExtensionSecurityMetadata {
             $_.TrimStart().StartsWith("--")
         }
 
-        # Define the new INSERT SQL
-        $insertStatement = @(
-            "`nINSERT INTO dmscs.claimshierarchy(",
-            "`t hierarchy)",
-            "`tVALUES ('$escapedJson'::jsonb);"
+        # Define the new SQL with DO block
+        $sqlStatement = @(
+            "",
+            'DO $$',
+            "DECLARE",
+            "    hierarchy_json JSONB;",
+            "BEGIN",
+            "    hierarchy_json := '$escapedJson'::JSONB;",
+            "    -- Check if a claimshierarchy with ID 1 exists",
+            "",
+            "    IF EXISTS (SELECT 1 FROM dmscs.claimshierarchy WHERE id = 1) THEN",
+            "        -- Update the existing record",
+            "        UPDATE dmscs.claimshierarchy",
+            "        SET hierarchy = hierarchy_json",
+            "        WHERE id = 1;",
+            "    ELSE",
+            "        -- Insert a new record",
+            "        INSERT INTO dmscs.claimshierarchy(hierarchy)",
+            "        VALUES (hierarchy_json);",
+            "    END IF;",
+            "END",
+            '$$;'
         ) -join "`n"
 
-        # Combine comments and new insert
-        $finalContent = ($commentLines -join "`n") + "`n" + $insertStatement
+        # Combine comments and new SQL
+        $finalContent = ($commentLines -join "`n") + $sqlStatement
 
         # Write the updated file
         Set-Content -Path $resolvedPath -Value $finalContent -Encoding UTF8
@@ -167,7 +184,7 @@ function UpdateExtensionSecurityMetadata {
         $escapedJson = Get-EscapedJsonContent -JsonFilePath $updatedAuthorizationHierarchyFilePath
         Remove-Item -Path $updatedAuthorizationHierarchyFilePath -ErrorAction SilentlyContinue
 
-        # Define the UPDATE SQL
+        # Define the UPDATE SQL with DO block
         $updateStatement = "UPDATE dmscs.claimshierarchy SET hierarchy = '$escapedJson'::jsonb;"
 
         $envValues = ReadValuesFromEnvFile $EnvironmentFile

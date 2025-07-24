@@ -3,7 +3,8 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-CREATE TABLE dms.Alias (
+-- Create main table if not exists
+CREATE TABLE IF NOT EXISTS dms.Alias (
   Id BIGINT GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
   ReferentialPartitionKey SMALLINT NOT NULL,
   ReferentialId UUID NOT NULL,
@@ -12,26 +13,34 @@ CREATE TABLE dms.Alias (
   PRIMARY KEY (ReferentialPartitionKey, Id)
 ) PARTITION BY HASH(ReferentialPartitionKey);
 
-CREATE TABLE dms.Alias_00 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 0);
-CREATE TABLE dms.Alias_01 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 1);
-CREATE TABLE dms.Alias_02 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 2);
-CREATE TABLE dms.Alias_03 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 3);
-CREATE TABLE dms.Alias_04 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 4);
-CREATE TABLE dms.Alias_05 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 5);
-CREATE TABLE dms.Alias_06 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 6);
-CREATE TABLE dms.Alias_07 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 7);
-CREATE TABLE dms.Alias_08 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 8);
-CREATE TABLE dms.Alias_09 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 9);
-CREATE TABLE dms.Alias_10 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 10);
-CREATE TABLE dms.Alias_11 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 11);
-CREATE TABLE dms.Alias_12 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 12);
-CREATE TABLE dms.Alias_13 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 13);
-CREATE TABLE dms.Alias_14 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 14);
-CREATE TABLE dms.Alias_15 PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER 15);
+-- Create partitions if not exists
+DO $$
+DECLARE
+    i INT;
+    partition_name TEXT;
+BEGIN
+    FOR i IN 0..15 LOOP
+        partition_name := 'alias_' || to_char(i, 'FM00');
+        EXECUTE format(
+            'CREATE TABLE IF NOT EXISTS dms.%I PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER %s);',
+            partition_name, i
+        );
+    END LOOP;
+END$$;
 
 -- Referential ID uniqueness validation and reference insert into References support
-CREATE UNIQUE INDEX UX_Alias_ReferentialId ON dms.Alias (ReferentialPartitionKey, ReferentialId);
+CREATE UNIQUE INDEX IF NOT EXISTS UX_Alias_ReferentialId ON dms.Alias (ReferentialPartitionKey, ReferentialId);
 
-ALTER TABLE dms.Alias
-ADD CONSTRAINT FK_Alias_Document FOREIGN KEY (DocumentPartitionKey, DocumentId)
-REFERENCES dms.Document (DocumentPartitionKey, Id) ON DELETE CASCADE;
+-- Add FK constraint if not exists
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE table_schema = 'dms' AND table_name = 'alias' AND constraint_name = 'fk_alias_document'
+    ) THEN
+        ALTER TABLE dms.Alias
+        ADD CONSTRAINT FK_Alias_Document FOREIGN KEY (DocumentPartitionKey, DocumentId)
+        REFERENCES dms.Document (DocumentPartitionKey, Id) ON DELETE CASCADE;
+    END IF;
+END$$;
+

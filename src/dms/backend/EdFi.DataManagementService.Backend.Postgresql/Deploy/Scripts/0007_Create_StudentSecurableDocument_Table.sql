@@ -3,7 +3,8 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-CREATE TABLE dms.StudentSecurableDocument(
+-- Create table if not exists
+CREATE TABLE IF NOT EXISTS dms.StudentSecurableDocument(
     Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     StudentUniqueId VARCHAR(32) NOT NULL,
     StudentSecurableDocumentId BIGINT NOT NULL,
@@ -12,4 +13,4 @@ CREATE TABLE dms.StudentSecurableDocument(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
 
-CREATE INDEX IX_StudentSecurableDocument_StudentUniqueId ON dms.StudentSecurableDocument (StudentUniqueId);
+CREATE INDEX IF NOT EXISTS IX_StudentSecurableDocument_StudentUniqueId ON dms.StudentSecurableDocument (StudentUniqueId);

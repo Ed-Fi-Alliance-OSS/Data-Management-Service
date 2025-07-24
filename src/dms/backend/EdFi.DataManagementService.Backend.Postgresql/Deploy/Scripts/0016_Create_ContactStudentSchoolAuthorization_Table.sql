@@ -3,7 +3,7 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-CREATE TABLE dms.ContactStudentSchoolAuthorization(
+CREATE TABLE IF NOT EXISTS dms.ContactStudentSchoolAuthorization(
     Id BIGINT UNIQUE GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     ContactUniqueId VARCHAR(32) NOT NULL,
     StudentUniqueId VARCHAR(32) NOT NULL,
@@ -19,9 +19,9 @@ CREATE TABLE dms.ContactStudentSchoolAuthorization(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
 );
 
-CREATE INDEX IX_ContactStudentSchoolAuthorization_ContactUniqueId
+CREATE INDEX IF NOT EXISTS IX_ContactStudentSchoolAuthorization_ContactUniqueId
 ON dms.ContactStudentSchoolAuthorization(ContactUniqueId);
 
-CREATE INDEX IX_ContactStudentSchoolAuthorization_StudentUniqueId
+CREATE INDEX IF NOT EXISTS IX_ContactStudentSchoolAuthorization_StudentUniqueId
 ON dms.ContactStudentSchoolAuthorization(StudentUniqueId);
 

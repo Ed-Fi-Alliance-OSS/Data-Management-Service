@@ -20,7 +20,7 @@ BEGIN
             SELECT jsonb_array_elements(seora.StudentEdOrgResponsibilityAuthorizationEdOrgIds) AS edOrgIds
             FROM dms.StudentEducationOrganizationResponsibilityAuthorization seora
             WHERE seora.StudentUniqueId = student_id
-        )
+        ) AS subquery
   );
 END;
 $$ LANGUAGE plpgsql;

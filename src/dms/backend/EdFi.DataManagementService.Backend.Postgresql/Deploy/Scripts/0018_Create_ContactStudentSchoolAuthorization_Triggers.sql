@@ -39,7 +39,7 @@ BEGIN
             SELECT jsonb_array_elements(ContactStudentSchoolAuthorizationEducationOrganizationIds) AS edOrgIds
             FROM dms.ContactStudentSchoolAuthorization
             WHERE ContactUniqueId = contact_id
-        )
+        ) AS subquery
   );
 END;
 $$ LANGUAGE plpgsql;

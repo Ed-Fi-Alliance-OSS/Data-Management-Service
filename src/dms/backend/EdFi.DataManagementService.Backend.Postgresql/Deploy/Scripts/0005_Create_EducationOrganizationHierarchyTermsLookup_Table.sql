@@ -5,12 +5,12 @@
 
 -- This table will hold the hierarchy of education organization ids as a means of efficient search filtering.
 -- The hierarchy is stored as a JSONB array of ids with its own id as the first element in the array.
-CREATE TABLE dms.EducationOrganizationHierarchyTermsLookup(
+CREATE TABLE IF NOT EXISTS dms.EducationOrganizationHierarchyTermsLookup(
     PrimaryKey BIGINT UNIQUE  GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
     Id BIGINT NOT NULL UNIQUE,
     Hierarchy JSONB NOT NULL
 );
 
--- Set REPLICA IDENTITY FULL so all columns are
--- available through replication to e.g. Debezium
+-- Set REPLICA IDENTITY FULL so all columns are available through replication
 ALTER TABLE dms.EducationOrganizationHierarchyTermsLookup REPLICA IDENTITY FULL;
+
