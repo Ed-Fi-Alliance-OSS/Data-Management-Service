@@ -7,10 +7,20 @@ name: Pkg EdFi.DmsApi.TestSdk
 on:
   release:
     types:
-      - prereleased
+      - released
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
 env:
+  STANDARD_VERSION: "5.2.0"
   SDK_PACKAGE_NAME: "EdFi.DmsApi.TestSdk.Standard.5.2.0"
-  ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
+  MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
+  PROVENANCE_FILE: "test.sdk.intoto.jsonl"
+  ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
+  ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
+  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
 
@@ -18,12 +28,15 @@ permissions: read-all
 
 jobs:
   build-sdk:
-    name: Build And Pack DMS Test SDK
-    if: startsWith(github.event.release.tag_name, 'dms-')
+    name: Build Test SDK Package
+    if: ${{ github.event_name != 'release' }}
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      dms-version: ${{ steps.versions.outputs.dms-v }}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -65,15 +78,43 @@ jobs:
           ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch"
         working-directory: eng/docker-compose/
 
-      - name: Generate Test SDK
+      - name: Build Test SDK
         run: |
-          ./build-sdk.ps1  BuildAndGenerateSdk -PackageName  "EdFi.DmsApi.TestSdk"
+          ./build-sdk.ps1  BuildAndGenerateSdk -PackageName EdFi.DmsApi.TestSdk
 
-      - name: Package Test SDK
+      - name: Generate Test SDK Package
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+          ./build-sdk.ps1 Package `
+                -SDKVersion $packageVersion `
+                -StandardVersion ${{ env.STANDARD_VERSION }} `
+                -PackageName EdFi.DmsApi.TestSdk
 
-          ./build-sdk.ps1 Package -SDKVersion $packageVersion -PackageName  "EdFi.DmsApi.TestSdk"
+      - name: Export Docker Logs
+        if: failure()
+        run: |
+          $logDir = "${{ github.workspace }}/logs"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          docker ps --format "{{.Names}}" | ForEach-Object {
+              $container = $_
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath
+          }
+        shell: pwsh
+
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: Logs
+          path: ${{ github.workspace }}/logs
+          retention-days: 10
+
+      - name: Generate hash for NuGet package
+        id: hash-code
+        run: |
+          "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Upload Test SDK Packages as Artifacts
         if: success()
@@ -84,9 +125,80 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  publish-package-sdk:
-    name: Publish Test SDK NuGet Package
+  generate-package-sbom:
+    name: Create Test SDK SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
     needs: build-sdk
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - name: Get Test SDK Artifacts
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: ${{ env.SDK_PACKAGE_NAME }}-NuGet
+
+      - name: Generate Test SDK Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.SDK_PACKAGE_NAME }}"
+          $version = "${{ needs.build-sdk.outputs.dms-version }}"
+
+          Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload Test SDK SBOM
+        if: success()
+        uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
+        with:
+          name: ${{ env.SDK_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate Test SDK SBOM Hash Code
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
+          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+
+  generate-package-provenance:
+    name: Create Test SDK Provenance
+    needs: build-sdk
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.build-sdk.outputs.hash-code }}
+      provenance-name: test.sdk.intoto.jsonl # env.PROVENANCE_FILE cannot be used in this context
+      upload-assets: false
+      # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
+      compile-generator: true
+
+  publish-sdk-package:
+    name: Publish Test SDK Package
+    needs:
+      - build-sdk
+      - generate-package-sbom
+      - generate-package-provenance
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -95,15 +207,17 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Get SDK Artifact
+      - name: Get Test SDK Artifact Package Artifact
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
           name: ${{ env.SDK_PACKAGE_NAME }}-NuGet
 
-      - name: Install-credential-handler DMS
-        run: iex "& { $(irm https://aka.ms/install-artifacts-credprovider.ps1) } -AddNetfx"
+      - name: Install-credential-handler
+        run: |
+            Import-Module ./package-helpers.psm1
+            InstallCredentialHandler
 
-      - name: Push DMS Package to Azure Artifacts
+      - name: Push Test SDK Package to Azure Artifacts
         run: |
          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
          $arguments = @{
@@ -115,3 +229,95 @@ jobs:
              $arguments.PackageFile = $_
              ./build-sdk.ps1 Push @arguments
           }
+
+  promote-azure-package:
+    name: Promote Azure Package
+    if: ${{ github.event_name == 'release'  }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Promote Test SDK Azure Package
+        run: |
+          $arguments = @{
+            PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
+            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            ViewId      = "release"
+            ReleaseRef  = "${{ github.ref_name }}"
+            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            PackageName = "${{ env.SDK_PACKAGE_NAME }}"
+          }
+
+          Import-Module ./package-helpers.psm1
+          Invoke-Promote @arguments
+
+  attach-sbom-and-provenance-to-release:
+    name: Attach Test SDK SBOM and Provenance to GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - generate-package-sbom
+      - generate-package-provenance
+    if: ${{ github.event_name == 'push' }}
+    permissions:
+      contents: write
+    steps:
+      - name: Download SBOM Artifact
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.SDK_PACKAGE_NAME }}-SBOM"
+          path: ${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.generate-package-sbom.outputs.sbom-hash-code }}"
+
+      - name: Download Provenance Artifact
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
+        with:
+          name: ${{ env.PROVENANCE_FILE }}
+
+      - name: Attach SBOM to Release
+        shell: pwsh
+        run: |
+          $release = "${{ github.ref_name }}"
+          $repo = "${{ github.repository }}"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $file = "${{ env.MANIFEST_FILE }}"
+          $uploadName = "${{ env.SDK_PACKAGE_NAME }}-SBOM.zip"
+
+          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer $token"
+          }
+          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
+          $releaseId = $response.id
+
+          Compress-Archive $file -DestinationPath $uploadName
+          $url = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
+          $gh_headers["Content-Type"] = "application/octet"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($url)?name=$($uploadName)" `
+              -Headers $gh_headers `
+              -InFile $uploadName
+
+      - name: Attach Provenance to Release
+        shell: pwsh
+        run: |
+          $release = "${{ github.ref_name }}"
+          $repo = "${{ github.repository }}"
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $file = "${{ env.PROVENANCE_FILE }}"
+          $uploadName = "${{ env.PROVENANCE_FILE }}"
+
+          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer $token"
+          }
+          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
+          $releaseId = $response.id
+          $url = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
+          $gh_headers["Content-Type"] = "application/octet"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($url)?name=$($uploadName)" `
+              -Headers $gh_headers `
+              -InFile $file

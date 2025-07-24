@@ -49,9 +49,14 @@ jobs:
             $release_list = Invoke-RestMethod $url -Headers $gh_headers
 
             $release_list | ForEach-Object {
-                if ($_.tag_name -like "Pre-Release-*" -and $_.prerelease) {
+                if ($_.tag_name -like "*-pre-*-alpha*" -and $_.prerelease) {
+
                     "Deleting pre-release $($_.tag_name)" | Write-Output
                     Invoke-RestMethod -Method Delete -Uri $_.url -Headers $gh_headers
+
+                    $tagUrl = "https://api.github.com/repos/$repo/git/refs/tags/$($_.tag_name)"
+                    "Deleted pre-release tag $($_.tag_name)" | Write-Output
+                    Invoke-RestMethod -Method Delete -Uri $tagUrl -Headers $gh_headers
                 }
             }
 
