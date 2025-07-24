@@ -199,7 +199,7 @@ internal class ApiSchemaProvider(
         {
             ApiSchemaFailure failure = new("Configuration", "No ApiSchemaPath configuration is set");
             _logger.LogError(failure.Message);
-            return new ApiSchemaLoadResult(null, new List<ApiSchemaFailure> { failure });
+            return new(null, [failure]);
         }
 
         string apiSchemaPath = appSettings.Value.ApiSchemaPath;
@@ -208,13 +208,13 @@ internal class ApiSchemaProvider(
         {
             ApiSchemaFailure failure = new("FileSystem", $"The directory {apiSchemaPath} does not exist");
             _logger.LogError(failure.Message);
-            return new ApiSchemaLoadResult(null, new List<ApiSchemaFailure> { failure });
+            return new(null, [failure]);
         }
 
         var (apiSchemaNodes, readFailures) = ReadApiSchemaFiles(apiSchemaPath);
         if (readFailures.Count > 0)
         {
-            return new ApiSchemaLoadResult(null, readFailures);
+            return new(null, readFailures);
         }
 
         if (apiSchemaNodes == null || apiSchemaNodes.Count == 0)
@@ -224,7 +224,7 @@ internal class ApiSchemaProvider(
                 $"No API schema files found in directory {apiSchemaPath}"
             );
             _logger.LogError(failure.Message);
-            return new ApiSchemaLoadResult(null, new List<ApiSchemaFailure> { failure });
+            return new(null, [failure]);
         }
 
         try
@@ -240,7 +240,7 @@ internal class ApiSchemaProvider(
                     "No core API schema found (all schemas are marked as extensions)"
                 );
                 _logger.LogError(failure.Message);
-                return new ApiSchemaLoadResult(null, new List<ApiSchemaFailure> { failure });
+                return new(null, [failure]);
             }
 
             JsonNode[] extensionApiSchemaNodes = apiSchemaNodes
@@ -258,7 +258,7 @@ internal class ApiSchemaProvider(
         {
             ApiSchemaFailure failure = new("ParseError", "Failed to process API schema files", null, ex);
             _logger.LogError(ex, failure.Message);
-            return new ApiSchemaLoadResult(null, new List<ApiSchemaFailure> { failure });
+            return new(null, [failure]);
         }
     }
 
@@ -624,9 +624,7 @@ internal class ApiSchemaProvider(
                     "Configuration",
                     "Schema loading returned null without failures"
                 );
-                return Task.FromResult(
-                    new ApiSchemaLoadStatus(false, new List<ApiSchemaFailure> { failure })
-                );
+                return Task.FromResult(new ApiSchemaLoadStatus(false, [failure]));
             }
 
             return Task.FromResult(TryUpdateSchema(newSchemaNodes));
@@ -656,9 +654,7 @@ internal class ApiSchemaProvider(
                         "Core schema is marked as extension project"
                     );
                     _logger.LogError(failure.Message);
-                    return Task.FromResult(
-                        new ApiSchemaLoadStatus(false, new List<ApiSchemaFailure> { failure })
-                    );
+                    return Task.FromResult(new ApiSchemaLoadStatus(false, [failure]));
                 }
 
                 // Create new schema nodes and attempt to update
@@ -674,9 +670,7 @@ internal class ApiSchemaProvider(
                     ex
                 );
                 _logger.LogError(ex, failure.Message);
-                return Task.FromResult(
-                    new ApiSchemaLoadStatus(false, new List<ApiSchemaFailure> { failure })
-                );
+                return Task.FromResult(new ApiSchemaLoadStatus(false, [failure]));
             }
         }
     }

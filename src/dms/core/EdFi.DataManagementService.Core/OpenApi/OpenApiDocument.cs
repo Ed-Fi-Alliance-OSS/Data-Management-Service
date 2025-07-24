@@ -221,25 +221,141 @@ public class OpenApiDocument(ILogger _logger)
     }
 
     /// <summary>
-    /// Finds the openApiExtensionDescriptors and openApiExtensionResources in extension ApiSchemaDocument.
+    /// Merges OpenAPI fragments from source into target
     /// </summary>
-    private List<JsonNode> FindOpenApiExtensionFragments(JsonNode extensionApiSchemaRootNode, string section)
+    private static void MergeOpenApiFragments(JsonNode source, JsonNode target)
     {
-        string[] paths = [$"$.projectSchema.openApiExtension{section}Fragments"];
-
-        List<JsonNode> selectedNodes = new List<JsonNode>();
-
-        // Iterate over the paths and select the nodes
-        foreach (var path in paths)
+        // Merge components
+        if (
+            source["components"] is JsonObject sourceComponents
+            && target["components"] is JsonObject targetComponents
+        )
         {
-            JsonNode node = extensionApiSchemaRootNode.SelectRequiredNodeFromPath(path, _logger);
-            if (node != null)
+            foreach ((string componentSchemaName, JsonNode? extObject) in sourceComponents)
             {
-                selectedNodes.Add(node.DeepClone());
+                if (
+                    targetComponents[componentSchemaName] is JsonObject targetSection
+                    && extObject is JsonObject sourceSection
+                )
+                {
+                    // Merge the sections
+                    foreach ((string itemKey, JsonNode? itemValue) in sourceSection)
+                    {
+                        if (itemValue != null)
+                        {
+                            targetSection[itemKey] = itemValue.DeepClone();
+                        }
+                    }
+                }
+                else if (extObject != null)
+                {
+                    targetComponents[componentSchemaName] = extObject.DeepClone();
+                }
             }
         }
 
-        return selectedNodes;
+        // Merge paths
+        if (source["paths"] is JsonObject sourcePaths && target["paths"] is JsonObject targetPaths)
+        {
+            foreach ((string pathKey, JsonNode? pathValue) in sourcePaths)
+            {
+                if (pathValue != null)
+                {
+                    targetPaths[pathKey] = pathValue.DeepClone();
+                }
+            }
+        }
+
+        // Merge tags
+        if (source["tags"] is JsonArray sourceTags && target["tags"] is JsonArray targetTags)
+        {
+            foreach (JsonNode? tag in sourceTags)
+            {
+                if (tag != null)
+                {
+                    targetTags.Add(tag.DeepClone());
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Collects OpenAPI fragments from resource schemas based on document type
+    /// </summary>
+    private void CollectFragmentsFromResourceSchemas(
+        ApiSchemaDocumentNodes apiSchemas,
+        OpenApiDocumentType documentType,
+        JsonNode targetDocument,
+        bool isExtensionProject
+    )
+    {
+        ProjectSchema projectSchema = new(apiSchemas.CoreApiSchemaRootNode["projectSchema"]!, _logger);
+        IEnumerable<JsonNode> resourceSchemaNodes = projectSchema.GetAllResourceSchemaNodes();
+
+        foreach (JsonNode resourceSchemaNode in resourceSchemaNodes)
+        {
+            ResourceSchema resourceSchema = new(resourceSchemaNode);
+
+            // Skip if this resource doesn't have OpenAPI fragments
+            if (resourceSchema.OpenApiFragments == null)
+            {
+                continue;
+            }
+
+            JsonNode fragmentsNode = resourceSchema.OpenApiFragments;
+            string documentTypeKey =
+                documentType == OpenApiDocumentType.Resource ? "resources" : "descriptors";
+
+            // Skip if this resource doesn't have fragments for this document type
+            if (fragmentsNode[documentTypeKey] == null)
+            {
+                continue;
+            }
+
+            JsonNode fragment = fragmentsNode[documentTypeKey]!;
+
+            // For extension projects with resource extensions, process exts
+            if (
+                isExtensionProject
+                && resourceSchema.IsResourceExtension
+                && fragment["exts"] is JsonObject exts
+            )
+            {
+                InsertExts(exts, targetDocument, projectSchema.ProjectName.Value.ToLower());
+            }
+            // For non-resource-extensions, merge the fragment directly
+            else if (!resourceSchema.IsResourceExtension)
+            {
+                MergeOpenApiFragments(fragment, targetDocument);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Collects abstract resource fragments and merges them into the document
+    /// </summary>
+    private void CollectAbstractResourceFragments(
+        ApiSchemaDocumentNodes apiSchemas,
+        OpenApiDocumentType documentType,
+        JsonNode targetDocument
+    )
+    {
+        // Only merge abstract resources for resources document, not descriptors
+        if (documentType != OpenApiDocumentType.Resource)
+        {
+            return;
+        }
+
+        ProjectSchema projectSchema = new(apiSchemas.CoreApiSchemaRootNode["projectSchema"]!, _logger);
+
+        IEnumerable<JsonNode> fragmentsToMerge = projectSchema
+            .AbstractResources.Where(abstractResource => abstractResource.OpenApiFragment != null)
+            .Select(abstractResource => abstractResource.OpenApiFragment!);
+
+        foreach (JsonNode fragment in fragmentsToMerge)
+        {
+            MergeOpenApiFragments(fragment, targetDocument);
+        }
     }
 
     public enum OpenApiDocumentType
@@ -253,51 +369,75 @@ public class OpenApiDocument(ILogger _logger)
     /// </summary>
     public JsonNode CreateDocument(ApiSchemaDocumentNodes apiSchemas, OpenApiDocumentType openApiDocumentType)
     {
-        // Get the core OpenAPI spec as a copy since we are going to modify it
+        // Get the base OpenAPI document as a starting point
+        string documentTypeKey =
+            openApiDocumentType == OpenApiDocumentType.Resource ? "resources" : "descriptors";
+        string baseDocumentPath = $"$.projectSchema.openApiBaseDocuments.{documentTypeKey}";
+
         JsonNode openApiSpecification = apiSchemas
-            .CoreApiSchemaRootNode.SelectRequiredNodeFromPath(
-                $"$.projectSchema.openApiCore{openApiDocumentType}s",
-                _logger
-            )
+            .CoreApiSchemaRootNode.SelectRequiredNodeFromPath(baseDocumentPath, _logger)
             .DeepClone();
 
-        // Get each extension OpenAPI fragment to insert into core OpenAPI spec
+        // Collect fragments from core project resource schemas
+        CollectFragmentsFromResourceSchemas(apiSchemas, openApiDocumentType, openApiSpecification, false);
+
+        // Collect abstract resource fragments (only for resources document)
+        CollectAbstractResourceFragments(apiSchemas, openApiDocumentType, openApiSpecification);
+
+        // Process each extension project
         foreach (JsonNode extensionApiSchemaRootNode in apiSchemas.ExtensionApiSchemaRootNodes)
         {
-            List<JsonNode> openApiExtensionFragments = FindOpenApiExtensionFragments(
-                extensionApiSchemaRootNode,
-                openApiDocumentType.ToString()
-            );
+            ProjectSchema extensionProjectSchema = new(extensionApiSchemaRootNode["projectSchema"]!, _logger);
+            IEnumerable<JsonNode> extensionResourceSchemaNodes =
+                extensionProjectSchema.GetAllResourceSchemaNodes();
 
-            string projectName =
-                (
-                    extensionApiSchemaRootNode
-                        .SelectNodeFromPath("$.projectSchema.projectName", _logger)
-                        ?.GetValue<string>()
-                )?.ToLower() ?? string.Empty;
-
-            foreach (JsonNode openApiExtensionFragment in openApiExtensionFragments)
+            foreach (JsonNode resourceSchemaNode in extensionResourceSchemaNodes)
             {
-                InsertExts(
-                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.exts", _logger).AsObject(),
-                    openApiSpecification,
-                    projectName
-                );
+                ResourceSchema resourceSchema = new(resourceSchemaNode);
 
-                InsertNewPaths(
-                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newPaths", _logger).AsObject(),
-                    openApiSpecification
-                );
+                // Skip if this resource doesn't have OpenAPI fragments
+                if (resourceSchema.OpenApiFragments == null)
+                {
+                    continue;
+                }
 
-                InsertNewSchemas(
-                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newSchemas", _logger).AsObject(),
-                    openApiSpecification
-                );
+                JsonNode fragmentsNode = resourceSchema.OpenApiFragments;
 
-                InsertNewTags(
-                    openApiExtensionFragment.SelectRequiredNodeFromPath("$.newTags", _logger).AsArray(),
-                    openApiSpecification
-                );
+                // Skip if this resource doesn't have fragments for this document type
+                if (fragmentsNode[documentTypeKey] == null)
+                {
+                    continue;
+                }
+
+                JsonNode fragment = fragmentsNode[documentTypeKey]!;
+
+                // Process paths if present
+                if (fragment["paths"] is JsonObject paths)
+                {
+                    InsertNewPaths(paths, openApiSpecification);
+                }
+
+                // Process schemas if present (located under components)
+                if (fragment["components"]?["schemas"] is JsonObject schemas)
+                {
+                    InsertNewSchemas(schemas, openApiSpecification);
+                }
+
+                // Process tags if present
+                if (fragment["tags"] is JsonArray tags)
+                {
+                    InsertNewTags(tags, openApiSpecification);
+                }
+
+                // Handle resource extensions (exts)
+                if (resourceSchema.IsResourceExtension && fragment["exts"] is JsonObject exts)
+                {
+                    InsertExts(
+                        exts,
+                        openApiSpecification,
+                        extensionProjectSchema.ProjectName.Value.ToLower()
+                    );
+                }
             }
         }
 
