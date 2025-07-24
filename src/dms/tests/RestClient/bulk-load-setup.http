@@ -6,10 +6,10 @@
  */
 
 #5126 or 8081
-@configPort=8081
+@configPort=5126
 
 #5198 or 8080
-@dmsPort=8080
+@dmsPort=5198
 @sysAdminId=sys-admin
 @sysAdminSecret=SdfH)98&Jk
 @encodedSysAdminSecret=SdfH%2998%26Jk
