@@ -141,52 +141,6 @@ jobs:
           sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
           echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
 
-  sbom-attach-dms:
-    name: Attach DMS SBOM file
-    runs-on: ubuntu-latest
-    needs:
-      - sbom-create-dms
-      - pack-dms
-    permissions:
-      actions: read
-      contents: write
-    steps:
-      - name: Download DMS SBOM
-        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
-        with:
-          name: "${{ env.DMS_PACKAGE_NAME }}-SBOM"
-          path: ${{ env.MANIFEST_FILE }}
-          sha256: "${{ needs.sbom-create-dms.outputs.sbom-hash-code }}"
-
-      - name: Attach DMS to release
-        shell: pwsh
-        run: |
-          $release = "${{ github.ref_name }}"
-          $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
-          $file = "${{ env.MANIFEST_FILE }}"
-          $uploadName = "${{ env.DMS_PACKAGE_NAME }}-SBOM.zip"
-
-          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
-
-          $gh_headers = @{
-              "Accept"        = "application/vnd.github+json"
-              "Authorization" = "Bearer $token"
-          }
-
-          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
-          $releaseId = $response.id
-
-          $url = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
-
-          Compress-Archive $file -DestinationPath $uploadName
-
-          $gh_headers["Content-Type"] = "application/octet"
-          Invoke-RestMethod -Method POST `
-              -Uri "$($url)?name=$($uploadName)" `
-              -Headers $gh_headers `
-              -InFile $uploadName
-
   provenance-create-dms:
     name: Create DMS Provenance
     needs: pack-dms
@@ -198,7 +152,7 @@ jobs:
     with:
       base64-subjects: ${{ needs.pack-dms.outputs.hash-code }}
       provenance-name: dmsApi.intoto.jsonl
-      upload-assets: true
+      upload-assets: false
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
       compile-generator: true
 
@@ -235,7 +189,7 @@ jobs:
              ./build-dms.ps1 Push @arguments
           }
 
-  # dms-pre and dms-*-alpha releases, have artifacts attached.
+  # dms-pre and dms-*-alpha releases, will not have artifacts attached.
   # This step attach DMS artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
   attach-dms-artifacts-to-release:
     name: Attach DMS Artifacts to GitHub Release
@@ -486,52 +440,6 @@ jobs:
           sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
           echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
 
-  sbom-attach-cs:
-    name: Attach Config SBOM file
-    runs-on: ubuntu-latest
-    needs:
-      - sbom-create-cs
-      - pack-cs
-    permissions:
-      actions: read
-      contents: write
-    steps:
-      - name: Download Config SBOM
-        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
-        with:
-          name: "${{ env.CS_PACKAGE_NAME }}-SBOM"
-          path: ${{ env.MANIFEST_FILE }}
-          sha256: "${{ needs.sbom-create-cs.outputs.sbom-hash-code }}"
-
-      - name: Attach Config to release
-        shell: pwsh
-        run: |
-          $release = "${{ github.ref_name }}"
-          $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
-          $file = "${{ env.MANIFEST_FILE }}"
-          $uploadName = "${{ env.CS_PACKAGE_NAME }}-SBOM.zip"
-
-          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
-
-          $gh_headers = @{
-              "Accept"        = "application/vnd.github+json"
-              "Authorization" = "Bearer $token"
-          }
-
-          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
-          $releaseId = $response.id
-
-          $url = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
-
-          Compress-Archive $file -DestinationPath $uploadName
-
-          $gh_headers["Content-Type"] = "application/octet"
-          Invoke-RestMethod -Method POST `
-              -Uri "$($url)?name=$($uploadName)" `
-              -Headers $gh_headers `
-              -InFile $uploadName
-
   provenance-create-cs:
     name: Create Config Provenance
     needs: pack-cs
@@ -543,7 +451,7 @@ jobs:
     with:
       base64-subjects: ${{ needs.pack-cs.outputs.hash-code }}
       provenance-name: dmsCSApi.intoto.jsonl
-      upload-assets: true
+      upload-assets: false
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
       compile-generator: true
 
@@ -580,7 +488,7 @@ jobs:
              ./build-config.ps1 Push @arguments
           }
 
-  # cs-pre and cs-*-alpha releases, have artifacts attached.
+  # cs-pre and cs-*-alpha releases, will not have artifacts attached.
   # This step attach Config artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
   attach-cs-artifacts-to-release:
     name: Attach Config Artifacts to GitHub Release
