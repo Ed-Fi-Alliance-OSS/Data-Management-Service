@@ -235,6 +235,8 @@ jobs:
              ./build-dms.ps1 Push @arguments
           }
 
+  # dms-pre and dms-*-alpha releases, have artifacts attached.
+  # This step attach DMS artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
   attach-dms-artifacts-to-release:
     name: Attach DMS Artifacts to GitHub Release
     runs-on: ubuntu-latest
@@ -578,6 +580,8 @@ jobs:
              ./build-config.ps1 Push @arguments
           }
 
+  # cs-pre and cs-*-alpha releases, have artifacts attached.
+  # This step attach Config artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
   attach-cs-artifacts-to-release:
     name: Attach Config Artifacts to GitHub Release
     runs-on: ubuntu-latest
