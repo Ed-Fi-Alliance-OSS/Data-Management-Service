@@ -6,10 +6,10 @@
  */
 
 #5126 or 8081
-@configPort=8081
+@configPort=5126
 
 #5198 or 8080
-@dmsPort=8080
+@dmsPort=5198
 @sysAdminId=sys-admin
 @sysAdminSecret=SdfH)98&Jk
 @encodedSysAdminSecret=SdfH%2998%26Jk
@@ -112,6 +112,39 @@ Content-Type: application/json
 }
 
 ###
+POST {{dataApi}}/ed-fi/schoolYearTypes
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolYear": "2023",
+    "currentSchoolYear": false,
+    "schoolYearDescription": "2023-2024"
+}
+
+###
+POST {{dataApi}}/ed-fi/schoolYearTypes
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolYear": "2024",
+    "currentSchoolYear": false,
+    "schoolYearDescription": "2024-2025"
+}
+
+###
+POST {{dataApi}}/ed-fi/schoolYearTypes
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+    "schoolYear": "2025",
+    "currentSchoolYear": false,
+    "schoolYearDescription": "2025-2026"
+}
+
+###
 # @name createSandboxApplication
 POST http://localhost:{{configPort}}/v2/applications
 Content-Type: application/json
@@ -121,20 +154,9 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Grand Bend Loader",
     "claimSetName": "EdFiSandbox",
-    "educationOrganizationIds": [255901]
+    "educationOrganizationIds": [255901,19255901,2559011,200000,100000,300000,255901044,255901001,255901107,51,54]
 }
 
 ###
 @sandboxKey={{createSandboxApplication.response.body.key}}
 @sandboxSecret={{createSandboxApplication.response.body.secret}}
-
-### Create a EdFiSandbox token
-# @name sandboxTokenRequest
-POST {{tokenUrl}}
-Authorization: basic {{sandboxKey}}:{{sandboxSecret}}
-Content-Type: application/x-www-form-urlencoded
-
-grant_type=client_credentials
-
-###
-@sandboxToken={{sandboxTokenRequest.response.body.access_token}}
