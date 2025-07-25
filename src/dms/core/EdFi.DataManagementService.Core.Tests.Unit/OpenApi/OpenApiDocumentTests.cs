@@ -132,12 +132,50 @@ public class OpenApiDocumentTests
             }
         );
 
-        return new ApiSchemaBuilder()
+        var builder = new ApiSchemaBuilder()
             .WithStartProject("ed-fi", "5.0.0")
-            .WithOpenApiCoreDescriptors(descriptorSchemas, descriptorsPaths, descriptorsTags)
-            .WithOpenApiCoreResources(schemas, paths, tags)
-            .WithEndProject()
-            .AsSingleApiSchemaRootNode();
+            .WithOpenApiBaseDocuments(
+                resourcesDoc: new JsonObject
+                {
+                    ["openapi"] = "3.0.1",
+                    ["info"] = new JsonObject { ["title"] = "Ed-Fi Resources API", ["version"] = "5.0.0" },
+                    ["components"] = new JsonObject { ["schemas"] = schemas },
+                    ["paths"] = paths,
+                    ["tags"] = tags,
+                },
+                descriptorsDoc: new JsonObject
+                {
+                    ["openapi"] = "3.0.1",
+                    ["info"] = new JsonObject { ["title"] = "Ed-Fi Descriptors API", ["version"] = "5.0.0" },
+                    ["components"] = new JsonObject { ["schemas"] = descriptorSchemas },
+                    ["paths"] = descriptorsPaths,
+                    ["tags"] = descriptorsTags,
+                }
+            );
+
+        // Add resources for each schema
+        builder.WithSimpleResource("AcademicWeek", false, schemas["EdFi_AcademicWeek"]);
+        builder.WithSimpleResource("AccountabilityRating", false, schemas["EdFi_AccountabilityRating"]);
+
+        // Add descriptors
+        builder.WithSimpleDescriptor(
+            "AbsenceEventCategoryDescriptor",
+            descriptorSchemas["EdFi_AbsenceEventCategoryDescriptor"]
+        );
+        builder.WithSimpleDescriptor(
+            "AcademicHonorCategoryDescriptor",
+            descriptorSchemas["EdFi_AcademicHonorCategoryDescriptor"]
+        );
+        builder.WithSimpleDescriptor(
+            "AcademicSubjectDescriptor",
+            descriptorSchemas["EdFi_AcademicSubjectDescriptor"]
+        );
+        builder.WithSimpleDescriptor(
+            "AccommodationDescriptor",
+            descriptorSchemas["EdFi_AccommodationDescriptor"]
+        );
+
+        return builder.WithEndProject().AsSingleApiSchemaRootNode();
     }
 
     internal static JsonNode FirstExtensionSchemaRootNode()
@@ -151,8 +189,6 @@ public class OpenApiDocumentTests
             },
         };
 
-        JsonObject descriptorExts = new() { };
-
         JsonObject newPaths = new()
         {
             ["/tpdm/credentials"] = new JsonObject
@@ -164,10 +200,10 @@ public class OpenApiDocumentTests
 
         JsonObject descriptorNewPaths = new()
         {
-            ["/tpdm/credentialDecriptor"] = new JsonObject
+            ["/tpdm/credentialDescriptor"] = new JsonObject
             {
-                ["get"] = new JsonObject { ["description"] = "credential decriptor get" },
-                ["post"] = new JsonObject { ["description"] = "credential decriptor post" },
+                ["get"] = new JsonObject { ["description"] = "credential descriptor get" },
+                ["post"] = new JsonObject { ["description"] = "credential descriptor post" },
             },
         };
 
@@ -182,9 +218,9 @@ public class OpenApiDocumentTests
 
         JsonObject descriptorNewSchemas = new()
         {
-            ["TPDM_CredentialDecriptor"] = new JsonObject
+            ["TPDM_CredentialDescriptor"] = new JsonObject
             {
-                ["description"] = "TPDM credential decriptor description",
+                ["description"] = "TPDM credential descriptor description",
                 ["type"] = "string",
             },
         };
@@ -206,14 +242,14 @@ public class OpenApiDocumentTests
         );
 
         JsonArray descriptorNewTags = [];
-        newTags.Add(
+        descriptorNewTags.Add(
             new JsonObject
             {
                 ["name"] = "ExtensionTagName1",
                 ["description"] = "First Extension Descriptor Description1",
             }
         );
-        newTags.Add(
+        descriptorNewTags.Add(
             new JsonObject
             {
                 ["name"] = "ExtensionTagName2",
@@ -221,17 +257,32 @@ public class OpenApiDocumentTests
             }
         );
 
-        return new ApiSchemaBuilder()
-            .WithStartProject("tpdm", "5.0.0")
-            .WithOpenApiExtensionResourceFragments(exts, newPaths, newSchemas, newTags)
-            .WithOpenApiExtensionDescriptorFragments(
-                descriptorExts,
-                descriptorNewPaths,
+        var builder = new ApiSchemaBuilder().WithStartProject("tpdm", "5.0.0");
+
+        // Add resource extension (exts)
+        builder
+            .WithStartResource("AcademicWeekExtension", isResourceExtension: true)
+            .WithResourceExtensionFragments("resources", exts)
+            .WithEndResource();
+
+        // Add new extension resource
+        builder
+            .WithStartResource("Credential", isDescriptor: false)
+            .WithNewExtensionResourceFragments("resources", newSchemas, newPaths, newTags)
+            .WithEndResource();
+
+        // Add new extension descriptor
+        builder
+            .WithStartResource("CredentialDescriptor", isDescriptor: true)
+            .WithNewExtensionResourceFragments(
+                "descriptors",
                 descriptorNewSchemas,
+                descriptorNewPaths,
                 descriptorNewTags
             )
-            .WithEndProject()
-            .AsSingleApiSchemaRootNode();
+            .WithEndResource();
+
+        return builder.WithEndProject().AsSingleApiSchemaRootNode();
     }
 
     internal static JsonNode SecondExtensionSchemaRootNode()
@@ -244,8 +295,6 @@ public class OpenApiDocumentTests
                 ["type"] = "string",
             },
         };
-
-        JsonObject descriptorExts = new() { };
 
         JsonObject newPaths = new()
         {
@@ -300,14 +349,14 @@ public class OpenApiDocumentTests
         );
 
         JsonArray descriptorNewTags = [];
-        newTags.Add(
+        descriptorNewTags.Add(
             new JsonObject
             {
                 ["name"] = "ExtensionTagName3",
                 ["description"] = "Second Extension Descriptor Description3",
             }
         );
-        newTags.Add(
+        descriptorNewTags.Add(
             new JsonObject
             {
                 ["name"] = "ExtensionTagName4",
@@ -315,17 +364,32 @@ public class OpenApiDocumentTests
             }
         );
 
-        return new ApiSchemaBuilder()
-            .WithStartProject("tpdm", "5.0.0")
-            .WithOpenApiExtensionResourceFragments(exts, newPaths, newSchemas, newTags)
-            .WithOpenApiExtensionDescriptorFragments(
-                descriptorExts,
-                descriptorNewPaths,
+        var builder = new ApiSchemaBuilder().WithStartProject("tpdm", "5.0.0");
+
+        // Add resource extension (exts)
+        builder
+            .WithStartResource("SchoolExtension", isResourceExtension: true)
+            .WithResourceExtensionFragments("resources", exts)
+            .WithEndResource();
+
+        // Add new extension resource
+        builder
+            .WithStartResource("Candidate", isDescriptor: false)
+            .WithNewExtensionResourceFragments("resources", newSchemas, newPaths, newTags)
+            .WithEndResource();
+
+        // Add new extension descriptor
+        builder
+            .WithStartResource("CandidateDescriptor", isDescriptor: true)
+            .WithNewExtensionResourceFragments(
+                "descriptors",
                 descriptorNewSchemas,
+                descriptorNewPaths,
                 descriptorNewTags
             )
-            .WithEndProject()
-            .AsSingleApiSchemaRootNode();
+            .WithEndResource();
+
+        return builder.WithEndProject().AsSingleApiSchemaRootNode();
     }
 
     [TestFixture]
@@ -342,11 +406,11 @@ public class OpenApiDocumentTests
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
             openApiResourcesResult = openApiDocument.CreateDocument(
                 new(coreSchemaRootNode, []),
-                OpenApiDocument.DocumentSection.Resource
+                OpenApiDocument.OpenApiDocumentType.Resource
             );
             openApiDescriptorsResult = openApiDocument.CreateDocument(
                 new(coreSchemaRootNode, []),
-                OpenApiDocument.DocumentSection.Descriptor
+                OpenApiDocument.OpenApiDocumentType.Descriptor
             );
         }
 
@@ -355,6 +419,11 @@ public class OpenApiDocumentTests
         {
             string expectedResult = """
                 {
+                  "openapi": "3.0.1",
+                  "info": {
+                    "title": "Ed-Fi Resources API",
+                    "version": "5.0.0"
+                  },
                   "components": {
                     "schemas": {
                       "EdFi_AcademicWeek": {
@@ -423,6 +492,11 @@ public class OpenApiDocumentTests
         {
             string expectedResult = """
                 {
+                  "openapi": "3.0.1",
+                  "info": {
+                    "title": "Ed-Fi Descriptors API",
+                    "version": "5.0.0"
+                  },
                   "components": {
                     "schemas": {
                       "EdFi_AbsenceEventCategoryDescriptor": {
@@ -506,11 +580,11 @@ public class OpenApiDocumentTests
             OpenApiDocument openApiDocument = new(NullLogger.Instance);
             openApiResourcesResult = openApiDocument.CreateDocument(
                 new(coreSchemaRootNode, extensionSchemaRootNodes),
-                OpenApiDocument.DocumentSection.Resource
+                OpenApiDocument.OpenApiDocumentType.Resource
             );
             openApiDescriptorsResult = openApiDocument.CreateDocument(
                 new(coreSchemaRootNode, extensionSchemaRootNodes),
-                OpenApiDocument.DocumentSection.Descriptor
+                OpenApiDocument.OpenApiDocumentType.Descriptor
             );
         }
 
@@ -649,28 +723,12 @@ public class OpenApiDocumentTests
                     "description": "First Extension Description2"
                   },
                   {
-                    "name": "ExtensionTagName1",
-                    "description": "First Extension Descriptor Description1"
-                  },
-                  {
-                    "name": "ExtensionTagName2",
-                    "description": "First Extension Descriptor Description2"
-                  },
-                  {
                     "name": "ExtensionTagName3",
                     "description": "Second Extension Description3"
                   },
                   {
                     "name": "ExtensionTagName4",
                     "description": "Second Extension Description4"
-                  },
-                  {
-                    "name": "ExtensionTagName3",
-                    "description": "Second Extension Descriptor Description3"
-                  },
-                  {
-                    "name": "ExtensionTagName4",
-                    "description": "Second Extension Descriptor Description4"
                   }
                 ]
                 """;
@@ -699,12 +757,12 @@ public class OpenApiDocumentTests
                       "description": "accommodationDescriptors delete description"
                     }
                   },
-                  "/tpdm/credentialDecriptor": {
+                  "/tpdm/credentialDescriptor": {
                     "get": {
-                      "description": "credential decriptor get"
+                      "description": "credential descriptor get"
                     },
                     "post": {
-                      "description": "credential decriptor post"
+                      "description": "credential descriptor post"
                     }
                   },
                   "/tpdm/candidateDescriptor/{id}": {
@@ -746,8 +804,8 @@ public class OpenApiDocumentTests
                     "properties": {},
                     "type": "string"
                   },
-                  "TPDM_CredentialDecriptor": {
-                    "description": "TPDM credential decriptor description",
+                  "TPDM_CredentialDescriptor": {
+                    "description": "TPDM credential descriptor description",
                     "type": "string"
                   },
                   "TPDM_CandidateDescriptor": {
@@ -772,6 +830,22 @@ public class OpenApiDocumentTests
                   {
                     "name": "accommodations",
                     "description": "Accommodations Descriptors Description"
+                  },
+                  {
+                    "name": "ExtensionTagName1",
+                    "description": "First Extension Descriptor Description1"
+                  },
+                  {
+                    "name": "ExtensionTagName2",
+                    "description": "First Extension Descriptor Description2"
+                  },
+                  {
+                    "name": "ExtensionTagName3",
+                    "description": "Second Extension Descriptor Description3"
+                  },
+                  {
+                    "name": "ExtensionTagName4",
+                    "description": "Second Extension Descriptor Description4"
                   }
                 ]
                 """;

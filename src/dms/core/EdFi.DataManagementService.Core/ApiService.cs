@@ -366,7 +366,7 @@ internal class ApiService : IApiService
         OpenApiDocument openApiDocument = new(_logger);
         return openApiDocument.CreateDocument(
             _apiSchemaProvider.GetApiSchemaNodes(),
-            OpenApiDocument.DocumentSection.Resource
+            OpenApiDocument.OpenApiDocumentType.Resource
         );
     }
 
@@ -375,7 +375,7 @@ internal class ApiService : IApiService
         OpenApiDocument descriptorOpenApiDocument = new(_logger);
         return descriptorOpenApiDocument.CreateDocument(
             _apiSchemaProvider.GetApiSchemaNodes(),
-            OpenApiDocument.DocumentSection.Descriptor
+            OpenApiDocument.OpenApiDocumentType.Descriptor
         );
     }
 

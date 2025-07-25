@@ -129,15 +129,18 @@ public class ApiSchemaValidatorTests
                       "educationOrg": {
                         "identityJsonPaths": [
                           "educationOrganizationId"
-                        ]
+                        ],
+                        "openApiFragment": {}
                       }
                     },
                     "description": "The Ed-Fi Data Standard v5.0",
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
-                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiBaseDocuments": {
+                      "resources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                    },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
@@ -181,8 +184,10 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
-                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiBaseDocuments": {
+                      "resources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                    },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
@@ -235,8 +240,10 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
-                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiBaseDocuments": {
+                      "resources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                    },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
@@ -294,8 +301,10 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
-                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiBaseDocuments": {
+                      "resources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                    },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
@@ -349,8 +358,10 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": false,
-                    "openApiCoreResources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
-                    "openApiCoreDescriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                    "openApiBaseDocuments": {
+                      "resources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                    },
                     "projectName": "ed-fi",
                     "projectEndpointName": "ed-fi",
                     "projectVersion": "5.0.0",
@@ -416,8 +427,10 @@ public class ApiSchemaValidatorTests
                     "educationOrganizationHierarchy": {},
                     "educationOrganizationTypes": [],
                     "isExtensionProject": true,
-                    "openApiExtensionResourceFragments": { "exts": {}, "newPaths": {}, "newSchemas": {}, "newTags": [] },
-                    "openApiExtensionDescriptorFragments": { "exts": {}, "newPaths": {}, "newSchemas": {}, "newTags": [] },
+                    "openApiBaseDocuments": {
+                      "resources": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] },
+                      "descriptors": { "components": {}, "info": {}, "openapi": "3.0.0", "paths": {}, "servers": [], "tags": [] }
+                    },
                     "projectName": "sample-extension",
                     "projectEndpointName": "sample-extension",
                     "projectVersion": "1.0.0",
@@ -431,8 +444,7 @@ public class ApiSchemaValidatorTests
         [Test]
         public void It_has_no_validation_errors()
         {
-            var response = _validator!.Validate(_apiSchemaRootNode);
-            response.Count.Should().Be(0);
+            _validator!.Validate(_apiSchemaRootNode).Count.Should().Be(0);
         }
     }
 }

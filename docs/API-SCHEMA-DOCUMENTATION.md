@@ -71,11 +71,8 @@ ProjectSchema object with the following properties:
   SchoolYearEnumeration (which is not a resource but has a ResourceSchema).
 * `abstractResources`: A collection of ResourceNames of abstract resources (that
   don't materialize to endpoints) mapped to AbstractResourceInfos.
-* `coreOpenApiSpecification` The core OpenApi specification DMS will use as a
-  starting point. This is only present if `isExtensionProject` is `false`.
-* `openApiExtensionFragments` The extension OpenApi fragments DMS needs to
-  incorporate into its final OpenApi spec. This is only present if
-  `isExtensionProject` is `true`.
+* `openApiBaseDocuments`: The base OpenAPI documents for resources and descriptors.
+  Contains two base OpenAPI specifications: one for resources and one for descriptors.
 
 ```json
 {
@@ -99,25 +96,29 @@ ProjectSchema object with the following properties:
       },
       "abstractResources": {
         // ResourceNames of abstract resources mapped to AbstractResourceInfos
-      }
-      "coreOpenApiSpecification": {
-        // OpenAPI specification for a Data Standard. Mutually exclusive
-        // with openApiExtensionFragments
-      }
-      "openApiExtensionFragments": {
-        // OpenAPI fragments for an extension project. Mutually exclusive
-        // with coreOpenApiSpecification
+      },
+      "openApiBaseDocuments": {
+        "resources": {
+          // Complete OpenAPI specification for resources
+        },
+        "descriptors": {
+          // Complete OpenAPI specification for descriptors
+        }
       }
     }
   }
 }
 ```
 
-## AbstractResourceInfos Object
+## AbstractResources Object
 
 These represent abstract resources that don't materialize to endpoints in the
-API. They have an `identityPathOrder` property which is a list that represents
-the elements of the resource's identity in the correct order.
+API. Each abstract resource has:
+
+* `identityPathOrder`: A list that represents the elements of the resource's 
+  identity in the correct order.
+* `openApiFragment`: An OpenAPI fragment that defines the OpenAPI schema for
+  this abstract resource.
 
 Example:
 
@@ -126,7 +127,24 @@ Example:
   "EducationOrganization": {
     "identityPathOrder": [
       "educationOrganizationId"
-    ]
+    ],
+    "openApiFragment": {
+      "components": {
+        "schemas": {
+          "EdFi_EducationOrganization": {
+            "description": "This entity represents any public or private institution...",
+            "properties": {
+              "educationOrganizationId": {
+                "description": "The identifier assigned to an education organization.",
+                "type": "integer"
+              }
+            },
+            "required": ["educationOrganizationId"],
+            "type": "object"
+          }
+        }
+      }
+    }
   },
   "Person": {
     "identityPathOrder": [
@@ -136,137 +154,104 @@ Example:
 }
 ```
 
-## CoreOpenApiSpecification Object
+## OpenApiBaseDocuments Object
 
-This is the core OpenApi specification for a Data Standard project. When DMS
-is configured with extension projects, DMS will use this as a starting point.
-This is a complete and valid OpenApi specification, but leaves blank any data
-that can only be determined at runtime, for example server URLs.
+The `openApiBaseDocuments` property contains the base OpenAPI specifications for
+a project. DMS will use these as starting points and merge in OpenAPI resource-level fragments.
+These starting points leave blank any data that can only be
+determined at runtime, for example server URLs.
 
-This is only present if `isExtensionProject` is `false`.
+The object contains two properties:
+* `resources`: Complete OpenAPI specification for resource endpoints
+* `descriptors`: Complete OpenAPI specification for descriptor endpoints
 
-Heavily truncated example:
+Example:
 
 ```json
-"coreOpenApiSpecification": {
-  "components": {
+"openApiBaseDocuments": {
+  "resources": {
+    "openapi": "3.0.1",
+    "info": {
+      "title": "Ed-Fi Resources API",
+      "version": "5.0.0",
+      "contact": {
+        "url": "https://www.ed-fi.org/what-is-ed-fi/contact/"
+      }
+    },
+    "servers": [
+      {
+        "url": ""
+      }
+    ],
     "parameters": {
-      "limit": {
-        "description": "Indicates the maximum number of items that should be returned in the results.",
-        "in": "query",
-        "name": "limit",
-        "schema": {
-          "default": 25,
-          "format": "int32",
-          "maximum": 500,
-          "minimum": 0,
-          "type": "integer"
+        "limit": {
+          "description": "Indicates the maximum number of items that should be returned in the results.",
+          "in": "query",
+          "name": "limit",
+          "schema": {
+            "default": 25,
+            "format": "int32",
+            "maximum": 500,
+            "minimum": 0,
+            "type": "integer"
+          }
         }
       }
+    }
+  },
+  "descriptors": {
+    "openapi": "3.0.1",
+    "info": {
+      "title": "Ed-Fi Descriptors API",
+      "version": "5.0.0"
     },
-    "responses": {
-      "Created": {
-        "description": "The resource was created.  An ETag value is available in the ETag header..."
+    "servers": [
+      {
+        "url": ""
       }
-    },
-    "schemas": {
-      "EdFi_AcademicWeek": {
-        "description": "This entity represents the academic weeks for a school year...",
-        "properties": {
-          "beginDate": {
-            "description": "The start date for the academic week.",
-            "format": "date",
-            "type": "string"
-          },
-          "endDate": {
-            "description": "The end date for the academic week.",
-            "format": "date",
-            "type": "string"
-          }
-        },
-        "required": [
-          "beginDate",
-          "endDate"
-        ],
-        "type": "object"
-      },
-      "EdFi_AcademicWeek_Reference": {
-        "properties": {
-          "schoolId": {
-            "description": "The identifier assigned to a school. It must be distinct from ...",
-            "type": "integer"
-          },
-          "weekIdentifier": {
-            "description": "The school label for the week.",
-            "maxLength": 80,
-            "minLength": 5,
-            "type": "string"
-          }
-        },
-        "required": [
-          "schoolId",
-          "weekIdentifier"
-        ],
-        "type": "object"
-      }
-    }
-  },
-  "info": {
-    "contact": {
-      "url": "https://www.ed-fi.org/what-is-ed-fi/contact/"
-    },
-    "description": "",
-    "title": "Ed-Fi Data Management Service API",
-    "version": "1"
-  },
-  "openapi": "3.0.0",
-  "paths": {
-    "/ed-fi/academicWeeks": {
-      "get": {},
-      "post": {}
-    },
-    "/ed-fi/academicWeeks/{id}": {
-      "delete": {},
-      "put": {}
-    },
-  },
-  "servers": [
-    {
-      "url": ""
-    }
-  ],
-  "tags": [
-    {
-      "description": "This entity represents the academic weeks for a school year...",
-      "name": "academicWeeks"
-    }
-  ]
+    ]
+  }
 }
 ```
 
-## OpenApiExtensionFragments Object
+## OpenAPI Fragments in ResourceSchema
 
-These are OpenApi fragments for an extension project. When DMS
-is configured with extension projects, DMS will use the
-CoreOpenApiSpecification as a starting point, and insert extension fragments
-into the appropriate locations.
+OpenAPI fragments are now defined at the resource level
+within each resource's schema definition. DMS will use the OpenApiBaseDocuments 
+as a starting point, and merge in the fragments from each resource.
 
-This is only present if `isExtensionProject` is `true`.
+The `openApiFragments` property exists within each resource in the `resourceSchemas`
+collection. This property contains fragments for both resources and descriptors:
 
-The overall structure of this object is made up of four sections, and
-looks like:
+* `resources`: OpenAPI fragments for resource endpoints
+* `descriptors`: OpenAPI fragments for descriptor endpoints
+
+Each fragment can contain the following sections:
 
 ```json
- "openApiExtensionFragments": {
-    "exts": {
-    },
-    "newPaths": {
-    },
-    "newSchemas": {
-    },
-    "newTags": [
-    ]
- },
+"resourceSchemas": {
+  "candidates": {
+    "openApiFragments": {
+      "resources": {
+        "exts": {
+          // Extensions to existing resources
+        },
+        "components": {
+          "schemas": {
+            // New schemas for this resource
+          }
+        },
+        "paths": {
+          // New paths for this resource
+        },
+        "tags": [
+          // New tags for this resource
+        ]
+      }
+    }
+    // Other resource properties...
+  }
+}
 ```
 
 ### Exts
@@ -275,48 +260,27 @@ The `exts` section contains OpenAPI fragments of extensions to an existing
 Data Standard document. These fragments are inserted by DMS into the
 existing document under an `_ext` document node.
 
-An example of extensions to the Data Standard documents `Credential`,
-`School` and `SurveyResponse`:
-
-Example:
+An example exts for an extension to the Data Standard document `Credential`:
 
 ```json
 "exts": {
-    "EdFi_Credential": {
+  "EdFi_Credential": {
     "description": "",
     "properties": {
-        "personReference": {
+      "personReference": {
         "$ref": "#/components/schemas/EdFi_Person_Reference"
-        }
-    }
-    "type": "object"
-    },
-    "EdFi_School": {
-    "description": "",
-    "properties": {
-        "postSecondaryInstitutionReference": {
-        "$ref": "#/components/schemas/EdFi_PostSecondaryInstitution_Reference"
-        }
+      }
     },
     "type": "object"
-    },
-    "EdFi_SurveyResponse": {
-    "description": "",
-    "properties": {
-        "personReference": {
-        "$ref": "#/components/schemas/EdFi_Person_Reference"
-        }
-    },
-    "type": "object"
-    }
+  }
 },
 ```
 
-### NewPaths
+### Paths
 
-The `newPaths` section contains OpenAPI fragments of new endpoint paths created
-by the extension. These are added into the Data Standard OpenAPI specification
-under `$.paths`.
+The `paths` section contains OpenAPI fragments of endpoint paths created
+by the resource. These are merged into the base OpenAPI
+document's paths section.
 
 Example:
 
@@ -327,140 +291,78 @@ Example:
        "description": "This GET operation provides access to resources...",
        "operationId": "getCandidateEducatorPreparationProgramAssociation",
        "parameters": [
-         {
-           "$ref": "#/components/parameters/offset"
-         },
-         {
-           "$ref": "#/components/parameters/limit"
-         },
-         {
-           "$ref": "#/components/parameters/totalCount"
-         },
-         {
-           "description": "The begin date for the association.",
-           "in": "query",
-           "name": "beginDate",
-           "schema": {
-             "format": "date",
-             "type": "string"
-           },
-           "x-Ed-Fi-isIdentity": true
-         },
-         {
-           "description": "The end date for the association.",
-           "in": "query",
-           "name": "endDate",
-           "schema": {
-             "format": "date",
-             "type": "string"
-           }
-         }
+          ...
        ],
        "responses": {
-         "200": {
-           "content": {
-             "application/json": {
-               "schema": {
-                 "items": {
-                   "$ref": "#/components/schemas/TPDM_CandidateEducatorPreparationProgramAssociation"
-                 },
-                 "type": "array"
-               }
-             }
-           },
-           "description": "The requested resource was successfully retrieved."
-         }
+          ...
        },
        "summary": "Retrieves specific resources using...",
        "tags": [
          "academicWeeks"
        ]
-     },
-     "post": {
-       "description": "The POST operation can be used to create...",
-       "operationId": "postCandidateEducatorPreparationProgramAssociation",
-       "requestBody": {
-         "content": {
-           "application/json": {
-             "schema": {
-               "$ref": "#/components/schemas/TPDM_CandidateEducatorPreparationProgramAssociation"
-             }
-           }
-         },
-         "description": "The JSON representation of the CandidateEducatorPreparationProgramAssociation...",
-         "required": true,
-         "x-bodyName": "CandidateEducatorPreparationProgramAssociation"
-       },
-       "responses": {
-         "200": {
-           "$ref": "#/components/responses/Updated"
-         }
-       },
-       "summary": "Creates or updates resources based on the natural key values of the supplied resource.",
-         "tags": [
-           "candidateEducatorPreparationProgramAssociations"
-         ]
-       }
-    }
+     }
+   }
  }
 ```
 
-### NewSchemas
+### Schemas (within components)
 
-The `newSchemas` section contains OpenAPI fragments of new document schemas created
-by the extension. These are added into the Data Standard OpenAPI specification
-under `$.components.schemas`.
+The `schemas` section within `components` contains OpenAPI fragments of 
+schemas created by the resource. These are merged into the appropriate 
+base OpenAPI document under `$.components.schemas`.
 
 Example:
 
 ```json
-"newSchemas": {   
-  "TPDM_Candidate": {
-    "description": "A candidate is both a person enrolled in a...",
-    "properties": {
-      "birthDate": {
-        "description": "The month, day, and year on which an individual was born.",
-        "format": "date",
-        "type": "string"
+"components": {
+  "schemas": {   
+    "TPDM_Candidate": {
+      "description": "A candidate is both a person enrolled in a...",
+      "properties": {
+        "birthDate": {
+          "description": "The month, day, and year on which an individual was born.",
+          "format": "date",
+          "type": "string"
+        },
+        "candidateIdentifier": {
+          "description": "A unique alphanumeric code assigned to a candidate.",
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        "firstName": {
+          "description": "A name given to an individual at birth...",
+          "maxLength": 75,
+          "type": "string"
+        },
+        "lastSurname": {
+          "description": "The name borne in common by members of a family.",
+          "maxLength": 75,
+          "type": "string"
+        }
       },
-      "candidateIdentifier": {
-        "description": "A unique alphanumeric code assigned to a candidate.",
-        "maxLength": 32,
-        "minLength": 1,
-        "type": "string"
-      },
-      "firstName": {
-        "description": "A name given to an individual at birth...",
-        "maxLength": 75,
-        "type": "string"
-      },
-      "lastSurname": {
-        "description": "The name borne in common by members of a family.",
-        "maxLength": 75,
-        "type": "string"
-      }
-    },
-    "required": [
-      "candidateIdentifier",
-      "firstName",
-      "lastSurname",
-      "birthDate"
-    ],
-    "type": "object"
+      "required": [
+        "candidateIdentifier",
+        "firstName",
+        "lastSurname",
+        "birthDate"
+      ],
+      "type": "object"
+    }
   }
 }
 ```
 
-### NewTags
+### Tags
 
-The `newTags` section contains OpenAPI the global tags needed for new endpoint paths created
-by the extension. These are added into the Data Standard OpenAPI specification
-under `$.tags`.
+The `tags` section contains OpenAPI tags needed for endpoints created
+by the resource. These are merged into the appropriate base OpenAPI global
+tags array.
 
 Example:
 
 ```json
-"newTags": [
+"tags": [
   {
     "description": "A candidate is both a person enrolled in a...",
     "name": "candidates"
@@ -468,7 +370,7 @@ Example:
   {
     "description": "The Educator Preparation Program is designed to...",
     "name": "educatorPreparationPrograms"
-  },
+  }
 ]
  ```
 
@@ -512,6 +414,11 @@ properties for subclass types.
 * `queryFieldMapping`: A mapping of API query term strings to the JsonPaths in
   the document for querying, used for building search engine API query
   expressions.
+* `isResourceExtension`: Boolean indicating if the resource extends an existing
+  Ed-Fi resource (used in extension projects).
+* `openApiFragments`: OpenAPI fragments for extension resources. Contains
+  `resources` and `descriptors` subdocuments with fragments to be merged into the
+  base OpenAPI documents.
 
 ### Additional Properties for Subclass Resources
 
@@ -561,7 +468,30 @@ Example:
       "queryFieldMapping": {
         // API query term strings mapped to JsonPaths
       },
-      "isSubclass": false
+      "isSubclass": false,
+      "isResourceExtension": false
+      "openApiFragments": {
+        "resources": {
+          // OpenAPI fragments for resource endpoints
+        },
+        "descriptors": {
+          // OpenAPI fragments for descriptor endpoints  
+        }
+      }
+    },
+    "candidates": {
+      "resourceName": "Candidate",
+      "isDescriptor": false,
+      "isResourceExtension": false,
+      // Other properties...
+      "openApiFragments": {
+        "resources": {
+          // OpenAPI fragments for resource endpoints
+        },
+        "descriptors": {
+          // OpenAPI fragments for descriptor endpoints  
+        }
+      }
     }
     // More resources...
   }

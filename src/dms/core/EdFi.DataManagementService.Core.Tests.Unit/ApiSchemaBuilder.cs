@@ -115,6 +115,9 @@ public class ApiSchemaBuilder
             ["abstractResources"] = abstractResources ?? new JsonObject(),
             ["caseInsensitiveEndpointNameMapping"] = new JsonObject(),
             ["description"] = $"{projectName} description",
+            ["educationOrganizationHierarchy"] = new JsonObject(),
+            ["educationOrganizationTypes"] = new JsonArray(),
+            ["domains"] = new JsonArray(),
             ["isExtensionProject"] = !_isCoreProject,
             ["projectName"] = projectName,
             ["projectVersion"] = projectVersion,
@@ -153,9 +156,12 @@ public class ApiSchemaBuilder
         _currentResourceNode = new JsonObject
         {
             ["allowIdentityUpdates"] = allowIdentityUpdates,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["authorizationPathways"] = new JsonArray(),
             ["booleanJsonPaths"] = new JsonArray(),
             ["dateTimeJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),
+            ["domains"] = new JsonArray(),
             ["equalityConstraints"] = new JsonArray(),
             ["identityJsonPaths"] = new JsonArray(),
             ["isDescriptor"] = isDescriptor,
@@ -167,8 +173,6 @@ public class ApiSchemaBuilder
             ["resourceName"] = resourceName,
             ["queryFieldMapping"] = new JsonObject(),
             ["securableElements"] = new JsonObject { ["Namespace"] = new JsonArray() },
-            ["authorizationPathways"] = new JsonArray(),
-            ["arrayUniquenessConstraints"] = new JsonArray(),
         };
 
         string endpointName = ToEndpointName(resourceName);
@@ -805,91 +809,358 @@ public class ApiSchemaBuilder
     }
 
     /// <summary>
-    /// Adds a core OpenAPI CoreResources to a project definition.
+    /// Creates a minimal OpenAPI doc structure.
     /// </summary>
-    public ApiSchemaBuilder WithOpenApiCoreResources(JsonNode schemas, JsonNode paths, JsonArray tags)
+    private static JsonObject CreateMinimalOpenApiDoc(string title)
     {
-        if (_currentProjectNode == null)
+        return new JsonObject
         {
-            throw new InvalidOperationException();
-        }
-
-        _currentProjectNode["openApiCoreResources"] = new JsonObject
-        {
-            ["components"] = new JsonObject { ["schemas"] = schemas },
-            ["paths"] = paths,
-            ["tags"] = tags,
+            ["openapi"] = "3.0.1",
+            ["info"] = new JsonObject { ["title"] = title, ["version"] = "1.0.0" },
+            ["servers"] = new JsonArray(),
+            ["paths"] = new JsonObject(),
+            ["components"] = new JsonObject
+            {
+                ["schemas"] = new JsonObject(),
+                ["parameters"] = new JsonObject(),
+            },
+            ["tags"] = new JsonArray(),
         };
-        return this;
     }
 
     /// <summary>
-    /// Adds a core OpenAPI Descriptors to a project definition.
+    /// Adds OpenAPI base documents to the current project.
+    /// If null is passed for either parameter, creates a minimal valid OpenAPI document.
+    ///
+    /// Example JSON for resourcesDoc/descriptorsDoc parameter:
+    /// {
+    ///   "openapi": "3.0.1",
+    ///   "info": {
+    ///     "title": "Ed-Fi Resources API",
+    ///     "version": "5.0.0"
+    ///   },
+    ///   "servers": [],
+    ///   "paths": {},
+    ///   "components": {
+    ///     "parameters": {
+    ///       "If-None-Match": {
+    ///         "description": "The previously returned ETag header value...",
+    ///         "in": "header",
+    ///         "name": "If-None-Match",
+    ///         "schema": { "type": "string" }
+    ///       }
+    ///     },
+    ///     "responses": {
+    ///       "Updated": {
+    ///         "description": "The resource was updated."
+    ///       }
+    ///     },
+    ///     "schemas": {}
+    ///   },
+    ///   "tags": []
+    /// }
     /// </summary>
-    public ApiSchemaBuilder WithOpenApiCoreDescriptors(JsonNode schemas, JsonNode paths, JsonArray tags)
-    {
-        if (_currentProjectNode == null)
-        {
-            throw new InvalidOperationException();
-        }
-
-        _currentProjectNode["openApiCoreDescriptors"] = new JsonObject
-        {
-            ["components"] = new JsonObject { ["schemas"] = schemas },
-            ["paths"] = paths,
-            ["tags"] = tags,
-        };
-        return this;
-    }
-
-    /// <summary>
-    /// Adds OpenAPI extension Resource fragments to a project definition.
-    /// </summary>
-    public ApiSchemaBuilder WithOpenApiExtensionResourceFragments(
-        JsonNode exts,
-        JsonNode newPaths,
-        JsonNode newSchemas,
-        JsonNode newTags
+    public ApiSchemaBuilder WithOpenApiBaseDocuments(
+        JsonNode? resourcesDoc = null,
+        JsonNode? descriptorsDoc = null
     )
     {
         if (_currentProjectNode == null)
         {
-            throw new InvalidOperationException();
+            throw new InvalidOperationException("Must be within a project context");
         }
 
-        _currentProjectNode["openApiExtensionResourceFragments"] = new JsonObject
+        _currentProjectNode["openApiBaseDocuments"] = new JsonObject
         {
-            ["exts"] = exts,
-            ["newPaths"] = newPaths,
-            ["newSchemas"] = newSchemas,
-            ["newTags"] = newTags,
+            ["resources"] = resourcesDoc ?? CreateMinimalOpenApiDoc("Ed-Fi Resources API"),
+            ["descriptors"] = descriptorsDoc ?? CreateMinimalOpenApiDoc("Ed-Fi Descriptors API"),
         };
+
         return this;
     }
 
     /// <summary>
-    /// Adds OpenAPI Extension Descriptor fragments to a project definition.
+    /// Adds an abstract resource to the current project with optional OpenAPI fragment.
+    ///
+    /// Example JSON for openApiFragment parameter:
+    /// {
+    ///   "components": {
+    ///     "schemas": {
+    ///       "EdFi_EducationOrganization": {
+    ///         "description": "This entity represents any public or private institution...",
+    ///         "properties": {
+    ///           "addresses": {
+    ///             "items": {
+    ///               "$ref": "#/components/schemas/EdFi_EducationOrganization_Address"
+    ///             },
+    ///             "minItems": 0,
+    ///             "type": "array"
+    ///           },
+    ///           "categories": {
+    ///             "items": {
+    ///               "$ref": "#/components/schemas/EdFi_EducationOrganizationCategory"
+    ///             },
+    ///             "type": "array"
+    ///           },
+    ///           "educationOrganizationId": {
+    ///             "description": "The identifier assigned to an education organization.",
+    ///             "type": "integer",
+    ///             "x-Ed-Fi-isIdentity": true
+    ///           }
+    ///         },
+    ///         "required": ["educationOrganizationId"],
+    ///         "type": "object"
+    ///       }
+    ///     }
+    ///   }
+    /// }
     /// </summary>
-    public ApiSchemaBuilder WithOpenApiExtensionDescriptorFragments(
-        JsonNode exts,
-        JsonNode newPaths,
-        JsonNode newSchemas,
-        JsonNode newTags
+    public ApiSchemaBuilder WithAbstractResource(
+        string resourceName,
+        string[] identityJsonPaths,
+        JsonNode? openApiFragment = null
     )
     {
         if (_currentProjectNode == null)
         {
-            throw new InvalidOperationException();
+            throw new InvalidOperationException("Must be within a project context");
         }
 
-        _currentProjectNode["openApiExtensionDescriptorFragments"] = new JsonObject
+        // Create abstractResources if it doesn't exist
+        if (_currentProjectNode["abstractResources"] == null)
         {
-            ["exts"] = exts,
-            ["newPaths"] = newPaths,
-            ["newSchemas"] = newSchemas,
-            ["newTags"] = newTags,
+            _currentProjectNode["abstractResources"] = new JsonObject();
+        }
+
+        var abstractResourceNode = new JsonObject
+        {
+            ["identityJsonPaths"] = new JsonArray(
+                identityJsonPaths.Select(p => JsonValue.Create(p)).ToArray()
+            ),
         };
+
+        if (openApiFragment != null)
+        {
+            abstractResourceNode["openApiFragment"] = openApiFragment.DeepClone();
+        }
+
+        _currentProjectNode["abstractResources"]![resourceName] = abstractResourceNode;
+
         return this;
+    }
+
+    /// <summary>
+    /// Creates a minimal OpenAPI fragment structure.
+    /// </summary>
+    private static JsonObject CreateMinimalOpenApiFragment()
+    {
+        return new JsonObject
+        {
+            ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+            ["paths"] = new JsonObject(),
+            ["tags"] = new JsonArray(),
+        };
+    }
+
+    /// <summary>
+    /// Adds OpenAPI fragments to the current resource by assembling individual components.
+    /// If all components are null, creates a minimal fragment structure.
+    ///
+    /// Parameters:
+    /// - documentType: "resources" or "descriptors" to specify which fragment to update
+    /// - schemas: OpenAPI schema definitions (for new resources/descriptors)
+    /// - paths: OpenAPI path definitions (for new resources/descriptors)
+    /// - tags: OpenAPI tag definitions (for new resources/descriptors)
+    /// - exts: Extension schema definitions (for extension resources only)
+    ///
+    /// Example schemas parameter:
+    /// {
+    ///   "EdFi_AcademicWeek": {
+    ///     "description": "This entity represents the academic weeks...",
+    ///     "properties": { ... },
+    ///     "type": "object"
+    ///   }
+    /// }
+    ///
+    /// Example paths parameter:
+    /// {
+    ///   "/ed-fi/academicWeeks": {
+    ///     "get": { "description": "Retrieves specific resources..." },
+    ///     "post": { "description": "Creates or updates resources..." }
+    ///   }
+    /// }
+    ///
+    /// Example tags parameter:
+    /// [
+    ///   {
+    ///     "name": "academicWeeks",
+    ///     "description": "This entity represents the academic weeks..."
+    ///   }
+    /// ]
+    ///
+    /// Example exts parameter (for extension resources):
+    /// {
+    ///   "EdFi_Credential": {
+    ///     "description": "",
+    ///     "properties": {
+    ///       "boardCertificationIndicator": {
+    ///         "description": "Indicator that the credential was granted...",
+    ///         "type": "boolean"
+    ///       }
+    ///     }
+    ///   }
+    /// }
+    /// </summary>
+    public ApiSchemaBuilder WithResourceOpenApiFragments(
+        string documentType,
+        JsonNode? schemas = null,
+        JsonNode? paths = null,
+        JsonNode? tags = null,
+        JsonNode? exts = null
+    )
+    {
+        if (_currentProjectNode == null || _currentResourceNode == null)
+        {
+            throw new InvalidOperationException("Must be within a resource context");
+        }
+
+        if (documentType != "resources" && documentType != "descriptors")
+        {
+            throw new ArgumentException("documentType must be 'resources' or 'descriptors'");
+        }
+
+        // Create openApiFragments if it doesn't exist
+        if (_currentResourceNode["openApiFragments"] == null)
+        {
+            _currentResourceNode["openApiFragments"] = new JsonObject();
+        }
+
+        // Build the fragment based on provided components
+        JsonObject fragment = new();
+
+        if (exts != null)
+        {
+            fragment["exts"] = exts.DeepClone();
+        }
+
+        if (schemas != null || paths != null || tags != null)
+        {
+            // Create components with schemas (either provided or empty)
+            fragment["components"] = new JsonObject
+            {
+                ["schemas"] = schemas != null ? schemas.DeepClone() : new JsonObject(),
+            };
+
+            if (paths != null)
+            {
+                fragment["paths"] = paths.DeepClone();
+            }
+
+            if (tags != null)
+            {
+                fragment["tags"] = tags.DeepClone();
+            }
+        }
+
+        // If no components provided, create minimal structure
+        if (fragment.Count == 0)
+        {
+            fragment = CreateMinimalOpenApiFragment();
+        }
+
+        _currentResourceNode["openApiFragments"]![documentType] = fragment;
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds OpenAPI fragments to the current resource for both resources and descriptors.
+    /// Creates minimal fragment structures if null is passed.
+    /// </summary>
+    public ApiSchemaBuilder WithResourceOpenApiFragments(
+        JsonNode? resourcesFragment = null,
+        JsonNode? descriptorsFragment = null
+    )
+    {
+        if (_currentProjectNode == null || _currentResourceNode == null)
+        {
+            throw new InvalidOperationException("Must be within a resource context");
+        }
+
+        // Create openApiFragments if it doesn't exist
+        if (_currentResourceNode["openApiFragments"] == null)
+        {
+            _currentResourceNode["openApiFragments"] = new JsonObject();
+        }
+
+        _currentResourceNode["openApiFragments"]!["resources"] =
+            resourcesFragment != null ? resourcesFragment.DeepClone() : CreateMinimalOpenApiFragment();
+
+        _currentResourceNode["openApiFragments"]!["descriptors"] =
+            descriptorsFragment != null ? descriptorsFragment.DeepClone() : CreateMinimalOpenApiFragment();
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds extension fragments for resources marked as isResourceExtension.
+    /// This is a convenience method for resources that extend existing Ed-Fi resources.
+    /// </summary>
+    public ApiSchemaBuilder WithResourceExtensionFragments(string documentType, JsonObject exts)
+    {
+        return WithResourceOpenApiFragments(documentType, schemas: null, paths: null, tags: null, exts: exts);
+    }
+
+    /// <summary>
+    /// Adds fragments for new extension resources/descriptors.
+    /// This is a convenience method for completely new resources introduced by an extension.
+    /// </summary>
+    public ApiSchemaBuilder WithNewExtensionResourceFragments(
+        string documentType,
+        JsonObject? schemas = null,
+        JsonObject? paths = null,
+        JsonArray? tags = null
+    )
+    {
+        return WithResourceOpenApiFragments(documentType, schemas, paths, tags, exts: null);
+    }
+
+    /// <summary>
+    /// Convenience method to create a simple resource with optional OpenAPI schema.
+    /// </summary>
+    public ApiSchemaBuilder WithSimpleResource(
+        string resourceName,
+        bool isDescriptor,
+        JsonNode? schema = null
+    )
+    {
+        WithStartResource(resourceName, isDescriptor: isDescriptor);
+
+        if (schema != null)
+        {
+            var schemaName =
+                $"{(_isCoreProject ? "EdFi" : _currentProjectNode!["projectName"]?.GetValue<string>() ?? "Extension")}_{resourceName}";
+            var schemas = new JsonObject { [schemaName] = schema.DeepClone() };
+
+            WithResourceOpenApiFragments(
+                documentType: isDescriptor ? "descriptors" : "resources",
+                schemas: schemas,
+                paths: null,
+                tags: null,
+                exts: null
+            );
+        }
+
+        WithEndResource();
+        return this;
+    }
+
+    /// <summary>
+    /// Convenience method to create a simple descriptor with optional OpenAPI schema.
+    /// </summary>
+    public ApiSchemaBuilder WithSimpleDescriptor(string descriptorName, JsonNode? schema = null)
+    {
+        return WithSimpleResource(descriptorName, true, schema);
     }
 
     public ApiSchemaBuilder WithDecimalPropertyValidationInfos(DecimalValidationInfo[] decimalValidationInfos)

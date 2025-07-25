@@ -542,4 +542,14 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
 
         return new ArrayUniquenessConstraint(basePath, paths, nestedConstraints);
     }
+
+    private readonly Lazy<JsonNode?> _openApiFragments = new(() =>
+    {
+        return _resourceSchemaNode["openApiFragments"];
+    });
+
+    /// <summary>
+    /// The OpenAPI fragments for this resource, containing resources and/or descriptors fragments
+    /// </summary>
+    public JsonNode? OpenApiFragments => _openApiFragments.Value;
 }

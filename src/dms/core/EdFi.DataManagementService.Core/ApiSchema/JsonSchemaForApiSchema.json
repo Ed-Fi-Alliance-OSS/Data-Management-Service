@@ -14,7 +14,19 @@
     ],
     "additionalProperties": false,
     "definitions": {
-        "openApiCoreResources": {
+        "openApiBaseDocuments": {
+            "type": "object",
+            "properties": {
+                "resources": {
+                    "$ref": "#/definitions/openApiDocument"
+                },
+                "descriptors": {
+                    "$ref": "#/definitions/openApiDocument"
+                }
+            },
+            "additionalProperties": false
+        },
+        "openApiDocument": {
             "type": "object",
             "properties": {
                 "components": {
@@ -38,51 +50,30 @@
             },
             "additionalProperties": false
         },
-        "openApiCoreDescriptors": {
+        "openApiFragments": {
+            "type": "object",
+            "properties": {
+                "resources": {
+                    "$ref": "#/definitions/openApiFragmentDocument"
+                },
+                "descriptors": {
+                    "$ref": "#/definitions/openApiFragmentDocument"
+                }
+            },
+            "additionalProperties": false
+        },
+        "openApiFragmentDocument": {
             "type": "object",
             "properties": {
                 "components": {
                     "type": "object"
                 },
-                "info": {
-                    "type": "object"
-                },
-                "openapi": {
-                    "type": "string"
-                },
                 "paths": {
                     "type": "object"
                 },
-                "servers": {
-                    "type": "array"
-                },
                 "tags": {
                     "type": "array"
-                }
-            },
-            "additionalProperties": false
-        },
-        "openApiExtensionResourceFragments": {
-            "type": "object",
-            "properties": {
-                "exts": {
-                    "type": "object"
                 },
-                "newPaths": {
-                    "type": "object"
-                },
-                "newSchemas": {
-                    "type": "object"
-                },
-                "newTags": {
-                    "type": "array"
-                }
-            },
-            "additionalProperties": false
-        },
-        "openApiExtensionDescriptorFragments": {
-            "type": "object",
-            "properties": {
                 "exts": {
                     "type": "object"
                 },
@@ -109,6 +100,9 @@
                             "properties": {
                                 "identityJsonPaths": {
                                     "$ref": "#/definitions/JsonPaths"
+                                },
+                                "openApiFragment": {
+                                    "type": "object"
                                 }
                             },
                             "additionalProperties": false
@@ -126,14 +120,17 @@
                     "additionalProperties": false
                 },
                 "compatibleDsRange": true,
-                "openApiCoreResources": {
-                    "$ref": "#/definitions/openApiCoreResources"
-                },
-                "openApiCoreDescriptors": {
-                    "$ref": "#/definitions/openApiCoreDescriptors"
+                "openApiBaseDocuments": {
+                    "$ref": "#/definitions/openApiBaseDocuments"
                 },
                 "description": {
                     "type": "string"
+                },
+                "domains": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "educationOrganizationHierarchy": {
                     "type": "object",
@@ -157,12 +154,6 @@
                 },
                 "isExtensionProject": {
                     "type": "boolean"
-                },
-                "openApiExtensionResourceFragments": {
-                    "$ref": "#/definitions/openApiExtensionResourceFragments"
-                },
-                "openApiExtensionDescriptorFragments": {
-                    "$ref": "#/definitions/openApiExtensionDescriptorFragments"
                 },
                 "projectName": {
                     "type": "string"
@@ -259,6 +250,12 @@
                         "documentPathsMapping": {
                             "$ref": "#/definitions/documentPathsMapping"
                         },
+                        "domains": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
                         "equalityConstraints": {
                             "type": "array",
                             "items": {}
@@ -286,6 +283,9 @@
                             "items": {
                                 "type": "string"
                             }
+                        },
+                        "openApiFragments": {
+                            "$ref": "#/definitions/openApiFragments"
                         },
                         "queryFieldMapping": {
                             "type": "object"

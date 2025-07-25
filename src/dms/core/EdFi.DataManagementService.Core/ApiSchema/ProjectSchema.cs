@@ -84,7 +84,8 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
             resourceName,
             abstractResourceNodeValue
                 .SelectNodesFromArrayPathCoerceToStrings("$.identityJsonPaths", logger)
-                .Select(identityJsonPath => new JsonPath(identityJsonPath))
+                .Select(identityJsonPath => new JsonPath(identityJsonPath)),
+            abstractResourceNodeValue.SelectNodeFromPath("$.openApiFragment", logger)
         );
     }
 
@@ -194,5 +195,23 @@ internal class ProjectSchema(JsonNode _projectSchemaNode, ILogger _logger)
             .AsArray()
             .Select(v => new ResourceName(v?.ToString() ?? string.Empty))
             .ToArray();
+    });
+
+    /// <summary>
+    /// Returns the OpenAPI base documents (resources and descriptors)
+    /// </summary>
+    public JsonNode? OpenApiBaseDocuments => _openApiBaseDocuments.Value;
+    private readonly Lazy<JsonNode?> _openApiBaseDocuments = new(() =>
+    {
+        return _projectSchemaNode.SelectNodeFromPath("$.openApiBaseDocuments", _logger);
+    });
+
+    /// <summary>
+    /// Indicates whether this is an extension project
+    /// </summary>
+    public bool IsExtensionProject => _isExtensionProject.Value;
+    private readonly Lazy<bool> _isExtensionProject = new(() =>
+    {
+        return _projectSchemaNode.SelectRequiredNodeFromPathAs<bool>("$.isExtensionProject", _logger);
     });
 }
