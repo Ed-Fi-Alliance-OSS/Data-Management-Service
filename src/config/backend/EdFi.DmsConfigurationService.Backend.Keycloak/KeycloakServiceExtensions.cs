@@ -22,8 +22,23 @@ public static class KeycloakServiceExtensions
     )
     {
         var uri = new Uri(Authority);
-        var baseUrl = uri.GetLeftPart(UriPartial.Authority);
-        var realm = Authority.TrimEnd('/').Split('/').Last();
+
+        var realmsUriSegmentIndex = uri
+            .Segments.ToList()
+            .FindIndex(segment => segment.Equals("realms/", StringComparison.OrdinalIgnoreCase));
+
+        if (realmsUriSegmentIndex < 0)
+        {
+            throw new InvalidOperationException(
+                $"The 'realms/' segment is missing from the '{nameof(Authority)}' URL."
+            );
+        }
+
+        var baseUrl = new Uri(uri, string.Concat(uri.Segments.Take(realmsUriSegmentIndex)))
+            .ToString()
+            .Trim('/');
+
+        var realm = uri.Segments.Skip(realmsUriSegmentIndex + 1).Take(1).Single().Trim('/');
 
         services.AddScoped(x => new KeycloakContext(baseUrl, realm, ClientId, ClientSecret, RoleClaimType));
 

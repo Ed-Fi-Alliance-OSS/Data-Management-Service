@@ -109,7 +109,7 @@ public static class WebApplicationBuilderExtensions
             .Services.AddHttpClient<ConfigurationServiceApiClient>(
                 (serviceProvider, client) =>
                 {
-                    client.BaseAddress = new Uri(configServiceSettings.BaseUrl);
+                    client.BaseAddress = new Uri($"{configServiceSettings.BaseUrl.Trim('/')}/");
                     client.DefaultRequestHeaders.Add("Accept", "application/json");
                     client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
                 }

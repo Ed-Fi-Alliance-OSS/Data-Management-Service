@@ -24,7 +24,7 @@ public static class OpenSearchServiceExtensions
     )
     {
         services.AddSingleton<IOpenSearchClient>(
-            (sp) => new OpenSearchClient(new ConnectionSettings(new Uri(connectionUrl)))
+            (sp) => new OpenSearchClient(new ConnectionSettings(new Uri($"{connectionUrl.Trim('/')}/")))
         );
         services.AddSingleton<IQueryHandler, OpenSearchQueryHandlerRepository>();
         return services;

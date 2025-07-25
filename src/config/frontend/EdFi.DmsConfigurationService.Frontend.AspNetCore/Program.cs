@@ -5,10 +5,10 @@
 
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Deploy;
-using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,7 +19,22 @@ var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
 {
     app.UsePathBase($"/{pathBase.Trim('/')}");
-    app.UseForwardedHeaders();
+}
+
+var useReverseProxyHeaders = app.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
+if (useReverseProxyHeaders)
+{
+    app.UseForwardedHeaders(
+        new ForwardedHeadersOptions
+        {
+            ForwardedHeaders =
+                ForwardedHeaders.All | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto,
+
+            // Accept forwarded headers from any network and proxy
+            KnownNetworks = { },
+            KnownProxies = { },
+        }
+    );
 }
 
 app.UseMiddleware<RequestLoggingMiddleware>();

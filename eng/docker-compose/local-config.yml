@@ -31,6 +31,7 @@ services:
       KEYCLOAK_REALM: ${KEYCLOAK_REALM:-edfi}
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       DMS_CONFIG_PATH_BASE: ${DMS_CONFIG_PATH_BASE:-}
+      DMS_CONFIG_USE_REVERSE_PROXY_HEADERS: ${DMS_CONFIG_USE_REVERSE_PROXY_HEADERS:-false}
     ports:
       - '127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}'
     networks:
