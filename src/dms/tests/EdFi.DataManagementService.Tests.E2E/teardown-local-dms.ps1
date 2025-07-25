@@ -48,13 +48,28 @@ try {
     )
 
     # Check if Docker is running
+    Write-Host "Checking Docker status..." -ForegroundColor Yellow
+    $dockerCheck = $null
     try {
-        docker version | Out-Null
+        $dockerCheck = docker version 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Docker command failed"
+        }
     }
     catch {
+        Write-Host ""
         Write-Error "Docker is not running or not installed. Please start Docker and try again."
+        Write-Host ""
+        Write-Host "Error details:" -ForegroundColor Red
+        if ($dockerCheck) {
+            Write-Host $dockerCheck -ForegroundColor Red
+        } else {
+            Write-Host $_.Exception.Message -ForegroundColor Red
+        }
         exit 1
     }
+    Write-Host "Docker is running ✓" -ForegroundColor Green
+    Write-Host ""
 
     # Set SCHEMA_PACKAGES to empty to prevent warning
     [System.Environment]::SetEnvironmentVariable("SCHEMA_PACKAGES", "", "Process")
