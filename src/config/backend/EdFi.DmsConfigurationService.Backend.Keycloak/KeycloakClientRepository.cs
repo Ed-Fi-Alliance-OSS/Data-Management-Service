@@ -20,7 +20,7 @@ public class KeycloakClientRepository(
 ) : IClientRepository
 {
     private readonly KeycloakClient _keycloakClient = new(
-        keycloakContext.Url,
+        $"{keycloakContext.Url.Trim('/')}/",
         keycloakContext.ClientSecret,
         new KeycloakOptions(adminClientId: keycloakContext.ClientId)
     );

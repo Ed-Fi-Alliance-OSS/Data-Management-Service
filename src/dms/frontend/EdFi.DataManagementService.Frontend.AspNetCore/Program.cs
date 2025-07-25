@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
 
@@ -51,7 +52,22 @@ var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
 {
     app.UsePathBase($"/{pathBase.Trim('/')}");
-    app.UseForwardedHeaders();
+}
+
+var useReverseProxyHeaders = app.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
+if (useReverseProxyHeaders)
+{
+    app.UseForwardedHeaders(
+        new ForwardedHeadersOptions
+        {
+            ForwardedHeaders =
+                ForwardedHeaders.All | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto,
+
+            // Accept forwarded headers from any network and proxy
+            KnownNetworks = { },
+            KnownProxies = { },
+        }
+    );
 }
 
 app.UseMiddleware<LoggingMiddleware>();
