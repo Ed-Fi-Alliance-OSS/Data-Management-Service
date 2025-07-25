@@ -58,42 +58,58 @@ public class OpenApiGeneratorTests
                     ""projectSchema"": {
                         ""description"": ""The Ed-Fi Data Standard v5.2.0"",
                         ""isExtensionProject"": false,
-                        ""openApiCoreDescriptors"": {
-                            ""components"": {
-                                ""schemas"": {
-                                    ""EdFi_Visa"": {
-                                        ""description"": ""An Ed-Fi Descriptor""
+                        ""abstractResources"": {},
+                        ""caseInsensitiveEndpointNameMapping"": {},
+                        ""resourceNameMapping"": {},
+                        ""resourceSchemas"": {},
+                        ""openApiBaseDocuments"": {
+                            ""descriptors"": {
+                                ""openapi"": ""3.0.1"",
+                                ""info"": {
+                                    ""title"": ""Ed-Fi Descriptors API"",
+                                    ""version"": ""5.2.0""
+                                },
+                                ""components"": {
+                                    ""schemas"": {
+                                        ""EdFi_Visa"": {
+                                            ""description"": ""An Ed-Fi Descriptor""
+                                        }
                                     }
-                                }
+                                },
+                                ""paths"": {
+                                    ""/ed-fi/absenceEventCategoryDescriptors"": {}
+                                },
+                                ""tags"": [
+                                {
+                                    ""description"": ""This entity"",
+                                    ""name"": ""academicWeeks""
+                                }]
                             },
-                            ""paths"": {
-                                ""/ed-fi/absenceEventCategoryDescriptors"": {}
-                            },
-                            ""tags"": [
-                            {
-                                ""description"": ""This entity"",
-                                ""name"": ""academicWeeks""
-                            }]
-                        },
-                        ""openApiCoreResources"": {
-                            ""components"": {
-                                ""schemas"": {
-                                    ""EdFi_StudentResource"": {
-                                        ""description"": ""A resource representing a student""
+                            ""resources"": {
+                                ""openapi"": ""3.0.1"",
+                                ""info"": {
+                                    ""title"": ""Ed-Fi Resources API"",
+                                    ""version"": ""5.2.0""
+                                },
+                                ""components"": {
+                                    ""schemas"": {
+                                        ""EdFi_StudentResource"": {
+                                            ""description"": ""A resource representing a student""
+                                        }
                                     }
-                                }
-                            },
-                            ""tags"": [
-                            {
-                                ""description"": ""This entity"",
-                                ""name"": ""academicWeeks""
-                            }],
-                            ""paths"": {
-                                ""/ed-fi/academicWeeks"": {
-                                    ""get"": {
-                                        ""description"": ""This GET operation""
-                                    }
+                                },
+                                ""tags"": [
+                                {
+                                    ""description"": ""This entity"",
+                                    ""name"": ""academicWeeks""
+                                }],
+                                ""paths"": {
+                                    ""/ed-fi/academicWeeks"": {
+                                        ""get"": {
+                                            ""description"": ""This GET operation""
+                                        }
 
+                                    }
                                 }
                             }
                         }
@@ -106,55 +122,84 @@ public class OpenApiGeneratorTests
                     ""apiSchemaVersion"": ""5.2.0"",
                     ""projectSchema"": {
                         ""isExtensionProject"": true,
-                        ""openApiExtensionResourceFragments"": {
-                            ""exts"": {},
-                            ""newPaths"": {
-                                ""/tpdm/accreditationStatusDescriptors"": {
-                                    ""get"": {
-                                        ""operationId"": ""getAccreditationStatus""
-                                    }
-                                }
-                            },
-                            ""newSchemas"": {
-                                ""TPDM_AccreditationStatus"": {
-                                    ""properties"": {
-                                        ""codeValue"": {
-                                            ""type"": ""string""
-                                        }
-                                    }
-                                }
-                            },
-                            ""newTags"": [
-                                {
-                                    ""description"": ""Accreditation Status"",
-                                    ""name"": ""accreditationStatusDescriptors""
-                                }
-                            ]
+                        ""projectName"": ""TPDM"",
+                        ""projectVersion"": ""5.2.0"",
+                        ""abstractResources"": {},
+                        ""caseInsensitiveEndpointNameMapping"": {
+                            ""accreditationstatusdescriptors"": ""accreditationStatusDescriptors"",
+                            ""candidates"": ""candidates""
                         },
-                        ""openApiExtensionDescriptorFragments"": {
-                            ""exts"": {},
-                            ""newPaths"": {
-                                ""/tpdm/candidates"": {
-                                    ""get"": {
-                                        ""operationId"": ""getAccreditationStatus""
+                        ""resourceNameMapping"": {
+                            ""AccreditationStatusDescriptor"": ""accreditationStatusDescriptors"",
+                            ""Candidate"": ""candidates""
+                        },
+                        ""resourceSchemas"": {
+                            ""accreditationStatusDescriptors"": {
+                                ""resourceName"": ""AccreditationStatusDescriptor"",
+                                ""isDescriptor"": true,
+                                ""isResourceExtension"": false,
+                                ""openApiFragments"": {
+                                    ""descriptors"": {
+                                        ""components"": {
+                                            ""schemas"": {
+                                                ""TPDM_AccreditationStatus"": {
+                                                    ""properties"": {
+                                                        ""codeValue"": {
+                                                            ""type"": ""string""
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        ""paths"": {
+                                            ""/tpdm/accreditationStatusDescriptors"": {
+                                                ""get"": {
+                                                    ""operationId"": ""getAccreditationStatus""
+                                                }
+                                            }
+                                        },
+                                        ""tags"": [
+                                            {
+                                                ""description"": ""Accreditation Status"",
+                                                ""name"": ""accreditationStatusDescriptors""
+                                            }
+                                        ]
                                     }
                                 }
                             },
-                            ""newSchemas"": {
-                                ""TPDM_Candidate"": {
-                                    ""properties"": {
-                                        ""codeValue"": {
-                                            ""type"": ""string""
-                                        }
+                            ""candidates"": {
+                                ""resourceName"": ""Candidate"",
+                                ""isDescriptor"": false,
+                                ""isResourceExtension"": false,
+                                ""openApiFragments"": {
+                                    ""resources"": {
+                                        ""components"": {
+                                            ""schemas"": {
+                                                ""TPDM_Candidate"": {
+                                                    ""properties"": {
+                                                        ""codeValue"": {
+                                                            ""type"": ""string""
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        ""paths"": {
+                                            ""/tpdm/candidates"": {
+                                                ""get"": {
+                                                    ""operationId"": ""getAccreditationStatus""
+                                                }
+                                            }
+                                        },
+                                        ""tags"": [
+                                            {
+                                                ""description"": ""Accreditation Status"",
+                                                ""name"": ""candidates""
+                                            }
+                                        ]
                                     }
                                 }
-                            },
-                            ""newTags"": [
-                                {
-                                    ""description"": ""Accreditation Status"",
-                                    ""name"": ""candidates""
-                                }
-                            ]
+                            }
                         }
                     }
                 }";
@@ -172,14 +217,14 @@ public class OpenApiGeneratorTests
             File.WriteAllText(extensionSchemaPath, "{ \"info\": { \"title\": \"Test API\" } }");
 
             // Act
-            var ex = Assert.Throws<InvalidOperationException>(
-                () => _generator.Generate(coreSchemaPath, extensionSchemaPath)
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                _generator.Generate(coreSchemaPath, extensionSchemaPath)
             );
 
             // Assert
             Assert.That(
                 ex?.Message,
-                Is.EqualTo("Node at path '$.projectSchema.openApiCoreResources' not found")
+                Is.EqualTo("Node at path '$.projectSchema.openApiBaseDocuments.resources' not found")
             );
 
             // Cleanup
@@ -189,7 +234,7 @@ public class OpenApiGeneratorTests
         }
 
         [Test]
-        public void Should_check_if_openApiCoreDescriptors_and_openApiCoreResources_exist_in_schema()
+        public void Should_check_if_openApiBaseDocuments_exists_in_schema()
         {
             // Arrange
             string coreSchemaPath = "core-schema.json";
@@ -205,13 +250,16 @@ public class OpenApiGeneratorTests
             // Read and parse the JSON schema to validate keys
             JsonNode? coreSchema = JsonObject.Parse(File.ReadAllText(coreSchemaPath));
 
-            // Check if openApiCoreDescriptors and openApiCoreResources keys exist in the core schema
-            bool coreDescriptorsExist = coreSchema?["projectSchema"]?["openApiCoreDescriptors"] != null;
-            bool coreResourcesExist = coreSchema?["projectSchema"]?["openApiCoreResources"] != null;
+            // Check if openApiBaseDocuments key exists and has descriptors and resources subdocuments
+            bool baseDocumentsExist = coreSchema?["projectSchema"]?["openApiBaseDocuments"] != null;
+            bool descriptorsExist =
+                coreSchema?["projectSchema"]?["openApiBaseDocuments"]?["descriptors"] != null;
+            bool resourcesExist = coreSchema?["projectSchema"]?["openApiBaseDocuments"]?["resources"] != null;
 
             // Assert
-            Assert.That(coreDescriptorsExist, "openApiCoreDescriptors key is missing.");
-            Assert.That(coreResourcesExist, "openApiCoreResources key is missing.");
+            Assert.That(baseDocumentsExist, "openApiBaseDocuments key is missing.");
+            Assert.That(descriptorsExist, "openApiBaseDocuments.descriptors key is missing.");
+            Assert.That(resourcesExist, "openApiBaseDocuments.resources key is missing.");
 
             // Cleanup
             File.Delete(coreSchemaPath);
@@ -219,7 +267,7 @@ public class OpenApiGeneratorTests
         }
 
         [Test]
-        public void Should_check_if_openApiExtensionDescriptorFragments_and_openApiExtensionResourceFragments_exist_in_schema()
+        public void Should_check_if_resources_have_openApiFragments_in_extension_schema()
         {
             // Arrange
             string coreSchemaPath = "core-schema.json";
@@ -235,14 +283,33 @@ public class OpenApiGeneratorTests
             // Read and parse the JSON schema to validate keys in extension schema
             JsonNode? extensionSchema = JsonObject.Parse(extensionSchemaJson);
 
-            bool extensionDescriptorsExist =
-                extensionSchema?["projectSchema"]?["openApiExtensionDescriptorFragments"] != null;
-            bool extensionResourcesExist =
-                extensionSchema?["projectSchema"]?["openApiExtensionResourceFragments"] != null;
+            // Check if resources have openApiFragments at resource level
+            bool resourceSchemasExist = extensionSchema?["projectSchema"]?["resourceSchemas"] != null;
+            bool descriptorFragmentsExist =
+                extensionSchema
+                    ?["projectSchema"]
+                    ?["resourceSchemas"]
+                    ?["accreditationStatusDescriptors"]
+                    ?["openApiFragments"]
+                    ?["descriptors"] != null;
+            bool resourceFragmentsExist =
+                extensionSchema
+                    ?["projectSchema"]
+                    ?["resourceSchemas"]
+                    ?["candidates"]
+                    ?["openApiFragments"]
+                    ?["resources"] != null;
 
-            // Assert that both keys exist in the extension schema
-            Assert.That(extensionDescriptorsExist, "openApiExtensionDescriptorFragments key is missing.");
-            Assert.That(extensionResourcesExist, "openApiExtensionResourceFragments key is missing.");
+            // Assert that resources have openApiFragments
+            Assert.That(resourceSchemasExist, "resourceSchemas key is missing.");
+            Assert.That(
+                descriptorFragmentsExist,
+                "openApiFragments.descriptors key is missing in accreditationStatusDescriptors resource."
+            );
+            Assert.That(
+                resourceFragmentsExist,
+                "openApiFragments.resources key is missing in candidates resource."
+            );
 
             // Cleanup
             File.Delete(coreSchemaPath);
