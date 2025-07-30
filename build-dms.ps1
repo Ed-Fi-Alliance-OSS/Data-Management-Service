@@ -18,6 +18,7 @@
           do not connect to a database.
         * E2ETest: executes NUnit tests in projects named `*.E2ETests`, which
           runs the API in an isolated Docker environment and executes API Calls .
+        * SmokeTest: starts DMS with all extensions in Docker environment for smoke testing.
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
@@ -44,7 +45,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
+    [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "SmokeTest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -329,6 +330,46 @@ if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
     Invoke-Step { RunE2E }
 }
 
+function SmokeTests {
+    if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
+        Invoke-Step { DockerBuild }
+    }
+
+    # Clean up all the containers and volumes
+    Invoke-Execute {
+        try {
+            Push-Location eng/docker-compose/
+            ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "OpenSearch" -EnableConfig -d -v
+            ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "ElasticSearch" -EnableConfig -d -v
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
+    # Start DMS with Core, TPDM, Sample, and Homograph Extensions
+    # Default to OpenSearch if no specific search engine is enabled
+    $searchEngine = "OpenSearch"
+    if ($EnableElasticSearch) {
+        $searchEngine = "ElasticSearch"
+    }
+
+    Invoke-Execute {
+        try {
+            Push-Location eng/docker-compose/
+            if ($UsePublishedImage) {
+                ./start-published-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine $searchEngine -EnableConfig -LoadSeedData -AddExtensionSecurityMetadata
+            }
+            else {
+                ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine $searchEngine -EnableConfig -LoadSeedData -AddExtensionSecurityMetadata
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
 function RunNuGetPack {
     param (
         [string]
@@ -495,6 +536,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild }
+        SmokeTest { Invoke-Step { SmokeTests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }

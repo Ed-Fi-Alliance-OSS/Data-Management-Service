@@ -122,9 +122,6 @@ else {
     # Create client with edfi_admin_api/authMetadata_readonly_access scope
     ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
 
-    Import-Module ./env-utility.psm1
-    $envValues = ReadValuesFromEnvFile $EnvironmentFile
-
     Write-Output "Starting Postgresql..."
     docker compose -f postgresql.yml --env-file $EnvironmentFile -p dms-local up $upArgs
     if ($LASTEXITCODE -ne 0) {
@@ -149,8 +146,6 @@ else {
     }
 
     Start-Sleep 20
-
-    Start-Sleep 10
 
     Write-Output "Running connector setup..."
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
