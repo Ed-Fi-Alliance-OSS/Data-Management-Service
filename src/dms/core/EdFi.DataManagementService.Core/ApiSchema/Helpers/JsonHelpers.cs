@@ -364,9 +364,7 @@ internal static class JsonHelpers
             )
             {
                 jsonNode.ReplaceWith(
-                    dateTimeValue
-                        .ToUniversalTime()
-                        .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
+                    dateTimeValue.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
                 );
             }
         }
