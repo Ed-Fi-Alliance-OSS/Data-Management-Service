@@ -71,9 +71,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions
-        run: |
-          $env:USE_API_SCHEMA_PATH="false"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -enableConfig
+        run: ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "OpenSearch" -enableConfig
         working-directory: eng/docker-compose/
 
       - name: Wait for services to be ready
@@ -101,19 +99,31 @@ jobs:
               exit 1
           }
 
+      - name: Create Smoke Test Credentials
+        run: |
+          Import-Module ./modules/SmokeTest.psm1 -Force
+          $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
+
+          # Store credentials in environment variables for subsequent steps
+          "SMOKE_TEST_KEY=$($credentials.Key)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SMOKE_TEST_SECRET=$($credentials.Secret)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          Write-Host "Smoke test credentials created successfully"
+        working-directory: eng/smoke_test/
+
       - name: Run NonDestructive API Tests
         run: |
-          ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key "sampleKey" -Secret "sampleSecret"
+          ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET"
         working-directory: eng/smoke_test/
 
       - name: Run NonDestructive SDK Tests
         run: |
-          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "sampleKey" -Secret "sampleSecret"
+          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET"
         working-directory: eng/smoke_test/
 
       - name: Run Destructive SDK Tests
         run: |
-          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "sampleKey" -Secret "sampleSecret"
+          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET"
         working-directory: eng/smoke_test/
 
       - name: Export Docker Logs on Failure
@@ -190,9 +200,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions
-        run: |
-          $env:USE_API_SCHEMA_PATH="false"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -enableConfig
+        run: ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "ElasticSearch" -enableConfig
         working-directory: eng/docker-compose/
 
       - name: Wait for services to be ready
@@ -220,19 +228,31 @@ jobs:
               exit 1
           }
 
+      - name: Create Smoke Test Credentials
+        run: |
+          Import-Module ./modules/SmokeTest.psm1 -Force
+          $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
+
+          # Store credentials in environment variables for subsequent steps
+          "SMOKE_TEST_KEY=$($credentials.Key)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SMOKE_TEST_SECRET=$($credentials.Secret)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+          Write-Host "Smoke test credentials created successfully"
+        working-directory: eng/smoke_test/
+
       - name: Run NonDestructive API Tests
         run: |
-          ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key "sampleKey" -Secret "sampleSecret"
+          ./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET"
         working-directory: eng/smoke_test/
 
       - name: Run NonDestructive SDK Tests
         run: |
-          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "sampleKey" -Secret "sampleSecret"
+          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET"
         working-directory: eng/smoke_test/
 
       - name: Run Destructive SDK Tests
         run: |
-          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "sampleKey" -Secret "sampleSecret"
+          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET"
         working-directory: eng/smoke_test/
 
       - name: Export Docker Logs on Failure
@@ -256,48 +276,49 @@ jobs:
           path: ${{ github.workspace }}/logs
           retention-days: 10
 
-  notify-results:
-    name: Notify Results
-    runs-on: ubuntu-latest
-    needs: [smoke-test-opensearch, smoke-test-elasticsearch]
-    if: always()
-    steps:
-      - name: Notify Slack on success
-        if: ${{ needs.smoke-test-opensearch.result == 'success' && needs.smoke-test-elasticsearch.result == 'success' }}
-        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
-        with:
-          payload: |
-            {
-              "text": "✅ Scheduled smoke tests passed successfully!",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Search Engines:* OpenSearch & ElasticSearch\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                  }
-                }
-              ]
-            }
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
+  # TODO: Re-enable Slack notifications once finished testing
+  # notify-results:
+  #   name: Notify Results
+  #   runs-on: ubuntu-latest
+  #   needs: [smoke-test-opensearch, smoke-test-elasticsearch]
+  #   if: always()
+  #   steps:
+  #     - name: Notify Slack on success
+  #       if: ${{ needs.smoke-test-opensearch.result == 'success' && needs.smoke-test-elasticsearch.result == 'success' }}
+  #       uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
+  #       with:
+  #         payload: |
+  #           {
+  #             "text": "✅ Scheduled smoke tests passed successfully!",
+  #             "blocks": [
+  #               {
+  #                 "type": "section",
+  #                 "text": {
+  #                   "type": "mrkdwn",
+  #                   "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Search Engines:* OpenSearch & ElasticSearch\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  #                 }
+  #               }
+  #             ]
+  #           }
+  #         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #         webhook-type: incoming-webhook
 
-      - name: Notify Slack on failure
-        if: ${{ needs.smoke-test-opensearch.result == 'failure' || needs.smoke-test-elasticsearch.result == 'failure' }}
-        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
-        with:
-          payload: |
-            {
-              "text": "❌ Scheduled smoke tests failed!",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*OpenSearch Tests:* ${{ needs.smoke-test-opensearch.result }}\n*ElasticSearch Tests:* ${{ needs.smoke-test-elasticsearch.result }}\n*Tests:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-                  }
-                }
-              ]
-            }
-          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
-          webhook-type: incoming-webhook
+  #     - name: Notify Slack on failure
+  #       if: ${{ needs.smoke-test-opensearch.result == 'failure' || needs.smoke-test-elasticsearch.result == 'failure' }}
+  #       uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
+  #       with:
+  #         payload: |
+  #           {
+  #             "text": "❌ Scheduled smoke tests failed!",
+  #             "blocks": [
+  #               {
+  #                 "type": "section",
+  #                 "text": {
+  #                   "type": "mrkdwn",
+  #                   "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*OpenSearch Tests:* ${{ needs.smoke-test-opensearch.result }}\n*ElasticSearch Tests:* ${{ needs.smoke-test-elasticsearch.result }}\n*Tests:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  #                 }
+  #               }
+  #             ]
+  #           }
+  #         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #         webhook-type: incoming-webhook
