@@ -108,7 +108,8 @@ jobs:
         id: prepare-tags
         run: |
           IMAGE_NAME="${{ vars.IMAGE_NAME }}"
-          MAJOR_TAG=$(echo "${{ github.ref_name }}" | sed 's/^v//')
+          MAJOR_TAG="${{ github.ref_name }}"
+          MAJOR_TAG=${MAJOR_TAG#v}
           MINOR_TAG=`echo $MAJOR_TAG | cut -d '.' -f 1,2`
           PRE_IMAGE="${IMAGE_NAME}:dms-pre-${MAJOR_TAG}"
           RELEASE_MAJOR="${IMAGE_NAME}:${MAJOR_TAG}"
@@ -146,6 +147,7 @@ jobs:
         run: |
           IMAGE_NAME="edfialliance/dms-configuration-service"
           MAJOR_TAG="${{ github.ref_name }}"
+          MAJOR_TAG=${MAJOR_TAG#v}
           MINOR_TAG=`echo $MAJOR_TAG | cut -d '.' -f 1,2`
           PRE_IMAGE="${IMAGE_NAME}:cs-pre-${MAJOR_TAG}"
           RELEASE_MAJOR="${IMAGE_NAME}:${MAJOR_TAG}"
