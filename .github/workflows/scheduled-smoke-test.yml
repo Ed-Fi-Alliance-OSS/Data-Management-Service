@@ -67,6 +67,33 @@ jobs:
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
         run: ./build-dms.ps1 SmokeTest -SkipDockerBuild
+
+      - name: Create Smoke Test Credentials
+        run: |
+          $output = ./create-smoke-test-credentials.ps1
+          Write-Output $output
+
+          # Extract credentials from the simple output format
+          foreach ($line in $output) {
+              if ($line -match "^SMOKE_TEST_KEY=(.+)$") {
+                  $key = $matches[1]
+                  "SMOKE_TEST_KEY=$key" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  Write-Host "✅ Smoke test key captured: $key"
+              }
+              elseif ($line -match "^SMOKE_TEST_SECRET=(.+)$") {
+                  $secret = $matches[1]  
+                  "SMOKE_TEST_SECRET=$secret" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  Write-Host "✅ Smoke test secret captured"
+              }
+          }
+
+          # Verify both credentials were captured
+          if ($env:SMOKE_TEST_KEY -and $env:SMOKE_TEST_SECRET) {
+              Write-Host "✅ Credentials successfully created and stored"
+          } else {
+              Write-Host "❌ Failed to create credentials"
+              exit 1
+          }
         working-directory: .
 
       - name: Wait for services to be ready
@@ -93,18 +120,6 @@ jobs:
               Write-Error "DMS failed to start within expected time"
               exit 1
           }
-
-      - name: Create Smoke Test Credentials
-        run: |
-          Import-Module ./modules/SmokeTest.psm1 -Force
-          $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
-
-          # Store credentials in environment variables for subsequent steps
-          "SMOKE_TEST_KEY=$($credentials.Key)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "SMOKE_TEST_SECRET=$($credentials.Secret)" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-          Write-Host "Smoke test credentials created successfully"
-        working-directory: eng/smoke_test/
 
       - name: Generate SDK for Smoke Tests
         run: |
@@ -224,6 +239,33 @@ jobs:
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
         run: ./build-dms.ps1 SmokeTest -SkipDockerBuild -EnableElasticSearch
+
+      - name: Create Smoke Test Credentials
+        run: |
+          $output = ./create-smoke-test-credentials.ps1
+          Write-Output $output
+
+          # Extract credentials from the simple output format
+          foreach ($line in $output) {
+              if ($line -match "^SMOKE_TEST_KEY=(.+)$") {
+                  $key = $matches[1]
+                  "SMOKE_TEST_KEY=$key" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  Write-Host "✅ Smoke test key captured: $key"
+              }
+              elseif ($line -match "^SMOKE_TEST_SECRET=(.+)$") {
+                  $secret = $matches[1]  
+                  "SMOKE_TEST_SECRET=$secret" | Out-File -FilePath $env:GITHUB_ENV -Append
+                  Write-Host "✅ Smoke test secret captured"
+              }
+          }
+
+          # Verify both credentials were captured
+          if ($env:SMOKE_TEST_KEY -and $env:SMOKE_TEST_SECRET) {
+              Write-Host "✅ Credentials successfully created and stored"
+          } else {
+              Write-Host "❌ Failed to create credentials"
+              exit 1
+          }
         working-directory: .
 
       - name: Wait for services to be ready
@@ -250,18 +292,6 @@ jobs:
               Write-Error "DMS failed to start within expected time"
               exit 1
           }
-
-      - name: Create Smoke Test Credentials
-        run: |
-          Import-Module ./modules/SmokeTest.psm1 -Force
-          $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
-
-          # Store credentials in environment variables for subsequent steps
-          "SMOKE_TEST_KEY=$($credentials.Key)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "SMOKE_TEST_SECRET=$($credentials.Secret)" | Out-File -FilePath $env:GITHUB_ENV -Append
-
-          Write-Host "Smoke test credentials created successfully"
-        working-directory: eng/smoke_test/
 
       - name: Generate SDK for Smoke Tests
         run: |
