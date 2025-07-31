@@ -354,6 +354,7 @@ function SmokeTests {
         $searchEngine = "ElasticSearch"
     }
 
+    # Start DMS environment without credentials (workflow will create them separately)
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
@@ -368,6 +369,8 @@ function SmokeTests {
             Pop-Location
         }
     }
+
+    Write-Output "SmokeTest environment started - credentials will be created separately"
 }
 
 function RunNuGetPack {

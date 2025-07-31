@@ -67,7 +67,6 @@ jobs:
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
         run: ./build-dms.ps1 SmokeTest -SkipDockerBuild
-        working-directory: .
 
       - name: Wait for services to be ready
         run: |
@@ -98,11 +97,9 @@ jobs:
         run: |
           Import-Module ./modules/SmokeTest.psm1 -Force
           $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
-
           # Store credentials in environment variables for subsequent steps
           "SMOKE_TEST_KEY=$($credentials.Key)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "SMOKE_TEST_SECRET=$($credentials.Secret)" | Out-File -FilePath $env:GITHUB_ENV -Append
-
           Write-Host "Smoke test credentials created successfully"
         working-directory: eng/smoke_test/
 
@@ -224,7 +221,6 @@ jobs:
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
         run: ./build-dms.ps1 SmokeTest -SkipDockerBuild -EnableElasticSearch
-        working-directory: .
 
       - name: Wait for services to be ready
         run: |
@@ -255,11 +251,9 @@ jobs:
         run: |
           Import-Module ./modules/SmokeTest.psm1 -Force
           $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
-
           # Store credentials in environment variables for subsequent steps
           "SMOKE_TEST_KEY=$($credentials.Key)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "SMOKE_TEST_SECRET=$($credentials.Secret)" | Out-File -FilePath $env:GITHUB_ENV -Append
-
           Write-Host "Smoke test credentials created successfully"
         working-directory: eng/smoke_test/
 
