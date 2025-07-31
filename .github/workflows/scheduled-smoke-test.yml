@@ -223,7 +223,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
-        run: ./build-dms.ps1 SmokeTest -SkipDockerBuild
+        run: ./build-dms.ps1 SmokeTest -SkipDockerBuild -EnableElasticSearch
         working-directory: .
 
       - name: Wait for services to be ready

@@ -61,7 +61,7 @@ $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081
 
 - `ConfigServiceUrl` (Required): The URL of the Configuration Service
 - `SysAdminId` (Optional): System administrator ID (default: "smoke-test-admin")
-- `SysAdminSecret` (Optional): System administrator secret (default: "SmokeTest123!")
+- `SysAdminSecret` (Optional): System administrator secret (default: "SmokeTest12!")
 - `VendorName` (Optional): Vendor name (default: "Smoke Test Vendor")
 - `ApplicationName` (Optional): Application name (default: "Smoke Test Application")
 - `ClaimSetName` (Optional): Claim set name (default: "EdFiSandbox")
