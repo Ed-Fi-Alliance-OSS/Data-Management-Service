@@ -370,30 +370,6 @@ internal static class JsonHelpers
         }
     }
 
-    public static void TryCoerceDateToDateTime(this JsonNode jsonNode)
-    {
-        var jsonValue = jsonNode.AsValue();
-        if (jsonValue.GetValueKind() == JsonValueKind.String)
-        {
-            string stringValue = jsonValue.GetValue<string>();
-            if (
-                DateOnly.TryParse(
-                    stringValue,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out DateOnly dateValue
-                )
-            )
-            {
-                jsonNode.ReplaceWith(
-                    dateValue
-                        .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
-                        .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
-                );
-            }
-        }
-    }
-
     /// <summary>
     /// Helper to replace slash-formatted dates (e.g., 5/1/2009 or 5/1/2009 10:30:00 AM) with dash-formatted dates (e.g., 2009-05-01 or 2009-05-01 10:30:00 AM)
     /// Handles both date-only and datetime formats. Time portions are preserved as-is while only the date portion is converted.
