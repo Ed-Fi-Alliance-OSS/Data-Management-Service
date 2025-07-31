@@ -437,11 +437,11 @@ Feature: Data strictness
                   }
                   """
 
-        Scenario: 19 Accept time with AM PM And Convert To UTC ISO8601 in a POST request
+        Scenario: 20 Accept time with AM PM And Convert To UTC ISO8601 in a POST request
             Given a POST request is made to "/ed-fi/assessments" with
                   """
                   {
-                      "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                      "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f5",
                       "namespace": "uri://ed-fi.org/Assessment/Assessment.xml", "academicSubjects": [
                           {
                               "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
@@ -472,7 +472,7 @@ Feature: Data strictness
                   """
                   {
                       "assessmentReference": {
-                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f5",
                           "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
                       },
                       "schoolYearTypeReference": {
@@ -481,7 +481,7 @@ Feature: Data strictness
                       "studentReference": {
                           "studentUniqueId": "604906"
                       },
-                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8c",
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8j",
                       "administrationDate": "2021-09-28 2:15:30 PM"
                   }
                   """
@@ -491,7 +491,7 @@ Feature: Data strictness
                   {
                       "id": "{id}",
                       "assessmentReference": {
-                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f5",
                           "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
                       },
                       "schoolYearTypeReference": {
@@ -500,16 +500,16 @@ Feature: Data strictness
                       "studentReference": {
                           "studentUniqueId": "604906"
                       },
-                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8c",
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8j",
                       "administrationDate": "2021-09-28T14:15:30Z"
                   }
                   """
 
-        Scenario: 20 accept time without zone and it will be added automatically
+        Scenario: 21 accept time without zone and it will be added automatically
             Given a POST request is made to "/ed-fi/assessments" with
                   """
                   {
-                      "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                      "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f8",
                       "namespace": "uri://ed-fi.org/Assessment/Assessment.xml", "academicSubjects": [
                           {
                               "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
@@ -540,7 +540,7 @@ Feature: Data strictness
                   """
                   {
                       "assessmentReference": {
-                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f8",
                           "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
                       },
                       "schoolYearTypeReference": {
@@ -549,7 +549,7 @@ Feature: Data strictness
                       "studentReference": {
                           "studentUniqueId": "604906"
                       },
-                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8c",
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8k",
                       "administrationDate": "2022-09-05T16:44:33"
                   }
                   """
@@ -559,7 +559,7 @@ Feature: Data strictness
                   {
                       "id": "{id}",
                       "assessmentReference": {
-                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f2",
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f8",
                           "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
                       },
                       "schoolYearTypeReference": {
@@ -568,7 +568,7 @@ Feature: Data strictness
                       "studentReference": {
                           "studentUniqueId": "604906"
                       },
-                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8c",
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8k",
                       "administrationDate": "2022-09-05T16:44:33Z"
                   }
                   """
