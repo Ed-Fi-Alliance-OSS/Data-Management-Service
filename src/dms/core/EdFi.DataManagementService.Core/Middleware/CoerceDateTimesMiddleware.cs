@@ -24,7 +24,7 @@ internal class CoerceDateTimesMiddleware(ILogger logger) : IPipelineStep
             IEnumerable<JsonNode?> jsonNodes = requestInfo.ParsedBody.SelectNodesFromArrayPath(path, logger);
             foreach (JsonNode? jsonNode in jsonNodes)
             {
-                jsonNode?.TryCoerceDateToDateTime();
+                jsonNode?.TryNormalizeDateTimeString();
             }
         }
 

@@ -436,3 +436,139 @@ Feature: Data strictness
                       "administrationDate": "2021-09-28T00:00:00Z"
                   }
                   """
+
+        Scenario: 20 Accept time with AM PM And Convert To UTC ISO8601 in a POST request
+            Given a POST request is made to "/ed-fi/assessments" with
+                  """
+                  {
+                      "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f5",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml", "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ],
+                      "assessmentTitle": "title"
+                  }
+                  """
+            Given a POST request is made to "/ed-fi/schoolYearTypes" with
+                  """
+                  {
+                    "schoolYear": 2022,
+                    "schoolYearDescription": "2022",
+                    "currentSchoolYear": true
+                  }
+                  """
+            Given a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                    "studentUniqueId": "604906",
+                    "firstName": "first",
+                    "lastSurname": "last",
+                    "birthDate": "2001-01-01"
+                  }
+                  """
+             When a POST request is made to "/ed-fi/studentAssessments" with
+                # Adminstration Date is missing the time - THIS IS ACCEPTED BY THE ODS/API
+                  """
+                  {
+                      "assessmentReference": {
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f5",
+                          "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                      },
+                      "schoolYearTypeReference": {
+                          "schoolYear": 2022
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604906"
+                      },
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8j",
+                      "administrationDate": "2021-09-28 2:15:30 PM"
+                  }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentReference": {
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f5",
+                          "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                      },
+                      "schoolYearTypeReference": {
+                          "schoolYear": 2022
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604906"
+                      },
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8j",
+                      "administrationDate": "2021-09-28T14:15:30Z"
+                  }
+                  """
+
+        Scenario: 21 accept time without zone and it will be added automatically
+            Given a POST request is made to "/ed-fi/assessments" with
+                  """
+                  {
+                      "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f8",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml", "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ],
+                      "assessmentTitle": "title"
+                  }
+                  """
+            Given a POST request is made to "/ed-fi/schoolYearTypes" with
+                  """
+                  {
+                    "schoolYear": 2022,
+                    "schoolYearDescription": "2022",
+                    "currentSchoolYear": true
+                  }
+                  """
+            Given a POST request is made to "/ed-fi/students" with
+                  """
+                  {
+                    "studentUniqueId": "604906",
+                    "firstName": "first",
+                    "lastSurname": "last",
+                    "birthDate": "2001-01-01"
+                  }
+                  """
+             When a POST request is made to "/ed-fi/studentAssessments" with
+                # Adminstration Date is missing the time - THIS IS ACCEPTED BY THE ODS/API
+                  """
+                  {
+                      "assessmentReference": {
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f8",
+                          "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                      },
+                      "schoolYearTypeReference": {
+                          "schoolYear": 2022
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604906"
+                      },
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8k",
+                      "administrationDate": "2022-09-05T16:44:33"
+                  }
+                  """
+             Then it should respond with 201
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentReference": {
+                          "assessmentIdentifier": "01774fa3-06f1-47fe-8801-c8b1e65057f8",
+                          "namespace": "uri://ed-fi.org/Assessment/Assessment.xml"
+                      },
+                      "schoolYearTypeReference": {
+                          "schoolYear": 2022
+                      },
+                      "studentReference": {
+                          "studentUniqueId": "604906"
+                      },
+                      "studentAssessmentIdentifier": "/Qhqqe/gI4p3RguP68ZEDArGHM64FKnCg/RLHG8k",
+                      "administrationDate": "2022-09-05T16:44:33Z"
+                  }
+                  """

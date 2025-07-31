@@ -342,25 +342,29 @@ internal static class JsonHelpers
         }
     }
 
-    public static void TryCoerceDateToDateTime(this JsonNode jsonNode)
+    /// <summary>
+    /// Helper to normalize date-time strings to a standard ISO-8601 format.
+    /// </summary>
+    /// <param name="jsonNode"></param>
+    public static void TryNormalizeDateTimeString(this JsonNode jsonNode)
     {
         var jsonValue = jsonNode.AsValue();
         if (jsonValue.GetValueKind() == JsonValueKind.String)
         {
             string stringValue = jsonValue.GetValue<string>();
+
+            // Always try to convert as DateTime with UTC support
             if (
-                DateOnly.TryParse(
+                DateTime.TryParse(
                     stringValue,
                     CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out DateOnly dateValue
+                    DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                    out DateTime dateTimeValue
                 )
             )
             {
                 jsonNode.ReplaceWith(
-                    dateValue
-                        .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
-                        .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
+                    dateTimeValue.ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture)
                 );
             }
         }
