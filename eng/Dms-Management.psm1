@@ -367,14 +367,17 @@ function Add-Application {
         [long]$VendorId,
 
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken
+        [string]$AccessToken,
+
+        [int[]]
+        $EducationOrganizationIds = @(255901, 19255901)
     )
 
     $applicationData = @{
         vendorId        = $VendorId
         applicationName = $ApplicationName
         claimSetName    = $ClaimSetName
-        educationOrganizationIds = @(255901, 19255901)
+        educationOrganizationIds = $EducationOrganizationIds
     }
 
     $invokeParams = @{
