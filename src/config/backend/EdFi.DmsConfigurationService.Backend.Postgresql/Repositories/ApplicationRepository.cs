@@ -73,6 +73,17 @@ public class ApplicationRepository(
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureVendorNotFound();
         }
+        catch (PostgresException ex)
+            when (ex.SqlState == "23505" && ex.Message.Contains("idx_vendor_applicationname"))
+        {
+            logger.LogWarning(
+                ex,
+                "Application '{ApplicationName}' already exists for vendor",
+                command.ApplicationName
+            );
+            await transaction.RollbackAsync();
+            return new ApplicationInsertResult.FailureDuplicateApplication(command.ApplicationName);
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Insert application failure");
@@ -228,6 +239,17 @@ public class ApplicationRepository(
             logger.LogWarning(ex, "Update application failure: Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureVendorNotFound();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == "23505" && ex.Message.Contains("idx_vendor_applicationname"))
+        {
+            logger.LogWarning(
+                ex,
+                "Application '{ApplicationName}' already exists for vendor",
+                command.ApplicationName
+            );
+            await transaction.RollbackAsync();
+            return new ApplicationUpdateResult.FailureDuplicateApplication(command.ApplicationName);
         }
         catch (Exception ex)
         {

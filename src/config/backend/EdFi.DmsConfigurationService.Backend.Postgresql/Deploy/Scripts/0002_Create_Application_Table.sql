@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS dmscs.Application (
     CONSTRAINT fk_vendor FOREIGN KEY (VendorId) REFERENCES dmscs.Vendor(Id) ON DELETE CASCADE
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_applicationname ON dmscs.Application (VendorId, ApplicationName);
+
 COMMENT ON COLUMN dmscs.Application.Id IS 'Application id';
 COMMENT ON COLUMN dmscs.Application.ApplicationName IS 'Application name';
 COMMENT ON COLUMN dmscs.Application.VendorId IS 'Vendor or company id';
@@ -26,3 +28,4 @@ CREATE TABLE IF NOT EXISTS dmscs.ApplicationEducationOrganization (
 COMMENT ON TABLE dmscs.ApplicationEducationOrganization IS 'Relationship of applications with educational organizations';
 COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.ApplicationId IS 'Application id';
 COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.EducationOrganizationId IS 'Education organization id';
+

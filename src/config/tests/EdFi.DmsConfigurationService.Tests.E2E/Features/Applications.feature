@@ -86,7 +86,7 @@ Feature: Applications endpoints
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "Demo application",
+                   "applicationName": "Demo application 02",
                    "claimSetName": "Claim06",
                    "educationOrganizationIds": [1, 2, 3]
                   }
@@ -103,7 +103,7 @@ Feature: Applications endpoints
                   """
                   {
                     "id": {applicationId},
-                    "applicationName": "Demo application",
+                    "applicationName": "Demo application 02",
                     "vendorId": {vendorId},
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3]
@@ -139,7 +139,7 @@ Feature: Applications endpoints
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "Demo application",
+                   "applicationName": "Scenario 04 Demo application",
                    "claimSetName": "ClaimScenario03"
                   }
                   """
@@ -413,7 +413,7 @@ Feature: Applications endpoints
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "Demo application",
+                   "applicationName": "Demo application 17",
                    "claimSetName": "ClaimScenario03"
                   }
                   """
@@ -424,7 +424,7 @@ Feature: Applications endpoints
                       {
                       "id": {applicationId},
                       "vendorId": {vendorId},
-                      "applicationName": "Demo application Update",
+                      "applicationName": "Demo application 17 Update",
                       "claimSetName": "ClaimScenario03Update"
                       }
                   """
@@ -436,7 +436,7 @@ Feature: Applications endpoints
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "Demo application",
+                   "applicationName": "Demo application 18",
                    "claimSetName": "ClaimScenario03"
                   }
                   """
@@ -460,7 +460,7 @@ Feature: Applications endpoints
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "Demo application",
+                   "applicationName": "Demo application 19",
                    "claimSetName": "ClaimScenario2559",
                    "educationOrganizationIds": [2559, 255901]
                   }
@@ -472,10 +472,48 @@ Feature: Applications endpoints
                       {
                       "id": {applicationId},
                       "vendorId": {vendorId},
-                      "applicationName": "Demo application Update",
+                      "applicationName": "Demo application 19 Update",
                       "claimSetName": "ClaimScenario2559Update",
                       "educationOrganizationIds": [2559, 255902]
                       }
                   """
              Then it should respond with 204
              Then the token should have "ClaimScenario2559Update" scope and "255902" edOrgIds
+
+        Scenario: 20 Ensure application names are unique per vendor
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Demo application 20",
+                   "claimSetName": "Claim06",
+                   "educationOrganizationIds": [1, 2, 3]
+                  }
+                  """
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Demo application 20",
+                   "claimSetName": "Claim06",
+                   "educationOrganizationIds": [1, 2, 3, 4]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": "0HNEJBSQ1BUK4:00000004",
+                    "validationErrors": {
+                    "ApplicationName": [
+                         "Application 'Demo application 20' already exists for vendor."
+                    ]
+                  },
+                    "errors": []
+                  }
+                  """
+              

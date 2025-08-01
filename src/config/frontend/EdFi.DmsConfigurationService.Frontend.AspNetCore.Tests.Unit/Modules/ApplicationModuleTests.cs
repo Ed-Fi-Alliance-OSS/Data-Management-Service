@@ -755,6 +755,166 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
+    public class FailureDuplicateApplicationNameTests : ApplicationModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "Test Prefix",
+                        }
+                    )
+                );
+
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(new ApplicationInsertResult.FailureDuplicateApplication("Test Application"));
+
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(new ApplicationUpdateResult.FailureDuplicateApplication("Test Application"));
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(
+                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid())])
+                );
+
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_for_duplicate_application_name_on_insert()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var insertResponse = await client.PostAsync(
+                "/v2/applications",
+                new StringContent(
+                    """
+                    {
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string responseBody = await insertResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseBody);
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ApplicationName": [
+                      "Application 'Test Application' already exists for vendor."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_for_duplicate_application_name_on_update()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v2/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "Id": 1,
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string responseBody = await updateResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseBody);
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ApplicationName": [
+                      "Application 'Test Application' already exists for vendor."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+    }
+
+    [TestFixture]
     public class FailureDuplicateClaimSetNameTests : ApplicationModuleTests
     {
         [SetUp]
