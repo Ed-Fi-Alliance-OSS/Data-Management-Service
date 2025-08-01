@@ -16,6 +16,8 @@ jobs:
   smoke-test-opensearch:
     name: Smoke Tests - OpenSearch
     runs-on: ubuntu-latest
+    env:
+      DATABASE_TEMPLATE_PACKAGE: EdFi.Dms.Populated.Template.PostgreSql.5.2.0
     defaults:
       run:
         shell: pwsh
@@ -170,6 +172,8 @@ jobs:
   smoke-test-elasticsearch:
     name: Smoke Tests - ElasticSearch
     runs-on: ubuntu-latest
+    env:
+      DATABASE_TEMPLATE_PACKAGE: EdFi.Dms.Populated.Template.PostgreSql.5.2.0
     defaults:
       run:
         shell: pwsh
