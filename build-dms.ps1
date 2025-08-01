@@ -341,6 +341,8 @@ function SmokeTests {
             Push-Location eng/docker-compose/
             ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "OpenSearch" -EnableConfig -d -v
             ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "ElasticSearch" -EnableConfig -d -v
+            ./start-published-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "OpenSearch" -EnableConfig -d -v
+            ./start-published-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "ElasticSearch" -EnableConfig -d -v
         }
         finally {
             Pop-Location
