@@ -91,7 +91,7 @@ function Get-SmokeTestCredentials {
         $ClaimSetName = "EdFiSandbox",
 
         [int[]]
-        $EducationOrganizationIds = @(255901, 19255901, 2559011, 200000, 100000, 300000, 255901044, 255901001, 255901107, 51, 54)
+        $EducationOrganizationIds = @(255901, 19255901, 100000, 200000, 300000)
     )
 
     Write-Host "Creating smoke test credentials via Configuration Service..."
