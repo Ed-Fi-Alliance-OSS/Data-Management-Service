@@ -49,7 +49,7 @@ jobs:
         run: ./build-dms.ps1 E2ETest -EnableElasticSearch -UsePublishedImage -Configuration Release
 
       - name: Notify Slack on success
-        if: success()
+        if: success() && github.event_name != 'workflow_dispatch'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: '{"text":"✅ Build and tests passed for the scheduled pre image tests!"}'
@@ -57,7 +57,7 @@ jobs:
           webhook-type: incoming-webhook
 
       - name: Notify Slack on failure
-        if: failure()
+        if: failure() && github.event_name != 'workflow_dispatch'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: |

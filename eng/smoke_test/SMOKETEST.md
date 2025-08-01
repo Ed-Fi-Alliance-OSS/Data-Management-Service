@@ -33,3 +33,40 @@ Apis.All and Models.All namespaces. Once the files are rearranged, the
 > The generated SDK for DMS metadata specifications (ODS API version 7.2
 > with Data standard 5.1.0) is available
 > [here](https://odsassets.blob.core.windows.net/public/project-tanager/sdk/5.1.0/EdFi.OdsApi.Sdk.zip).
+
+## Automatic Credential Creation
+
+The SmokeTest module includes a `Get-SmokeTestCredentials` function that
+automatically creates the necessary vendor and application credentials for
+smoke testing. This function:
+
+1. Creates system administrator credentials in the Configuration Service
+2. Obtains an authentication token
+3. Creates a vendor with the required namespace prefixes
+4. Creates an application with the appropriate claimset and education
+   organization IDs
+5. Returns the key and secret for use in smoke tests
+
+### Usage
+
+```powershell
+Import-Module ./modules/SmokeTest.psm1 -Force
+$credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
+
+# Use the credentials in smoke tests
+./Invoke-NonDestructiveApiTests.ps1 -BaseUrl "http://localhost:8080" -Key $credentials.Key -Secret $credentials.Secret
+```
+
+### Parameters
+
+- `ConfigServiceUrl` (Required): The URL of the Configuration Service
+- `SysAdminId` (Optional): System administrator ID (default: "smoke-test-admin")
+- `SysAdminSecret` (Optional): System administrator secret (default: "SmokeTest12!")
+- `VendorName` (Optional): Vendor name (default: "Smoke Test Vendor")
+- `ApplicationName` (Optional): Application name (default: "Smoke Test Application")
+- `ClaimSetName` (Optional): Claim set name (default: "EdFiSandbox")
+- `EducationOrganizationIds` (Optional): Array of education organization IDs
+
+### Example
+
+See `Example-GetCredentials.ps1` for a complete example of how to use the function.

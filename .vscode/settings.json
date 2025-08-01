@@ -99,6 +99,7 @@
     "issubclass",
     "jsonschemaforinsert",
     "Keycloak",
+    "LASTEXITCODE",
     "lastmodifiedat",
     "noallowidentityupdates",
     "nodocumentpathsmappings",

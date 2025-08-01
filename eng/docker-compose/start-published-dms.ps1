@@ -39,7 +39,11 @@ param (
 
     # Add extension security metadata
     [Switch]
-    $AddExtensionSecurityMetadata
+    $AddExtensionSecurityMetadata,
+
+    # Add smoke test credentials
+    [Switch]
+    $AddSmokeTestCredentials
 )
 
 $files = @(
@@ -145,4 +149,16 @@ else {
 
     Write-Output "Running connector setup..."
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
+
+    if($AddSmokeTestCredentials)
+    {
+        Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
+        Write-Output "Creating smoke test credentials..."
+        $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
+        
+        Write-Output "Smoke test credentials created successfully!"
+        Write-Output "Key: $($credentials.Key)"
+        Write-Output "Secret: $($credentials.Secret)"
+        Write-Output "These credentials can be used for smoke testing the DMS API."
+    }
 }
