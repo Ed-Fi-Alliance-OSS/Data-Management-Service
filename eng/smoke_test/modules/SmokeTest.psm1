@@ -6,8 +6,8 @@
 #Requires -Version 7
 $ErrorActionPreference = "Stop"
 
-# Add System.Web assembly for URL encoding
-Add-Type -AssemblyName System.Web
+# Import the Dms-Management module for vendor/application management
+Import-Module "$PSScriptRoot/../../Dms-Management.psm1" -Force
 
 function Invoke-SmokeTestUtility {
 
@@ -96,82 +96,27 @@ function Get-SmokeTestCredentials {
 
     Write-Host "Creating smoke test credentials via Configuration Service..."
 
-    # URL encode the secret for form data
-    $encodedSysAdminSecret = [System.Web.HttpUtility]::UrlEncode($SysAdminSecret)
-
     try {
-        # Step 1: Create system administrator credentials
+        # Step 1: Create system administrator credentials using Dms-Management module
         Write-Host "Creating system administrator credentials..."
-        $registerBody = "ClientId=$SysAdminId&ClientSecret=$encodedSysAdminSecret&DisplayName=Smoke Test Administrator"
-        
-        Invoke-RestMethod -Uri "$ConfigServiceUrl/connect/register" `
-            -Method Post `
-            -ContentType "application/x-www-form-urlencoded" `
-            -Body $registerBody `
-            -ErrorAction SilentlyContinue | Out-Null
+        Add-CmsClient -CmsUrl $ConfigServiceUrl -ClientId $SysAdminId -ClientSecret $SysAdminSecret -DisplayName "Smoke Test Administrator"
 
-        # Step 2: Get configuration service token
+        # Step 2: Get configuration service token using Dms-Management module
         Write-Host "Obtaining configuration service token..."
-        $tokenBody = "client_id=$SysAdminId&client_secret=$encodedSysAdminSecret&grant_type=client_credentials&scope=edfi_admin_api/full_access"
-        
-        $tokenResponse = Invoke-RestMethod -Uri "$ConfigServiceUrl/connect/token" `
-            -Method Post `
-            -ContentType "application/x-www-form-urlencoded" `
-            -Body $tokenBody
+        $configToken = Get-CmsToken -CmsUrl $ConfigServiceUrl -ClientId $SysAdminId -ClientSecret $SysAdminSecret
 
-        $configToken = $tokenResponse.access_token
-
-        # Step 3: Create vendor
+        # Step 3: Create vendor using Dms-Management module
         Write-Host "Creating vendor..."
-        $vendorData = @{
-            company = $VendorName
-            contactName = "Smoke Test Contact"
-            contactEmailAddress = "smoketest@example.com"
-            namespacePrefixes = "uri://ed-fi.org,uri://gbisd.edu,uri://tpdm.ed-fi.org"
-        } | ConvertTo-Json
-
-        $vendorResponse = Invoke-RestMethod -Uri "$ConfigServiceUrl/v2/vendors" `
-            -Method Post `
-            -ContentType "application/json" `
-            -Headers @{ Authorization = "bearer $configToken" } `
-            -Body $vendorData
-
-        # Extract vendor ID from location header or response
-        if ($vendorResponse.PSObject.Properties.Name -contains "id") {
-            $vendorId = $vendorResponse.id
-        } else {
-            # If vendor already exists, try to get it by name
-            $existingVendors = Invoke-RestMethod -Uri "$ConfigServiceUrl/v2/vendors" `
-                -Method Get `
-                -Headers @{ Authorization = "bearer $configToken" }
-            
-            $existingVendor = $existingVendors | Where-Object { $_.company -eq $VendorName }
-            if ($existingVendor) {
-                $vendorId = $existingVendor.id
-            } else {
-                throw "Failed to create or find vendor"
-            }
-        }
+        $vendorId = Add-Vendor -CmsUrl $ConfigServiceUrl -Company $VendorName -ContactName "Smoke Test Contact" -ContactEmailAddress "smoketest@example.com" -NamespacePrefixes "uri://ed-fi.org,uri://gbisd.edu,uri://tpdm.ed-fi.org" -AccessToken $configToken
 
         Write-Host "Vendor created with ID: $vendorId"
 
-        # Step 4: Create application
+        # Step 4: Create application using Dms-Management module
         Write-Host "Creating application..."
-        $applicationData = @{
-            vendorId = $vendorId
-            applicationName = $ApplicationName
-            claimSetName = $ClaimSetName
-            educationOrganizationIds = $EducationOrganizationIds
-        } | ConvertTo-Json
+        $credentials = Add-Application -CmsUrl $ConfigServiceUrl -ApplicationName $ApplicationName -ClaimSetName $ClaimSetName -VendorId $vendorId -AccessToken $configToken -EducationOrganizationIds $EducationOrganizationIds
 
-        $applicationResponse = Invoke-RestMethod -Uri "$ConfigServiceUrl/v2/applications" `
-            -Method Post `
-            -ContentType "application/json" `
-            -Headers @{ Authorization = "bearer $configToken" } `
-            -Body $applicationData
-
-        $key = $applicationResponse.key
-        $secret = $applicationResponse.secret
+        $key = $credentials.Key
+        $secret = $credentials.Secret
 
         Write-Host "Application created successfully!"
         Write-Host "Key: $key"

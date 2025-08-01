@@ -6,7 +6,7 @@
 #Requires -Version 7
 
 Import-Module ../Package-Management.psm1 -Force
-Import-Module ./Dms-Management.psm1 -Force
+Import-Module ../Dms-Management.psm1 -Force
 
 <#
 .SYNOPSIS
