@@ -223,7 +223,7 @@ jobs:
     if: always()
     steps:
       - name: Notify Slack on success
-        if: needs.build-and-test.result == 'success' && needs.validate-resources-spec.result == 'success' && needs.validate-descriptors-spec.result == 'success' && needs.validate-discovery-spec.result == 'success'
+        if: github.event_name != 'workflow_dispatch' && needs.build-and-test.result == 'success' && needs.validate-resources-spec.result == 'success' && needs.validate-descriptors-spec.result == 'success' && needs.validate-discovery-spec.result == 'success'
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: '{"text":"✅ Build and tests passed for the scheduled run!"}'
@@ -231,7 +231,7 @@ jobs:
           webhook-type: incoming-webhook
 
       - name: Notify Slack on failure
-        if: needs.build-and-test.result == 'failure' || needs.validate-resources-spec.result == 'failure' || needs.validate-descriptors-spec.result == 'failure' || needs.validate-discovery-spec.result == 'failure'
+        if: github.event_name != 'workflow_dispatch' && (needs.build-and-test.result == 'failure' || needs.validate-resources-spec.result == 'failure' || needs.validate-descriptors-spec.result == 'failure' || needs.validate-discovery-spec.result == 'failure')
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
         with:
           payload: |
