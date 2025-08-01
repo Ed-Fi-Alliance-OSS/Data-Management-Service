@@ -26,3 +26,13 @@ CREATE TABLE IF NOT EXISTS dmscs.ApplicationEducationOrganization (
 COMMENT ON TABLE dmscs.ApplicationEducationOrganization IS 'Relationship of applications with educational organizations';
 COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.ApplicationId IS 'Application id';
 COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.EducationOrganizationId IS 'Education organization id';
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.indexes
+        WHERE indexname = 'idx_vendor_applicationname' AND tablename = 'application'
+    ) THEN
+        CREATE UNIQUE INDEX idx_vendor_applicationname ON dmscs.Application (VendorId, ApplicationName);
+    END IF;
+END$$;
