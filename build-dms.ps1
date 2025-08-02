@@ -18,7 +18,7 @@
           do not connect to a database.
         * E2ETest: executes NUnit tests in projects named `*.E2ETests`, which
           runs the API in an isolated Docker environment and executes API Calls .
-        * SmokeTest: starts DMS with all extensions in Docker environment for smoke testing.
+        * Seed: starts DMS with all extensions in Docker environment with seed data for testing.
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
@@ -45,7 +45,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "SmokeTest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
+    [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "Seed", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -283,96 +283,79 @@ function RunE2E {
     Invoke-Execute { RunTests -Filter "*.Tests.E2E" }
 }
 
-function E2ETests {
-if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
-        Invoke-Step { DockerBuild }
-    }
+function Start-TestEnvironment {
+    param (
+        [switch]$EnableOpenSearch,
+        [switch]$EnableElasticSearch,
+        [switch]$UsePublishedImage,
+        [switch]$SkipDockerBuild,
+        [switch]$LoadSeedData
+    )
 
-    # Clean up all the containers and volumes
-    Invoke-Execute {
-        try {
-            Push-Location eng/docker-compose/
-            ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -EnableConfig -d -v
-        }
-        finally {
-            Pop-Location
-        }
-    }
-
-    if ($EnableOpenSearch -or $EnableElasticSearch) {
-
-        $searchEngine = "OpenSearch"
-        if ($EnableElasticSearch) {
-            $searchEngine = "ElasticSearch"
-        }
-
-        Invoke-Execute {
-            try {
-                Push-Location eng/docker-compose/
-                if ($UsePublishedImage) {
-                    ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
-                }
-                else {
-                    ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
-                }
-            }
-            finally {
-                Pop-Location
-            }
-        }
-    }
-    else {
-        Invoke-Step { DockerRun }
-    }
-    Invoke-Step { RunE2E }
-}
-
-function SmokeTests {
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
     }
 
+    # Both E2E and Seed use the same environment file
+    $envFile = "./.env.example"
+    
     # Clean up all the containers and volumes
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "ElasticSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine "ElasticSearch" -EnableConfig -d -v
+            ./start-local-dms.ps1 -d -v -EnvironmentFile $envFile -SearchEngine "OpenSearch" -EnableConfig
+            ./start-local-dms.ps1 -d -v -EnvironmentFile $envFile -SearchEngine "ElasticSearch" -EnableConfig
+            ./start-published-dms.ps1 -d -v -EnvironmentFile $envFile -SearchEngine "OpenSearch" -EnableConfig
+            ./start-published-dms.ps1 -d -v -EnvironmentFile $envFile -SearchEngine "ElasticSearch" -EnableConfig
         }
         finally {
             Pop-Location
         }
     }
 
-    # Start DMS with Core, TPDM, Sample, and Homograph Extensions
-    # Default to OpenSearch if no specific search engine is enabled
+    # Determine search engine
     $searchEngine = "OpenSearch"
     if ($EnableElasticSearch) {
         $searchEngine = "ElasticSearch"
     }
 
-    # Start DMS environment without credentials (workflow will create them separately)
+    # Start DMS environment
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
+            
             if ($UsePublishedImage) {
-                ./start-published-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine $searchEngine -EnableConfig -LoadSeedData -AddExtensionSecurityMetadata
+                if ($LoadSeedData) {
+                    ./start-published-dms.ps1 -EnvironmentFile $envFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData
+                } else {
+                    ./start-published-dms.ps1 -EnvironmentFile $envFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
+                }
             }
             else {
-                ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine $searchEngine -EnableConfig -LoadSeedData -AddExtensionSecurityMetadata
+                if ($LoadSeedData) {
+                    ./start-local-dms.ps1 -EnvironmentFile $envFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData
+                } else {
+                    ./start-local-dms.ps1 -EnvironmentFile $envFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
+                }
             }
         }
         finally {
             Pop-Location
         }
     }
+    
+    if ($LoadSeedData) {
+        Write-Output "Seed environment started with seed data"
+    }
+}
 
-    Write-Output "SmokeTest environment started - credentials will be created separately"
+function E2ETests {
+    Start-TestEnvironment -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild
+    Invoke-Step { RunE2E }
+}
+
+function SeedTests {
+    Start-TestEnvironment -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData
 }
 
 function RunNuGetPack {
@@ -541,7 +524,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild }
-        SmokeTest { Invoke-Step { SmokeTests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild } }
+        Seed { Invoke-Step { SeedTests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }

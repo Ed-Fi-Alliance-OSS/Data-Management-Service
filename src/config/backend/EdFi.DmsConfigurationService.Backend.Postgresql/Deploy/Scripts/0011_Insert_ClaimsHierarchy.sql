@@ -2,7 +2,12 @@
 -- Licensed to the Ed-Fi Alliance under one or more agreements.
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
-
+    -- Check if a claimshierarchy with ID 1 exists
+        -- Update the existing record
+        -- Insert a new record
+    -- Check if a claimshierarchy with ID 1 exists
+        -- Update the existing record
+        -- Insert a new record
 DO $$
 DECLARE
     hierarchy_json JSONB;
@@ -2851,6 +2856,15 @@ BEGIN
             "name": "http://ed-fi.org/identity/claims/tpdm/rubricRatingLevelDescriptor"
           }
         ]
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/artMediumDescriptor"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/favoriteBookCategoryDescriptor"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/membershipTypeDescriptor"
       }
     ]
   },
@@ -6464,6 +6478,12 @@ BEGIN
       },
       {
         "name": "http://ed-fi.org/identity/claims/ed-fi/studentEducationOrganizationAssessmentAccommodationGeneralAccommodation"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/studentArtProgramAssociation"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/studentGraduationPlanAssociation"
       }
     ]
   },
@@ -8599,10 +8619,179 @@ BEGIN
         ]
       }
     ]
+  },
+  {
+    "name": "http://ed-fi.org/identity/claims/domains/sample",
+    "defaultAuthorization": {
+      "actions": [
+        {
+          "name": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Delete",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    "claimSets": [
+      {
+        "name": "EdFiSandbox",
+        "actions": [
+          {
+            "name": "Create"
+          },
+          {
+            "name": "Read"
+          },
+          {
+            "name": "Update"
+          },
+          {
+            "name": "Delete"
+          },
+          {
+            "name": "ReadChanges"
+          }
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/bus"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/busRoute"
+      }
+    ]
+  },
+  {
+    "name": "http://ed-fi.org/identity/claims/domains/homograph",
+    "defaultAuthorization": {
+      "actions": [
+        {
+          "name": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "Delete",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "name": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ]
+    },
+    "claimSets": [
+      {
+        "name": "EdFiSandbox",
+        "actions": [
+          {
+            "name": "Create"
+          },
+          {
+            "name": "Read"
+          },
+          {
+            "name": "Update"
+          },
+          {
+            "name": "Delete"
+          },
+          {
+            "name": "ReadChanges"
+          }
+        ]
+      }
+    ],
+    "claims": [
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/name"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/school"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/contact"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/student"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/staff"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/schoolYearType"
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/homograph/studentSchoolAssociation"
+      }
+    ]
   }
 ]'::JSONB;
-
     -- Check if a claimshierarchy with ID 1 exists
+
     IF EXISTS (SELECT 1 FROM dmscs.claimshierarchy WHERE id = 1) THEN
         -- Update the existing record
         UPDATE dmscs.claimshierarchy
