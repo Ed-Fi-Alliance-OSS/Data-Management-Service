@@ -19,7 +19,7 @@ jobs:
     env:
       DATABASE_TEMPLATE_PACKAGE: EdFi.Dms.Populated.Template.PostgreSql.5.2.0
       OAUTH_TOKEN_ENDPOINT: http://localhost:8045/realms/edfi/protocol/openid-connect/token
-      
+
     defaults:
       run:
         shell: pwsh
@@ -70,7 +70,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
-        run: ./build-dms.ps1 SmokeTest -SkipDockerBuild
+        run: ./build-dms.ps1 StartEnvironment -SkipDockerBuild -EnableOpenSearch -LoadSeedData
 
       - name: Wait for services to be ready
         run: |
@@ -176,6 +176,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_TEMPLATE_PACKAGE: EdFi.Dms.Populated.Template.PostgreSql.5.2.0
+      OAUTH_TOKEN_ENDPOINT: http://localhost:8045/realms/edfi/protocol/openid-connect/token
+
     defaults:
       run:
         shell: pwsh
@@ -226,7 +228,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
-        run: ./build-dms.ps1 SmokeTest -SkipDockerBuild -EnableElasticSearch
+        run: ./build-dms.ps1 StartEnvironment -SkipDockerBuild -EnableElasticSearch -LoadSeedData
 
       - name: Wait for services to be ready
         run: |
