@@ -361,10 +361,10 @@ function SmokeTests {
         try {
             Push-Location eng/docker-compose/
             if ($UsePublishedImage) {
-                ./start-published-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine $searchEngine -EnableConfig -LoadSeedData -AddExtensionSecurityMetadata
+                ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -LoadSeedData -AddExtensionSecurityMetadata
             }
             else {
-                ./start-local-dms.ps1 -EnvironmentFile "./.env.example" -SearchEngine $searchEngine -EnableConfig -LoadSeedData -AddExtensionSecurityMetadata
+                ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -LoadSeedData -AddExtensionSecurityMetadata
             }
         }
         finally {

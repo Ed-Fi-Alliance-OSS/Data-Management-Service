@@ -18,6 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_TEMPLATE_PACKAGE: EdFi.Dms.Populated.Template.PostgreSql.5.2.0
+      OAUTH_TOKEN_ENDPOINT: http://localhost:8045/realms/edfi/protocol/openid-connect/token
+      
     defaults:
       run:
         shell: pwsh
