@@ -31,6 +31,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj" />
+    <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.OpenIddict\EdFi.DmsConfigurationService.Backend.OpenIddict.csproj" />
     <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
   </ItemGroup>
 
