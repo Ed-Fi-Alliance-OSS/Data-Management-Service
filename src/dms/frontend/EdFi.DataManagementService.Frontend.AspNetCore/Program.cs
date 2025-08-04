@@ -32,6 +32,22 @@ builder.Services.Configure<KestrelServerOptions>(options =>
     options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10MB
 });
 
+var useReverseProxyHeaders = builder.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
+if (useReverseProxyHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders =
+            ForwardedHeaders.XForwardedFor
+            | ForwardedHeaders.XForwardedHost
+            | ForwardedHeaders.XForwardedProto;
+
+        // Accept forwarded headers from any network and proxy
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
+
 // Add CORS policy to allow Swagger UI to access the API
 string swaggerUiOrigin =
     builder.Configuration.GetValue<string>("Cors:SwaggerUIOrigin") ?? "http://localhost:8082";
@@ -54,20 +70,9 @@ if (!string.IsNullOrEmpty(pathBase))
     app.UsePathBase($"/{pathBase.Trim('/')}");
 }
 
-var useReverseProxyHeaders = app.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
 if (useReverseProxyHeaders)
 {
-    app.UseForwardedHeaders(
-        new ForwardedHeadersOptions
-        {
-            ForwardedHeaders =
-                ForwardedHeaders.All | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto,
-
-            // Accept forwarded headers from any network and proxy
-            KnownNetworks = { },
-            KnownProxies = { },
-        }
-    );
+    app.UseForwardedHeaders();
 }
 
 app.UseMiddleware<LoggingMiddleware>();
