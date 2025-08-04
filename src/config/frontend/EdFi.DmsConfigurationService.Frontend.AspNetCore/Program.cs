@@ -13,6 +13,23 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServices();
+
+var useReverseProxyHeaders = builder.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
+if (useReverseProxyHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders =
+            ForwardedHeaders.XForwardedFor
+            | ForwardedHeaders.XForwardedHost
+            | ForwardedHeaders.XForwardedProto;
+
+        // Accept forwarded headers from any network and proxy
+        options.KnownNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
+
 var app = builder.Build();
 
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
@@ -21,20 +38,9 @@ if (!string.IsNullOrEmpty(pathBase))
     app.UsePathBase($"/{pathBase.Trim('/')}");
 }
 
-var useReverseProxyHeaders = app.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
 if (useReverseProxyHeaders)
 {
-    app.UseForwardedHeaders(
-        new ForwardedHeadersOptions
-        {
-            ForwardedHeaders =
-                ForwardedHeaders.All | ForwardedHeaders.XForwardedHost | ForwardedHeaders.XForwardedProto,
-
-            // Accept forwarded headers from any network and proxy
-            KnownNetworks = { },
-            KnownProxies = { },
-        }
-    );
+    app.UseForwardedHeaders();
 }
 
 app.UseMiddleware<RequestLoggingMiddleware>();
