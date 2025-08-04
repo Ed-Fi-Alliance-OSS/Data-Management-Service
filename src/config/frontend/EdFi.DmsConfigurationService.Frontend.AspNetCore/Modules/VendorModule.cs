@@ -58,15 +58,15 @@ public class VendorModule : IEndpointModule
                 }
             ),
             VendorInsertResult.FailureDuplicateCompanyName => Results.Json(
-            FailureResponse.ForDataValidation(
-                [
-                                new ValidationFailure(
-                                    "Name",
-                                    "A vendor name already exists in the database. Please enter a unique name."
-                                ),
-                ],
-                httpContext.TraceIdentifier
-            ),
+                FailureResponse.ForDataValidation(
+                    [
+                        new ValidationFailure(
+                            "Name",
+                            "A vendor name already exists in the database. Please enter a unique name."
+                        ),
+                    ],
+                    httpContext.TraceIdentifier
+                ),
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),

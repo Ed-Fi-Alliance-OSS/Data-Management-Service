@@ -41,6 +41,15 @@
     <Compile Update="Features\AuthorizationMetadata.feature.cs">
       <DependentUpon>AuthorizationMetadata.feature</DependentUpon>
     </Compile>
+    <Compile Update="Features\ClaimsManagement.feature.cs">
+      <DependentUpon>ClaimsManagement.feature</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="TestData\Claims\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

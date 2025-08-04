@@ -13,6 +13,13 @@ public class AppSettings
     public bool DeployDatabaseOnStartup { get; set; }
     public required string Datastore { get; set; }
     public required string IdentityProvider { get; set; }
+
+    /// <summary>
+    /// When enabled, allows dynamic loading and reloading of claims via management endpoints.
+    /// WARNING: This feature allows runtime modification of security claims and should only be
+    /// enabled in development or testing environments. Default is false.
+    /// </summary>
+    public bool DangerouslyEnableDynamicClaimsLoading { get; set; } = false;
 }
 
 public class AppSettingsValidator : IValidateOptions<AppSettings>

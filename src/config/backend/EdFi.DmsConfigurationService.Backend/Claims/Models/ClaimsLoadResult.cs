@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+namespace EdFi.DmsConfigurationService.Backend.Claims.Models;
+
+/// <summary>
+/// Result of loading claims from file system or assembly
+/// </summary>
+public record ClaimsLoadResult
+{
+    /// <summary>
+    /// The loaded claims document nodes, or null if loading failed
+    /// </summary>
+    public ClaimsDocumentNodes? Nodes { get; init; }
+
+    /// <summary>
+    /// List of failures that occurred during loading
+    /// </summary>
+    public List<ClaimsFailure> Failures { get; init; }
+
+    /// <summary>
+    /// Creates a new ClaimsLoadResult
+    /// </summary>
+    public ClaimsLoadResult(ClaimsDocumentNodes? nodes, List<ClaimsFailure> failures)
+    {
+        Nodes = nodes;
+        Failures = failures;
+    }
+}

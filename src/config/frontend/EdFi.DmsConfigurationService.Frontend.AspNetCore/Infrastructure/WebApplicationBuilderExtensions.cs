@@ -7,10 +7,13 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
+using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
+using EdFi.DmsConfigurationService.Backend.Postgresql.Claims;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -58,8 +61,9 @@ public static class WebApplicationBuilderExtensions
             .Services.Configure<AppSettings>(webApplicationBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("ConnectionStrings"))
-            .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>();
-        ;
+            .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>()
+            .Configure<ClaimsOptions>(webApplicationBuilder.Configuration.GetSection("ClaimsOptions"))
+            .AddSingleton<IValidateOptions<ClaimsOptions>, ClaimsOptionsValidator>();
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
@@ -89,6 +93,14 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
+        webApplicationBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
+
+        // Claims loading services
+        webApplicationBuilder.Services.AddSingleton<IClaimsValidator, ClaimsValidator>();
+        webApplicationBuilder.Services.AddSingleton<IClaimsFragmentComposer, ClaimsFragmentComposer>();
+        webApplicationBuilder.Services.AddScoped<IClaimsDataLoader, ClaimsDataLoader>();
+        // IClaimsProvider registration moved to backend-specific sections
+        webApplicationBuilder.Services.AddSingleton<IClaimsUploadService, ClaimsUploadService>();
 
         Serilog.ILogger ConfigureLogging()
         {
@@ -119,11 +131,17 @@ public static class WebApplicationBuilderExtensions
                     ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
+            webAppBuilder.Services.AddTransient<
+                IClaimsTableValidator,
+                Backend.Postgresql.ClaimsDataLoader.ClaimsTableValidator
+            >();
+            webAppBuilder.Services.AddSingleton<IClaimsProvider, PostgresqlClaimsProvider>();
         }
         else
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
+            webAppBuilder.Services.AddSingleton<IClaimsProvider, ClaimsProvider>();
         }
     }
 

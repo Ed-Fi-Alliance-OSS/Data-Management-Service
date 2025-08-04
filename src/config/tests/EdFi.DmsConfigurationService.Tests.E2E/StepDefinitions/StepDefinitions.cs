@@ -136,8 +136,8 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a PUT request is made to {string} with")]
     public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
     {
-        url = ReplaceIds(url);
-        body = ReplaceIds(body);
+        url = await ReplaceIdsAsync(url);
+        body = await ReplaceIdsAsync(body);
 
         _apiResponse = await playwrightContext.ApiRequestContext?.PutAsync(
             url,
@@ -150,7 +150,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a GET request is made to {string}")]
     public async Task WhenAGETRequestIsMadeTo(string url)
     {
-        url = ReplaceIds(url);
+        url = await ReplaceIdsAsync(url);
         _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(
             url,
             new() { Headers = _authHeaders }
@@ -160,7 +160,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a GET request is made to {string} for first {int} items")]
     public async Task WhenAGETRequestIsMadeTo(string url, int limit)
     {
-        url = ReplaceIds(url);
+        url = await ReplaceIdsAsync(url);
         _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(
             $"{url}?limit={limit}",
             new() { Headers = _authHeaders }
@@ -170,7 +170,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a GET request is made to {string} for next {int} items after skipping {int} items")]
     public async Task WhenAGETRequestIsMadeTo(string url, int limit, int offset)
     {
-        url = ReplaceIds(url);
+        url = await ReplaceIdsAsync(url);
         _apiResponse = await playwrightContext.ApiRequestContext?.GetAsync(
             $"{url}?limit={limit}&offset={offset}",
             new() { Headers = _authHeaders }
@@ -181,7 +181,11 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [Given("a POST request is made to {string} with")]
     public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
     {
-        APIRequestContextOptions? options = new() { Headers = _authHeaders, Data = ReplaceIds(body) };
+        APIRequestContextOptions? options = new()
+        {
+            Headers = _authHeaders,
+            Data = await ReplaceIdsAsync(body),
+        };
         _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
         ExtractIdFromHeader(_apiResponse);
     }
@@ -211,7 +215,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a DELETE request is made to {string}")]
     public async Task WhenADELETERequestIsMadeTo(string url)
     {
-        url = ReplaceIds(url);
+        url = await ReplaceIdsAsync(url);
         _apiResponse = await playwrightContext.ApiRequestContext?.DeleteAsync(
             url,
             new() { Headers = _authHeaders }
@@ -423,7 +427,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
         JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
-        expectedBody = ReplacePlaceholdersInResponse(expectedBody, responseJson);
+        expectedBody = await ReplacePlaceholdersInResponseAsync(expectedBody, responseJson);
         JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
 
         (responseJson as JsonObject)?.Remove("correlationId");
@@ -490,8 +494,141 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         return replacedBody;
     }
 
+    private async Task<string> ReplacePlaceholdersInResponseAsync(string body, JsonNode responseJson)
+    {
+        var replacements = new Dictionary<string, Regex>()
+        {
+            { "id", new(@"\{id\}") },
+            { "vendorId", new(@"\{vendorId\}") },
+            { "key", new(@"\{key\}") },
+            { "secret", new(@"\{secret\}") },
+            { "access_token", new(@"\{access_token\}") },
+        };
+
+        string replacedBody = await ReplaceIdsAsync(body);
+        foreach (var replacement in replacements)
+        {
+            if (replacedBody.TrimStart().StartsWith('['))
+            {
+                // Handle arrays - replace placeholders in each array element
+                var arrayElementIndex = 0;
+                replacedBody = replacement.Value.Replace(
+                    replacedBody,
+                    match =>
+                    {
+                        var arrayItem = responseJson.AsArray()?[arrayElementIndex];
+                        var idValue = arrayItem?[replacement.Key]?.ToString();
+                        var index = arrayElementIndex;
+                        arrayElementIndex++;
+                        return idValue ?? match.ToString();
+                    }
+                );
+            }
+            else
+            {
+                replacedBody = replacement.Value.Replace(
+                    replacedBody,
+                    match =>
+                    {
+                        var idValue = responseJson[replacement.Key]?.ToString();
+                        return idValue ?? match.ToString();
+                    }
+                );
+            }
+            replacedBody = replacedBody.Replace("{BASE_URL}/", playwrightContext.ApiUrl);
+        }
+
+        return replacedBody;
+    }
+
+    /// <summary>
+    /// Queries ClaimSet ID by name for dynamic resolution
+    /// </summary>
+    private async Task<int> GetClaimSetIdByNameAsync(string claimSetName)
+    {
+        var cacheKey = $"ClaimSetId_{claimSetName}";
+
+        // Check if already cached in scenario context
+        if (scenarioContext.ContainsKey(cacheKey))
+        {
+            return (int)scenarioContext[cacheKey];
+        }
+
+        // Query the API to get all claim sets
+        var response = await playwrightContext.ApiRequestContext?.GetAsync(
+            "/v2/claimSets",
+            new() { Headers = _authHeaders }
+        )!;
+        response.Status.Should().Be(200, "Failed to fetch claim sets for ID resolution");
+
+        var responseText = await response.TextAsync();
+        var claimSets = JsonDocument.Parse(responseText);
+
+        // Find the claim set with the matching name
+        foreach (var claimSet in claimSets.RootElement.EnumerateArray())
+        {
+            if (
+                claimSet.TryGetProperty("name", out var nameProperty)
+                && nameProperty.GetString() == claimSetName
+                && claimSet.TryGetProperty("id", out var idProperty)
+            )
+            {
+                var id = idProperty.GetInt32();
+                scenarioContext[cacheKey] = id; // Cache for future use
+                return id;
+            }
+        }
+
+        throw new InvalidOperationException($"ClaimSet with name '{claimSetName}' not found");
+    }
+
     private string ReplaceIds(string str)
     {
+        // Handle {claimSetId:ClaimSetName} pattern synchronously by looking up cached values
+        var claimSetPattern = @"\{claimSetId:([^}]+)\}";
+        var claimSetMatches = Regex.Matches(str, claimSetPattern);
+        foreach (Match match in claimSetMatches)
+        {
+            var claimSetName = match.Groups[1].Value;
+            var cacheKey = $"ClaimSetId_{claimSetName}";
+
+            // Use cached value if available, otherwise use a placeholder that will be resolved later
+            if (scenarioContext.ContainsKey(cacheKey))
+            {
+                var claimSetId = (int)scenarioContext[cacheKey];
+                str = str.Replace(match.Value, claimSetId.ToString());
+            }
+            else
+            {
+                // For scenarios that need dynamic resolution, we'll handle this in the async version
+                // For now, keep the placeholder for later async resolution
+            }
+        }
+
+        foreach (var key in _ids.Keys)
+        {
+            // Replace both formats {resourceId} and _resourceId
+            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_{key}", _ids[key]);
+        }
+
+        str = str.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString())
+            .Replace("_scenarioRunId", scenarioContext["ScenarioRunId"].ToString());
+
+        return str;
+    }
+
+    private async Task<string> ReplaceIdsAsync(string str)
+    {
+        // Handle {claimSetId:ClaimSetName} pattern
+        var claimSetPattern = @"\{claimSetId:([^}]+)\}";
+        var claimSetMatches = Regex.Matches(str, claimSetPattern);
+        foreach (Match match in claimSetMatches)
+        {
+            var claimSetName = match.Groups[1].Value;
+            var claimSetId = await GetClaimSetIdByNameAsync(claimSetName);
+            str = str.Replace(match.Value, claimSetId.ToString());
+        }
+
         foreach (var key in _ids.Keys)
         {
             // Replace both formats {resourceId} and _resourceId

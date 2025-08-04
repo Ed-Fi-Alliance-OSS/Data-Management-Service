@@ -53,7 +53,6 @@ try
         logger.LogInformation("OpenAPI spec successfully generated and written to standard output.");
     }
 
-
     return 0;
 }
 catch (Exception ex)
