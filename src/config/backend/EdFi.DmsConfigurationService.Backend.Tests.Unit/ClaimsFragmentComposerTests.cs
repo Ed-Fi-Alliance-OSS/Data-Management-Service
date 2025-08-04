@@ -211,11 +211,11 @@ public class ClaimsFragmentComposerTests
             // Verify the composition worked - should have additional claims added
             var hierarchyArray = result.Nodes!.ClaimsHierarchyNode.AsArray();
             var systemDescriptorsDomain = hierarchyArray!.FirstOrDefault(n =>
-                n?["Name"]?.ToString().Contains("systemDescriptors") == true
+                n?["name"]?.ToString().Contains("systemDescriptors") == true
             );
             Assert.That(systemDescriptorsDomain, Is.Not.Null);
 
-            var claims = systemDescriptorsDomain!["Claims"]?.AsArray();
+            var claims = systemDescriptorsDomain!["claims"]?.AsArray();
             Assert.That(claims, Is.Not.Null);
             Assert.That(claims.Count, Is.GreaterThan(0)); // Should have the new claim
         }
@@ -284,11 +284,11 @@ public class ClaimsFragmentComposerTests
             // Verify both extensions were applied
             var hierarchyArray = result.Nodes!.ClaimsHierarchyNode.AsArray();
             var systemDescriptorsDomain = hierarchyArray!.FirstOrDefault(n =>
-                n?["Name"]?.ToString().Contains("systemDescriptors") == true
+                n?["name"]?.ToString().Contains("systemDescriptors") == true
             );
             Assert.That(systemDescriptorsDomain, Is.Not.Null);
 
-            var claims = systemDescriptorsDomain!["Claims"]?.AsArray();
+            var claims = systemDescriptorsDomain!["claims"]?.AsArray();
             Assert.That(claims, Is.Not.Null);
             Assert.That(claims.Count, Is.GreaterThan(0)); // Should have claims from both extensions
         }
@@ -340,7 +340,7 @@ public class ClaimsFragmentComposerTests
             var resultHierarchy = result.Nodes.ClaimsHierarchyNode.AsArray();
             Assert.That(resultHierarchy, Is.Not.Null);
             Assert.That(resultHierarchy.Count, Is.EqualTo(1));
-            Assert.That(resultHierarchy[0]?["Name"]?.ToString(), Is.EqualTo("base"));
+            Assert.That(resultHierarchy[0]?["name"]?.ToString(), Is.EqualTo("base"));
         }
     }
 }
