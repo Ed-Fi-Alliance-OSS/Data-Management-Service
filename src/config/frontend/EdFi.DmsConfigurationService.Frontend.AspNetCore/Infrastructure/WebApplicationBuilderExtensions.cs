@@ -24,6 +24,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
+using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -139,14 +140,81 @@ public static class WebApplicationBuilderExtensions
             logger.Error("Error reading IdentitySettings");
             throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
         }
+        var identityProvider = config.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant() ?? "keycloak";
         webApplicationBuilder
             .Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
             .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
 
         // Set up authentication using JWT bearer tokens
-        webApplicationBuilder
-            .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(
+
+        var authBuilder = webApplicationBuilder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme);
+
+        // Configure JWT Bearer based on identity provider
+        if (string.Equals(identityProvider, "openiddict", StringComparison.OrdinalIgnoreCase))
+        {
+            // For OpenIddict, we use our own validation
+            authBuilder.AddJwtBearer(
+                JwtBearerDefaults.AuthenticationScheme,
+                options =>
+                {
+                    options.Authority = identitySettings.Authority;
+                    options.SaveToken = true;
+                    options.Audience = identitySettings.Audience;
+                    options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+                    options.TokenValidationParameters = new TokenValidationParameters
+                    {
+                        ValidateAudience = false,
+                        ValidateIssuer = true,
+                        ValidateIssuerSigningKey = true,
+                        ValidIssuer = identitySettings.Authority,
+                        RoleClaimType = identitySettings.RoleClaimType,
+                        IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                            System.Text.Encoding.UTF8.GetBytes(identitySettings.ClientSecret))
+                        /*ValidateAudience = true,
+                        ValidAudience = identitySettings.Audience,
+                        ValidateIssuer = true,
+                        ValidIssuer = identitySettings.Authority,
+                        ValidateLifetime = true,
+                        RoleClaimType = identitySettings.RoleClaimType,
+                        ValidateIssuerSigningKey = true,
+                        IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
+                            System.Text.Encoding.UTF8.GetBytes(identitySettings.ClientSecret)
+                        )*/
+                    };
+
+                    options.Events = new JwtBearerEvents
+                    {
+                        OnAuthenticationFailed = context =>
+                        {
+                            logger.Error("Authentication failed: {Message}", context.Exception.Message);
+                            return Task.CompletedTask;
+                        },
+                    };
+                }
+            );
+
+            // Add authorization services for OpenIddict (same as Keycloak)
+            webApplicationBuilder.Services.AddAuthorization(options =>
+            {
+                options.AddPolicy(
+                    SecurityConstants.ServicePolicy,
+                    policy =>
+                        policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
+                );
+
+                AuthorizationScopePolicies.Add(options);
+            });
+
+            webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
+
+            logger.Information("Registering OpenIddict services");
+            webApplicationBuilder.Services.AddPostgresOpenIddictStores(
+                identitySettings.Authority
+            );
+        }
+        else // Default to Keycloak
+        {
+            authBuilder.AddJwtBearer(
                 JwtBearerDefaults.AuthenticationScheme,
                 options =>
                 {
@@ -176,34 +244,48 @@ public static class WebApplicationBuilderExtensions
                 }
             );
 
-        // Add service policy for role validation
-        webApplicationBuilder.Services.AddAuthorization(options =>
-        {
-            options.AddPolicy(
-                SecurityConstants.ServicePolicy,
-                policy =>
-                    policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
-            );
+            // Add service policy for role validation
+            webApplicationBuilder.Services.AddAuthorization(options =>
+            {
+                options.AddPolicy(
+                    SecurityConstants.ServicePolicy,
+                    policy =>
+                        policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
+                );
 
-            AuthorizationScopePolicies.Add(options);
-        });
+                AuthorizationScopePolicies.Add(options);
+            });
 
-        webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
+            webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
-        if (
-            string.Equals(
-                webApplicationBuilder.Configuration.GetSection("AppSettings:IdentityProvider").Value,
-                "keycloak",
-                StringComparison.OrdinalIgnoreCase
+            if (
+                string.Equals(
+                    webApplicationBuilder.Configuration.GetSection("AppSettings:IdentityProvider").Value,
+                    "keycloak",
+                    StringComparison.OrdinalIgnoreCase
+                )
             )
-        )
-        {
-            webApplicationBuilder.Services.AddKeycloakServices(
-                identitySettings.Authority,
-                identitySettings.ClientId,
-                identitySettings.ClientSecret,
-                Regex.Escape(identitySettings.RoleClaimType) // Escape the claim type for regex usage
-            );
+            {
+                logger.Information("Registering Keycloak services");
+                webApplicationBuilder.Services.AddKeycloakServices(
+                    identitySettings.Authority,
+                    identitySettings.ClientId,
+                    identitySettings.ClientSecret,
+                    Regex.Escape(identitySettings.RoleClaimType) // Escape the claim type for regex usage
+                );
+            }
+            else
+            {
+                logger.Warning("Unknown identity provider: {IdentityProvider}. Defaulting to Keycloak.", identityProvider);
+                webApplicationBuilder.Services.AddKeycloakServices(
+                    identitySettings.Authority,
+                    identitySettings.ClientId,
+                    identitySettings.ClientSecret,
+                    Regex.Escape(identitySettings.RoleClaimType) // Escape the claim type for regex usage
+                );
+            }
         }
     }
 }
+
+
