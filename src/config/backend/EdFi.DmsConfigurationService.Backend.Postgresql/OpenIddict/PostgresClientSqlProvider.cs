@@ -3,85 +3,266 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DmsConfigurationService.Backend.OpenIddict;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Dapper;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 {
-    public class PostgresClientSqlProvider : IClientSqlProvider
+    public class PostgresClientSqlProvider : IClientRepository
     {
-        public string GetFindByIdSql()
-            => "SELECT * FROM dmscs.openiddict_tokens WHERE id = @Id";
+        private readonly IOptions<DatabaseOptions> _databaseOptions;
+        private readonly ILogger<PostgresClientSqlProvider> _logger;
 
-        public string GetFindByReferenceIdSql()
-            => "SELECT * FROM dmscs.openiddict_tokens WHERE reference_id = @ReferenceId";
-
-        public string GetFindBySubjectSql()
-            => "SELECT * FROM dmscs.openiddict_tokens WHERE subject = @Subject";
-
-        public string GetCreateSql()
-            => @"INSERT INTO dmscs.openiddict_tokens
-                (id, application_id, subject, type, reference_id, expiration_date)
-              VALUES
-                (@Id, @ApplicationId, @Subject, @Type, @ReferenceId, @ExpirationDate)";
-
-        public string GetUpdateSql()
-            => @"UPDATE dmscs.openiddict_tokens
-                SET application_id = @ApplicationId,
-                    subject = @Subject,
-                    type = @Type,
-                    reference_id = @ReferenceId,
-                    expiration_date = @ExpirationDate
-              WHERE id = @Id";
-
-        public string GetDeleteSql()
-            => "DELETE FROM dmscs.openiddict_tokens WHERE id = @Id";
-
-        public string GetListSql()
-            => "SELECT * FROM dmscs.openiddict_tokens";
-
-        string IClientSqlProvider.GetCreateClientSql()
+        public PostgresClientSqlProvider(
+            IOptions<DatabaseOptions> databaseOptions,
+            ILogger<PostgresClientSqlProvider> logger)
         {
-            return @"INSERT INTO dmscs.openiddict_applications
-                (id, client_id, client_secret, display_name)
-              VALUES
-                (@Id, @ClientId, @ClientSecret, @DisplayName)";
+            _databaseOptions = databaseOptions;
+            _logger = logger;
         }
 
-        string IClientSqlProvider.GetUpdateClientSql()
+        public async Task<ClientCreateResult> CreateClientAsync(
+            string clientId,
+            string clientSecret,
+            string role,
+            string displayName,
+            string scope,
+            string namespacePrefixes,
+            string educationOrganizationIds)
         {
-            return @"UPDATE dmscs.openiddict_applications
-                SET client_id = @ClientId,
-                    client_secret = @ClientSecret,
-                    display_name = @DisplayName,
-                    redirect_uris = @RedirectUris,
-                    post_logout_redirect_uris = @PostLogoutRedirectUris,
-                    permissions = @Permissions,
-                    requirements = @Requirements
-              WHERE id = @Id";
+            try
+            {
+                var clientUuid = Guid.NewGuid();
+                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+                await connection.OpenAsync();
+                await using var transaction = await connection.BeginTransactionAsync();
+
+                // Insert client
+                string sql = @"
+INSERT INTO dmscs.openiddict_application
+    (id, client_id, client_secret, display_name, permissions, requirements, type, created_at)
+VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, CURRENT_TIMESTAMP)
+";
+                var permissions = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
+                var requirementsArray = Array.Empty<string>();
+                await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        Id = clientUuid,
+                        ClientId = clientId,
+                        ClientSecret = clientSecret,
+                        DisplayName = displayName,
+                        Permissions = permissions,
+                        Requirements = requirementsArray,
+                        Type = "confidential"
+                    },
+                    transaction
+                );
+
+                // Insert scopes and join records if scope is not null
+                if (!string.IsNullOrWhiteSpace(scope))
+                {
+                    var scopes = scope.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    foreach (var scopeName in scopes)
+                    {
+                        // Insert scope if not exists
+                        var scopeId = await connection.ExecuteScalarAsync<Guid?>(
+                            "SELECT id FROM dmscs.openiddict_scope WHERE name = @Name",
+                            new { Name = scopeName },
+                            transaction
+                        );
+                        if (scopeId == null)
+                        {
+                            scopeId = Guid.NewGuid();
+                            await connection.ExecuteAsync(
+                                "INSERT INTO dmscs.openiddict_scope (id, name) VALUES (@Id, @Name)",
+                                new { Id = scopeId, Name = scopeName },
+                                transaction
+                            );
+                        }
+                        // Insert into join table
+                        await connection.ExecuteAsync(
+                            "INSERT INTO dmscs.openiddict_application_scope (application_id, scope_id) VALUES (@AppId, @ScopeId)",
+                            new { AppId = clientUuid, ScopeId = scopeId },
+                            transaction
+                        );
+                    }
+                }
+
+                await transaction.CommitAsync();
+                return new ClientCreateResult.Success(clientUuid);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to create OpenIddict client");
+                return new ClientCreateResult.FailureUnknown(ex.Message);
+            }
         }
 
-        string IClientSqlProvider.GetUpdateNamespaceClaimSql()
+        public async Task<ClientUpdateResult> UpdateClientAsync(
+            string clientUuid,
+            string displayName,
+            string scope,
+            string educationOrganizationIds)
         {
-            return @"UPDATE dmscs.openiddict_applications
-                SET namespace_claim = @NamespaceClaim
-              WHERE id = @Id";
+            try
+            {
+                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+                await connection.OpenAsync();
+                await using var transaction = await connection.BeginTransactionAsync();
+
+                string sql = @"
+UPDATE dmscs.openiddict_application
+    SET display_name = @DisplayName,
+        permissions = @Permissions
+    WHERE id = @Id
+";
+                var permissions = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
+                var rows = await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        Id = Guid.Parse(clientUuid),
+                        DisplayName = displayName,
+                        Permissions = permissions
+                    },
+                    transaction
+                );
+                if (rows == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
+                }
+
+                // Update scopes if provided
+                if (!string.IsNullOrWhiteSpace(scope))
+                {
+                    // Remove existing associations
+                    await connection.ExecuteAsync(
+                        "DELETE FROM dmscs.openiddict_application_scope WHERE application_id = @AppId",
+                        new { AppId = Guid.Parse(clientUuid) },
+                        transaction
+                    );
+                    var scopes = scope.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    foreach (var scopeName in scopes)
+                    {
+                        // Insert scope if not exists
+                        var scopeId = await connection.ExecuteScalarAsync<Guid?>(
+                            "SELECT id FROM dmscs.openiddict_scope WHERE name = @Name",
+                            new { Name = scopeName },
+                            transaction
+                        );
+                        if (scopeId == null)
+                        {
+                            scopeId = Guid.NewGuid();
+                            await connection.ExecuteAsync(
+                                "INSERT INTO dmscs.openiddict_scope (id, name) VALUES (@Id, @Name)",
+                                new { Id = scopeId, Name = scopeName },
+                                transaction
+                            );
+                        }
+                        // Insert into join table
+                        await connection.ExecuteAsync(
+                            "INSERT INTO dmscs.openiddict_application_scope (application_id, scope_id) VALUES (@AppId, @ScopeId)",
+                            new { AppId = Guid.Parse(clientUuid), ScopeId = scopeId },
+                            transaction
+                        );
+                    }
+                }
+
+                await transaction.CommitAsync();
+                return new ClientUpdateResult.Success(Guid.Parse(clientUuid));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update OpenIddict client");
+                return new ClientUpdateResult.FailureUnknown(ex.Message);
+            }
         }
 
-        string IClientSqlProvider.GetAllClientsSql()
+        public async Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(string clientUuid, string namespacePrefixes)
         {
-            return "SELECT * FROM dmscs.openiddict_applications";
+            // This method is obsolete as 'namespace_claim' does not exist in the schema.
+            // To fix the CS1998 warning, we can explicitly return a completed task.
+            return await Task.FromException<ClientUpdateResult>(
+                new NotImplementedException("NamespaceClaim is not a column in dmscs.openiddict_application."));
         }
 
-        string IClientSqlProvider.GetDeleteClientSql()
+        public async Task<ClientClientsResult> GetAllClientsAsync()
         {
-            return "DELETE FROM dmscs.openiddict_applications WHERE id = @Id";
+            try
+            {
+                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+                await connection.OpenAsync();
+                string sql = "SELECT client_id FROM dmscs.openiddict_application";
+                var clients = await connection.QueryAsync<string>(sql);
+                return new ClientClientsResult.Success(clients);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to get all OpenIddict clients");
+                return new ClientClientsResult.FailureUnknown(ex.Message);
+            }
         }
 
-        string IClientSqlProvider.GetResetCredentialsSql()
+        public async Task<ClientDeleteResult> DeleteClientAsync(string clientUuid)
         {
-            return @"UPDATE dmscs.openiddict_applications
+            try
+            {
+                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+                await connection.OpenAsync();
+                string sql = "DELETE FROM dmscs.openiddict_application WHERE id = @Id";
+                var rows = await connection.ExecuteAsync(sql, new { Id = Guid.Parse(clientUuid) });
+                if (rows == 0)
+                {
+                    return new ClientDeleteResult.FailureUnknown($"Client {clientUuid} not found");
+                }
+
+                return new ClientDeleteResult.Success();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete OpenIddict client");
+                return new ClientDeleteResult.FailureUnknown(ex.Message);
+            }
+        }
+
+        public async Task<ClientResetResult> ResetCredentialsAsync(string clientUuid)
+        {
+            try
+            {
+                var newSecret = Guid.NewGuid().ToString("N");
+                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+                await connection.OpenAsync();
+                string sql = @"
+                UPDATE dmscs.openiddict_application
                 SET client_secret = @ClientSecret
-              WHERE id = @Id";
+                WHERE id = @Id
+                ";
+                var rows = await connection.ExecuteAsync(
+                    sql,
+                    new { Id = Guid.Parse(clientUuid), ClientSecret = newSecret }
+                );
+                if (rows == 0)
+                {
+                    return new ClientResetResult.FailureUnknown($"Client {clientUuid} not found");
+                }
+
+                return new ClientResetResult.Success(newSecret);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to reset OpenIddict client credentials");
+                return new ClientResetResult.FailureUnknown(ex.Message);
+            }
         }
     }
 }
+

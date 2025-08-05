@@ -17,6 +17,7 @@
       </PackageReference>
       <PackageReference Include="Npgsql" />
       <PackageReference Include="Npgsql.DependencyInjection" />
+      <PackageReference Include="OpenIddict.Core" />
       <PackageReference Include="Polly" />
       <PackageReference Include="Polly.Extensions" />
       <PackageReference Include="SonarAnalyzer.CSharp">
@@ -39,6 +40,16 @@
       <EmbeddedResource Include="Deploy\Scripts\*.sql">
           <CopyToOutputDirectory>Never</CopyToOutputDirectory>
       </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="OpenIddict\Repositories\**" />
+    <EmbeddedResource Remove="OpenIddict\Repositories\**" />
+    <None Remove="OpenIddict\Repositories\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="OpenIddict\PostgresOidcServiceExtensions.cs" />
   </ItemGroup>
 
 </Project>
