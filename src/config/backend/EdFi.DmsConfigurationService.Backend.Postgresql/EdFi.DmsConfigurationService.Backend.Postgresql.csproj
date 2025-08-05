@@ -10,6 +10,7 @@
       <PackageReference Include="Dapper" />
       <PackageReference Include="dbup-core" />
       <PackageReference Include="dbup-postgresql" />
+      <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
       <PackageReference Include="Microsoft.CodeAnalysis" />
       <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
         <PrivateAssets>all</PrivateAssets>
@@ -24,6 +25,7 @@
         <PrivateAssets>all</PrivateAssets>
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
+      <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -46,6 +48,14 @@
     <Compile Remove="OpenIddict\Repositories\**" />
     <EmbeddedResource Remove="OpenIddict\Repositories\**" />
     <None Remove="OpenIddict\Repositories\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="OpenIddict\SampleController.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="OpenIddict\test-jwt-tokens.http" />
   </ItemGroup>
 
   <ItemGroup>
