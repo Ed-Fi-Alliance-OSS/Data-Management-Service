@@ -8,53 +8,22 @@ namespace EdFi.DmsConfigurationService.Backend.Claims.Models;
 /// <summary>
 /// Response model for claims upload operations
 /// </summary>
-public record UploadClaimsResponse
+/// <param name="Success">Indicates whether the upload was successful</param>
+/// <param name="ReloadId">The reload ID of the claims after successful upload</param>
+/// <param name="Errors">Any errors that occurred during the upload</param>
+public record UploadClaimsResponse(
+    bool Success,
+    Guid? ReloadId = null,
+    List<ClaimsUploadError>? Errors = null
+)
 {
-    /// <summary>
-    /// Indicates whether the upload was successful
-    /// </summary>
-    public required bool Success { get; init; }
-
-    /// <summary>
-    /// The reload ID of the claims after successful upload
-    /// </summary>
-    public Guid? ReloadId { get; init; }
-
-    /// <summary>
-    /// Any errors that occurred during the upload
-    /// </summary>
-    public List<ClaimsUploadError>? Errors { get; init; }
-
     /// <summary>
     /// Creates a successful response
     /// </summary>
-    public static UploadClaimsResponse Successful(Guid reloadId) =>
-        new() { Success = true, ReloadId = reloadId };
+    public static UploadClaimsResponse Successful(Guid reloadId) => new(true, reloadId);
 
     /// <summary>
     /// Creates a failure response
     /// </summary>
-    public static UploadClaimsResponse Failed(List<ClaimsUploadError> errors) =>
-        new() { Success = false, Errors = errors };
-}
-
-/// <summary>
-/// Represents an error that occurred during claims upload
-/// </summary>
-public record ClaimsUploadError
-{
-    /// <summary>
-    /// The type of error
-    /// </summary>
-    public required string ErrorType { get; init; }
-
-    /// <summary>
-    /// The error message
-    /// </summary>
-    public required string Message { get; init; }
-
-    /// <summary>
-    /// The JSON path where the error occurred, if applicable
-    /// </summary>
-    public string? Path { get; init; }
+    public static UploadClaimsResponse Failed(List<ClaimsUploadError> errors) => new(false, Errors: errors);
 }

@@ -53,7 +53,7 @@ public class ClaimsProviderTests
 
             var claimSetsNode = JsonNode.Parse("[{\"claimSetName\": \"Test\", \"isSystemReserved\": false}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
             provider.SetClaimsNodes(claimsNodes);
 
             // Act
@@ -108,7 +108,7 @@ public class ClaimsProviderTests
 
             var claimSetsNode = JsonNode.Parse("[{\"claimSetName\": \"Test\", \"isSystemReserved\": false}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
             var newReloadId = Guid.NewGuid();
             var initialReloadId = provider.ReloadId;
 
@@ -164,7 +164,7 @@ public class ClaimsProviderTests
 
             var claimSetsNode = JsonNode.Parse("[{\"claimSetName\": \"Test\", \"isSystemReserved\": false}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
 
             // Set up the claims nodes
             provider.UpdateInMemoryState(claimsNodes, Guid.NewGuid());
@@ -266,7 +266,7 @@ public class ClaimsProviderTests
 
             var claimSetsNode = JsonNode.Parse("[{\"claimSetName\": \"Test\", \"isSystemReserved\": false}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
 
             // Act
             provider.UpdateInMemoryState(claimsNodes, newReloadId);
@@ -299,7 +299,7 @@ public class ClaimsProviderTests
             );
             var claimSetsNode = JsonNode.Parse("[{\"claimSetName\": \"Test\", \"isSystemReserved\": false}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
             provider.SetClaimsNodes(claimsNodes);
 
             // Act
@@ -396,7 +396,7 @@ public class ClaimsProviderTests
 
             var claimSetsNode = JsonNode.Parse("[{\"claimSetName\": \"Test\", \"isSystemReserved\": false}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
 
             // Act
             provider.UpdateInMemoryState(claimsNodes, Guid.Empty);
@@ -428,7 +428,7 @@ public class ClaimsProviderTests
                 "[{\"claimSetName\": \"E2E-Test\", \"isSystemReserved\": true}]"
             );
             var hierarchyNode = JsonNode.Parse("[{\"name\": \"test-hierarchy\"}]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
             provider.SetClaimsNodes(claimsNodes);
 
             // Act
@@ -439,7 +439,7 @@ public class ClaimsProviderTests
             Assert.That(result.Failures, Is.Empty);
             // Fragment composer should not be called in embedded mode
             A.CallTo(() =>
-                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocumentNodes>._, A<string>._)
+                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocument>._, A<string>._)
                 )
                 .MustNotHaveHappened();
         }
@@ -467,17 +467,17 @@ public class ClaimsProviderTests
                 "[{\"claimSetName\": \"Base\", \"isSystemReserved\": true}]"
             );
             var baseHierarchyNode = JsonNode.Parse("[{\"name\": \"base-hierarchy\"}]");
-            var baseClaimsNodes = new ClaimsDocumentNodes(baseClaimSetsNode!, baseHierarchyNode!);
+            var baseClaimsNodes = new ClaimsDocument(baseClaimSetsNode!, baseHierarchyNode!);
             provider.SetClaimsNodes(baseClaimsNodes);
 
             var composedClaimSetsNode = JsonNode.Parse(
                 "[{\"claimSetName\": \"Composed\", \"isSystemReserved\": true}]"
             );
             var composedHierarchyNode = JsonNode.Parse("[{\"name\": \"composed-hierarchy\"}]");
-            var composedClaimsNodes = new ClaimsDocumentNodes(composedClaimSetsNode!, composedHierarchyNode!);
+            var composedClaimsNodes = new ClaimsDocument(composedClaimSetsNode!, composedHierarchyNode!);
 
             A.CallTo(() =>
-                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocumentNodes>._, A<string>._)
+                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocument>._, A<string>._)
                 )
                 .Returns(new ClaimsLoadResult(composedClaimsNodes, new List<ClaimsFailure>()));
 
@@ -490,7 +490,7 @@ public class ClaimsProviderTests
             Assert.That(result.Failures, Is.Empty);
             // Fragment composer should not be called because TestableClaimsProvider overrides LoadClaimsFromSource
             A.CallTo(() =>
-                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocumentNodes>._, A<string>._)
+                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocument>._, A<string>._)
                 )
                 .MustNotHaveHappened();
         }
@@ -518,17 +518,17 @@ public class ClaimsProviderTests
                 "[{\"claimSetName\": \"FileSystem\", \"isSystemReserved\": false}]"
             );
             var baseHierarchyNode = JsonNode.Parse("[{\"name\": \"filesystem-hierarchy\"}]");
-            var baseClaimsNodes = new ClaimsDocumentNodes(baseClaimSetsNode!, baseHierarchyNode!);
+            var baseClaimsNodes = new ClaimsDocument(baseClaimSetsNode!, baseHierarchyNode!);
 
             var composedClaimSetsNode = JsonNode.Parse(
                 "[{\"claimSetName\": \"ComposedFS\", \"isSystemReserved\": false}]"
             );
             var composedHierarchyNode = JsonNode.Parse("[{\"name\": \"composed-fs-hierarchy\"}]");
-            var composedClaimsNodes = new ClaimsDocumentNodes(composedClaimSetsNode!, composedHierarchyNode!);
+            var composedClaimsNodes = new ClaimsDocument(composedClaimSetsNode!, composedHierarchyNode!);
 
             provider.SetFilesystemClaims(baseClaimsNodes);
             A.CallTo(() =>
-                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocumentNodes>._, A<string>._)
+                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocument>._, A<string>._)
                 )
                 .Returns(new ClaimsLoadResult(composedClaimsNodes, new List<ClaimsFailure>()));
 
@@ -541,7 +541,7 @@ public class ClaimsProviderTests
             Assert.That(result.Failures, Is.Empty);
             // Fragment composer should not be called because TestableClaimsProviderWithFilesystem overrides LoadClaimsFromSource
             A.CallTo(() =>
-                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocumentNodes>._, A<string>._)
+                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocument>._, A<string>._)
                 )
                 .MustNotHaveHappened();
         }
@@ -565,7 +565,7 @@ public class ClaimsProviderTests
                 _claimsFragmentComposer
             );
 
-            var baseClaimsNodes = new ClaimsDocumentNodes(
+            var baseClaimsNodes = new ClaimsDocument(
                 JsonNode.Parse("[{\"claimSetName\": \"Base\"}]")!,
                 JsonNode.Parse("[{\"name\": \"base\"}]")!
             );
@@ -573,7 +573,7 @@ public class ClaimsProviderTests
 
             var compositionFailure = new ClaimsFailure("FragmentComposition", "Test failure");
             A.CallTo(() =>
-                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocumentNodes>._, A<string>._)
+                    _claimsFragmentComposer.ComposeClaimsFromFragments(A<ClaimsDocument>._, A<string>._)
                 )
                 .Returns(new ClaimsLoadResult(null, [compositionFailure]));
 
@@ -664,7 +664,7 @@ public class ClaimsProviderTests
     private class TestableClaimsProviderWithPathSupport : IClaimsProvider
     {
         private readonly IOptions<ClaimsOptions> _testClaimsOptions;
-        private ClaimsDocumentNodes? _testClaimsNodes;
+        private ClaimsDocument? _testClaimsNodes;
         private Guid _reloadId = Guid.NewGuid();
 
         public TestableClaimsProviderWithPathSupport(
@@ -684,17 +684,17 @@ public class ClaimsProviderTests
         public bool IsClaimsValid => true;
         public List<ClaimsFailure> ClaimsFailures => [];
 
-        public void SetClaimsNodes(ClaimsDocumentNodes nodes)
+        public void SetClaimsNodes(ClaimsDocument nodes)
         {
             _testClaimsNodes = nodes;
         }
 
-        public ClaimsDocumentNodes GetClaimsDocumentNodes()
+        public ClaimsDocument GetClaimsDocumentNodes()
         {
             return _testClaimsNodes ?? throw new InvalidOperationException("No test claims nodes set");
         }
 
-        public void UpdateInMemoryState(ClaimsDocumentNodes claimsNodes, Guid newReloadId)
+        public void UpdateInMemoryState(ClaimsDocument claimsNodes, Guid newReloadId)
         {
             _testClaimsNodes = claimsNodes;
             _reloadId = newReloadId;
@@ -730,7 +730,7 @@ public class ClaimsProviderTests
     /// </summary>
     private class TestableClaimsProvider : ClaimsProvider
     {
-        private ClaimsDocumentNodes? _testClaimsNodes;
+        private ClaimsDocument? _testClaimsNodes;
 
         public TestableClaimsProvider(
             ILogger<ClaimsProvider> logger,
@@ -740,7 +740,7 @@ public class ClaimsProviderTests
         )
             : base(logger, claimsOptions, claimsValidator, claimsFragmentComposer) { }
 
-        public void SetClaimsNodes(ClaimsDocumentNodes nodes)
+        public void SetClaimsNodes(ClaimsDocument nodes)
         {
             _testClaimsNodes = nodes;
         }
@@ -766,7 +766,7 @@ public class ClaimsProviderTests
     /// </summary>
     private class TestableClaimsProviderWithFilesystem : ClaimsProvider
     {
-        private ClaimsDocumentNodes? _filesystemClaimsNodes;
+        private ClaimsDocument? _filesystemClaimsNodes;
 
         public TestableClaimsProviderWithFilesystem(
             ILogger<ClaimsProvider> logger,
@@ -776,7 +776,7 @@ public class ClaimsProviderTests
         )
             : base(logger, claimsOptions, claimsValidator, claimsFragmentComposer) { }
 
-        public void SetFilesystemClaims(ClaimsDocumentNodes nodes)
+        public void SetFilesystemClaims(ClaimsDocument nodes)
         {
             _filesystemClaimsNodes = nodes;
         }

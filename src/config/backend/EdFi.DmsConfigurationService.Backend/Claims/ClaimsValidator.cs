@@ -39,13 +39,11 @@ public class ClaimsValidator(ILogger<ClaimsValidator> _logger) : IClaimsValidato
         var assembly = Assembly.GetExecutingAssembly();
         string resourceName = "EdFi.DmsConfigurationService.Backend.Claims.JsonSchemaForClaims.json";
 
-        using Stream? stream = assembly.GetManifestResourceStream(resourceName);
-        if (stream == null)
-        {
-            throw new InvalidOperationException(
+        using Stream? stream =
+            assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException(
                 $"Could not load embedded resource '{resourceName}' from assembly '{assembly.GetName().Name}'"
             );
-        }
 
         using StreamReader reader = new(stream);
         string schemaContent = reader.ReadToEnd();
@@ -108,10 +106,10 @@ public class ClaimsValidator(ILogger<ClaimsValidator> _logger) : IClaimsValidato
         }
         catch (Exception ex)
         {
-            const string CriticalFailure =
+            const string Failure =
                 "ClaimsValidator failed to validate, check server configuration for JsonSchemaForClaims.json";
-            _logger.LogCritical(ex, CriticalFailure);
-            return [new(new("$."), [CriticalFailure])];
+            _logger.LogWarning(ex, Failure);
+            return [new(new("$."), [Failure])];
         }
     }
 }

@@ -58,7 +58,7 @@ public class ClaimsUploadServiceTests
                 .Returns(new List<ClaimsValidationFailure>());
 
             // Mock successful database update
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
                 .Returns(new ClaimsDataLoadResult.Success(1, true));
 
             // Act
@@ -66,9 +66,9 @@ public class ClaimsUploadServiceTests
 
             // Assert
             Assert.That(result.Success, Is.True);
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocumentNodes>._, A<Guid>._))
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -79,7 +79,7 @@ public class ClaimsUploadServiceTests
             var claimsJson = JsonNode.Parse(
                 """
                 {
-                    "claimSets": "invalid", 
+                    "claimSets": "invalid",
                     "claimsHierarchy": []
                 }
                 """
@@ -100,9 +100,8 @@ public class ClaimsUploadServiceTests
             // Assert
             Assert.That(result.Success, Is.False);
             Assert.That(result.Failures.Count, Is.EqualTo(1));
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
-                .MustNotHaveHappened();
-            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocumentNodes>._, A<Guid>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
                 .MustNotHaveHappened();
         }
 
@@ -124,7 +123,7 @@ public class ClaimsUploadServiceTests
                 .Returns(new List<ClaimsValidationFailure>());
 
             // Mock database update failure
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
                 .Returns(new ClaimsDataLoadResult.DatabaseFailure("Connection failed"));
 
             // Act
@@ -134,7 +133,7 @@ public class ClaimsUploadServiceTests
             Assert.That(result.Success, Is.False);
             Assert.That(result.Failures.Count, Is.EqualTo(1));
             Assert.That(result.Failures[0].Message, Is.EqualTo("Connection failed"));
-            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocumentNodes>._, A<Guid>._))
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
                 .MustNotHaveHappened();
         }
 
@@ -153,15 +152,15 @@ public class ClaimsUploadServiceTests
                 """
             );
 
-            ClaimsDocumentNodes? capturedNodes = null;
+            ClaimsDocument? capturedNodes = null;
 
             // Mock validator succeeds
             A.CallTo(() => _claimsValidator.Validate(A<JsonNode>._))
                 .Returns(new List<ClaimsValidationFailure>());
 
             // Capture the nodes passed to UpdateClaimsAsync
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
-                .Invokes((ClaimsDocumentNodes nodes) => capturedNodes = nodes)
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
+                .Invokes((ClaimsDocument nodes) => capturedNodes = nodes)
                 .Returns(new ClaimsDataLoadResult.Success(1, true));
 
             // Act
@@ -197,7 +196,7 @@ public class ClaimsUploadServiceTests
                 .Returns(new List<ClaimsValidationFailure>());
 
             // Mock database update failure
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
                 .Returns(new ClaimsDataLoadResult.DatabaseFailure("Connection failed"));
 
             // Act
@@ -206,7 +205,7 @@ public class ClaimsUploadServiceTests
             // Assert
             // Validator should only be called once for validation, UpdateInMemoryState should not be called after DB failure
             A.CallTo(() => _claimsValidator.Validate(A<JsonNode>._)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocumentNodes>._, A<Guid>._))
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
                 .MustNotHaveHappened();
         }
     }
@@ -220,7 +219,7 @@ public class ClaimsUploadServiceTests
             // Arrange
             var claimSetsNode = JsonNode.Parse("[{\"claimSetName\": \"Test\", \"isSystemReserved\": false}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
 
             // Mock provider returns valid claims
             A.CallTo(() => _claimsProvider.LoadClaimsFromSource())
@@ -231,7 +230,7 @@ public class ClaimsUploadServiceTests
                 .Returns(new List<ClaimsValidationFailure>());
 
             // Mock successful database update
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
                 .Returns(new ClaimsDataLoadResult.Success(1, true));
 
             // Act
@@ -240,9 +239,9 @@ public class ClaimsUploadServiceTests
             // Assert
             Assert.That(result.Success, Is.True);
             A.CallTo(() => _claimsProvider.LoadClaimsFromSource()).MustHaveHappenedOnceExactly();
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
                 .MustHaveHappenedOnceExactly();
-            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocumentNodes>._, A<Guid>._))
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -266,9 +265,8 @@ public class ClaimsUploadServiceTests
             Assert.That(result.Success, Is.False);
             Assert.That(result.Failures.Count, Is.EqualTo(1));
             Assert.That(result.Failures[0].Message, Is.EqualTo("Could not load Claims.json file"));
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
-                .MustNotHaveHappened();
-            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocumentNodes>._, A<Guid>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
                 .MustNotHaveHappened();
         }
 
@@ -278,7 +276,7 @@ public class ClaimsUploadServiceTests
             // Arrange
             var claimSetsNode = JsonNode.Parse("[{\"invalid\": \"data\"}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
 
             // Mock provider returns claims
             A.CallTo(() => _claimsProvider.LoadClaimsFromSource())
@@ -302,9 +300,8 @@ public class ClaimsUploadServiceTests
             // Assert
             Assert.That(result.Success, Is.False);
             Assert.That(result.Failures.Count, Is.EqualTo(1));
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
-                .MustNotHaveHappened();
-            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocumentNodes>._, A<Guid>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._)).MustNotHaveHappened();
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
                 .MustNotHaveHappened();
         }
 
@@ -314,7 +311,7 @@ public class ClaimsUploadServiceTests
             // Arrange
             var claimSetsNode = JsonNode.Parse("[{\"claimSetName\": \"Test\", \"isSystemReserved\": false}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
 
             // Mock provider returns valid claims
             A.CallTo(() => _claimsProvider.LoadClaimsFromSource())
@@ -325,7 +322,7 @@ public class ClaimsUploadServiceTests
                 .Returns(new List<ClaimsValidationFailure>());
 
             // Mock database update failure
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
                 .Returns(new ClaimsDataLoadResult.DatabaseFailure("Database connection lost"));
 
             // Act
@@ -335,7 +332,7 @@ public class ClaimsUploadServiceTests
             Assert.That(result.Success, Is.False);
             Assert.That(result.Failures.Count, Is.EqualTo(1));
             Assert.That(result.Failures[0].Message, Is.EqualTo("Database connection lost"));
-            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocumentNodes>._, A<Guid>._))
+            A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
                 .MustNotHaveHappened();
         }
 
@@ -345,7 +342,7 @@ public class ClaimsUploadServiceTests
             // Arrange
             var claimSetsNode = JsonNode.Parse("[{\"claimSetName\": \"Test\", \"isSystemReserved\": false}]");
             var hierarchyNode = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsNode!, hierarchyNode!);
+            var claimsNodes = new ClaimsDocument(claimSetsNode!, hierarchyNode!);
 
             // Mock provider returns valid claims
             A.CallTo(() => _claimsProvider.LoadClaimsFromSource())
@@ -356,7 +353,7 @@ public class ClaimsUploadServiceTests
                 .Returns(new List<ClaimsValidationFailure>());
 
             // Mock successful database update
-            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
                 .Returns(new ClaimsDataLoadResult.Success(1, true));
 
             // Act
@@ -370,11 +367,11 @@ public class ClaimsUploadServiceTests
                 .MustHaveHappened()
                 .Then(A.CallTo(() => _claimsValidator.Validate(A<JsonNode>._)).MustHaveHappened())
                 .Then(
-                    A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocumentNodes>._))
+                    A.CallTo(() => _claimsDataLoader.UpdateClaimsAsync(A<ClaimsDocument>._))
                         .MustHaveHappened()
                 )
                 .Then(
-                    A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocumentNodes>._, A<Guid>._))
+                    A.CallTo(() => _claimsProvider.UpdateInMemoryState(A<ClaimsDocument>._, A<Guid>._))
                         .MustHaveHappened()
                 );
         }

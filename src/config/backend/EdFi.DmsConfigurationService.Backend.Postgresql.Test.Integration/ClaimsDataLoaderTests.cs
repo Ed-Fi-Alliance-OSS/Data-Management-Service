@@ -832,7 +832,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
     private class MockInvalidClaimsProvider : IClaimsProvider
     {
-        public ClaimsDocumentNodes GetClaimsDocumentNodes() => null!;
+        public ClaimsDocument GetClaimsDocumentNodes() => null!;
 
         public Guid ReloadId => Guid.NewGuid();
         public bool IsClaimsValid => false;
@@ -840,7 +840,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
         public ClaimsLoadResult LoadClaimsFromSource() => new ClaimsLoadResult(null, ClaimsFailures);
 
-        public void UpdateInMemoryState(ClaimsDocumentNodes claimsNodes, Guid newReloadId)
+        public void UpdateInMemoryState(ClaimsDocument claimsNodes, Guid newReloadId)
         {
             // Mock implementation - do nothing
         }

@@ -3,14 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Data.Common;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
-using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using Microsoft.Extensions.Logging;
 
@@ -19,7 +17,7 @@ namespace EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 internal class DatabaseOperationException(string message) : Exception(message);
 
 /// <summary>
-/// Implementation of IClaimsDataLoader that loads initial claims data from Claims.json into datastore
+/// Implementation of IClaimsDataLoader that loads claims data from Claims.json into datastore
 /// </summary>
 public class ClaimsDataLoader(
     IClaimsProvider claimsProvider,
@@ -49,7 +47,7 @@ public class ClaimsDataLoader(
 
             logger.LogInformation("Loading initial claims data from Claims.json");
 
-            ClaimsDocumentNodes claimsNodes;
+            ClaimsDocument claimsNodes;
             try
             {
                 // Get claims data from provider
@@ -223,7 +221,7 @@ public class ClaimsDataLoader(
     /// </summary>
     /// <param name="claimsNodes">The new claims document containing claim sets and hierarchy to load</param>
     /// <returns>Result indicating success or failure of the update operation</returns>
-    public async Task<ClaimsDataLoadResult> UpdateClaimsAsync(ClaimsDocumentNodes claimsNodes)
+    public async Task<ClaimsDataLoadResult> UpdateClaimsAsync(ClaimsDocument claimsNodes)
     {
         try
         {

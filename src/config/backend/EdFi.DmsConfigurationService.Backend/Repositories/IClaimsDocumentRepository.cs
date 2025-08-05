@@ -17,7 +17,7 @@ public interface IClaimsDocumentRepository
     /// </summary>
     /// <param name="claimsNodes">The new claims document containing claim sets and hierarchy</param>
     /// <returns>Result indicating success or failure of the update operation</returns>
-    Task<ClaimsDocumentUpdateResult> ReplaceClaimsDocument(ClaimsDocumentNodes claimsNodes);
+    Task<ClaimsDocumentUpdateResult> ReplaceClaimsDocument(ClaimsDocument claimsNodes);
 }
 
 public abstract record ClaimsDocumentUpdateResult

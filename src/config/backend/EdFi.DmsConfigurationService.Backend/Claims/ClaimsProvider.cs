@@ -5,7 +5,6 @@
 
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using Microsoft.Extensions.Logging;
@@ -84,7 +83,7 @@ public class ClaimsProvider : IClaimsProvider
     private readonly IClaimsFragmentComposer _claimsFragmentComposer;
 
     // Cached claims nodes
-    private ClaimsDocumentNodes? _claimsNodes;
+    private ClaimsDocument? _claimsNodes;
 
     // Unique identifier for the current reload instance
     private Guid _reloadId = Guid.NewGuid();
@@ -157,7 +156,7 @@ public class ClaimsProvider : IClaimsProvider
     /// <summary>
     /// Returns claims document nodes containing claim sets and claims hierarchy
     /// </summary>
-    public ClaimsDocumentNodes GetClaimsDocumentNodes()
+    public ClaimsDocument GetClaimsDocumentNodes()
     {
         lock (_reloadLock)
         {
@@ -207,7 +206,7 @@ public class ClaimsProvider : IClaimsProvider
     /// <summary>
     /// Updates the in-memory claims state after successful database update
     /// </summary>
-    public void UpdateInMemoryState(ClaimsDocumentNodes claimsNodes, Guid newReloadId)
+    public void UpdateInMemoryState(ClaimsDocument claimsNodes, Guid newReloadId)
     {
         lock (_reloadLock)
         {
@@ -253,7 +252,7 @@ public class ClaimsProvider : IClaimsProvider
                 return new ClaimsLoadStatus(false, failures);
             }
 
-            var newClaimsNodes = new ClaimsDocumentNodes(claimSetsNode, claimsHierarchyNode);
+            var newClaimsNodes = new ClaimsDocument(claimSetsNode, claimsHierarchyNode);
             var validationResult = ValidateClaims(newClaimsNodes);
             return validationResult;
         }
@@ -432,7 +431,7 @@ public class ClaimsProvider : IClaimsProvider
                 return new ClaimsLoadResult(null, [failure]);
             }
 
-            return new ClaimsLoadResult(new ClaimsDocumentNodes(claimSetsNode, claimsHierarchyNode), []);
+            return new ClaimsLoadResult(new ClaimsDocument(claimSetsNode, claimsHierarchyNode), []);
         }
         catch (Exception ex)
         {
@@ -500,7 +499,7 @@ public class ClaimsProvider : IClaimsProvider
 
             _logger.LogInformation("Loaded Claims.json from assembly resource");
 
-            return new ClaimsLoadResult(new ClaimsDocumentNodes(claimSetsNode, claimsHierarchyNode), []);
+            return new ClaimsLoadResult(new ClaimsDocument(claimSetsNode, claimsHierarchyNode), []);
         }
         catch (Exception ex)
         {
@@ -518,7 +517,7 @@ public class ClaimsProvider : IClaimsProvider
     /// <summary>
     /// Validates the claims structure using JSON Schema
     /// </summary>
-    private ClaimsLoadStatus ValidateClaims(ClaimsDocumentNodes claimsNodes)
+    private ClaimsLoadStatus ValidateClaims(ClaimsDocument claimsNodes)
     {
         List<ClaimsFailure> failures = [];
 

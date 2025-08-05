@@ -12,38 +12,30 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Claims;
 
 /// <summary>
-/// Service for composing claims from base Claims.json and fragment files
-/// Ports the transformation logic from the CmsHierarchy tool
+/// Service for composing claims from base Claims.json and fragment claimset files
+/// This is a port of the transformation logic from the CmsHierarchy tool
 /// </summary>
-public class ClaimsFragmentComposer : IClaimsFragmentComposer
+public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IClaimsFragmentComposer
 {
-    private readonly ILogger<ClaimsFragmentComposer> _logger;
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    private readonly ILogger<ClaimsFragmentComposer> _logger = logger;
+    private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
     // Options for final output that uses camelCase like the base Claims.json
-    private static readonly JsonSerializerOptions OutputJsonOptions = new()
+    private static readonly JsonSerializerOptions _outputJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase, // Convert to camelCase for output
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, // Omit null values
     };
 
-    public ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger)
-    {
-        _logger = logger;
-    }
-
     /// <summary>
     /// Composes claims from base Claims.json and fragment files in the specified directory
     /// </summary>
-    public ClaimsLoadResult ComposeClaimsFromFragments(
-        ClaimsDocumentNodes baseClaimsNodes,
-        string fragmentsPath
-    )
+    public ClaimsLoadResult ComposeClaimsFromFragments(ClaimsDocument baseClaimsNodes, string fragmentsPath)
     {
         try
         {
@@ -63,34 +55,24 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
             _logger.LogInformation("Found {FragmentCount} fragment files to compose", fragmentFiles.Count);
 
             // Convert base claims to our transformation model
-            var baseClaims = ConvertToTransformationModel(baseClaimsNodes.ClaimsHierarchyNode);
+            List<TransformationClaim> baseClaims = ConvertToTransformationModel(
+                baseClaimsNodes.ClaimsHierarchyNode
+            );
             _logger.LogDebug(
                 "Base claims converted to transformation model: {BaseClaimsCount} claims",
-                baseClaims?.Count ?? 0
+                baseClaims.Count
             );
-
-            // Ensure baseClaims is not null before processing
-            if (baseClaims == null)
-            {
-                baseClaims = [];
-            }
 
             // Apply each fragment transformation
             foreach (var fragmentFile in fragmentFiles)
             {
                 _logger.LogInformation("Applying fragment: {FragmentFile}", fragmentFile);
-                baseClaims = ApplyFragmentTransformation(fragmentFile, baseClaims ?? []);
+                baseClaims = ApplyFragmentTransformation(fragmentFile, baseClaims) ?? [];
                 _logger.LogDebug(
                     "After applying {FragmentFile}: {ClaimsCount} claims",
                     fragmentFile,
-                    baseClaims?.Count ?? 0
+                    baseClaims.Count
                 );
-            }
-
-            // Ensure baseClaims is still not null before converting back
-            if (baseClaims == null)
-            {
-                baseClaims = [];
             }
 
             // Clean up empty collections before conversion to ensure JSON Schema compliance
@@ -116,7 +98,7 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
             }
 
             var claimSetsNode = baseClaimsNodes.ClaimSetsNode ?? JsonNode.Parse("[]")!;
-            var composedNodes = new ClaimsDocumentNodes(claimSetsNode, transformedHierarchy);
+            var composedNodes = new ClaimsDocument(claimSetsNode, transformedHierarchy);
 
             _logger.LogInformation(
                 "Successfully composed claims from {FragmentCount} fragments",
@@ -138,7 +120,7 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
     }
 
     /// <summary>
-    /// Discovers fragment files matching the pattern *-claims.json in the specified directory
+    /// Discovers fragment files matching the pattern *-claimset.json in the specified directory
     /// </summary>
     public List<string> DiscoverFragmentFiles(string fragmentsPath)
     {
@@ -151,7 +133,7 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
             }
 
             var fragmentFiles = Directory
-                .GetFiles(fragmentsPath, "*-claims.json", SearchOption.AllDirectories)
+                .GetFiles(fragmentsPath, "*-claimset.json", SearchOption.AllDirectories)
                 .Where(f => !Path.GetFileName(f).Equals("Claims.json", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(f => f)
                 .ToList();
@@ -173,10 +155,10 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
     /// <summary>
     /// Converts ClaimsHierarchy JSON to transformation model (ported from CmsHierarchy.GetBaseClaimHierarchy)
     /// </summary>
-    private List<TransformationClaim> ConvertToTransformationModel(JsonNode claimsHierarchyNode)
+    private static List<TransformationClaim> ConvertToTransformationModel(JsonNode claimsHierarchyNode)
     {
         var hierarchyJson = claimsHierarchyNode.ToJsonString();
-        var claims = JsonSerializer.Deserialize<List<TransformationClaim>>(hierarchyJson, JsonOptions);
+        var claims = JsonSerializer.Deserialize<List<TransformationClaim>>(hierarchyJson, _jsonOptions);
         return claims ?? [];
     }
 
@@ -185,7 +167,7 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
     /// </summary>
     private JsonNode ConvertFromTransformationModel(List<TransformationClaim> claims)
     {
-        var json = JsonSerializer.Serialize(claims, OutputJsonOptions);
+        var json = JsonSerializer.Serialize(claims, _outputJsonOptions);
         return JsonNode.Parse(json) ?? JsonNode.Parse("[]")!;
     }
 
@@ -198,7 +180,7 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
     )
     {
         var jsonData = File.ReadAllText(fragmentFilePath);
-        var claimSetData = JsonSerializer.Deserialize<ClaimSetResourceClaims>(jsonData, JsonOptions);
+        var claimSetData = JsonSerializer.Deserialize<ClaimSetResourceClaims>(jsonData, _jsonOptions);
         var claimSetName = claimSetData?.Name ?? Path.GetFileNameWithoutExtension(fragmentFilePath);
 
         if (claimSetData?.ResourceClaims == null)
@@ -225,7 +207,7 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
     /// <summary>
     /// Applies parent resource claim transformation
     /// </summary>
-    private void ApplyParentResourceClaim(
+    private static void ApplyParentResourceClaim(
         ResourceClaim resourceClaim,
         List<TransformationClaim> existingClaims
     )
@@ -238,12 +220,12 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
         {
             // Add additional child claims
             var childClaims = resourceClaim
-                .Children.Select(x => new TransformationClaim { Name = x.Name })
+                .Children.Where(x => !string.IsNullOrEmpty(x.Name))
+                .Select(x => new TransformationClaim { Name = x.Name! })
                 .ToList();
             if (childClaims.Count > 0)
             {
-                existingClaim.Claims ??= [];
-                existingClaim.Claims.AddRange(childClaims);
+                existingClaim.Claims?.AddRange(childClaims);
             }
         }
         else
@@ -255,14 +237,19 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
                     Name = resourceClaim.Name,
                     Claims =
                         resourceClaim.Children.Count > 0
-                            ? resourceClaim
-                                .Children.Select(x => new TransformationClaim { Name = x.Name })
-                                .ToList()
+                            ?
+                            [
+                                .. resourceClaim.Children.Select(x => new TransformationClaim
+                                {
+                                    Name = x.Name,
+                                }),
+                            ]
                             : null,
                     ClaimSets =
                         resourceClaim.ClaimSets?.Count > 0
-                            ? resourceClaim
-                                .ClaimSets.Select(cs => new TransformationClaimSet
+                            ?
+                            [
+                                .. resourceClaim.ClaimSets.Select(cs => new TransformationClaimSet
                                 {
                                     Name = cs.Name,
                                     Actions =
@@ -285,8 +272,8 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
                                                 })
                                                 .ToList()
                                             : null,
-                                })
-                                .ToList()
+                                }),
+                            ]
                             : null,
                     DefaultAuthorization =
                         resourceClaim.DefaultAuthorizationStrategiesForCRUD?.Count > 0
@@ -458,27 +445,35 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
     /// Cleans up empty collections that would violate JSON Schema minItems constraints
     /// Sets them to null so JsonIgnoreCondition.WhenWritingNull will omit them
     /// </summary>
-    private void CleanupEmptyCollections(List<TransformationClaim> claims)
+    private static void CleanupEmptyCollections(List<TransformationClaim> claims)
     {
         foreach (var claim in claims)
         {
             // Clean up empty collections that violate minItems: 1
             if (claim.ClaimSets?.Count == 0)
+            {
                 claim.ClaimSets = null;
+            }
 
             if (claim.DefaultAuthorization?.Actions?.Count == 0)
+            {
                 claim.DefaultAuthorization.Actions = null;
+            }
 
             // If DefaultAuthorization has no actions, remove it entirely
             if (claim.DefaultAuthorization?.Actions == null)
+            {
                 claim.DefaultAuthorization = null;
+            }
 
             // Clean nested claims recursively
             if (claim.Claims != null)
             {
                 CleanupEmptyCollections(claim.Claims);
                 if (claim.Claims.Count == 0)
+                {
                     claim.Claims = null;
+                }
             }
 
             // Clean claim set actions
@@ -487,7 +482,9 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
                 foreach (var claimSet in claim.ClaimSets)
                 {
                     if (claimSet.Actions?.Count == 0)
+                    {
                         claimSet.Actions = null;
+                    }
                 }
 
                 // Remove claim sets that have no actions (violates schema requirements)
@@ -495,7 +492,9 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
 
                 // If no claim sets remain, set to null
                 if (claim.ClaimSets.Count == 0)
+                {
                     claim.ClaimSets = null;
+                }
             }
         }
     }

@@ -10,10 +10,4 @@ namespace EdFi.DmsConfigurationService.Backend.Claims.Models;
 /// <summary>
 /// Response model for retrieving current claims
 /// </summary>
-public record CurrentClaimsResponse
-{
-    /// <summary>
-    /// The currently loaded claims in their original format
-    /// </summary>
-    public required JsonNode Claims { get; init; }
-}
+public record CurrentClaimsResponse(JsonNode Claims);

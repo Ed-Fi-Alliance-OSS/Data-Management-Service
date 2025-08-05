@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 
 namespace EdFi.DmsConfigurationService.Backend.Claims;
@@ -16,7 +15,7 @@ public interface IClaimsProvider
     /// <summary>
     /// Returns claims document nodes containing claim sets and claims hierarchy
     /// </summary>
-    ClaimsDocumentNodes GetClaimsDocumentNodes();
+    ClaimsDocument GetClaimsDocumentNodes();
 
     /// <summary>
     /// Gets the current reload identifier.
@@ -45,5 +44,5 @@ public interface IClaimsProvider
     /// </summary>
     /// <param name="claimsNodes">The new claims document nodes</param>
     /// <param name="newReloadId">The new reload identifier</param>
-    void UpdateInMemoryState(ClaimsDocumentNodes claimsNodes, Guid newReloadId);
+    void UpdateInMemoryState(ClaimsDocument claimsNodes, Guid newReloadId);
 }

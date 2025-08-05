@@ -151,7 +151,7 @@ public class ClaimsFragmentComposerTests
             // Arrange
             var baseClaimSets = JsonNode.Parse("[{\"claimSetName\": \"Base\", \"isSystemReserved\": true}]")!;
             var baseHierarchy = JsonNode.Parse("[{\"name\": \"base-domain\"}]")!;
-            var baseClaimsNodes = new ClaimsDocumentNodes(baseClaimSets, baseHierarchy);
+            var baseClaimsNodes = new ClaimsDocument(baseClaimSets, baseHierarchy);
 
             // Act
             var result = _composer.ComposeClaimsFromFragments(baseClaimsNodes, _testFragmentsPath);
@@ -180,7 +180,7 @@ public class ClaimsFragmentComposerTests
                 ]
                 """
             )!;
-            var baseClaimsNodes = new ClaimsDocumentNodes(baseClaimSets, baseHierarchy);
+            var baseClaimsNodes = new ClaimsDocument(baseClaimSets, baseHierarchy);
 
             // Create a fragment file
             var fragmentContent = """
@@ -235,7 +235,7 @@ public class ClaimsFragmentComposerTests
                 ]
                 """
             )!;
-            var baseClaimsNodes = new ClaimsDocumentNodes(baseClaimSets, baseHierarchy);
+            var baseClaimsNodes = new ClaimsDocument(baseClaimSets, baseHierarchy);
 
             // Create multiple fragment files
             var fragment1 = """
@@ -256,7 +256,7 @@ public class ClaimsFragmentComposerTests
                 """;
             var fragment2 = """
                 {
-                  "name": "Extension2", 
+                  "name": "Extension2",
                   "resourceClaims": [
                     {
                       "isParent": true,
@@ -299,7 +299,7 @@ public class ClaimsFragmentComposerTests
             // Arrange
             var baseClaimSets = JsonNode.Parse("[{\"claimSetName\": \"Base\"}]")!;
             var baseHierarchy = JsonNode.Parse("[{\"name\": \"base\"}]")!;
-            var baseClaimsNodes = new ClaimsDocumentNodes(baseClaimSets, baseHierarchy);
+            var baseClaimsNodes = new ClaimsDocument(baseClaimSets, baseHierarchy);
 
             // Create a malformed fragment file
             File.WriteAllText(Path.Combine(_testFragmentsPath, "bad-claims.json"), "{ invalid json }");
@@ -319,7 +319,7 @@ public class ClaimsFragmentComposerTests
             // Arrange
             var baseClaimSets = JsonNode.Parse("[{\"claimSetName\": \"Base\"}]")!;
             var baseHierarchy = JsonNode.Parse("[{\"name\": \"base\"}]")!;
-            var baseClaimsNodes = new ClaimsDocumentNodes(baseClaimSets, baseHierarchy);
+            var baseClaimsNodes = new ClaimsDocument(baseClaimSets, baseHierarchy);
 
             // Create fragment without resourceClaims
             var fragmentContent = """

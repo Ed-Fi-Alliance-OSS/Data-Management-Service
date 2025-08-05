@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 
 namespace EdFi.DmsConfigurationService.Backend.Claims;
@@ -19,7 +18,7 @@ public interface IClaimsFragmentComposer
     /// <param name="baseClaimsNodes">Base claims document nodes</param>
     /// <param name="fragmentsPath">Path to directory containing fragment files (*-claims.json)</param>
     /// <returns>Composed claims document nodes with all fragments applied</returns>
-    ClaimsLoadResult ComposeClaimsFromFragments(ClaimsDocumentNodes baseClaimsNodes, string fragmentsPath);
+    ClaimsLoadResult ComposeClaimsFromFragments(ClaimsDocument baseClaimsNodes, string fragmentsPath);
 
     /// <summary>
     /// Discovers fragment files matching the pattern *-claims.json in the specified directory

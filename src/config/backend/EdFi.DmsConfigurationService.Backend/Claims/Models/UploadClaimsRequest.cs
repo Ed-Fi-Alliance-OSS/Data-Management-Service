@@ -10,10 +10,5 @@ namespace EdFi.DmsConfigurationService.Backend.Claims.Models;
 /// <summary>
 /// Request model for uploading claims
 /// </summary>
-public record UploadClaimsRequest
-{
-    /// <summary>
-    /// The claims JSON content to upload
-    /// </summary>
-    public required JsonNode Claims { get; init; }
-}
+/// <param name="Claims">The claims JSON content to upload</param>
+public record UploadClaimsRequest(JsonNode Claims);

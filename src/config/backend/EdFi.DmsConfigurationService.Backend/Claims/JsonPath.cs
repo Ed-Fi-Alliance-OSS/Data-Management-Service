@@ -8,7 +8,4 @@ namespace EdFi.DmsConfigurationService.Backend.Claims;
 /// <summary>
 /// Represents a JSON path for locating elements within a JSON document
 /// </summary>
-public record JsonPath(string Value)
-{
-    public override string ToString() => Value;
-}
+public record JsonPath(string Value);

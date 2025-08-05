@@ -8,53 +8,22 @@ namespace EdFi.DmsConfigurationService.Backend.Claims.Models;
 /// <summary>
 /// Response model for claims reload operations
 /// </summary>
-public record ReloadClaimsResponse
+/// <param name="Success">Indicates whether the reload was successful</param>
+/// <param name="ReloadId">The new reload ID after successful reload</param>
+/// <param name="Errors">Any errors that occurred during the reload</param>
+public record ReloadClaimsResponse(
+    bool Success,
+    Guid? ReloadId = null,
+    List<ClaimsReloadError>? Errors = null
+)
 {
-    /// <summary>
-    /// Indicates whether the reload was successful
-    /// </summary>
-    public required bool Success { get; init; }
-
-    /// <summary>
-    /// The new reload ID after successful reload
-    /// </summary>
-    public Guid? ReloadId { get; init; }
-
-    /// <summary>
-    /// Any errors that occurred during the reload
-    /// </summary>
-    public List<ClaimsReloadError>? Errors { get; init; }
-
     /// <summary>
     /// Creates a successful response
     /// </summary>
-    public static ReloadClaimsResponse Successful(Guid reloadId) =>
-        new() { Success = true, ReloadId = reloadId };
+    public static ReloadClaimsResponse Successful(Guid reloadId) => new(true, reloadId);
 
     /// <summary>
     /// Creates a failure response
     /// </summary>
-    public static ReloadClaimsResponse Failed(List<ClaimsReloadError> errors) =>
-        new() { Success = false, Errors = errors };
-}
-
-/// <summary>
-/// Represents an error that occurred during claims reload
-/// </summary>
-public record ClaimsReloadError
-{
-    /// <summary>
-    /// The type of error
-    /// </summary>
-    public required string ErrorType { get; init; }
-
-    /// <summary>
-    /// The error message
-    /// </summary>
-    public required string Message { get; init; }
-
-    /// <summary>
-    /// Additional details about the error, if available
-    /// </summary>
-    public string? Details { get; init; }
+    public static ReloadClaimsResponse Failed(List<ClaimsReloadError> errors) => new(false, Errors: errors);
 }

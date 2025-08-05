@@ -20,7 +20,7 @@ public class ClaimsDocumentRepository(
     ILogger<ClaimsDocumentRepository> logger
 ) : IClaimsDocumentRepository
 {
-    public async Task<ClaimsDocumentUpdateResult> ReplaceClaimsDocument(ClaimsDocumentNodes claimsNodes)
+    public async Task<ClaimsDocumentUpdateResult> ReplaceClaimsDocument(ClaimsDocument claimsNodes)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();

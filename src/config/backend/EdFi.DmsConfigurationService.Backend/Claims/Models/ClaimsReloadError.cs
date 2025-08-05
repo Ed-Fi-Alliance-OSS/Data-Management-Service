@@ -6,15 +6,9 @@
 namespace EdFi.DmsConfigurationService.Backend.Claims.Models;
 
 /// <summary>
-/// Result of loading claims from file system or assembly
+/// Represents an error that occurred during claims reload
 /// </summary>
-public record ClaimsLoadResult(
-    /// <summary>
-    /// The loaded claims document nodes, or null if loading failed
-    /// </summary>
-    ClaimsDocument? Nodes,
-    /// <summary>
-    /// List of failures that occurred during loading
-    /// </summary>
-    List<ClaimsFailure> Failures
-);
+/// <param name="ErrorType">The type of error</param>
+/// <param name="Message">The error message</param>
+/// <param name="Details">Additional details about the error, if available</param>
+public record ClaimsReloadError(string ErrorType, string Message, string? Details = null);

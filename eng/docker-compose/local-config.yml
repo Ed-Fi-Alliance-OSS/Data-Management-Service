@@ -35,11 +35,11 @@ services:
       DMS_CONFIG_DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING: ${DMS_CONFIG_DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING:-false}
       DMS_CONFIG_USE_CLAIMS_PATH: ${DMS_CONFIG_USE_CLAIMS_PATH:-false}
       DMS_CONFIG_CLAIMS_PATH: ${DMS_CONFIG_CLAIMS_PATH:-}
-      DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS: ${DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS:-false}
+      DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS: ${DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS:-true}
     ports:
       - '127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}'
     volumes:
-      - ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/test-claims:/app/test-claims
+      - ../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets:/app/test-claims
     networks:
       - dms
     restart: unless-stopped

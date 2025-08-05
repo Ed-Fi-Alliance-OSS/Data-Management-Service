@@ -113,6 +113,8 @@ function AddExtensionSecurityMetadata {
         [string]$EnvironmentFile
     )
 
+    throw "This is no longer the way to add extension claimsets to CMS. CMS can be configured to load them dynamically from JSON files now."
+
     try {
         $inputFileList = Get-InputFileList -EnvironmentFile $EnvironmentFile
         $inputFileListString = $inputFileList -join ";"

@@ -9,10 +9,9 @@ This guide covers the deployment and configuration of the Fragment-Based Claims 
 Fragment files must follow the naming pattern: `*-claims.json`
 
 Examples:
-- `001-namespace-claimset-claims.json`
-- `002-noauth-claimset-claims.json`
-- `sample-extension-claims.json`
-- `homograph-extension-claims.json`
+- `001-namespace-claimset.json`
+- `002-nofurtherauth-claimset.json`
+- `003-edorgsonly-claimset.json`
 
 ## Required Configuration Environment Variables
 

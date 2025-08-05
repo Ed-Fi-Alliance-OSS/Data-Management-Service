@@ -26,11 +26,13 @@ cd src/dms/tests/EdFi.DataManagementService.Tests.E2E
 
 ### Expected Fragment Files
 The following fragment files must be present in the mounted volume (`/app/test-claims`):
-- `E2E-NameSpaceBasedClaimSet-claims.json`
-- `E2E-NoFurtherAuthRequiredClaimSet-claims.json`
-- `E2E-RelationshipsWithEdOrgsOnlyClaimSet-claims.json`
-- `HomographExtensionResourceClaims-claims.json`
-- `SampleExtensionResourceClaims-claims.json`
+- `001-namespace-claimset.json` (E2E-NameSpaceBasedClaimSet)
+- `002-nofurtherauth-claimset.json` (E2E-NoFurtherAuthRequiredClaimSet)
+- `003-edorgsonly-claimset.json` (E2E-RelationshipsWithEdOrgsOnlyClaimSet)
+- `004-sample-extension-claimset.json` (SampleExtensionResourceClaims)
+- `005-homograph-extension-claimset.json` (HomographExtensionResourceClaims)
+
+These files are sourced from `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/` and mounted into the container.
 
 ## Test Scenarios
 
@@ -78,8 +80,8 @@ Verifies endpoints require dynamic claims loading to be enabled
    - Verify the Configuration Service is running with correct environment variables
 
 3. **"Claim set 'E2E-NameSpaceBasedClaimSet' was not found"**
-   - Verify fragment files are in the correct location
-   - Check Docker volume mounting in `local-config.yml`
+   - Verify fragment files are in `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`
+   - Check Docker volume mounting in `local-config.yml` and `local-dms.yml`
    - Ensure fragment files follow naming pattern: `*-claims.json`
 
 4. **404 responses from management endpoints**

@@ -8,12 +8,12 @@ using EdFi.DmsConfigurationService.Backend.Claims.Models;
 namespace EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 
 /// <summary>
-/// Service responsible for loading initial claims data into the database during application startup
+/// Service responsible for loading claims data into the database
 /// </summary>
 public interface IClaimsDataLoader
 {
     /// <summary>
-    /// Loads initial claims data from Claims.json into the database if tables are empty
+    /// Loads claims data from Claims.json into the database if tables are empty
     /// </summary>
     /// <returns>Result indicating success or failure of the load operation</returns>
     Task<ClaimsDataLoadResult> LoadInitialClaimsAsync();
@@ -30,7 +30,7 @@ public interface IClaimsDataLoader
     /// </summary>
     /// <param name="claimsNodes">The new claims data to load, containing both claim sets and claims hierarchy</param>
     /// <returns>Result indicating success or failure of the update operation</returns>
-    Task<ClaimsDataLoadResult> UpdateClaimsAsync(ClaimsDocumentNodes claimsNodes);
+    Task<ClaimsDataLoadResult> UpdateClaimsAsync(ClaimsDocument claimsNodes);
 }
 
 /// <summary>

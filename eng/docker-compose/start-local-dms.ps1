@@ -55,7 +55,7 @@ if($AddExtensionSecurityMetadata)
     $env:DMS_CONFIG_USE_CLAIMS_PATH = "true"
     $env:DMS_CONFIG_CLAIMS_PATH = "/app/test-claims"
     $env:DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS = "true"
-    Write-Output "Configured environment variables for file-based claimset loading"
+    Write-Output "Configured environment variables for file-based extension claimset loading"
 }
 
 $files = @(

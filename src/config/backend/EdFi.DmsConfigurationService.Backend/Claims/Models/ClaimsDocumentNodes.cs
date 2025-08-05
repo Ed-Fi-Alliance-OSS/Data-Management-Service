@@ -8,6 +8,6 @@ using System.Text.Json.Nodes;
 namespace EdFi.DmsConfigurationService.Backend.Claims.Models;
 
 /// <summary>
-/// Container for claims JSON nodes including claim sets and claims hierarchy
+/// A Claims.json document
 /// </summary>
-public record ClaimsDocumentNodes(JsonNode ClaimSetsNode, JsonNode ClaimsHierarchyNode);
+public record ClaimsDocument(JsonNode ClaimSetsNode, JsonNode ClaimsHierarchyNode);

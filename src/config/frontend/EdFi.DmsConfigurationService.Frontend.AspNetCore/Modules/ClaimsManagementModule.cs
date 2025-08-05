@@ -75,24 +75,20 @@ public class ClaimsManagementModule : IEndpointModule
                     "Claims reloaded successfully with reload ID {ReloadId}",
                     claimsProvider.ReloadId
                 );
-                return Results.Ok(
-                    new ReloadClaimsResponse { Success = true, ReloadId = claimsProvider.ReloadId }
-                );
+                return Results.Ok(new ReloadClaimsResponse(Success: true, ReloadId: claimsProvider.ReloadId));
             }
 
             logger.LogError("Claims reload failed with {FailureCount} failures", status.Failures.Count);
             return Results.Json(
-                new ReloadClaimsResponse
-                {
-                    Success = false,
-                    Errors = status
-                        .Failures.Select(f => new ClaimsReloadError
-                        {
-                            ErrorType = f.FailureType,
-                            Message = f.Message,
-                        })
-                        .ToList(),
-                },
+                new ReloadClaimsResponse(
+                    Success: false,
+                    Errors: status
+                        .Failures.Select(f => new ClaimsReloadError(
+                            ErrorType: f.FailureType,
+                            Message: f.Message
+                        ))
+                        .ToList()
+                ),
                 statusCode: 500
             );
         }
@@ -100,14 +96,13 @@ public class ClaimsManagementModule : IEndpointModule
         {
             logger.LogError(ex, "Unexpected error during claims reload");
             return Results.Json(
-                new ReloadClaimsResponse
-                {
-                    Success = false,
-                    Errors = new List<ClaimsReloadError>
+                new ReloadClaimsResponse(
+                    Success: false,
+                    Errors: new List<ClaimsReloadError>
                     {
-                        new() { ErrorType = "UnexpectedError", Message = ex.Message },
-                    },
-                },
+                        new ClaimsReloadError(ErrorType: "UnexpectedError", Message: ex.Message),
+                    }
+                ),
                 statusCode: 500
             );
         }
@@ -138,7 +133,10 @@ public class ClaimsManagementModule : IEndpointModule
                 UploadClaimsResponse.Failed(
                     new List<ClaimsUploadError>
                     {
-                        new() { ErrorType = "ValidationError", Message = "Claims JSON is required" },
+                        new ClaimsUploadError(
+                            ErrorType: "ValidationError",
+                            Message: "Claims JSON is required"
+                        ),
                     }
                 ),
                 statusCode: 400
@@ -165,12 +163,11 @@ public class ClaimsManagementModule : IEndpointModule
             return Results.Json(
                 UploadClaimsResponse.Failed(
                     status
-                        .Failures.Select(f => new ClaimsUploadError
-                        {
-                            ErrorType = f.FailureType,
-                            Message = f.Message,
-                            Path = f.Path,
-                        })
+                        .Failures.Select(f => new ClaimsUploadError(
+                            ErrorType: f.FailureType,
+                            Message: f.Message,
+                            Path: f.Path
+                        ))
                         .ToList()
                 ),
                 statusCode: 400
@@ -183,7 +180,7 @@ public class ClaimsManagementModule : IEndpointModule
                 UploadClaimsResponse.Failed(
                     new List<ClaimsUploadError>
                     {
-                        new() { ErrorType = "UnexpectedError", Message = ex.Message },
+                        new ClaimsUploadError(ErrorType: "UnexpectedError", Message: ex.Message),
                     }
                 ),
                 statusCode: 500

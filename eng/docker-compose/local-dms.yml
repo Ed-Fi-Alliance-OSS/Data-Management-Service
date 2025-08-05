@@ -57,7 +57,7 @@ services:
     ports:
       - '127.0.0.1:${DMS_HTTP_PORTS}:${DMS_HTTP_PORTS}'
     volumes:
-      - ../../src/dms/tests/EdFi.DataManagementService.Tests.E2E/test-claims:/app/test-claims
+      - ../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets:/app/test-claims
     networks:
       - dms
     restart: unless-stopped

@@ -116,7 +116,7 @@ public class ClaimsDataLoaderTests
             """
         );
 
-        var claimsNodes = new ClaimsDocumentNodes(claimSetsJson!, hierarchyJson!);
+        var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
         A.CallTo(() => _claimsProvider.GetClaimsDocumentNodes()).Returns(claimsNodes);
         A.CallTo(() => _claimsProvider.IsClaimsValid).Returns(true);
 
@@ -149,7 +149,7 @@ public class ClaimsDataLoaderTests
         var claimSetsJson = JsonNode.Parse("""[{ "claimSetName": "Test1", "isSystemReserved": true }]""");
         var hierarchyJson = JsonNode.Parse("""[]""");
 
-        var claimsNodes = new ClaimsDocumentNodes(claimSetsJson!, hierarchyJson!);
+        var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
         A.CallTo(() => _claimsProvider.GetClaimsDocumentNodes()).Returns(claimsNodes);
         A.CallTo(() => _claimsProvider.IsClaimsValid).Returns(true);
 
@@ -198,7 +198,7 @@ public class ClaimsDataLoaderTests
 
         var hierarchyJson = JsonNode.Parse("""[]""");
 
-        var claimsNodes = new ClaimsDocumentNodes(claimSetsJson!, hierarchyJson!);
+        var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
         A.CallTo(() => _claimsProvider.GetClaimsDocumentNodes()).Returns(claimsNodes);
         A.CallTo(() => _claimsProvider.IsClaimsValid).Returns(true);
 

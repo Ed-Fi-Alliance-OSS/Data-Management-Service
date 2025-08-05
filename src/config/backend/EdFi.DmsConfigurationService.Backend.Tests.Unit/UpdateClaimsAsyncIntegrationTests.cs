@@ -69,10 +69,10 @@ public class UpdateClaimsAsyncIntegrationTests
                 """
             );
 
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsJson!, hierarchyJson!);
+            var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
 
             // Mock successful update
-            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
                 .Returns(new ClaimsDocumentUpdateResult.Success(0, 2, true));
 
             // Act
@@ -85,7 +85,7 @@ public class UpdateClaimsAsyncIntegrationTests
             Assert.That(success.HierarchyLoaded, Is.True);
 
             // Verify ReplaceClaimsDocument was called
-            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -97,10 +97,10 @@ public class UpdateClaimsAsyncIntegrationTests
                 """[{ "claimSetName": "Test1", "isSystemReserved": false }]"""
             );
             var hierarchyJson = JsonNode.Parse("""[]""");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsJson!, hierarchyJson!);
+            var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
 
             // Mock failed update
-            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
                 .Returns(new ClaimsDocumentUpdateResult.DatabaseFailure("Database error occurred"));
 
             // Act
@@ -112,7 +112,7 @@ public class UpdateClaimsAsyncIntegrationTests
             Assert.That(failure.ErrorMessage, Is.EqualTo("Database error occurred"));
 
             // Verify transaction was attempted
-            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -124,10 +124,10 @@ public class UpdateClaimsAsyncIntegrationTests
                 """[{ "claimSetName": "SystemReserved", "isSystemReserved": true }]"""
             );
             var hierarchyJson = JsonNode.Parse("""[]""");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsJson!, hierarchyJson!);
+            var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
 
             // Mock foreign key constraint failure
-            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
                 .Returns(
                     new ClaimsDocumentUpdateResult.DatabaseFailure(
                         "Cannot delete claim set 'SystemReserved' - it is referenced by existing applications"
@@ -159,22 +159,22 @@ public class UpdateClaimsAsyncIntegrationTests
             var hierarchyJson = JsonNode.Parse(
                 """
                 [
-                    { 
-                        "name": "domain1", 
+                    {
+                        "name": "domain1",
                         "claims": [
                             { "name": "claim1", "type": "read" }
-                        ] 
+                        ]
                     }
                 ]
                 """
             );
 
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsJson!, hierarchyJson!);
+            var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
 
             var callOrder = new List<string>();
 
             // Track call order
-            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
                 .Invokes(() => callOrder.Add("ReplaceClaimsDocument"))
                 .Returns(new ClaimsDocumentUpdateResult.Success(0, 2, true));
 
@@ -193,10 +193,10 @@ public class UpdateClaimsAsyncIntegrationTests
             // Arrange
             var claimSetsJson = JsonNode.Parse("[]");
             var hierarchyJson = JsonNode.Parse("[]");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsJson!, hierarchyJson!);
+            var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
 
             // Mock successful update with no claim sets
-            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
                 .Returns(new ClaimsDocumentUpdateResult.Success(0, 0, true));
 
             // Act
@@ -215,10 +215,10 @@ public class UpdateClaimsAsyncIntegrationTests
             // Arrange
             var claimSetsJson = JsonNode.Parse("""[{ "claimSetName": "Test", "isSystemReserved": false }]""");
             var hierarchyJson = JsonNode.Parse("""[]""");
-            var claimsNodes = new ClaimsDocumentNodes(claimSetsJson!, hierarchyJson!);
+            var claimsNodes = new ClaimsDocument(claimSetsJson!, hierarchyJson!);
 
             // Mock exception during update
-            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocumentNodes>._))
+            A.CallTo(() => _claimsDocumentRepository.ReplaceClaimsDocument(A<ClaimsDocument>._))
                 .Throws(new InvalidOperationException("Unexpected database error"));
 
             // Act
