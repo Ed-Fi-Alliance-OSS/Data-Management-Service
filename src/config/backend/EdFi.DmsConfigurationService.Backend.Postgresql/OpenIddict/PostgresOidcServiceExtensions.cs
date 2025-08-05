@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Data;
-using EdFi.DmsConfigurationService.Backend.OpenIddict;
+
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using Microsoft.Extensions.Configuration;
@@ -16,8 +16,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
     {
         public static IServiceCollection AddPostgresOpenIddictStores(this IServiceCollection services, string authority)
         {
-            services.AddSingleton<IClientSqlProvider, PostgresClientSqlProvider>();
-            services.AddSingleton<IClientRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IClientRepository, PostgresClientSqlProvider>();
+            // services.AddSingleton<IClientRepository, OpenIddictClientRepository>()
             services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
             // services AddSingleton(typeof(IOpenIddictTokenStore<>), typeof(OpenIddictDapperTokenStore<>))
             // TODO: services AddSingleton<ITokenManager, OpenIddictTokenManager>
