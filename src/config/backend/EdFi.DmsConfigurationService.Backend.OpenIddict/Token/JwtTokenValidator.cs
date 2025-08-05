@@ -1,0 +1,42 @@
+using System;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using Microsoft.IdentityModel.Tokens;
+
+namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
+{
+    public static class JwtTokenValidator
+    {
+        public static bool ValidateToken(
+            string token,
+            SecurityKey signingKey,
+            string issuer,
+            string audience,
+            out JwtSecurityToken? jwtToken)
+        {
+            jwtToken = null;
+            try
+            {
+                var tokenHandler = new JwtSecurityTokenHandler();
+                var validationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = signingKey,
+                    ValidateIssuer = true,
+                    ValidIssuer = issuer,
+                    ValidateAudience = true,
+                    ValidAudience = audience,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.FromMinutes(5)
+                };
+                tokenHandler.ValidateToken(token, validationParameters, out var validatedToken);
+                jwtToken = validatedToken as JwtSecurityToken;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+}

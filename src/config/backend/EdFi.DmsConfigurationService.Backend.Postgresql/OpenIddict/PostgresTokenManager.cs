@@ -38,7 +38,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             _databaseOptions = databaseOptions;
             _logger = logger;
             _jwtSettings = new JwtSettings();
-            _signingKey = GenerateSigningKey();
+            _signingKey = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtSigningKeyHelper.GenerateSigningKey();
 
             _logger.LogInformation("PostgresTokenManager initialized with JWT settings - Issuer: {Issuer}, Audience: {Audience}",
                 _jwtSettings.Issuer, _jwtSettings.Audience);
@@ -155,106 +155,23 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             var now = DateTimeOffset.UtcNow;
             var expiration = now.AddHours(_jwtSettings.ExpirationHours);
 
-            // Create claims
-            var claims = new List<Claim>
-            {
-                new Claim(JwtRegisteredClaimNames.Jti, tokenId.ToString()),
-                new Claim(JwtRegisteredClaimNames.Sub, clientId),
-                new Claim(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-                new Claim(JwtRegisteredClaimNames.Exp, expiration.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-                new Claim("client_id", clientId),
-                new Claim("token_type", "access_token")
-            };
+            // Prepare roles from scopes
+            var roles = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
 
-            // Add display name if available
-            if (!string.IsNullOrEmpty(applicationInfo.DisplayName))
-            {
-                claims.Add(new Claim("client_name", applicationInfo.DisplayName));
-            }
-
-            // Add scope claims
-            var scopes = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
-            foreach (var s in scopes)
-            {
-                claims.Add(new Claim("scope", s));
-            }
-
-            // Add custom scope array claim
-            if (scopes.Length > 0)
-            {
-                claims.Add(new Claim("uri://myuri.org/scopes", JsonSerializer.Serialize(scopes)));
-            }
-
-            // Add permissions if available
-            if (applicationInfo.Permissions != null && applicationInfo.Permissions.Length > 0)
-            {
-                foreach (var permission in applicationInfo.Permissions)
-                {
-                    claims.Add(new Claim("permission", permission));
-                }
-            }
-
-            // Create JWT token with validation
-            _logger.LogDebug("Creating JWT token descriptor with {ClaimCount} claims", claims.Count);
-
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(claims),
-                Expires = expiration.DateTime,
-                SigningCredentials = new SigningCredentials(_signingKey, SecurityAlgorithms.HmacSha256),
-                Issuer = _jwtSettings.Issuer,
-                Audience = _jwtSettings.Audience
-            };
-
-            var tokenHandler = new JwtSecurityTokenHandler();
-            SecurityToken securityToken;
-
-            try
-            {
-                securityToken = tokenHandler.CreateToken(tokenDescriptor);
-                _logger.LogDebug("SecurityToken created successfully");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to create SecurityToken");
-                throw new InvalidOperationException("Failed to create JWT SecurityToken", ex);
-            }
-
-            string tokenString;
-            try
-            {
-                tokenString = tokenHandler.WriteToken(securityToken);
-                _logger.LogDebug("Token written successfully, length: {Length}", tokenString?.Length ?? 0);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to write token to string");
-                throw new InvalidOperationException("Failed to serialize JWT token to string", ex);
-            }
-
-            // Validate the generated token format
-            if (string.IsNullOrEmpty(tokenString))
-            {
-                _logger.LogError("Generated JWT token is null or empty");
-                throw new InvalidOperationException("JWT token generation failed - token is null or empty");
-            }
-
-            if (!tokenString.Contains('.'))
-            {
-                _logger.LogError("Generated JWT token does not contain dots. Token: {Token}", tokenString);
-                throw new InvalidOperationException("JWT token generation failed - token does not contain required separators");
-            }
-
-            var tokenParts = tokenString.Split('.');
-            if (tokenParts.Length != 3)
-            {
-                _logger.LogError("Generated JWT token has {PartCount} parts instead of 3. Token: {Token}",
-                    tokenParts.Length, tokenString);
-                throw new InvalidOperationException($"Generated JWT token is not in the correct format. Expected 3 parts (header.payload.signature), got {tokenParts.Length} parts");
-            }
-
-            _logger.LogInformation("Successfully generated JWT token with {HeaderLength}/{PayloadLength}/{SignatureLength} character parts",
-                tokenParts[0].Length, tokenParts[1].Length, tokenParts[2].Length);
+            // Use shared JwtTokenGenerator
+            var tokenString = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenGenerator.GenerateJwtToken(
+                tokenId,
+                clientId,
+                applicationInfo.DisplayName,
+                applicationInfo.Permissions,
+                roles,
+                scope ?? "",
+                now,
+                expiration,
+                _jwtSettings.Issuer,
+                _jwtSettings.Audience,
+                _signingKey
+            );
 
             // Store token in database
             await StoreTokenInDatabaseAsync(connection, tokenId, applicationInfo.Id, clientId, tokenString, expiration);
@@ -292,25 +209,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             _logger.LogInformation("JWT token stored in database with ID: {TokenId}", tokenId);
         }
 
-        private static SecurityKey GenerateSigningKey()
-        {
-            // Retrieve the key from a secure configuration source or key vault
-            var key = Environment.GetEnvironmentVariable("JWT_SIGNING_KEY") ?? "YourSecretKeyForJWTWhichMustBeLongEnoughForSecurity123456789";
-
-            if (string.IsNullOrEmpty(key))
-            {
-                throw new InvalidOperationException("JWT signing key is not configured.");
-            }
-
-            // Ensure key is long enough for HMAC-SHA256 (at least 256 bits / 32 bytes)
-            var keyBytes = Encoding.UTF8.GetBytes(key);
-            if (keyBytes.Length < 32)
-            {
-                throw new InvalidOperationException($"JWT signing key must be at least 32 bytes long. Current length: {keyBytes.Length}");
-            }
-
-            return new SymmetricSecurityKey(keyBytes);
-        }
+        // Signing key logic moved to JwtSigningKeyHelper
 
         /// <summary>
         /// Validates a JWT token and checks its status in the database
@@ -319,40 +218,29 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             try
             {
-                var tokenHandler = new JwtSecurityTokenHandler();
-
-                var validationParameters = new TokenValidationParameters
+                if (!EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenValidator.ValidateToken(
+                    token,
+                    _signingKey,
+                    _jwtSettings.Issuer,
+                    _jwtSettings.Audience,
+                    out var jwtToken))
                 {
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = _signingKey,
-                    ValidateIssuer = true,
-                    ValidIssuer = _jwtSettings.Issuer,
-                    ValidateAudience = true,
-                    ValidAudience = _jwtSettings.Audience,
-                    ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromMinutes(5)
-                };
-
-                // Validate the token
-                tokenHandler.ValidateToken(token, validationParameters, out var validatedToken);
+                    _logger.LogWarning("Token validation failed (signature, issuer, audience, or lifetime)");
+                    return false;
+                }
 
                 // Check token status in database
-                var jwtToken = validatedToken as JwtSecurityToken;
                 var jti = jwtToken?.Claims?.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
-
                 if (!string.IsNullOrEmpty(jti))
                 {
                     await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                     await connection.OpenAsync();
-
                     var status = await connection.QuerySingleOrDefaultAsync<string>(
                         "SELECT status FROM dmscs.openiddict_token WHERE id = @Id",
                         new { Id = Guid.Parse(jti) }
                     );
-
                     return status == "valid";
                 }
-
                 return false;
             }
             catch (Exception ex)
