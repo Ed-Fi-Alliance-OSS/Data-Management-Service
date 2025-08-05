@@ -7,7 +7,6 @@ using System.Data.Common;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
-using EdFi.DmsConfigurationService.Backend.Postgresql.Claims;
 using EdFi.DmsConfigurationService.Backend.Postgresql.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -72,8 +71,8 @@ public class ClaimSetTests : DatabaseTest
             NullLogger<Backend.ClaimsDataLoader.ClaimsDataLoader>.Instance
         );
 
-        var claimsProvider = new PostgresqlClaimsProvider(
-            NullLogger<PostgresqlClaimsProvider>.Instance,
+        var claimsProvider = new ClaimsProvider(
+            NullLogger<ClaimsProvider>.Instance,
             claimsOptions,
             claimsValidator,
             claimsFragmentComposer

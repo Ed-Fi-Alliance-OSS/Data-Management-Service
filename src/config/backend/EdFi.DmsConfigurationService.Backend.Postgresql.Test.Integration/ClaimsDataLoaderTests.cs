@@ -10,7 +10,6 @@ using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
-using EdFi.DmsConfigurationService.Backend.Postgresql.Claims;
 using EdFi.DmsConfigurationService.Backend.Postgresql.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -85,8 +84,8 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         );
 
         // Now create the ClaimsProvider (no longer needs ClaimsDataLoader)
-        _claimsProvider = new PostgresqlClaimsProvider(
-            NullLogger<PostgresqlClaimsProvider>.Instance,
+        _claimsProvider = new ClaimsProvider(
+            NullLogger<ClaimsProvider>.Instance,
             claimsOptions,
             claimsValidator,
             claimsFragmentComposer
@@ -473,8 +472,8 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             var hybridClaimsFragmentComposer = new ClaimsFragmentComposer(
                 NullLogger<ClaimsFragmentComposer>.Instance
             );
-            var hybridClaimsProvider = new PostgresqlClaimsProvider(
-                NullLogger<PostgresqlClaimsProvider>.Instance,
+            var hybridClaimsProvider = new ClaimsProvider(
+                NullLogger<ClaimsProvider>.Instance,
                 hybridClaimsOptions,
                 hybridClaimsValidator,
                 hybridClaimsFragmentComposer
@@ -585,8 +584,8 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
                 var hybridClaimsFragmentComposer = new ClaimsFragmentComposer(
                     NullLogger<ClaimsFragmentComposer>.Instance
                 );
-                var hybridClaimsProvider = new PostgresqlClaimsProvider(
-                    NullLogger<PostgresqlClaimsProvider>.Instance,
+                var hybridClaimsProvider = new ClaimsProvider(
+                    NullLogger<ClaimsProvider>.Instance,
                     hybridClaimsOptions,
                     hybridClaimsValidator,
                     hybridClaimsFragmentComposer
@@ -775,8 +774,8 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
                 var filesystemClaimsFragmentComposer = new ClaimsFragmentComposer(
                     NullLogger<ClaimsFragmentComposer>.Instance
                 );
-                var filesystemClaimsProvider = new PostgresqlClaimsProvider(
-                    NullLogger<PostgresqlClaimsProvider>.Instance,
+                var filesystemClaimsProvider = new ClaimsProvider(
+                    NullLogger<ClaimsProvider>.Instance,
                     filesystemClaimsOptions,
                     filesystemClaimsValidator,
                     filesystemClaimsFragmentComposer

@@ -38,9 +38,6 @@
       <EmbeddedResource Include="Deploy\Scripts\*.sql">
           <CopyToOutputDirectory>Never</CopyToOutputDirectory>
       </EmbeddedResource>
-      <EmbeddedResource Include="Deploy\Claims.json">
-          <CopyToOutputDirectory>Never</CopyToOutputDirectory>
-      </EmbeddedResource>
   </ItemGroup>
 
 </Project>

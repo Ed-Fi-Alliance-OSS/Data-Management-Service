@@ -5,7 +5,6 @@
 
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using System.Runtime.Loader;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
@@ -459,7 +458,7 @@ public class ClaimsProvider : IClaimsProvider
         try
         {
             var assembly = GetAssemblyForEmbeddedResource();
-            string resourceName = $"{assembly.GetName().Name}.Deploy.Claims.json";
+            string resourceName = $"{assembly.GetName().Name}.Claims.Claims.json";
 
             using Stream? stream = assembly.GetManifestResourceStream(resourceName);
             if (stream == null)
@@ -530,19 +529,11 @@ public class ClaimsProvider : IClaimsProvider
             var claimSetsJson = claimsNodes.ClaimSetsNode.ToJsonString();
             var hierarchyJson = claimsNodes.ClaimsHierarchyNode.ToJsonString();
 
-            // Debug logging to identify null values
-            _logger.LogInformation("ClaimSets JSON length: {Length}", claimSetsJson.Length);
-            _logger.LogInformation("Hierarchy JSON length: {Length}", hierarchyJson.Length);
-
-            // Save the full combined JSON to a file for detailed analysis
-            var combinedForAnalysis = new JsonObject
-            {
-                ["claimSets"] = JsonNode.Parse(claimSetsJson),
-                ["claimsHierarchy"] = JsonNode.Parse(hierarchyJson),
-            };
-            _logger.LogInformation(
-                "Full combined JSON for validation: {CombinedJson}",
-                combinedForAnalysis.ToJsonString()
+            // Parse JSON nodes for validation
+            _logger.LogDebug(
+                "Parsing claims JSON for validation. ClaimSets length: {ClaimSetsLength}, Hierarchy length: {HierarchyLength}",
+                claimSetsJson.Length,
+                hierarchyJson.Length
             );
 
             var claimSetsNode = JsonNode.Parse(claimSetsJson);

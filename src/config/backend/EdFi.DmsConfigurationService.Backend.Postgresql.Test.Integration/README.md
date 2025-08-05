@@ -102,6 +102,6 @@ Ensure the PostgreSQL user has sufficient permissions to:
 
 ## Test Data
 
-The tests use the embedded `Claims.json` file from the PostgreSQL backend assembly. This file contains:
+The tests use the embedded `Claims.json` file from the Backend assembly. This file contains:
 - 16 claim sets (all marked as system reserved)
 - Complete claims hierarchy with multiple domains

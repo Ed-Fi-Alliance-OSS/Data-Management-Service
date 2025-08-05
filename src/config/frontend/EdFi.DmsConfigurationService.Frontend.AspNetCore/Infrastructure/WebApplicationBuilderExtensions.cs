@@ -13,7 +13,6 @@ using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
-using EdFi.DmsConfigurationService.Backend.Postgresql.Claims;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -117,6 +116,9 @@ public static class WebApplicationBuilderExtensions
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
     {
+        // Common service registration for all database backends
+        webAppBuilder.Services.AddSingleton<IClaimsProvider, ClaimsProvider>();
+
         if (
             string.Equals(
                 webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
@@ -135,13 +137,11 @@ public static class WebApplicationBuilderExtensions
                 IClaimsTableValidator,
                 Backend.Postgresql.ClaimsDataLoader.ClaimsTableValidator
             >();
-            webAppBuilder.Services.AddSingleton<IClaimsProvider, PostgresqlClaimsProvider>();
         }
         else
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
-            webAppBuilder.Services.AddSingleton<IClaimsProvider, ClaimsProvider>();
         }
     }
 
