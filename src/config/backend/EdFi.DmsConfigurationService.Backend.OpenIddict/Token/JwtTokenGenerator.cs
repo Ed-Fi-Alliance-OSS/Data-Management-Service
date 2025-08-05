@@ -29,19 +29,29 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             DateTimeOffset expiresAt,
             string issuer,
             string audience,
-            SecurityKey signingKey)
+            SecurityKey signingKey,
+            IConfiguration? configuration = null
+        )
         {
             var claims = new List<Claim>
-                {
-                    new Claim(JwtRegisteredClaimNames.Jti, tokenId.ToString()),
-                    new Claim(JwtRegisteredClaimNames.Sub, clientId),
-                    new Claim(JwtRegisteredClaimNames.Iat, issuedAt.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-                    new Claim(JwtRegisteredClaimNames.Exp, expiresAt.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
-                    new Claim("client_id", clientId),
-                    new Claim("typ", "Bearer"),
-                    new Claim("azp", clientId),
-                    new Claim("scope", scope)
-                };
+            {
+                new Claim(JwtRegisteredClaimNames.Jti, tokenId.ToString()),
+                new Claim(JwtRegisteredClaimNames.Sub, clientId),
+                new Claim(
+                    JwtRegisteredClaimNames.Iat,
+                    issuedAt.ToUnixTimeSeconds().ToString(),
+                    ClaimValueTypes.Integer64
+                ),
+                new Claim(
+                    JwtRegisteredClaimNames.Exp,
+                    expiresAt.ToUnixTimeSeconds().ToString(),
+                    ClaimValueTypes.Integer64
+                ),
+                new Claim("client_id", clientId),
+                new Claim("typ", "Bearer"),
+                new Claim("azp", clientId),
+                new Claim("scope", scope),
+            };
 
             if (!string.IsNullOrEmpty(displayName))
             {
@@ -50,13 +60,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
 
             if (roles != null && roles.Length > 0)
             {
-                var rolesClaim = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
+                // Read the role claim type from configuration (JSON), fallback to default if not set
+                var rolesClaim = configuration?.GetValue<string>("Authentication:RoleClaimAttribute")
+                    ?? "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
                 foreach (var role in roles)
                 {
-                    claims.Add(new Claim(rolesClaim, role, OpenIddictConstants.Destinations.AccessToken));
+                    var claim = new Claim(rolesClaim, role);
+                    claim.SetDestinations(OpenIddictConstants.Destinations.AccessToken);
+                    claims.Add(claim);
                 }
             }
-
             if (permissions != null && permissions.Length > 0)
             {
                 foreach (var permission in permissions)
@@ -71,7 +84,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 Expires = expiresAt.DateTime,
                 SigningCredentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256),
                 Issuer = issuer,
-                Audience = audience
+                Audience = audience,
             };
 
             var tokenHandler = new JwtSecurityTokenHandler();
