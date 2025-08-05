@@ -208,9 +208,7 @@ public static class WebApplicationBuilderExtensions
             webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
             logger.Information("Registering OpenIddict services");
-            webApplicationBuilder.Services.AddPostgresOpenIddictStores(
-                identitySettings.Authority
-            );
+            webApplicationBuilder.Services.AddPostgresOpenIddictStores(identitySettings.Authority);
         }
         else // Default to Keycloak
         {
