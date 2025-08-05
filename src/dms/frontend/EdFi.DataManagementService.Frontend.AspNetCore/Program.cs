@@ -11,6 +11,8 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
 
+Environment.Exit(-1);
+
 // Disable reload to work around .NET file watcher bug on Linux. See:
 // https://github.com/dotnet/runtime/issues/62869
 // https://stackoverflow.com/questions/60295562/turn-reloadonchange-off-in-config-source-for-webapplicationfactory
