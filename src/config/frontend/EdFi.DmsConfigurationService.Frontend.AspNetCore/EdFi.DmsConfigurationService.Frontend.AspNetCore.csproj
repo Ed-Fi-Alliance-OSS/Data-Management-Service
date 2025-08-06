@@ -18,6 +18,7 @@
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
       <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+      <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
       <PackageReference Include="Serilog" />
       <PackageReference Include="Serilog.Extensions.Logging" />
       <PackageReference Include="Serilog.Settings.Configuration" />
