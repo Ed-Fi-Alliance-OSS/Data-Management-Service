@@ -121,11 +121,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             // Add roles as an actual array if present
             if (roles != null && roles.Length > 0)
             {
-                string[] arrayRoles = { "cms-client" };
-
                 var rolesClaim = configuration?.GetValue<string>("Authentication:RoleClaimAttribute")
                     ?? "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
-                payload.Add(rolesClaim, arrayRoles); // This will be serialized as an actual array
+                payload.Add(rolesClaim, roles);
             }
 
             // Create the JWT with header and payload

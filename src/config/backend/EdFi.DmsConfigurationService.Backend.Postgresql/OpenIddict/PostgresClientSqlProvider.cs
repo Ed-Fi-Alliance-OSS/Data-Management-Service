@@ -43,11 +43,32 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 await connection.OpenAsync();
                 await using var transaction = await connection.BeginTransactionAsync();
 
-                // Insert client
+                // 1. Ensure role exists (oidc_rol)
+                Guid rolId;
+                var existingRolId = await connection.ExecuteScalarAsync<Guid?>(
+                    "SELECT id FROM dmscs.oidc_rol WHERE name = @Name",
+                    new { Name = role },
+                    transaction
+                );
+                if (existingRolId == null)
+                {
+                    rolId = Guid.NewGuid();
+                    await connection.ExecuteAsync(
+                        "INSERT INTO dmscs.oidc_rol (id, name) VALUES (@Id, @Name)",
+                        new { Id = rolId, Name = role },
+                        transaction
+                    );
+                }
+                else
+                {
+                    rolId = existingRolId.Value;
+                }
+
+                // 2. Insert client with claims
                 string sql = @"
 INSERT INTO dmscs.openiddict_application
-    (id, client_id, client_secret, display_name, permissions, requirements, type, created_at)
-VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, CURRENT_TIMESTAMP)
+    (id, client_id, client_secret, display_name, permissions, requirements, type, created_at, namespace_prefixes, education_organization_ids)
+VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, CURRENT_TIMESTAMP, @NamespacePrefixes, @EducationOrganizationIds)
 ";
                 var permissions = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
                 var requirementsArray = Array.Empty<string>();
@@ -61,12 +82,14 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                         DisplayName = displayName,
                         Permissions = permissions,
                         Requirements = requirementsArray,
-                        Type = "confidential"
+                        Type = "confidential",
+                        NamespacePrefixes = namespacePrefixes,
+                        EducationOrganizationIds = educationOrganizationIds
                     },
                     transaction
                 );
 
-                // Insert scopes and join records if scope is not null
+                // 3. Insert scopes and join records if scope is not null
                 if (!string.IsNullOrWhiteSpace(scope))
                 {
                     var scopes = scope.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -95,6 +118,13 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                         );
                     }
                 }
+
+                // 4. Assign role to client (oidc_client_rol)
+                await connection.ExecuteAsync(
+                    "INSERT INTO dmscs.oidc_client_rol (client_id, rol_id) VALUES (@ClientId, @RolId)",
+                    new { ClientId = clientUuid, RolId = rolId },
+                    transaction
+                );
 
                 await transaction.CommitAsync();
                 return new ClientCreateResult.Success(clientUuid);
