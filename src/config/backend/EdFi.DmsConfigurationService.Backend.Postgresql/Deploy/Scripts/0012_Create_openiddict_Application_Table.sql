@@ -1,4 +1,10 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Licensed to the Ed-Fi Alliance under one or more agreements.
+-- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+-- See the LICENSE and NOTICES files in the project root for more information.
+
 CREATE TABLE if not exists dmscs.openiddict_application (
+
 id uuid NOT NULL,
 client_id text NOT NULL,
 client_secret text,
@@ -9,6 +15,7 @@ permissions text[],
 requirements text[],
 type text,
 created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+protocolmappers jsonb,
 CONSTRAINT openiddict_application_pkey PRIMARY KEY (id)
 )
 USING heap;
@@ -34,3 +41,4 @@ comment on Column dmscs.openiddict_application.requirements is 'Requirements for
 comment on Column dmscs.openiddict_application.type is 'Application type (public/confidential).';
 
 comment on Column dmscs.openiddict_application.created_at is 'Creation timestamp.';
+comment on Column dmscs.openiddict_application.protocolmappers is 'Protocol mappers for the client, stored as JSON.';
