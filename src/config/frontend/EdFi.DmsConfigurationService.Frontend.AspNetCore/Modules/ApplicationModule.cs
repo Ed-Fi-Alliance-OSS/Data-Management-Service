@@ -112,6 +112,17 @@ public class ApplicationModule : IEndpointModule
                                 new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist."),
                             }
                         );
+                    case ApplicationInsertResult.FailureDuplicateApplication duplicateApp:
+                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
+                        throw new ValidationException(
+                            new[]
+                            {
+                                new ValidationFailure(
+                                    "ApplicationName",
+                                    $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
+                                ),
+                            }
+                        );
                     case ApplicationInsertResult.FailureUnknown failure:
                         logger.LogError("Failure creating client {failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
@@ -199,6 +210,21 @@ public class ApplicationModule : IEndpointModule
                                         new ValidationFailure(
                                             "VendorId",
                                             $"Reference 'VendorId' does not exist."
+                                        ),
+                                    ]
+                                );
+                            }
+
+                            if (
+                                applicationUpdateResult
+                                is ApplicationUpdateResult.FailureDuplicateApplication duplicateApp
+                            )
+                            {
+                                throw new ValidationException(
+                                    [
+                                        new ValidationFailure(
+                                            "ApplicationName",
+                                            $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
                                         ),
                                     ]
                                 );

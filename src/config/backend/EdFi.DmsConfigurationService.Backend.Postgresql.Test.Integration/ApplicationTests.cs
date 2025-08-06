@@ -371,4 +371,145 @@ public class ApplicationTests : DatabaseTest
             apiClients.Length.Should().Be(0);
         }
     }
+
+    [TestFixture]
+    public class DuplicateApplicationTests : ApplicationTests
+    {
+        private long _testVendorId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance
+            );
+
+            VendorInsertCommand vendor = new()
+            {
+                Company = "Test Company",
+                ContactEmailAddress = "test@test.com",
+                ContactName = "Fake Name",
+                NamespacePrefixes = "FakePrefix1,FakePrefix2",
+            };
+
+            var vendorResult = await vendorRepository.InsertVendor(vendor);
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _testVendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+
+            // Insert first application
+            ApplicationInsertCommand firstApplication = new()
+            {
+                ApplicationName = "Duplicate Test Application",
+                VendorId = _testVendorId,
+                ClaimSetName = "Test Claim set",
+                EducationOrganizationIds = [1, 2],
+            };
+
+            var firstResult = await _applicationRepository.InsertApplication(
+                firstApplication,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            firstResult.Should().BeOfType<ApplicationInsertResult.Success>();
+        }
+
+        [Test]
+        public async Task Should_fail_to_insert_duplicate_application_name_for_same_vendor()
+        {
+            // Attempt to insert a second application with the same name for the same vendor
+            ApplicationInsertCommand duplicateApplication = new()
+            {
+                ApplicationName = "Duplicate Test Application",
+                VendorId = _testVendorId,
+                ClaimSetName = "Different Claim set",
+                EducationOrganizationIds = [3, 4],
+            };
+
+            var insertResult = await _applicationRepository.InsertApplication(
+                duplicateApplication,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+
+            insertResult.Should().BeOfType<ApplicationInsertResult.FailureDuplicateApplication>();
+            var failureResult = (ApplicationInsertResult.FailureDuplicateApplication)insertResult;
+            failureResult.ApplicationName.Should().Be("Duplicate Test Application");
+        }
+
+        [Test]
+        public async Task Should_allow_same_application_name_for_different_vendor()
+        {
+            // Create a second vendor
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance
+            );
+
+            VendorInsertCommand secondVendor = new()
+            {
+                Company = "Another Test Company",
+                ContactEmailAddress = "test2@test.com",
+                ContactName = "Another Fake Name",
+                NamespacePrefixes = "AnotherPrefix1,AnotherPrefix2",
+            };
+
+            var secondVendorResult = await vendorRepository.InsertVendor(secondVendor);
+            secondVendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            var secondVendorId = (secondVendorResult as VendorInsertResult.Success)!.Id;
+
+            // Insert application with same name but different vendor
+            ApplicationInsertCommand sameNameDifferentVendor = new()
+            {
+                ApplicationName = "Duplicate Test Application",
+                VendorId = secondVendorId,
+                ClaimSetName = "Test Claim set",
+                EducationOrganizationIds = [5, 6],
+            };
+
+            var insertResult = await _applicationRepository.InsertApplication(
+                sameNameDifferentVendor,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+
+            insertResult.Should().BeOfType<ApplicationInsertResult.Success>();
+        }
+
+        [Test]
+        public async Task Should_fail_to_update_to_duplicate_application_name_for_same_vendor()
+        {
+            // Insert a second application with a different name
+            ApplicationInsertCommand secondApplication = new()
+            {
+                ApplicationName = "Second Application",
+                VendorId = _testVendorId,
+                ClaimSetName = "Test Claim set",
+                EducationOrganizationIds = [7, 8],
+            };
+
+            var secondResult = await _applicationRepository.InsertApplication(
+                secondApplication,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            secondResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            var secondApplicationId = ((ApplicationInsertResult.Success)secondResult).Id;
+
+            // Try to update the second application to have the same name as the first
+            ApplicationUpdateCommand updateCommand = new()
+            {
+                Id = secondApplicationId,
+                ApplicationName = "Duplicate Test Application", // Same name as first application
+                VendorId = _testVendorId,
+                ClaimSetName = "Updated Claim set",
+                EducationOrganizationIds = [9, 10],
+            };
+
+            var updateResult = await _applicationRepository.UpdateApplication(
+                updateCommand,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+
+            updateResult.Should().BeOfType<ApplicationUpdateResult.FailureDuplicateApplication>();
+            var failureResult = (ApplicationUpdateResult.FailureDuplicateApplication)updateResult;
+            failureResult.ApplicationName.Should().Be("Duplicate Test Application");
+        }
+    }
 }

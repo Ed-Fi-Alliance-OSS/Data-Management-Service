@@ -38,6 +38,11 @@ public record ApplicationInsertResult
     public record FailureVendorNotFound() : ApplicationInsertResult();
 
     /// <summary>
+    /// Application name already exists for the vendor
+    /// </summary>
+    public record FailureDuplicateApplication(string ApplicationName) : ApplicationInsertResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApplicationInsertResult();
@@ -91,6 +96,11 @@ public record ApplicationUpdateResult
     /// Referenced vendor not found exception thrown and caught
     /// </summary>
     public record FailureVendorNotFound() : ApplicationUpdateResult();
+
+    /// <summary>
+    /// Application name already exists for the vendor
+    /// </summary>
+    public record FailureDuplicateApplication(string ApplicationName) : ApplicationUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

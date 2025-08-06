@@ -61,7 +61,7 @@ Feature: Authorization
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "Demo application",
+                   "applicationName": "Demo application 03",
                    "claimSetName": "ClaimScenario03"
                   }
                   """
@@ -71,7 +71,7 @@ Feature: Authorization
                       {
                       "id": {applicationId},
                       "vendorId": {vendorId},
-                      "applicationName": "Demo application Update",
+                      "applicationName": "Demo application 03 Update",
                       "claimSetName": "ClaimScenario03Update"
                       }
                   """
@@ -82,7 +82,7 @@ Feature: Authorization
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "Delete application",
+                   "applicationName": "Delete application 04",
                    "claimSetName": "ClaimScenario05"
                   }
                   """
@@ -104,13 +104,13 @@ Feature: Authorization
                         "namespacePrefixes": "uri://ed-fi-e2e.org,uri://ed-fi-e2e2.org"
                     }
                   """
-              And the system has these "applications"
-                  | vendorId  | applicationName | claimSetName |
-                  | _vendorId | application01   | claim01      |
-                  | _vendorId | application02   | claim01      |
 
         Scenario: 05 Ensure clients can GET applications with read only scope
             Given client "CMSReadOnlyAccess" credentials with "edfi_admin_api/readonly_access" scope
+            And the system has these "applications"
+                  | vendorId  | applicationName | claimSetName |
+                  | _vendorId | application03   | claim01      |
+                  | _vendorId | application04   | claim01      |
               And token received
              When a GET request is made to "/v2/applications"
              Then it should respond with 200
@@ -122,7 +122,7 @@ Feature: Authorization
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "Unauthorized application",
+                   "applicationName": "Unauthorized application 06",
                    "claimSetName": "ClaimScenario08"
                   }
                   """
