@@ -158,8 +158,15 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             var now = DateTimeOffset.UtcNow;
             var expiration = now.AddHours(_jwtSettings.ExpirationHours);
 
-            // Prepare roles from scopes
-            var roles = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>();
+            // Prepare roles from oidc_client_rol/oidc_rol tables
+            var roles = (await connection.QueryAsync<string>(
+                    @"SELECT r.name
+                      FROM dmscs.oidc_client_rol cr
+                      JOIN dmscs.oidc_rol r ON cr.rol_id = r.id
+                      WHERE cr.client_id = @ClientId",
+                    new { ClientId = applicationInfo.Id }
+                )
+            ).ToArray();
 
             // Use shared JwtTokenGenerator
             var tokenString = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenGenerator.GenerateJwtToken(
@@ -196,18 +203,21 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 VALUES
                 (@Id, @ApplicationId, @Subject, @Type, @Payload, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
 
-            await connection.ExecuteAsync(insertSql, new
-            {
-                Id = tokenId,
-                ApplicationId = applicationId,
-                Subject = subject,
-                Type = "access_token",
-                Payload = payload,
-                CreationDate = DateTimeOffset.UtcNow,
-                ExpirationDate = expiration,
-                Status = "valid",
-                ReferenceId = tokenId.ToString("N")
-            });
+            await connection.ExecuteAsync(
+                insertSql,
+                new
+                {
+                    Id = tokenId,
+                    ApplicationId = applicationId,
+                    Subject = subject,
+                    Type = "access_token",
+                    Payload = payload,
+                    CreationDate = DateTimeOffset.UtcNow,
+                    ExpirationDate = expiration,
+                    Status = "valid",
+                    ReferenceId = tokenId.ToString("N"),
+                }
+            );
 
             _logger.LogInformation("JWT token stored in database with ID: {TokenId}", tokenId);
         }
@@ -222,11 +232,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             try
             {
                 if (!EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenValidator.ValidateToken(
-                    token,
-                    _signingKey,
-                    _jwtSettings.Issuer,
-                    _jwtSettings.Audience,
-                    out var jwtToken))
+                        token,
+                        _signingKey,
+                        _jwtSettings.Issuer,
+                        _jwtSettings.Audience,
+                        out var jwtToken
+                    )
+                )
                 {
                     _logger.LogWarning("Token validation failed (signature, issuer, audience, or lifetime)");
                     return false;
