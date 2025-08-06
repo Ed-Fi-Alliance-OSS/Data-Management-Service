@@ -26,6 +26,7 @@
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
         * Run: starts the application
+        * StartEnvironment: starts the Docker environment for DMS
     .EXAMPLE
         .\build-dms.ps1 build -Configuration Release -Version "2.0" -BuildCounter 45
 
@@ -44,7 +45,7 @@
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run")]
+    [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run", "StartEnvironment")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -94,7 +95,11 @@ param(
 
     # Only required with E2E testing.
     [switch]
-    $SkipDockerBuild
+    $SkipDockerBuild,
+
+    # Load seed data when starting DMS environment.
+    [switch]
+    $LoadSeedData
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -282,8 +287,25 @@ function RunE2E {
     Invoke-Execute { RunTests -Filter "*.Tests.E2E" }
 }
 
-function E2ETests {
-if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
+function Start-DockerEnvironment {
+    param (
+        [switch]
+        $EnableOpenSearch,
+
+        [switch]
+        $EnableElasticSearch,
+
+        [switch]
+        $UsePublishedImage,
+
+        [switch]
+        $SkipDockerBuild,
+
+        [switch]
+        $LoadSeedData
+    )
+
+    if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
         Invoke-Step { DockerBuild }
     }
 
@@ -312,10 +334,20 @@ if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
             try {
                 Push-Location eng/docker-compose/
                 if ($UsePublishedImage) {
-                    ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
+                    if ($LoadSeedData) {
+                        ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData
+                    }
+                    else {
+                        ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
+                    }
                 }
                 else {
-                    ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
+                    if ($LoadSeedData) {
+                        ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData
+                    }
+                    else {
+                        ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata
+                    }
                 }
             }
             finally {
@@ -326,6 +358,10 @@ if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
     else {
         Invoke-Step { DockerRun }
     }
+}
+
+function E2ETests {
+    Invoke-Step { Start-DockerEnvironment -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData }
     Invoke-Step { RunE2E }
 }
 
@@ -405,10 +441,13 @@ function Invoke-TestExecution {
         $UsePublishedImage,
 
         [switch]
-        $SkipDockerBuild
+        $SkipDockerBuild,
+
+        [switch]
+        $LoadSeedData
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild } }
+        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -494,7 +533,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild }
+        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
@@ -502,6 +541,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
+        StartEnvironment { Invoke-Step { Start-DockerEnvironment -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData } }
         default { throw "Command '$Command' is not recognized" }
     }
 }
