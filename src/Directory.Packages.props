@@ -19,6 +19,7 @@
         <PackageVersion Include="Keycloak.Net.Core" Version="1.0.29" />
         <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.8" />
         <PackageVersion Include="Microsoft.AspNetCore.Http" Version="2.2.2" />
+        <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.12.0" />
         <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="7.7.1" />
         <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="7.7.1" />
         <PackageVersion Include="Newtonsoft.Json" Version="13.0.1" />
