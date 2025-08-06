@@ -158,11 +158,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             var now = DateTimeOffset.UtcNow;
             var expiration = now.AddHours(_jwtSettings.ExpirationHours);
 
-            // Prepare roles from oidc_client_rol/oidc_rol tables
+            // Prepare roles from openiddict_client_rol/openiddict_rol tables
             var roles = (await connection.QueryAsync<string>(
                     @"SELECT r.name
-                      FROM dmscs.oidc_client_rol cr
-                      JOIN dmscs.oidc_rol r ON cr.rol_id = r.id
+                      FROM dmscs.openiddict_client_rol cr
+                      JOIN dmscs.openiddict_rol r ON cr.rol_id = r.id
                       WHERE cr.client_id = @ClientId",
                     new { ClientId = applicationInfo.Id }
                 )
