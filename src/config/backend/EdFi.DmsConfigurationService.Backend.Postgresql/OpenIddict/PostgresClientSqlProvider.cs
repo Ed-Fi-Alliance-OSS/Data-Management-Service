@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using System.Text.Json;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 {
@@ -43,10 +44,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 await connection.OpenAsync();
                 await using var transaction = await connection.BeginTransactionAsync();
 
-                // 1. Ensure role exists (oidc_rol)
+                // 1. Ensure role exists (openiddict_rol)
                 Guid rolId;
                 var existingRolId = await connection.ExecuteScalarAsync<Guid?>(
-                    "SELECT id FROM dmscs.oidc_rol WHERE name = @Name",
+                    "SELECT id FROM dmscs.openiddict_rol WHERE name = @Name",
                     new { Name = role },
                     transaction
                 );
@@ -54,7 +55,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 {
                     rolId = Guid.NewGuid();
                     await connection.ExecuteAsync(
-                        "INSERT INTO dmscs.oidc_rol (id, name) VALUES (@Id, @Name)",
+                        "INSERT INTO dmscs.openiddict_rol (id, name) VALUES (@Id, @Name)",
                         new { Id = rolId, Name = role },
                         transaction
                     );
@@ -64,14 +65,21 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     rolId = existingRolId.Value;
                 }
 
-                // 2. Insert client with claims
+                var namespacePrefixClaim = ClientClaimHelper.CreateNamespacePrefixClaim(namespacePrefixes);
+                var educationOrgClaim = ClientClaimHelper.CreateEducationOrganizationClaim(educationOrganizationIds);
+                var protocolMappers = new List<Dictionary<string, string>>
+                {
+                    namespacePrefixClaim,
+                    educationOrgClaim
+                };
                 string sql = @"
 INSERT INTO dmscs.openiddict_application
-    (id, client_id, client_secret, display_name, permissions, requirements, type, created_at, namespace_prefixes, education_organization_ids)
-VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, CURRENT_TIMESTAMP, @NamespacePrefixes, @EducationOrganizationIds)
+    (id, client_id, client_secret, display_name, permissions, requirements, type, created_at, protocolmappers)
+VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, CURRENT_TIMESTAMP, @ProtocolMappers::jsonb)
 ";
                 var permissions = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
                 var requirementsArray = Array.Empty<string>();
+                var protocolMappersJson = JsonSerializer.Serialize(protocolMappers);
                 await connection.ExecuteAsync(
                     sql,
                     new
@@ -83,8 +91,7 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                         Permissions = permissions,
                         Requirements = requirementsArray,
                         Type = "confidential",
-                        NamespacePrefixes = namespacePrefixes,
-                        EducationOrganizationIds = educationOrganizationIds
+                        ProtocolMappers = protocolMappersJson
                     },
                     transaction
                 );
@@ -119,9 +126,9 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                     }
                 }
 
-                // 4. Assign role to client (oidc_client_rol)
+                // 4. Assign role to client (openiddict_client_rol)
                 await connection.ExecuteAsync(
-                    "INSERT INTO dmscs.oidc_client_rol (client_id, rol_id) VALUES (@ClientId, @RolId)",
+                    "INSERT INTO dmscs.openiddict_client_rol (client_id, rol_id) VALUES (@ClientId, @RolId)",
                     new { ClientId = clientUuid, RolId = rolId },
                     transaction
                 );
@@ -148,10 +155,19 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                 await connection.OpenAsync();
                 await using var transaction = await connection.BeginTransactionAsync();
 
+                // Build protocol mappers (simulate Keycloak workflow)
+                var protocolMappers = new List<Dictionary<string, string>>
+                {
+                    ClientClaimHelper.CreateNamespacePrefixClaim(displayName),
+                    ClientClaimHelper.CreateEducationOrganizationClaim(educationOrganizationIds)
+                };
+                var protocolMappersJson = System.Text.Json.JsonSerializer.Serialize(protocolMappers);
+
                 string sql = @"
 UPDATE dmscs.openiddict_application
     SET display_name = @DisplayName,
-        permissions = @Permissions
+        permissions = @Permissions,
+        protocolmappers = @ProtocolMappers::jsonb
     WHERE id = @Id
 ";
                 var permissions = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
@@ -161,7 +177,8 @@ UPDATE dmscs.openiddict_application
                     {
                         Id = Guid.Parse(clientUuid),
                         DisplayName = displayName,
-                        Permissions = permissions
+                        Permissions = permissions,
+                        ProtocolMappers = protocolMappersJson
                     },
                     transaction
                 );
@@ -219,10 +236,47 @@ UPDATE dmscs.openiddict_application
 
         public async Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(string clientUuid, string namespacePrefixes)
         {
-            // This method is obsolete as 'namespace_claim' does not exist in the schema.
-            // To fix the CS1998 warning, we can explicitly return a completed task.
-            return await Task.FromException<ClientUpdateResult>(
-                new NotImplementedException("NamespaceClaim is not a column in dmscs.openiddict_application."));
+            try
+            {
+                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+                await connection.OpenAsync();
+                await using var transaction = await connection.BeginTransactionAsync();
+
+                // Build protocol mappers with updated namespacePrefixes
+                var protocolMappers = new List<Dictionary<string, string>>
+                {
+                    ClientClaimHelper.CreateNamespacePrefixClaim(namespacePrefixes)
+                };
+                var protocolMappersJson = System.Text.Json.JsonSerializer.Serialize(protocolMappers);
+
+                string sql = @"
+UPDATE dmscs.openiddict_application
+    SET protocolmappers = @ProtocolMappers::jsonb
+    WHERE id = @Id
+";
+                var rows = await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        Id = Guid.Parse(clientUuid),
+                        ProtocolMappers = protocolMappersJson
+                    },
+                    transaction
+                );
+                if (rows == 0)
+                {
+                    await transaction.RollbackAsync();
+                    return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
+                }
+
+                await transaction.CommitAsync();
+                return new ClientUpdateResult.Success(Guid.Parse(clientUuid));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update namespace claim for OpenIddict client");
+                return new ClientUpdateResult.FailureUnknown(ex.Message);
+            }
         }
 
         public async Task<ClientClientsResult> GetAllClientsAsync()

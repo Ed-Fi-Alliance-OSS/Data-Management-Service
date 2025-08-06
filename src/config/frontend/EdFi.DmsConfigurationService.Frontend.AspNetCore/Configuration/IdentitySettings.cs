@@ -23,6 +23,11 @@ public class IdentitySettings
 
 public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
 {
+    private readonly string _identityProvider;
+    public IdentitySettingsValidator(IOptions<AppSettings> appSettings)
+    {
+        _identityProvider = appSettings.Value.IdentityProvider.ToLowerInvariant();
+    }
     public ValidateOptionsResult Validate(string? name, IdentitySettings options)
     {
         if (string.IsNullOrWhiteSpace(options.Authority))
@@ -33,7 +38,8 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientId");
         }
-        if (string.IsNullOrWhiteSpace(options.ClientSecret))
+        if (string.Equals(_identityProvider, "keycloak", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(options.ClientSecret))
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientSecret");
         }
@@ -52,6 +58,11 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
         if (string.IsNullOrEmpty(options.ClientRole))
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientRole");
+        }
+        if (string.Equals(_identityProvider, "openiddict", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(options.SigningKey))
+        {
+            return ValidateOptionsResult.Fail("Missing required IdentitySettings value: SigningKey");
         }
         return ValidateOptionsResult.Success;
     }
