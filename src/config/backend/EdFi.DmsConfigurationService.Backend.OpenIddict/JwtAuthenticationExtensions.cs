@@ -24,12 +24,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict
 
         public static IServiceCollection AddJwtAuthentication(
             this IServiceCollection services,
-            JwtSettings jwtSettings)
+            JwtSettings jwtSettings,
+            Microsoft.Extensions.Configuration.IConfiguration configuration)
         {
-            var key = Encoding.UTF8.GetBytes("YourSecretKeyForJWTWhichMustBeLongEnoughForSecurity123456789");
+            var signingKey = configuration["IdentitySettings:SigningKey"];
+            if (string.IsNullOrEmpty(signingKey))
+            {
+                throw new InvalidOperationException(
+                    "JWT signing key is not configured in IdentitySettings:SigningKey."
+                );
+            }
+            var key = Encoding.UTF8.GetBytes(signingKey);
 
             // Add authentication without setting a default scheme to avoid conflicts
             services.AddAuthentication()
+
                 .AddJwtBearer(JwtSchemeName, options =>
                 {
                     options.TokenValidationParameters = new TokenValidationParameters
@@ -43,7 +52,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict
                         ValidateLifetime = true,
                         ClockSkew = TimeSpan.FromMinutes(5),
                         RequireExpirationTime = true,
-                        RequireSignedTokens = true
+                        RequireSignedTokens = true,
                     };
 
                     options.Events = new JwtBearerEvents
@@ -51,8 +60,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict
                         OnTokenValidated = async context =>
                         {
                             // Additional validation against database using any ITokenManager implementation
-                            var tokenManager = context.HttpContext.RequestServices
-                                .GetService<ITokenManager>();
+                            var tokenManager = context.HttpContext.RequestServices.GetService<ITokenManager>();
 
                             if (tokenManager != null)
                             {
@@ -73,17 +81,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict
                         },
                         OnChallenge = context =>
                         {
-                            var logger = context.HttpContext.RequestServices
-                                .GetRequiredService<ILogger<JwtBearerHandler>>();
-                            logger.LogWarning("JWT authentication challenge: {Error} - {Description}",
+                            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerHandler>>();
+                            logger.LogWarning("**** JWT authentication challenge: {Error} - {Description}",
                                 context.Error, context.ErrorDescription);
                             return Task.CompletedTask;
                         },
                         OnAuthenticationFailed = context =>
                         {
-                            var logger = context.HttpContext.RequestServices
-                                .GetRequiredService<ILogger<JwtBearerHandler>>();
-                            logger.LogError(context.Exception, "JWT authentication failed");
+                            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerHandler>>();
+                            logger.LogError(context.Exception, "*** JWT authentication failed");
                             return Task.CompletedTask;
                         }
                     };
