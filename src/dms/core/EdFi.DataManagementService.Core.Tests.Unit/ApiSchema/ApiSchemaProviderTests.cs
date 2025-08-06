@@ -675,12 +675,13 @@ public class ApiSchemaProviderTests
             A.CallTo(() => _apiSchemaValidator.Validate(A<JsonNode>._))
                 .ReturnsNextFromSequence(
                     new List<SchemaValidationFailure>(), // Core schema validation passes
-                    [
+                    new List<SchemaValidationFailure>
+                    {
                         new(
                             new JsonPath("$.projectSchema"),
                             ["Extension schema is missing required properties"]
                         ),
-                    ]
+                    }
                 );
 
             // Act
@@ -705,8 +706,14 @@ public class ApiSchemaProviderTests
             A.CallTo(() => _apiSchemaValidator.Validate(A<JsonNode>._))
                 .ReturnsNextFromSequence(
                     new List<SchemaValidationFailure>(), // Core schema validation passes
-                    [new(new JsonPath("$.projectSchema.projectName"), ["Invalid project name format"])],
-                    [new(new JsonPath("$.projectSchema.projectVersion"), ["Invalid version format"])]
+                    new List<SchemaValidationFailure>
+                    {
+                        new(new JsonPath("$.projectSchema.projectName"), ["Invalid project name format"]),
+                    },
+                    new List<SchemaValidationFailure>
+                    {
+                        new(new JsonPath("$.projectSchema.projectVersion"), ["Invalid version format"]),
+                    }
                 );
 
             // Act
@@ -737,12 +744,13 @@ public class ApiSchemaProviderTests
             A.CallTo(() => _apiSchemaValidator.Validate(A<JsonNode>._))
                 .ReturnsNextFromSequence(
                     new List<SchemaValidationFailure>(), // Core schema validation passes
-                    [
+                    new List<SchemaValidationFailure>
+                    {
                         new(
                             new JsonPath("$.projectSchema.resourceSchemas"),
                             ["Resource schemas are invalid", "Missing required resource definitions"]
                         ),
-                    ]
+                    }
                 );
 
             // Act
@@ -787,7 +795,10 @@ public class ApiSchemaProviderTests
             A.CallTo(() => _apiSchemaValidator.Validate(A<JsonNode>._))
                 .ReturnsNextFromSequence(
                     new List<SchemaValidationFailure>(), // Core schema validation passes
-                    [new(new JsonPath("$.apiSchemaVersion"), ["Unsupported API schema version"])]
+                    new List<SchemaValidationFailure>
+                    {
+                        new(new JsonPath("$.apiSchemaVersion"), ["Unsupported API schema version"]),
+                    }
                 );
 
             // Act
