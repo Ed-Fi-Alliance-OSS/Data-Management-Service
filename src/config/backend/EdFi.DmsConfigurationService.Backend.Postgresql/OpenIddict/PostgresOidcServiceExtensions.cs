@@ -13,7 +13,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 {
     public static class PostgresOidcServiceExtensions
     {
-        public static IServiceCollection AddPostgresOpenIddictStores(this IServiceCollection services, string authority)
+        public static IServiceCollection AddPostgresOpenIddictStores(this IServiceCollection services, IConfiguration configuration, string authority)
         {
             services.AddSingleton<IClientRepository, PostgresClientSqlProvider>();
             services.AddSingleton<ITokenManager, PostgresTokenManager>();
@@ -22,9 +22,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             services.AddJwtAuthentication(new JwtSettings
             {
                 Issuer = "https://dms-config-service",
-                Audience = "dms-api",
+                Audience = "account",
                 ExpirationHours = 1
-            });
+            }, configuration);
 
             // Register database connection
             services.AddTransient<IDbConnection>(sp =>
@@ -40,12 +40,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// </summary>
         public static IServiceCollection AddPostgresOpenIddictStores(
             this IServiceCollection services,
+            IConfiguration configuration,
             string authority,
             JwtSettings jwtSettings)
         {
             services.AddSingleton<IClientRepository, PostgresClientSqlProvider>();
             services.AddSingleton<ITokenManager, PostgresTokenManager>();
-            services.AddJwtAuthentication(jwtSettings);
+            services.AddJwtAuthentication(jwtSettings, configuration);
 
             services.AddTransient<IDbConnection>(sp =>
             {
