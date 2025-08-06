@@ -46,9 +46,9 @@ public class ClaimsFragmentComposerTests
             // Arrange
             var fragmentFiles = new[]
             {
-                "sample-claims.json",
-                "homograph-claims.json",
-                "custom-extension-claims.json",
+                "sample-claimset.json",
+                "homograph-claimset.json",
+                "custom-extension-claimset.json",
             };
             var nonFragmentFiles = new[]
             {
@@ -67,14 +67,15 @@ public class ClaimsFragmentComposerTests
 
             // Assert
             Assert.That(result.Count, Is.EqualTo(3));
-            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "sample-claims.json")));
-            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "homograph-claims.json")));
+            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "sample-claimset.json")));
+            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "homograph-claimset.json")));
             Assert.That(
                 result,
-                Does.Contain(Path.Combine(_testFragmentsPath, "custom-extension-claims.json"))
+                Does.Contain(Path.Combine(_testFragmentsPath, "custom-extension-claimset.json"))
             );
             Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "Claims.json")));
             Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "config.json")));
+            Assert.That(result, Does.Not.Contain(Path.Combine(_testFragmentsPath, "test-claims.txt")));
         }
 
         [Test]
@@ -109,23 +110,23 @@ public class ClaimsFragmentComposerTests
             var subDir = Path.Combine(_testFragmentsPath, "subdirectory");
             Directory.CreateDirectory(subDir);
 
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "root-claims.json"), "{}");
-            File.WriteAllText(Path.Combine(subDir, "sub-claims.json"), "{}");
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "root-claimset.json"), "{}");
+            File.WriteAllText(Path.Combine(subDir, "sub-claimset.json"), "{}");
 
             // Act
             var result = _composer.DiscoverFragmentFiles(_testFragmentsPath);
 
             // Assert
             Assert.That(result.Count, Is.EqualTo(2));
-            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "root-claims.json")));
-            Assert.That(result, Does.Contain(Path.Combine(subDir, "sub-claims.json")));
+            Assert.That(result, Does.Contain(Path.Combine(_testFragmentsPath, "root-claimset.json")));
+            Assert.That(result, Does.Contain(Path.Combine(subDir, "sub-claimset.json")));
         }
 
         [Test]
         public void It_should_return_files_in_sorted_order()
         {
             // Arrange
-            var fragmentFiles = new[] { "z-claims.json", "a-claims.json", "m-claims.json" };
+            var fragmentFiles = new[] { "z-claimset.json", "a-claimset.json", "m-claimset.json" };
             foreach (var file in fragmentFiles)
             {
                 File.WriteAllText(Path.Combine(_testFragmentsPath, file), "{}");
@@ -136,9 +137,9 @@ public class ClaimsFragmentComposerTests
 
             // Assert
             Assert.That(result.Count, Is.EqualTo(3));
-            Assert.That(result[0], Does.EndWith("a-claims.json"));
-            Assert.That(result[1], Does.EndWith("m-claims.json"));
-            Assert.That(result[2], Does.EndWith("z-claims.json"));
+            Assert.That(result[0], Does.EndWith("a-claimset.json"));
+            Assert.That(result[1], Does.EndWith("m-claimset.json"));
+            Assert.That(result[2], Does.EndWith("z-claimset.json"));
         }
     }
 
@@ -199,7 +200,7 @@ public class ClaimsFragmentComposerTests
                   ]
                 }
                 """;
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "test-claims.json"), fragmentContent);
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "test-claimset.json"), fragmentContent);
 
             // Act
             var result = _composer.ComposeClaimsFromFragments(baseClaimsNodes, _testFragmentsPath);
@@ -271,8 +272,8 @@ public class ClaimsFragmentComposerTests
                 }
                 """;
 
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "extension1-claims.json"), fragment1);
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "extension2-claims.json"), fragment2);
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "extension1-claimset.json"), fragment1);
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "extension2-claimset.json"), fragment2);
 
             // Act
             var result = _composer.ComposeClaimsFromFragments(baseClaimsNodes, _testFragmentsPath);
@@ -302,7 +303,10 @@ public class ClaimsFragmentComposerTests
             var baseClaimsNodes = new ClaimsDocument(baseClaimSets, baseHierarchy);
 
             // Create a malformed fragment file
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "bad-claims.json"), "{ invalid json }");
+            File.WriteAllText(
+                Path.Combine(_testFragmentsPath, "bad-claimset.json"),
+                "{ \"name\": invalid json without quotes }"
+            );
 
             // Act
             var result = _composer.ComposeClaimsFromFragments(baseClaimsNodes, _testFragmentsPath);
@@ -327,7 +331,7 @@ public class ClaimsFragmentComposerTests
                   "name": "EmptyExtension"
                 }
                 """;
-            File.WriteAllText(Path.Combine(_testFragmentsPath, "empty-claims.json"), fragmentContent);
+            File.WriteAllText(Path.Combine(_testFragmentsPath, "empty-claimset.json"), fragmentContent);
 
             // Act
             var result = _composer.ComposeClaimsFromFragments(baseClaimsNodes, _testFragmentsPath);
