@@ -188,12 +188,13 @@ public static class WebApplicationBuilderExtensions
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateAudience = false,
-                        ValidateIssuer = true,
+                        ValidateIssuer = false,
                         ValidateIssuerSigningKey = true,
                         ValidIssuer = identitySettings.Authority,
                         RoleClaimType = identitySettings.RoleClaimType,
-                        IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
-                            System.Text.Encoding.UTF8.GetBytes(identitySettings.ClientSecret))
+                        IssuerSigningKey = new SymmetricSecurityKey(
+                            System.Text.Encoding.UTF8.GetBytes(identitySettings.ClientSecret)
+                        )
                         /*ValidateAudience = true,
                         ValidAudience = identitySettings.Audience,
                         ValidateIssuer = true,
@@ -212,7 +213,7 @@ public static class WebApplicationBuilderExtensions
                         {
                             logger.Error("Authentication failed: {Message}", context.Exception.Message);
                             return Task.CompletedTask;
-                        },
+                        }
                     };
                 }
             );
