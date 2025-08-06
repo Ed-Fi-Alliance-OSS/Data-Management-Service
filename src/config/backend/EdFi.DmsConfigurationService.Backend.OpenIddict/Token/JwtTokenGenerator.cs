@@ -81,9 +81,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 // Read the role claim type from configuration (JSON), fallback to default if not set
                 var rolesClaim = configuration?.GetValue<string>("Authentication:RoleClaimAttribute")
                     ?? "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
-
-                // We'll handle roles specially in the manual JWT creation below
-                // Don't add them as individual claims
             }
             if (permissions != null && permissions.Length > 0)
             {
