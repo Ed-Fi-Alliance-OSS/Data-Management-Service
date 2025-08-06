@@ -18,6 +18,7 @@ public class IdentitySettings
     public required string RoleClaimType { get; set; }
     public required string ConfigServiceRole { get; set; }
     public required string ClientRole { get; set; }
+    public required string SigningKey { get; set; }
 }
 
 public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
