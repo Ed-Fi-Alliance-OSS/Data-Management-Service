@@ -171,24 +171,14 @@ public static class WebApplicationBuilderExtensions
                     options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
-                        ValidateAudience = false,
-                        ValidateIssuer = false,
+                        ValidateAudience = true,
+                        ValidateIssuer = true,
                         ValidateIssuerSigningKey = true,
                         ValidIssuer = identitySettings.Authority,
                         RoleClaimType = identitySettings.RoleClaimType,
                         IssuerSigningKey = new SymmetricSecurityKey(
-                            System.Text.Encoding.UTF8.GetBytes(identitySettings.ClientSecret)
+                            System.Text.Encoding.UTF8.GetBytes(identitySettings.SigningKey)
                         )
-                        /*ValidateAudience = true,
-                        ValidAudience = identitySettings.Audience,
-                        ValidateIssuer = true,
-                        ValidIssuer = identitySettings.Authority,
-                        ValidateLifetime = true,
-                        RoleClaimType = identitySettings.RoleClaimType,
-                        ValidateIssuerSigningKey = true,
-                        IssuerSigningKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(
-                            System.Text.Encoding.UTF8.GetBytes(identitySettings.ClientSecret)
-                        )*/
                     };
 
                     options.Events = new JwtBearerEvents

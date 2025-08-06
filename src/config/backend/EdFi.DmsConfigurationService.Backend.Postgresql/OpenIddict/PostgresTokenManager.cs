@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -33,12 +34,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
         public PostgresTokenManager(
             IOptions<DatabaseOptions> databaseOptions,
-            ILogger<PostgresTokenManager> logger)
+            ILogger<PostgresTokenManager> logger,
+            IConfiguration configuration)
         {
             _databaseOptions = databaseOptions;
             _logger = logger;
             _jwtSettings = new JwtSettings();
-            _signingKey = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtSigningKeyHelper.GenerateSigningKey();
+            _jwtSettings = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenGenerator.GetJwtSettings(configuration);
+            _signingKey = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtSigningKeyHelper.GenerateSigningKey(configuration["IdentitySettings:SigningKey"]);
 
             _logger.LogInformation("PostgresTokenManager initialized with JWT settings - Issuer: {Issuer}, Audience: {Audience}",
                 _jwtSettings.Issuer, _jwtSettings.Audience);

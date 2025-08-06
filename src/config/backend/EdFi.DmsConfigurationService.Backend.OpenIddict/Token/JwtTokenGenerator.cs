@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Security.Claims;
 using EdFi.DmsConfigurationService.DataModel;
 using Microsoft.Extensions.Configuration;
@@ -18,6 +19,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
 {
     public static class JwtTokenGenerator
     {
+        public static JwtSettings GetJwtSettings(IConfiguration configuration)
+        {
+            var jwtSettings = new JwtSettings();
+            if (configuration != null)
+            {
+                jwtSettings.Audience = configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
+                jwtSettings.Issuer = configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
+            }
+            return jwtSettings;
+        }
+
+
         public static string GenerateJwtToken(
             Guid tokenId,
             string clientId,
@@ -51,7 +64,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 new Claim("typ", "Bearer"),
                 new Claim("azp", clientId),
                 new Claim("scope", scope),
+                // Add audience and issuer as claims if present
+                new Claim(JwtRegisteredClaimNames.Aud, audience),
+                new Claim(JwtRegisteredClaimNames.Iss, issuer)
             };
+            // Remove any null claims (if audience or issuer is null)
+            claims = claims.Where(c => c != null).ToList();
 
             if (!string.IsNullOrEmpty(displayName))
             {
