@@ -15,7 +15,11 @@ param(
   # 8080 is the default k8s port
   # 5198 is the default when running F5
   [string]
-  $BaseUrl = "http://localhost:5198"
+  $BaseUrl = "http://localhost:5198",
+
+  # Optional SDK path - if not provided, will download SDK
+  [string]
+  $SdkPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,8 +27,16 @@ $ErrorActionPreference = "Stop"
 Import-Module ../Package-Management.psm1 -Force
 Import-Module ./modules/SmokeTest.psm1
 
-$sdkPath = Get-ApiSdkDll
-$path = Get-SmokeTestTool -PackageVersion '7.2.413'
+# Use provided SDK path or download it
+if ($SdkPath) {
+  Write-Host "Using provided SDK path: $SdkPath"
+  $sdkDllPath = $SdkPath
+} else {
+  Write-Host "No SDK path provided, downloading SDK..."
+  $sdkDllPath = Get-ApiSdkDll
+}
+
+$path = Get-SmokeTestTool -PackageVersion '7.3.10008' -PreRelease
 
 $parameters = @{
   BaseUrl = $BaseUrl
@@ -32,7 +44,7 @@ $parameters = @{
   Secret = $Secret
   ToolPath = $path
   TestSet = "DestructiveSdk"
-  SdkPath = $sdkPath
+  SdkPath = $sdkDllPath
 }
 
 Invoke-SmokeTestUtility @parameters

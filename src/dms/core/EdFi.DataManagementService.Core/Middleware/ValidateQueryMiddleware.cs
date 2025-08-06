@@ -111,16 +111,16 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
 
         if (
             matchingQueryField.DocumentPathsWithType[0].Type == "date-time"
-            && DateOnly.TryParse(
+            && DateTime.TryParse(
                 clientQueryTerm.Value,
                 CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out DateOnly dateValue
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                out DateTime dateTimeValue
             )
         )
         {
-            string fullDateTimeString = dateValue
-                .ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)
+            string fullDateTimeString = dateTimeValue
+                .ToUniversalTime()
                 .ToString("yyyy-MM-ddTHH:mm:ssZ", CultureInfo.InvariantCulture);
 
             return new QueryElementAndType(
