@@ -4,6 +4,7 @@
     </PropertyGroup>
     <ItemGroup>
         <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="8.0.2" />
+        <PackageVersion Include="Azure.Identity" Version="1.11.4" />
         <PackageVersion
             Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic"
             Version="4.0.0"
@@ -19,9 +20,11 @@
         <PackageVersion Include="Keycloak.Net.Core" Version="1.0.29" />
         <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.8" />
         <PackageVersion Include="Microsoft.AspNetCore.Http" Version="2.2.2" />
-        <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="7.7.1" />
+        <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="6.34.0" />
+        <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.13.0" />
         <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="7.7.1" />
-        <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="7.7.1" />
+        <PackageVersion Include="System.Drawing.Common" Version="5.0.3" />
+        <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.13.0" />
         <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.11.0" />
         <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.11.0" />
         <PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="9.0.1" />

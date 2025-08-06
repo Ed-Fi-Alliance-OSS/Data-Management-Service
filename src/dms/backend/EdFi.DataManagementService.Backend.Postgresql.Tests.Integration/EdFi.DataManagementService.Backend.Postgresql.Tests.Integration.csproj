@@ -40,6 +40,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.Identity" />
+    <PackageReference Include="System.Drawing.Common" />
+  <PackageReference Include="System.IdentityModel.Tokens.Jwt" VersionOverride="8.13.0" />
     <None Update="appsettings.Test.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
