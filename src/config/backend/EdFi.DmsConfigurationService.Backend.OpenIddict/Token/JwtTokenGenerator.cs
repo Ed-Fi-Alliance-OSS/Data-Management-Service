@@ -63,12 +63,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 // Read the role claim type from configuration (JSON), fallback to default if not set
                 var rolesClaim = configuration?.GetValue<string>("Authentication:RoleClaimAttribute")
                     ?? "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
-                foreach (var role in roles)
-                {
-                    var claim = new Claim(rolesClaim, role);
-                    claim.SetDestinations(OpenIddictConstants.Destinations.AccessToken);
-                    claims.Add(claim);
-                }
+
+                // We'll handle roles specially in the manual JWT creation below
+                // Don't add them as individual claims
             }
             if (permissions != null && permissions.Length > 0)
             {
@@ -77,7 +74,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                     claims.Add(new Claim("permission", permission));
                 }
             }
-
+            foreach (var claim in claims)
+            {
+                claim.SetDestinations(OpenIddictConstants.Destinations.AccessToken);
+            }
             var tokenDescriptor = new SecurityTokenDescriptor
             {
                 Subject = new ClaimsIdentity(claims),
@@ -87,9 +87,38 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 Audience = audience,
             };
 
+            // Prevent claim type mapping so that claim types like the role URI are not mapped to short names
+            JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
+            JwtSecurityTokenHandler.DefaultOutboundClaimTypeMap.Clear();
+
+            // Create a JwtPayload directly to handle arrays properly
+            var payload = new JwtPayload();
+
+            // Add all standard claims
+            foreach (var claim in claims)
+            {
+                payload.Add(claim.Type, claim.Value);
+            }
+
+            // Add roles as an actual array if present
+            if (roles != null && roles.Length > 0)
+            {
+                string[] arrayRoles = { "cms-client" };
+
+                var rolesClaim = configuration?.GetValue<string>("Authentication:RoleClaimAttribute")
+                    ?? "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
+                payload.Add(rolesClaim, arrayRoles); // This will be serialized as an actual array
+            }
+
+            // Create the JWT with header and payload
+            var header = new JwtHeader(new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256));
+            var token = new JwtSecurityToken(
+                header,
+                payload
+            );
+
             var tokenHandler = new JwtSecurityTokenHandler();
-            var securityToken = tokenHandler.CreateToken(tokenDescriptor);
-            return tokenHandler.WriteToken(securityToken);
+            return tokenHandler.WriteToken(token);
         }
     }
 }
