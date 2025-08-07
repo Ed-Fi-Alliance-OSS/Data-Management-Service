@@ -19,12 +19,18 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             services.AddSingleton<ITokenManager, PostgresTokenManager>();
 
             // Register JWT authentication with default settings
-            services.AddJwtAuthentication(new JwtSettings
-            {
-                Issuer = "https://dms-config-service",
-                Audience = "account",
-                ExpirationHours = 1
-            }, configuration);
+            // Read Issuer and Audience from IdentitySettings in configuration
+            var issuer = configuration["IdentitySettings:Authority"];
+            var audience = configuration["IdentitySettings:Audience"];
+            services.AddJwtAuthentication(
+                new JwtSettings
+                {
+                    Issuer = issuer ?? String.Empty,
+                    Audience = audience ?? String.Empty,
+                    ExpirationHours = 1,
+                },
+                configuration
+            );
 
             // Register database connection
             services.AddTransient<IDbConnection>(sp =>
