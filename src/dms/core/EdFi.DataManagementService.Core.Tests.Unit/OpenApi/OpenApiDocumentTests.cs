@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.OpenApi;
 using FluentAssertions;
 using Json.Path;
@@ -877,6 +878,347 @@ public class OpenApiDocumentTests
             result = result.Replace("\r\n", "\n");
 
             result.Should().Be(expectedResult);
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Schema_With_Domain_Filtering : OpenApiDocumentTests
+    {
+        private JsonNode _resultResources = null!;
+        private JsonNode _resultDescriptors = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Create paths with x-Ed-Fi-domains extension properties
+            JsonObject pathsWithDomains = new()
+            {
+                ["/ed-fi/academicWeeks"] = new JsonObject
+                {
+                    ["get"] = new JsonObject { ["description"] = "academicWeek get description" },
+                    ["post"] = new JsonObject { ["description"] = "academicWeek post description" },
+                    ["x-Ed-Fi-domains"] = new JsonArray { "SchoolCalendar" },
+                },
+                ["/ed-fi/students"] = new JsonObject
+                {
+                    ["get"] = new JsonObject { ["description"] = "student get description" },
+                    ["post"] = new JsonObject { ["description"] = "student post description" },
+                    ["x-Ed-Fi-domains"] = new JsonArray { "Enrollment" },
+                },
+                ["/ed-fi/schools"] = new JsonObject
+                {
+                    ["get"] = new JsonObject { ["description"] = "school get description" },
+                    ["post"] = new JsonObject { ["description"] = "school post description" },
+                    ["x-Ed-Fi-domains"] = new JsonArray { "EducationOrganization" },
+                },
+                ["/ed-fi/calendars"] = new JsonObject
+                {
+                    ["get"] = new JsonObject { ["description"] = "calendar get description" },
+                    ["post"] = new JsonObject { ["description"] = "calendar post description" },
+                    ["x-Ed-Fi-domains"] = new JsonArray { "SchoolCalendar" },
+                },
+            };
+
+            JsonObject descriptorPathsWithDomains = new()
+            {
+                ["/ed-fi/calendarTypeDescriptors"] = new JsonObject
+                {
+                    ["get"] = new JsonObject { ["description"] = "calendarType descriptor get description" },
+                    ["post"] = new JsonObject
+                    {
+                        ["description"] = "calendarType descriptor post description",
+                    },
+                    ["x-Ed-Fi-domains"] = new JsonArray { "SchoolCalendar" },
+                },
+                ["/ed-fi/enrollmentTypeDescriptors"] = new JsonObject
+                {
+                    ["get"] = new JsonObject
+                    {
+                        ["description"] = "enrollmentType descriptor get description",
+                    },
+                    ["post"] = new JsonObject
+                    {
+                        ["description"] = "enrollmentType descriptor post description",
+                    },
+                    ["x-Ed-Fi-domains"] = new JsonArray { "Enrollment" },
+                },
+                ["/ed-fi/schoolTypeDescriptors"] = new JsonObject
+                {
+                    ["get"] = new JsonObject { ["description"] = "schoolType descriptor get description" },
+                    ["post"] = new JsonObject { ["description"] = "schoolType descriptor post description" },
+                    ["x-Ed-Fi-domains"] = new JsonArray { "EducationOrganization" },
+                },
+            };
+
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Resources API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = pathsWithDomains,
+                        ["tags"] = new JsonArray(),
+                    },
+                    descriptorsDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Descriptors API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = descriptorPathsWithDomains,
+                        ["tags"] = new JsonArray(),
+                    }
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            // Test with excluded domains "SchoolCalendar,Enrollment"
+            string[] excludedDomains = ["SchoolCalendar", "Enrollment"];
+            OpenApiDocument openApiDocument = new(NullLogger.Instance, excludedDomains);
+
+            _resultResources = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+            _resultDescriptors = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Descriptor
+            );
+        }
+
+        [Test]
+        public void It_should_exclude_SchoolCalendar_and_Enrollment_paths_from_resources()
+        {
+            JsonObject? resultPaths = _resultResources["paths"]?.AsObject();
+            resultPaths.Should().NotBeNull();
+
+            // Should exclude SchoolCalendar and Enrollment domain paths
+            resultPaths!.Should().NotContainKey("/ed-fi/academicWeeks");
+            resultPaths.Should().NotContainKey("/ed-fi/students");
+            resultPaths.Should().NotContainKey("/ed-fi/calendars");
+
+            // Should keep EducationOrganization domain paths
+            resultPaths.Should().ContainKey("/ed-fi/schools");
+        }
+
+        [Test]
+        public void It_should_exclude_SchoolCalendar_and_Enrollment_paths_from_descriptors()
+        {
+            JsonObject? resultPaths = _resultDescriptors["paths"]?.AsObject();
+            resultPaths.Should().NotBeNull();
+
+            // Should exclude SchoolCalendar and Enrollment domain paths
+            resultPaths!.Should().NotContainKey("/ed-fi/calendarTypeDescriptors");
+            resultPaths.Should().NotContainKey("/ed-fi/enrollmentTypeDescriptors");
+
+            // Should keep EducationOrganization domain paths
+            resultPaths.Should().ContainKey("/ed-fi/schoolTypeDescriptors");
+        }
+
+        [Test]
+        public void It_should_be_case_insensitive_for_domain_matching()
+        {
+            // Test with different case
+            string[] excludedDomains = ["schoolcalendar", "ENROLLMENT"];
+            OpenApiDocument openApiDocument = new(NullLogger.Instance, excludedDomains);
+
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Resources API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = new JsonObject
+                        {
+                            ["/ed-fi/students"] = new JsonObject
+                            {
+                                ["get"] = new JsonObject(),
+                                ["x-Ed-Fi-domains"] = new JsonArray { "Enrollment" },
+                            },
+                        },
+                        ["tags"] = new JsonArray(),
+                    },
+                    descriptorsDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Descriptors API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = new JsonObject(),
+                        ["tags"] = new JsonArray(),
+                    }
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            JsonNode result = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+            JsonObject? resultPaths = result["paths"]?.AsObject();
+
+            resultPaths.Should().NotBeNull();
+            resultPaths!.Should().NotContainKey("/ed-fi/students");
+        }
+
+        [Test]
+        public void It_should_not_filter_when_no_domains_excluded()
+        {
+            // Test with no excluded domains
+            OpenApiDocument openApiDocument = new(NullLogger.Instance, null);
+
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Resources API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = new JsonObject
+                        {
+                            ["/ed-fi/academicWeeks"] = new JsonObject
+                            {
+                                ["get"] = new JsonObject(),
+                                ["x-Ed-Fi-domains"] = new JsonArray { "SchoolCalendar" },
+                            },
+                            ["/ed-fi/students"] = new JsonObject
+                            {
+                                ["get"] = new JsonObject(),
+                                ["x-Ed-Fi-domains"] = new JsonArray { "Enrollment" },
+                            },
+                        },
+                        ["tags"] = new JsonArray(),
+                    },
+                    descriptorsDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Descriptors API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = new JsonObject(),
+                        ["tags"] = new JsonArray(),
+                    }
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            JsonNode result = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+            JsonObject? resultPaths = result["paths"]?.AsObject();
+
+            resultPaths.Should().NotBeNull();
+            resultPaths!.Should().ContainKey("/ed-fi/academicWeeks");
+            resultPaths.Should().ContainKey("/ed-fi/students");
+        }
+
+        [Test]
+        public void It_should_handle_malformed_domain_data_gracefully()
+        {
+            // Test with excluded domains that might have malformed data in the API schema
+            string[] excludedDomains = ["TestDomain"];
+            OpenApiDocument openApiDocument = new(NullLogger.Instance, excludedDomains);
+
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Resources API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = new JsonObject
+                        {
+                            ["/ed-fi/testResource1"] = new JsonObject
+                            {
+                                ["get"] = new JsonObject(),
+                                ["x-Ed-Fi-domains"] = new JsonArray { "TestDomain" }, // Valid string
+                            },
+                            ["/ed-fi/testResource2"] = new JsonObject
+                            {
+                                ["get"] = new JsonObject(),
+                                ["x-Ed-Fi-domains"] = new JsonArray { 123 }, // Invalid: number instead of string
+                            },
+                            ["/ed-fi/testResource3"] = new JsonObject
+                            {
+                                ["get"] = new JsonObject(),
+                                ["x-Ed-Fi-domains"] = new JsonArray { "" }, // Invalid: empty string
+                            },
+                            ["/ed-fi/testResource4"] = new JsonObject
+                            {
+                                ["get"] = new JsonObject(),
+                                ["x-Ed-Fi-domains"] = new JsonArray { "OtherDomain" }, // Valid but not excluded
+                            },
+                        },
+                        ["tags"] = new JsonArray(),
+                    },
+                    descriptorsDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Descriptors API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = new JsonObject(),
+                        ["tags"] = new JsonArray(),
+                    }
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            // This should not throw an exception despite malformed domain data
+            JsonNode result = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+            JsonObject? resultPaths = result["paths"]?.AsObject();
+
+            resultPaths.Should().NotBeNull();
+
+            // Should exclude testResource1 (valid "TestDomain" string that matches excluded domain)
+            resultPaths!.Should().NotContainKey("/ed-fi/testResource1");
+
+            // Should keep testResource2 (malformed data - number instead of string)
+            resultPaths.Should().ContainKey("/ed-fi/testResource2");
+
+            // Should keep testResource3 (empty string, not matching excluded domain)
+            resultPaths.Should().ContainKey("/ed-fi/testResource3");
+
+            // Should keep testResource4 (valid string but not in excluded domains)
+            resultPaths.Should().ContainKey("/ed-fi/testResource4");
         }
     }
 }

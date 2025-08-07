@@ -13,8 +13,77 @@ namespace EdFi.DataManagementService.Core.OpenApi;
 /// <summary>
 /// Provides information from a loaded ApiSchema.json document
 /// </summary>
-public class OpenApiDocument(ILogger _logger)
+public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
 {
+    private readonly string[] _excludedDomains = excludedDomains ?? [];
+
+    /// <summary>
+    /// Determines if a path should be excluded based on the excluded domains configuration
+    /// </summary>
+    private bool ShouldExcludePath(JsonNode pathValue)
+    {
+        if (_excludedDomains.Length == 0)
+        {
+            return false;
+        }
+
+        // Check if the path has the x-Ed-Fi-domains extension property
+        if (pathValue["x-Ed-Fi-domains"] is JsonArray domainsArray)
+        {
+            // Check if any of the domains in the path match our excluded domains
+            foreach (JsonNode? domainNode in domainsArray)
+            {
+                if (domainNode != null)
+                {
+                    if (
+                        domainNode.AsValue().TryGetValue<string>(out string? domainName)
+                        && !string.IsNullOrWhiteSpace(domainName)
+                    )
+                    {
+                        if (_excludedDomains.Contains(domainName, StringComparer.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Found non-string or invalid domain value in x-Ed-Fi-domains array: {DomainValue}",
+                            domainNode.ToString()
+                        );
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Filters out paths from a JsonObject based on excluded domains
+    /// </summary>
+    private void FilterPathsByDomain(JsonObject paths)
+    {
+        if (_excludedDomains.Length == 0)
+        {
+            return;
+        }
+
+        var pathsToRemove = paths
+            .Where(kvp => kvp.Value != null && ShouldExcludePath(kvp.Value))
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var pathToRemove in pathsToRemove)
+        {
+            paths.Remove(pathToRemove);
+            _logger.LogDebug(
+                "Excluded path '{Path}' from OpenAPI specification due to domain filtering",
+                pathToRemove
+            );
+        }
+    }
+
     /// <summary>
     /// Inserts exts from extension OpenAPI fragments into the _ext section of the corresponding
     /// core OpenAPI endpoint.
@@ -439,6 +508,12 @@ public class OpenApiDocument(ILogger _logger)
                     );
                 }
             }
+        }
+
+        // Apply domain filtering to exclude specified domains from the OpenAPI specification
+        if (openApiSpecification["paths"] is JsonObject specificationPaths)
+        {
+            FilterPathsByDomain(specificationPaths);
         }
 
         return openApiSpecification;

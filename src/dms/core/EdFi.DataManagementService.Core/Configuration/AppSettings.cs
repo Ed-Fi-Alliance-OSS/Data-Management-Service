@@ -46,4 +46,10 @@ public class AppSettings
     /// If true, enables management endpoints like schema reload.
     /// </summary>
     public bool EnableManagementEndpoints { get; set; }
+
+    /// <summary>
+    /// Comma-separated list of domain names to exclude from OpenAPI documentation generation.
+    /// Domains listed here will not appear in the generated OpenAPI specifications.
+    /// </summary>
+    public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
 }
