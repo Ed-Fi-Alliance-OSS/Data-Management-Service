@@ -6,19 +6,18 @@
 CREATE TABLE if not exists dmscs.openiddict_application (
 
 id uuid NOT NULL,
-client_id text NOT NULL,
-client_secret text,
-display_name text,
-redirect_uris text[],
-post_logout_redirect_uris text[],
-permissions text[],
-requirements text[],
-type text,
-created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-protocolmappers jsonb,
-CONSTRAINT openiddict_application_pkey PRIMARY KEY (id)
-)
-USING heap;
+    client_id text NOT NULL,
+    client_secret text,
+    display_name text,
+    redirect_uris text[],
+    post_logout_redirect_uris text[],
+    permissions text[],
+    requirements text[],
+    type text,
+    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    protocolmappers jsonb,
+    CONSTRAINT openiddict_application_pkey PRIMARY KEY (id)
+);
 
 comment on Table dmscs.openiddict_application is 'OpenIddict applications (clients) storage.';
 

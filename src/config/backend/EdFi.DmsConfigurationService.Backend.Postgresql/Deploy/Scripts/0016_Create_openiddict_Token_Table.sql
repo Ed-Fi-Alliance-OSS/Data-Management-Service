@@ -4,15 +4,14 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE if not exists dmscs.openiddict_token (
-id uuid NOT NULL,
-application_id uuid,
-subject text,
-type text,
-reference_id text,
-expiration_date timestamp without time zone,
-CONSTRAINT openiddict_token_pkey PRIMARY KEY (id)
-)
-USING heap;
+    id uuid NOT NULL,
+    application_id uuid,
+    subject text,
+    type text,
+    reference_id text,
+    expiration_date timestamp without time zone,
+    CONSTRAINT openiddict_token_pkey PRIMARY KEY (id)
+);
 
 comment on Table dmscs.openiddict_token is 'OpenIddict tokens storage.';
 

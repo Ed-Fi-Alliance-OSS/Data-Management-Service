@@ -4,12 +4,11 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 CREATE TABLE if not exists dmscs.openiddict_scope (
-id uuid NOT NULL,
-name text NOT NULL,
-description text,
-CONSTRAINT openiddict_scope_pkey PRIMARY KEY (id)
-)
-USING heap;
+    id uuid NOT NULL,
+    name text NOT NULL,
+    description text,
+    CONSTRAINT openiddict_scope_pkey PRIMARY KEY (id)
+);
 
 comment on Table dmscs.openiddict_scope is 'OpenIddict scopes storage.';
 
