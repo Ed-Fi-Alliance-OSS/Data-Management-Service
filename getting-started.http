@@ -1,6 +1,6 @@
 
 @dmsPort=8080
-@configPort=5126
+@configPort=8081
 
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=s3creT@09
