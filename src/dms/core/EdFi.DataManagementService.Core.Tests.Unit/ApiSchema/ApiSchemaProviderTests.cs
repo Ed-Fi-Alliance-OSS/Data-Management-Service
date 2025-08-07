@@ -230,8 +230,8 @@ public class ApiSchemaProviderTests
         public async Task ReloadApiSchemaAsync_UpdatesSchemaContent()
         {
             // Arrange - Create core schemas (not extensions) with different project descriptions
-            string initialSchema = CreateValidApiSchema("Ed-Fi");
-            string updatedDescriptionSchema = CreateValidApiSchema("Ed-Fi");
+            string initialSchema = CreateValidApiSchema();
+            string updatedDescriptionSchema = CreateValidApiSchema();
 
             // Modify the updated schema to have different description
             var updatedSchemaJson = JsonNode.Parse(updatedDescriptionSchema)!;
@@ -268,7 +268,7 @@ public class ApiSchemaProviderTests
         public async Task LoadApiSchemas_FromDirectory_LoadsAllFiles()
         {
             // Arrange
-            await WriteTestSchemaFile("ApiSchema.json", CreateValidApiSchema("Ed-Fi"));
+            await WriteTestSchemaFile("ApiSchema.json", CreateValidApiSchema());
             await WriteTestSchemaFile("ApiSchema.Extension1.json", CreateValidApiSchema("Extension1"));
             await WriteTestSchemaFile("ApiSchema.Extension2.json", CreateValidApiSchema("Extension2"));
 
@@ -295,7 +295,7 @@ public class ApiSchemaProviderTests
         public async Task LoadApiSchemas_MixedValidInvalid_LoadFails()
         {
             // Arrange
-            await WriteTestSchemaFile("ApiSchema.json", CreateValidApiSchema("Ed-Fi"));
+            await WriteTestSchemaFile("ApiSchema.json", CreateValidApiSchema());
             await WriteTestSchemaFile("ApiSchema.Extension1.json", CreateValidApiSchema("Extension1"));
             await File.WriteAllTextAsync(
                 Path.Combine(_testDirectory, "ApiSchema.Invalid.json"),
@@ -642,6 +642,173 @@ public class ApiSchemaProviderTests
             failures.Should().HaveCount(1);
             failures[0].Exception.Should().NotBeNull();
             failures[0].Exception.Should().BeAssignableTo<JsonException>();
+        }
+    }
+
+    [TestFixture]
+    [NonParallelizable]
+    public class ExtensionSchemaValidationTests : ApiSchemaProviderTests
+    {
+        [Test]
+        public async Task ReloadApiSchemaAsync_WithValidExtensionSchemas_ReturnsSuccess()
+        {
+            // Arrange
+            await WriteTestSchemaFile("ApiSchema.json", CreateValidApiSchema());
+            await WriteTestSchemaFile("ApiSchema.Extension1.json", CreateValidApiSchema("Extension1"));
+            await WriteTestSchemaFile("ApiSchema.Extension2.json", CreateValidApiSchema("Extension2"));
+
+            // Act
+            var result = await _loader.ReloadApiSchemaAsync();
+
+            // Assert
+            result.Success.Should().BeTrue();
+            result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task ReloadApiSchemaAsync_WithInvalidExtensionSchema_ReturnsFailure()
+        {
+            // Arrange - Setup validator to return validation errors for extension schemas
+            await WriteTestSchemaFile("ApiSchema.json", CreateValidApiSchema());
+            await WriteTestSchemaFile("ApiSchema.Extension1.json", CreateValidApiSchema("Extension1"));
+
+            A.CallTo(() => _apiSchemaValidator.Validate(A<JsonNode>._))
+                .ReturnsNextFromSequence(
+                    new List<SchemaValidationFailure>(), // Core schema validation passes
+                    new List<SchemaValidationFailure>
+                    {
+                        new(
+                            new JsonPath("$.projectSchema"),
+                            ["Extension schema is missing required properties"]
+                        ),
+                    }
+                );
+
+            // Act
+            var result = await _loader.ReloadApiSchemaAsync();
+
+            // Assert
+            result.Success.Should().BeFalse();
+            result.Failures.Should().HaveCount(1);
+            result.Failures[0].FailureType.Should().Be("Validation");
+            result.Failures[0].Message.Should().Contain("Extension Schema 0");
+            result.Failures[0].Message.Should().Contain("Extension schema is missing required properties");
+        }
+
+        [Test]
+        public async Task ReloadApiSchemaAsync_WithMultipleInvalidExtensionSchemas_ReturnsAllFailures()
+        {
+            // Arrange - Setup validator to return validation errors for multiple extension schemas
+            await WriteTestSchemaFile("ApiSchema.json", CreateValidApiSchema());
+            await WriteTestSchemaFile("ApiSchema.Extension1.json", CreateValidApiSchema("Extension1"));
+            await WriteTestSchemaFile("ApiSchema.Extension2.json", CreateValidApiSchema("Extension2"));
+
+            A.CallTo(() => _apiSchemaValidator.Validate(A<JsonNode>._))
+                .ReturnsNextFromSequence(
+                    new List<SchemaValidationFailure>(), // Core schema validation passes
+                    new List<SchemaValidationFailure>
+                    {
+                        new(new JsonPath("$.projectSchema.projectName"), ["Invalid project name format"]),
+                    },
+                    new List<SchemaValidationFailure>
+                    {
+                        new(new JsonPath("$.projectSchema.projectVersion"), ["Invalid version format"]),
+                    }
+                );
+
+            // Act
+            var result = await _loader.ReloadApiSchemaAsync();
+
+            // Assert
+            result.Success.Should().BeFalse();
+            result.Failures.Should().HaveCount(2);
+
+            result.Failures[0].FailureType.Should().Be("Validation");
+            result.Failures[0].Message.Should().Contain("Extension Schema 0");
+            result.Failures[0].Message.Should().Contain("Invalid project name format");
+            result.Failures[0].FailurePath?.Value.Should().Be("$.projectSchema.projectName");
+
+            result.Failures[1].FailureType.Should().Be("Validation");
+            result.Failures[1].Message.Should().Contain("Extension Schema 1");
+            result.Failures[1].Message.Should().Contain("Invalid version format");
+            result.Failures[1].FailurePath?.Value.Should().Be("$.projectSchema.projectVersion");
+        }
+
+        [Test]
+        public async Task ReloadApiSchemaAsync_WithValidCoreAndInvalidExtension_ReturnsFailure()
+        {
+            // Arrange - Core schema passes validation, extension schema fails
+            await WriteTestSchemaFile("ApiSchema.json", CreateValidApiSchema());
+            await WriteTestSchemaFile("ApiSchema.Extension1.json", CreateValidApiSchema("Extension1"));
+
+            A.CallTo(() => _apiSchemaValidator.Validate(A<JsonNode>._))
+                .ReturnsNextFromSequence(
+                    new List<SchemaValidationFailure>(), // Core schema validation passes
+                    new List<SchemaValidationFailure>
+                    {
+                        new(
+                            new JsonPath("$.projectSchema.resourceSchemas"),
+                            ["Resource schemas are invalid", "Missing required resource definitions"]
+                        ),
+                    }
+                );
+
+            // Act
+            var result = await _loader.ReloadApiSchemaAsync();
+
+            // Assert
+            result.Success.Should().BeFalse();
+            result.Failures.Should().HaveCount(1);
+            result.Failures[0].Message.Should().Contain("Extension Schema 0");
+            result
+                .Failures[0]
+                .Message.Should()
+                .Contain("Resource schemas are invalid, Missing required resource definitions");
+        }
+
+        [Test]
+        public async Task LoadApiSchemaFromAsync_WithValidExtensionSchemas_ReturnsSuccess()
+        {
+            // Arrange
+            var coreSchema = JsonNode.Parse(CreateValidApiSchema())!;
+            var extensionSchemas = new[]
+            {
+                JsonNode.Parse(CreateValidApiSchema("Extension1"))!,
+                JsonNode.Parse(CreateValidApiSchema("Extension2"))!,
+            };
+
+            // Act
+            var result = await _loader.LoadApiSchemaFromAsync(coreSchema, extensionSchemas);
+
+            // Assert
+            result.Success.Should().BeTrue();
+            result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task LoadApiSchemaFromAsync_WithInvalidExtensionSchema_ReturnsFailure()
+        {
+            // Arrange
+            var coreSchema = JsonNode.Parse(CreateValidApiSchema())!;
+            var extensionSchemas = new[] { JsonNode.Parse(CreateValidApiSchema("Extension1"))! };
+
+            A.CallTo(() => _apiSchemaValidator.Validate(A<JsonNode>._))
+                .ReturnsNextFromSequence(
+                    new List<SchemaValidationFailure>(), // Core schema validation passes
+                    new List<SchemaValidationFailure>
+                    {
+                        new(new JsonPath("$.apiSchemaVersion"), ["Unsupported API schema version"]),
+                    }
+                );
+
+            // Act
+            var result = await _loader.LoadApiSchemaFromAsync(coreSchema, extensionSchemas);
+
+            // Assert
+            result.Success.Should().BeFalse();
+            result.Failures.Should().HaveCount(1);
+            result.Failures[0].Message.Should().Contain("Extension Schema 0");
+            result.Failures[0].Message.Should().Contain("Unsupported API schema version");
         }
     }
 }

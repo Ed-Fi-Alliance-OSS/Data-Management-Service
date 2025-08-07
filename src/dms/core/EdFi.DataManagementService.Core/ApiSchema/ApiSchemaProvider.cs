@@ -432,37 +432,35 @@ internal class ApiSchemaProvider(
 
         // Validate extension schemas
 
-#pragma warning disable S125 // Sections of code should not be commented out
-        // for (int i = 0; i < schemaNodes.ExtensionApiSchemaRootNodes.Length; i++)
-        // {
-        //     List<SchemaValidationFailure> extensionValidationErrors = _apiSchemaValidator.Validate(
-        //         schemaNodes.ExtensionApiSchemaRootNodes[i]
-        //     );
+        for (int i = 0; i < schemaNodes.ExtensionApiSchemaRootNodes.Length; i++)
+        {
+            List<SchemaValidationFailure> extensionValidationErrors = _apiSchemaValidator.Validate(
+                schemaNodes.ExtensionApiSchemaRootNodes[i]
+            );
 
-        //     if (extensionValidationErrors.Count > 0)
-        //     {
-        //         _logger.LogError("Extension Api schema {Index} validation failed.", i);
+            if (extensionValidationErrors.Count > 0)
+            {
+                _logger.LogError("Extension Api schema {Index} validation failed.", i);
 
-        //         foreach (var error in extensionValidationErrors)
-        //         {
-        //             _logger.LogError(
-        //                 "[Extension Schema {Index}] {FailurePath} - {FailureMessages}",
-        //                 i,
-        //                 error.FailurePath.Value,
-        //                 string.Join(", ", error.FailureMessages)
-        //             );
+                foreach (var error in extensionValidationErrors)
+                {
+                    _logger.LogError(
+                        "[Extension Schema {Index}] {FailurePath} - {FailureMessages}",
+                        i,
+                        error.FailurePath.Value,
+                        string.Join(", ", error.FailureMessages)
+                    );
 
-        //             failures.Add(
-        //                 new ApiSchemaFailure(
-        //                     "Validation",
-        //                     $"[Extension Schema {i}] {string.Join(", ", error.FailureMessages)}",
-        //                     error.FailurePath
-        //                 )
-        //             );
-        //         }
-        //     }
-        // }
-#pragma warning restore S125 // Sections of code should not be commented out
+                    failures.Add(
+                        new ApiSchemaFailure(
+                            "Validation",
+                            $"[Extension Schema {i}] {string.Join(", ", error.FailureMessages)}",
+                            error.FailurePath
+                        )
+                    );
+                }
+            }
+        }
 
         return failures;
     }
