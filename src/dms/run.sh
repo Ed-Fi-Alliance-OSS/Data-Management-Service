@@ -7,7 +7,6 @@
 set -e
 set +x
 
-envsubst < /app/appsettings.template.json > /app/appsettings.json
 # Safely extract a few environment variables from the admin connection string
 host=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
 port=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
