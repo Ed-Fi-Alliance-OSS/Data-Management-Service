@@ -124,7 +124,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict
         {
             var sql = _sqlProvider.GetResetCredentialsSql();
             await _db.ExecuteAsync(sql, new { ClientUuid = clientUuid });
-            return new ClientResetResult.Success("TODO");
+            return new ClientResetResult.Success(clientUuid);
         }
     }
 }
