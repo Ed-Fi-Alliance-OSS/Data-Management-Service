@@ -145,23 +145,21 @@ public static class WebApplicationBuilderExtensions
             .Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
             .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
 
-        // Set up authentication using JWT bearer tokens
-        // Check if authentication services are already registered to avoid conflicts
-        var authBuilder = webApplicationBuilder.Services.AddAuthentication(options =>
-        {
-            // Only set default scheme if not already configured
-            if (string.IsNullOrEmpty(options.DefaultAuthenticateScheme))
-            {
-                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-            }
-        });
-
         // Configure JWT Bearer based on identity provider
         if (string.Equals(identityProvider, "openiddict", StringComparison.OrdinalIgnoreCase))
         {
             // For OpenIddict, we use our own validation
-            authBuilder.AddJwtBearer(
+            webApplicationBuilder
+                .Services.AddAuthentication(options =>
+                {
+                    // Only set default scheme if not already configured
+                    if (string.IsNullOrEmpty(options.DefaultAuthenticateScheme))
+                    {
+                        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                    }
+                })
+                .AddJwtBearer(
                 JwtBearerDefaults.AuthenticationScheme,
                 options =>
                 {
@@ -211,7 +209,9 @@ public static class WebApplicationBuilderExtensions
         }
         else // Default to Keycloak
         {
-            authBuilder.AddJwtBearer(
+            webApplicationBuilder
+                .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddJwtBearer(
                 JwtBearerDefaults.AuthenticationScheme,
                 options =>
                 {
