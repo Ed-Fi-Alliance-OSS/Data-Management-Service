@@ -11,6 +11,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
 {
     public static class JwtSigningKeyHelper
     {
+        private const int MinimumKeyLengthBytes = 32;
+
         public static SecurityKey GenerateSigningKey(string? key = null)
         {
             key = key
@@ -20,10 +22,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 throw new InvalidOperationException("JWT signing key is not configured.");
             }
             var keyBytes = Encoding.UTF8.GetBytes(key);
-            if (keyBytes.Length < 32)
+            if (keyBytes.Length < MinimumKeyLengthBytes)
             {
                 throw new InvalidOperationException(
-                    $"JWT signing key must be at least 32 bytes long. Current length: {keyBytes.Length}"
+                    $"JWT signing key must be at least {MinimumKeyLengthBytes} bytes long. Current length: {keyBytes.Length}"
                 );
             }
             return new SymmetricSecurityKey(keyBytes);

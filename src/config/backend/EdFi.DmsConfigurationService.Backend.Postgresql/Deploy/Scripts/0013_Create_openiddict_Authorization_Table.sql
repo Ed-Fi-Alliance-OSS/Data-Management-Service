@@ -3,14 +3,13 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 CREATE TABLE if not exists dmscs.openiddict_authorization (
-id uuid NOT NULL,
-application_id uuid NOT NULL,
-subject text NOT NULL,
-status text NOT NULL,
-type text NOT NULL,
-CONSTRAINT openiddict_authorization_pkey PRIMARY KEY (id)
-)
-USING heap;
+    id uuid NOT NULL,
+    application_id uuid NOT NULL,
+    subject text NOT NULL,
+    status text NOT NULL,
+    type text NOT NULL,
+    CONSTRAINT openiddict_authorization_pkey PRIMARY KEY (id)
+);
 
 comment on Table dmscs.openiddict_authorization is 'OpenIddict authorizations storage.';
 
