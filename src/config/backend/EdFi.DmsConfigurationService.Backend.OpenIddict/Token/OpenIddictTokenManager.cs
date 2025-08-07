@@ -26,8 +26,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
         public OpenIddictTokenManager(IHttpClientFactory httpClientFactory)
         {
             _httpClientFactory = httpClientFactory;
-            //TODO UPDATE VALUE
-            _tokenEndpoint = "tokenEndpoint";
+            _tokenEndpoint = string.Empty;
         }
 
         public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)

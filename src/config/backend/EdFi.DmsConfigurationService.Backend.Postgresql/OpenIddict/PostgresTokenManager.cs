@@ -25,7 +25,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
     /// PostgreSQL implementation of ITokenManager that generates and validates JWT tokens using OpenIddict standards.
     /// Stores tokens in dmscs.openiddict_token table and includes custom scope claims.
     /// </summary>
-    public class PostgresTokenManager : ITokenManager //, ITokenRevocationManager, ITokenValidationManager
+    public class PostgresTokenManager : ITokenManager
     {
         private readonly IOptions<DatabaseOptions> _databaseOptions;
         private readonly ILogger<PostgresTokenManager> _logger;
