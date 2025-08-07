@@ -23,6 +23,8 @@ file.
 | UseApiSchemaPath             | When set to `true`, the application will use the `UseApiSchemaPath` configuration to load core data standard and extension artifacts. The `ApiSchemaDownloader` CLI can be used to download and extract the published `ApiSchema` packages. |
 | ApiSchemaPath                | Specifies the directory where core and extension ApiSchema.json files are located. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages. |
 
+| IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `openiddict` (to use self-contained authentication). When using `openiddict`, you must also provide a value for `IdentitySettings:SigningKey`, which must be at least 32 characters long. |
+
 ## ConnectionStrings
 
 | Parameter          | Description                                                                   |
