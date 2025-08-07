@@ -24,6 +24,8 @@ file.
 | ApiSchemaPath                | Specifies the directory where core and extension ApiSchema.json files are located. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages. |
 | DomainsExcludedFromOpenApi   | Comma separated list of domain names to exclude from OpenAPI documentation generation. Domains listed here will not appear in the generated OpenAPI specifications. Case insensitive. |
 
+| IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `openiddict` (to use self-contained authentication). When using `openiddict`, you must also provide a value for `IdentitySettings:SigningKey`, which must be at least 32 characters long. |
+
 ## ConnectionStrings
 
 | Parameter          | Description                                                                   |

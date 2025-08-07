@@ -67,7 +67,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict
                                 var token = context.Request.Headers["Authorization"]
                                     .ToString().Replace("Bearer ", "");
 
-                                // Check if the token manager supports validation (duck typing approach)
+                                // Check if the token manager supports validation
                                 var validationMethod = tokenManager.GetType().GetMethod("ValidateTokenAsync");
                                 if (validationMethod != null)
                                 {
@@ -82,14 +82,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict
                         OnChallenge = context =>
                         {
                             var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerHandler>>();
-                            logger.LogWarning("**** JWT authentication challenge: {Error} - {Description}",
+                            logger.LogWarning("JWT authentication challenge: {Error} - {Description}",
                                 context.Error, context.ErrorDescription);
                             return Task.CompletedTask;
                         },
                         OnAuthenticationFailed = context =>
                         {
                             var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerHandler>>();
-                            logger.LogError(context.Exception, "*** JWT authentication failed");
+                            logger.LogError(context.Exception, "JWT authentication failed");
                             return Task.CompletedTask;
                         }
                     };

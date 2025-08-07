@@ -107,9 +107,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict
                 var clientList = clients.Select(client => client.ClientId).Where(id => id != null).Cast<string>().ToList();
                 return new ClientClientsResult.Success(clientList);
             }
-            catch (Exception oEx)
+            catch
             {
-                throw new Exception(oEx.Message);
+                throw;
             }
         }
 
