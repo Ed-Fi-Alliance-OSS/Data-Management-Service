@@ -162,7 +162,7 @@ public static class WebApplicationBuilderExtensions
             .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
 
         // Configure JWT Bearer based on identity provider
-        if (string.Equals(identityProvider, "openiddict", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
         {
             // For OpenIddict, we use our own validation
             webApplicationBuilder
@@ -220,7 +220,7 @@ public static class WebApplicationBuilderExtensions
 
             webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
-            logger.Information("Registering OpenIddict services");
+            logger.Information("Registering Self-Contained services");
             webApplicationBuilder.Services.AddPostgresOpenIddictStores(config, identitySettings.Authority);
         }
         else // Default to Keycloak
