@@ -46,9 +46,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef62
 
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
-# gettext: provides `envsubst`, used to inject env values into appsettings
 # jq: used to parse plugins defined in JSON env variable
-RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0 jq=~1.7
+RUN apk --no-cache add bash=~5 postgresql16-client=~16 jq=~1.7
 
 FROM runtimebase AS setup
 
@@ -67,7 +66,6 @@ COPY --from=build /app/Frontend/appsettings.json ./
 COPY --from=build /app/Frontend/*runtimeconfig.json ./
 COPY --from=build /app/Frontend/*.deps.json ./
 COPY --from=build /app/ApiSchemaDownloader/*.* ./ApiSchemaDownloader/
-COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
 COPY --chmod=700 run.sh /app/run.sh
 
 EXPOSE ${ASPNETCORE_HTTP_PORTS}

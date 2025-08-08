@@ -33,16 +33,13 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef62
 
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
-# gettext: provides `envsubst`, used to inject env values into appsettings
-RUN apk --no-cache add bash=~5 postgresql16-client=~16 gettext=~0
+RUN apk --no-cache add bash=~5 postgresql16-client=~16
 
 FROM runtimebase AS setup
 
 ENV ASPNETCORE_HTTP_PORTS=8080
 
 WORKDIR /app
-
-COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
 
 COPY --from=build /app/Frontend/*.dll ./
 COPY --from=build /app/Frontend/*.pdb ./
@@ -55,4 +52,3 @@ COPY --chmod=700 run.sh /app/run.sh
 EXPOSE ${ASPNETCORE_HTTP_PORTS}
 
 ENTRYPOINT ["/app/run.sh"]
-

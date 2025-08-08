@@ -7,7 +7,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef62
 
 LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
-RUN apk --no-cache add gettext=~0 postgresql16-client=~16 jq=~1.7
+RUN apk --no-cache add postgresql16-client=~16 jq=~1.7
 
 FROM runtimebase AS setup
 
@@ -26,8 +26,6 @@ RUN wget -O /app/EdFi.DataManagementService.zip "https://pkgs.dev.azure.com/ed-f
     cp -r /app/DataManagementService/. /app/ && \
     rm -f /app/EdFi.DataManagementService.zip && \
     rm -r /app/DataManagementService
-
-COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
 
 COPY --chmod=700 run.sh /app/run.sh
 EXPOSE ${ASPNETCORE_HTTP_PORTS}

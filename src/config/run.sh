@@ -7,7 +7,17 @@
 set -e
 set +x
 
-envsubst < /app/appsettings.template.json > /app/appsettings.json
+# Safely extract a few environment variables from the admin connection string
+host=$(echo ${ConnectionStrings__DatabaseConnection} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
+port=$(echo ${ConnectionStrings__DatabaseConnection} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
+username=$(echo ${ConnectionStrings__DatabaseConnection} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
 
+until pg_isready -h ${host} -p ${port} -U ${username}; do
+  echo "Waiting for PostgreSQL to start..."
+  sleep 2
+done
+
+echo "PostgreSQL is ready."
+echo "Running EdFi.DmsConfigurationService.Frontend.AspNetCore..."
 dotnet EdFi.DmsConfigurationService.Frontend.AspNetCore.dll
 
