@@ -1,0 +1,108 @@
+{
+  "name": "SampleExtensionClaims",
+  "resourceClaims": [
+    {
+      "isParent": true,
+      "name": "domains/systemDescriptors",
+      "children": [
+        {
+          "name": "http://ed-fi.org/identity/claims/sample/artMediumDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sample/favoriteBookCategoryDescriptor"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sample/membershipTypeDescriptor"
+        }
+      ]
+    },
+    {
+      "isParent": true,
+      "name": "domains/relationshipBasedData",
+      "children": [
+        {
+          "name": "http://ed-fi.org/identity/claims/sample/studentArtProgramAssociation"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sample/studentGraduationPlanAssociation"
+        }
+      ]
+    },
+    {
+      "isParent": true,
+      "name": "http://ed-fi.org/identity/claims/domains/sample",
+      "_defaultAuthorizationStrategiesForCrud": [
+        {
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        },
+        {
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "http://ed-fi.org/identity/claims/sample/bus"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sample/busRoute"
+        }
+      ],
+      "claimSets": [
+        {
+          "name": "EdFiSandbox",
+          "actions": [
+            {
+              "name": "Create"
+            },
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Update"
+            },
+            {
+              "name": "Delete"
+            },
+            {
+              "name": "ReadChanges"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+=== AUTHORITATIVE COMPOSITION STRUCTURE ANALYSIS ===
+Date: Sun Aug  3 08:21:21 AM CDT 2025
+
+SUMMARY:
+- Total claimsHierarchy items: 18
+- Total unique claimSets: 13
+- Max nesting depth: 4
+- File size: 233738 bytes
+
+CLAIMSET NAMES:
+ABConnect
+AssessmentRead
+AssessmentVendor
+BootstrapDescriptorsandEdOrgs
+DistrictHostedSISVendor
+E2E-NoFurtherAuthRequiredClaimSet
+EdFiAPIPublisherReader
+EdFiAPIPublisherWriter
+EdFiODSAdminApp
+EdFiSandbox
+EducationPreparationProgram
+RosterVendor
+SISVendor
+
+KEY FINDINGS:
+- Authoritative system produces claimsHierarchy array format (18 top-level claims)
+- Each claim can contain nested claimSets with actions and authorization overrides
+- Structure includes E2E test claimSets successfully composed with extension fragments
+=== CRITICAL FINDINGS COMPARISON ===
+
+AUTHORITATIVE SYSTEM (CmsHierarchy):
+- Produces claimsHierarchy format (18 top-level claims)
+- Successfully processes all 5 fragment files
+- Output is valid claimsHierarchy structure
+
+NEW SYSTEM (ClaimsFragmentComposer):
+- Successfully discovers and applies all 5 fragments
+- Fragment composition completes successfully
+- Produces schema format (with claimSets and claimsHierarchy arrays)
+- CRITICAL ISSUE: 1451 validation failures with null values
+
+ROOT CAUSE IDENTIFIED:
+- The transformation from claimsHierarchy format to schema format is faulty
+- Arrays expected by schema are coming through as null values
+- Fragment composition logic needs revision to match schema requirements
