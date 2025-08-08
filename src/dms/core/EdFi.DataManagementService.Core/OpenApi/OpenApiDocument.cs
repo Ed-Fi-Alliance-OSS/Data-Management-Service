@@ -30,29 +30,22 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         // Check if the path has the x-Ed-Fi-domains extension property
         if (pathValue["x-Ed-Fi-domains"] is JsonArray domainsArray)
         {
-            // Check if any of the domains in the path match our excluded domains
-            foreach (JsonNode? domainNode in domainsArray)
+            var domainsList = domainsArray
+                .Where(node =>
+                    node != null
+                    && node.AsValue().TryGetValue(out string? domainName)
+                    && !string.IsNullOrWhiteSpace(domainName)
+                )
+                .Select(node => node?.GetValue<string>())
+                .ToList();
+
+            // If there are valid domains and all of them are in the excluded list, exclude the path
+            if (
+                domainsList.Count > 0
+                && domainsList.TrueForAll(d => _excludedDomains.Contains(d, StringComparer.OrdinalIgnoreCase))
+            )
             {
-                if (domainNode != null)
-                {
-                    if (
-                        domainNode.AsValue().TryGetValue<string>(out string? domainName)
-                        && !string.IsNullOrWhiteSpace(domainName)
-                    )
-                    {
-                        if (_excludedDomains.Contains(domainName, StringComparer.OrdinalIgnoreCase))
-                        {
-                            return true;
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogWarning(
-                            "Found non-string or invalid domain value in x-Ed-Fi-domains array: {DomainValue}",
-                            domainNode.ToString()
-                        );
-                    }
-                }
+                return true;
             }
         }
 
