@@ -59,7 +59,7 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientRole");
         }
-        if (string.Equals(_identityProvider, "openiddict", StringComparison.OrdinalIgnoreCase)
+        if (string.Equals(_identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase)
             && string.IsNullOrWhiteSpace(options.SigningKey))
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: SigningKey");

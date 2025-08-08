@@ -40,9 +40,9 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         }
 
         // We only support keycloak for now
-        if (!(new[] { "keycloak", "openiddict" }.Contains(options.IdentityProvider, StringComparer.CurrentCultureIgnoreCase)))
+        if (!(new[] { "keycloak", "self-contained" }.Contains(options.IdentityProvider, StringComparer.CurrentCultureIgnoreCase)))
         {
-            return ValidateOptionsResult.Fail("AppSettings value IdentityProvider must be one of: (keycloak, openiddict)");
+            return ValidateOptionsResult.Fail("AppSettings value IdentityProvider must be one of: (keycloak, self-contained)");
         }
 
         return ValidateOptionsResult.Success;
