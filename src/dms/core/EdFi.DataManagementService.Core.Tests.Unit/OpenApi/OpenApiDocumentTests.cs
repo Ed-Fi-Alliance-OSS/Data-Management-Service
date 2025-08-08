@@ -78,13 +78,29 @@ public class OpenApiDocumentTests
         {
             ["/ed-fi/academicWeeks"] = new JsonObject
             {
-                ["get"] = new JsonObject { ["description"] = "academicWeek get description" },
-                ["post"] = new JsonObject { ["description"] = "academicWeek post description" },
+                ["get"] = new JsonObject
+                {
+                    ["description"] = "academicWeek get description",
+                    ["tags"] = new JsonArray("academicWeeks"),
+                },
+                ["post"] = new JsonObject
+                {
+                    ["description"] = "academicWeek post description",
+                    ["tags"] = new JsonArray("academicWeeks"),
+                },
             },
             ["/ed-fi/academicWeeks/{id}"] = new JsonObject
             {
-                ["get"] = new JsonObject { ["description"] = "academicWeek id get description" },
-                ["delete"] = new JsonObject { ["description"] = "academicWeek delete description" },
+                ["get"] = new JsonObject
+                {
+                    ["description"] = "academicWeek id get description",
+                    ["tags"] = new JsonArray("academicWeeks"),
+                },
+                ["delete"] = new JsonObject
+                {
+                    ["description"] = "academicWeek delete description",
+                    ["tags"] = new JsonArray("academicWeeks"),
+                },
             },
         };
 
@@ -92,15 +108,28 @@ public class OpenApiDocumentTests
         {
             ["/ed-fi/accommodationDescriptors"] = new JsonObject
             {
-                ["get"] = new JsonObject { ["description"] = "accommodationDescriptors get description" },
-                ["post"] = new JsonObject { ["description"] = "accommodationDescriptors post description" },
+                ["get"] = new JsonObject
+                {
+                    ["description"] = "accommodationDescriptors get description",
+                    ["tags"] = new JsonArray("accommodationDescriptors"),
+                },
+                ["post"] = new JsonObject
+                {
+                    ["description"] = "accommodationDescriptors post description",
+                    ["tags"] = new JsonArray("accommodationDescriptors"),
+                },
             },
             ["/ed-fi/accommodationDescriptors/{id}"] = new JsonObject
             {
-                ["get"] = new JsonObject { ["description"] = "accommodationDescriptors id get description" },
+                ["get"] = new JsonObject
+                {
+                    ["description"] = "accommodationDescriptors id get description",
+                    ["tags"] = new JsonArray("accommodationDescriptors"),
+                },
                 ["delete"] = new JsonObject
                 {
                     ["description"] = "accommodationDescriptors delete description",
+                    ["tags"] = new JsonArray("accommodationDescriptors"),
                 },
             },
         };
@@ -121,14 +150,14 @@ public class OpenApiDocumentTests
         descriptorsTags.Add(
             new JsonObject
             {
-                ["name"] = "academicSubjects",
+                ["name"] = "academicSubjectDescriptors",
                 ["description"] = "AcademicSubjects Descriptors Description",
             }
         );
         descriptorsTags.Add(
             new JsonObject
             {
-                ["name"] = "accommodations",
+                ["name"] = "accommodationDescriptors",
                 ["description"] = "Accommodations Descriptors Description",
             }
         );
@@ -452,18 +481,30 @@ public class OpenApiDocumentTests
                   "paths": {
                     "/ed-fi/academicWeeks": {
                       "get": {
-                        "description": "academicWeek get description"
+                        "description": "academicWeek get description",
+                        "tags": [
+                          "academicWeeks"
+                        ]
                       },
                       "post": {
-                        "description": "academicWeek post description"
+                        "description": "academicWeek post description",
+                        "tags": [
+                          "academicWeeks"
+                        ]
                       }
                     },
                     "/ed-fi/academicWeeks/{id}": {
                       "get": {
-                        "description": "academicWeek id get description"
+                        "description": "academicWeek id get description",
+                        "tags": [
+                          "academicWeeks"
+                        ]
                       },
                       "delete": {
-                        "description": "academicWeek delete description"
+                        "description": "academicWeek delete description",
+                        "tags": [
+                          "academicWeeks"
+                        ]
                       }
                     }
                   },
@@ -471,10 +512,6 @@ public class OpenApiDocumentTests
                     {
                       "name": "academicWeeks",
                       "description": "AcademicWeeks Description"
-                    },
-                    {
-                      "name": "accountabilityRating",
-                      "description": "AccountabilityRatings Description"
                     }
                   ]
                 }
@@ -525,28 +562,36 @@ public class OpenApiDocumentTests
                   "paths": {
                     "/ed-fi/accommodationDescriptors": {
                       "get": {
-                        "description": "accommodationDescriptors get description"
+                        "description": "accommodationDescriptors get description",
+                        "tags": [
+                          "accommodationDescriptors"
+                        ]
                       },
                       "post": {
-                        "description": "accommodationDescriptors post description"
+                        "description": "accommodationDescriptors post description",
+                        "tags": [
+                          "accommodationDescriptors"
+                        ]
                       }
                     },
                     "/ed-fi/accommodationDescriptors/{id}": {
                       "get": {
-                        "description": "accommodationDescriptors id get description"
+                        "description": "accommodationDescriptors id get description",
+                        "tags": [
+                          "accommodationDescriptors"
+                        ]
                       },
                       "delete": {
-                        "description": "accommodationDescriptors delete description"
+                        "description": "accommodationDescriptors delete description",
+                        "tags": [
+                          "accommodationDescriptors"
+                        ]
                       }
                     }
                   },
                   "tags": [
                     {
-                      "name": "academicSubjects",
-                      "description": "AcademicSubjects Descriptors Description"
-                    },
-                    {
-                      "name": "accommodations",
+                      "name": "accommodationDescriptors",
                       "description": "Accommodations Descriptors Description"
                     }
                   ]
@@ -596,18 +641,30 @@ public class OpenApiDocumentTests
                 {
                   "/ed-fi/academicWeeks": {
                     "get": {
-                      "description": "academicWeek get description"
+                      "description": "academicWeek get description",
+                      "tags": [
+                        "academicWeeks"
+                      ]
                     },
                     "post": {
-                      "description": "academicWeek post description"
+                      "description": "academicWeek post description",
+                      "tags": [
+                        "academicWeeks"
+                      ]
                     }
                   },
                   "/ed-fi/academicWeeks/{id}": {
                     "get": {
-                      "description": "academicWeek id get description"
+                      "description": "academicWeek id get description",
+                      "tags": [
+                        "academicWeeks"
+                      ]
                     },
                     "delete": {
-                      "description": "academicWeek delete description"
+                      "description": "academicWeek delete description",
+                      "tags": [
+                        "academicWeeks"
+                      ]
                     }
                   },
                   "/tpdm/credentials": {
@@ -710,26 +767,6 @@ public class OpenApiDocumentTests
                   {
                     "name": "academicWeeks",
                     "description": "AcademicWeeks Description"
-                  },
-                  {
-                    "name": "accountabilityRating",
-                    "description": "AccountabilityRatings Description"
-                  },
-                  {
-                    "name": "ExtensionTagName1",
-                    "description": "First Extension Description1"
-                  },
-                  {
-                    "name": "ExtensionTagName2",
-                    "description": "First Extension Description2"
-                  },
-                  {
-                    "name": "ExtensionTagName3",
-                    "description": "Second Extension Description3"
-                  },
-                  {
-                    "name": "ExtensionTagName4",
-                    "description": "Second Extension Description4"
                   }
                 ]
                 """;
@@ -744,18 +781,30 @@ public class OpenApiDocumentTests
                 {
                   "/ed-fi/accommodationDescriptors": {
                     "get": {
-                      "description": "accommodationDescriptors get description"
+                      "description": "accommodationDescriptors get description",
+                      "tags": [
+                        "accommodationDescriptors"
+                      ]
                     },
                     "post": {
-                      "description": "accommodationDescriptors post description"
+                      "description": "accommodationDescriptors post description",
+                      "tags": [
+                        "accommodationDescriptors"
+                      ]
                     }
                   },
                   "/ed-fi/accommodationDescriptors/{id}": {
                     "get": {
-                      "description": "accommodationDescriptors id get description"
+                      "description": "accommodationDescriptors id get description",
+                      "tags": [
+                        "accommodationDescriptors"
+                      ]
                     },
                     "delete": {
-                      "description": "accommodationDescriptors delete description"
+                      "description": "accommodationDescriptors delete description",
+                      "tags": [
+                        "accommodationDescriptors"
+                      ]
                     }
                   },
                   "/tpdm/credentialDescriptor": {
@@ -825,28 +874,8 @@ public class OpenApiDocumentTests
             string expectedResult = """
                 [
                   {
-                    "name": "academicSubjects",
-                    "description": "AcademicSubjects Descriptors Description"
-                  },
-                  {
-                    "name": "accommodations",
+                    "name": "accommodationDescriptors",
                     "description": "Accommodations Descriptors Description"
-                  },
-                  {
-                    "name": "ExtensionTagName1",
-                    "description": "First Extension Descriptor Description1"
-                  },
-                  {
-                    "name": "ExtensionTagName2",
-                    "description": "First Extension Descriptor Description2"
-                  },
-                  {
-                    "name": "ExtensionTagName3",
-                    "description": "Second Extension Descriptor Description3"
-                  },
-                  {
-                    "name": "ExtensionTagName4",
-                    "description": "Second Extension Descriptor Description4"
                   }
                 ]
                 """;
@@ -1147,6 +1176,97 @@ public class OpenApiDocumentTests
             resultPaths.Should().NotBeNull();
             resultPaths!.Should().ContainKey("/ed-fi/academicWeeks");
             resultPaths.Should().ContainKey("/ed-fi/students");
+        }
+
+        [Test]
+        public void It_should_remove_unused_tags_after_domain_filtering()
+        {
+            // Create paths with tags that will reference some but not all global tags
+            JsonObject pathsWithTags = new()
+            {
+                ["/ed-fi/schools"] = new JsonObject
+                {
+                    ["get"] = new JsonObject { ["tags"] = new JsonArray { "schools" } },
+                    ["x-Ed-Fi-domains"] = new JsonArray { "EducationOrganization" },
+                },
+                ["/ed-fi/academicWeeks"] = new JsonObject
+                {
+                    ["get"] = new JsonObject { ["tags"] = new JsonArray { "academicWeeks" } },
+                    ["x-Ed-Fi-domains"] = new JsonArray { "SchoolCalendar" },
+                },
+            };
+
+            // Create global tags array with both used and unused tags
+            JsonArray globalTags = new()
+            {
+                new JsonObject { ["name"] = "schools", ["description"] = "School resources" },
+                new JsonObject { ["name"] = "academicWeeks", ["description"] = "Academic week resources" },
+                new JsonObject { ["name"] = "unusedTag", ["description"] = "This tag should be removed" },
+            };
+
+            var apiSchemaDocumentNodes = new ApiSchemaBuilder()
+                .WithStartProject("ed-fi", "5.0.0")
+                .WithOpenApiBaseDocuments(
+                    resourcesDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Resources API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = pathsWithTags,
+                        ["tags"] = globalTags,
+                    },
+                    descriptorsDoc: new JsonObject
+                    {
+                        ["openapi"] = "3.0.1",
+                        ["info"] = new JsonObject
+                        {
+                            ["title"] = "Ed-Fi Descriptors API",
+                            ["version"] = "5.0.0",
+                        },
+                        ["components"] = new JsonObject { ["schemas"] = new JsonObject() },
+                        ["paths"] = new JsonObject(),
+                        ["tags"] = new JsonArray(),
+                    }
+                )
+                .WithEndProject()
+                .AsApiSchemaNodes();
+
+            // Exclude SchoolCalendar domain which will remove /ed-fi/academicWeeks path
+            string[] excludedDomains = ["SchoolCalendar"];
+            OpenApiDocument openApiDocument = new(NullLogger.Instance, excludedDomains);
+
+            JsonNode result = openApiDocument.CreateDocument(
+                apiSchemaDocumentNodes,
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+
+            // Verify paths are filtered correctly
+            JsonObject? resultPaths = result["paths"]?.AsObject();
+            resultPaths.Should().NotBeNull();
+            resultPaths!.Should().ContainKey("/ed-fi/schools");
+            resultPaths.Should().NotContainKey("/ed-fi/academicWeeks");
+
+            // Verify tags are filtered correctly
+            JsonArray? resultTags = result["tags"]?.AsArray();
+            resultTags.Should().NotBeNull();
+
+            // Should keep "schools" tag (used by remaining path)
+            var schoolsTag = resultTags!.FirstOrDefault(t => t?["name"]?.GetValue<string>() == "schools");
+            schoolsTag.Should().NotBeNull();
+
+            // Should remove "academicWeeks" tag (path was removed by domain filtering)
+            var academicWeeksTag = resultTags!.FirstOrDefault(t =>
+                t?["name"]?.GetValue<string>() == "academicWeeks"
+            );
+            academicWeeksTag.Should().BeNull();
+
+            // Should remove "unusedTag" (never used by any path)
+            var unusedTag = resultTags!.FirstOrDefault(t => t?["name"]?.GetValue<string>() == "unusedTag");
+            unusedTag.Should().BeNull();
         }
 
         [Test]

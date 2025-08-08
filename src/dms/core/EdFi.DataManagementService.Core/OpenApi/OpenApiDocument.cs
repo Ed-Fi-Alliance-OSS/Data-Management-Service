@@ -78,6 +78,76 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     }
 
     /// <summary>
+    /// Removes tags that are not referenced by any paths in the OpenAPI specification
+    /// </summary>
+    private void RemoveUnusedTags(JsonNode openApiSpecification)
+    {
+        if (
+            openApiSpecification["tags"] is not JsonArray tags
+            || openApiSpecification["paths"] is not JsonObject paths
+        )
+        {
+            return;
+        }
+
+        // Collect all tag names used in paths
+        HashSet<string> usedTagNames = [];
+
+        foreach ((string pathKey, JsonNode? pathValue) in paths)
+        {
+            if (pathValue is not JsonObject pathObject)
+            {
+                continue;
+            }
+
+            // Check each HTTP method in the path
+            foreach ((string methodKey, JsonNode? methodValue) in pathObject)
+            {
+                if (
+                    methodValue is not JsonObject methodObject
+                    || methodObject["tags"] is not JsonArray pathTags
+                )
+                {
+                    continue;
+                }
+
+                // Add all tag names from this path's tags array
+                foreach (JsonNode? tag in pathTags)
+                {
+                    if (
+                        tag != null
+                        && tag.AsValue().TryGetValue(out string? tagName)
+                        && !string.IsNullOrWhiteSpace(tagName)
+                    )
+                    {
+                        usedTagNames.Add(tagName);
+                    }
+                }
+            }
+        }
+
+        // Remove unused tags
+        var tagsToRemove = new List<int>();
+        for (int i = 0; i < tags.Count; i++)
+        {
+            if (
+                tags[i] is JsonObject tagObject
+                && tagObject["name"]?.GetValue<string>() is string tagName
+                && !usedTagNames.Contains(tagName)
+            )
+            {
+                tagsToRemove.Add(i);
+                _logger.LogDebug("Removed unused tag '{TagName}' from OpenAPI specification", tagName);
+            }
+        }
+
+        for (int i = tagsToRemove.Count - 1; i >= 0; i--)
+        {
+            tags.RemoveAt(tagsToRemove[i]);
+        }
+    }
+
+    /// <summary>
     /// Inserts exts from extension OpenAPI fragments into the _ext section of the corresponding
     /// core OpenAPI endpoint.
     /// </summary>
@@ -508,6 +578,9 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         {
             FilterPathsByDomain(specificationPaths);
         }
+
+        // Remove unused tags after domain filtering
+        RemoveUnusedTags(openApiSpecification);
 
         return openApiSpecification;
     }
