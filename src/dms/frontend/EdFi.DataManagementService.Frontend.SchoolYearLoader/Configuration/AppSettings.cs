@@ -14,6 +14,7 @@ public class AppSettings
     public required string QueryHandler { get; set; }
     public bool DeployDatabaseOnStartup { get; set; }
     public required string CorrelationIdHeader { get; set; }
+    public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
 }
 
 public class AppSettingsValidator : IValidateOptions<AppSettings>

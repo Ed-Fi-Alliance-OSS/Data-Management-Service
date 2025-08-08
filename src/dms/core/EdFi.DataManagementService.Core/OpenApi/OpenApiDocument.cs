@@ -13,8 +13,140 @@ namespace EdFi.DataManagementService.Core.OpenApi;
 /// <summary>
 /// Provides information from a loaded ApiSchema.json document
 /// </summary>
-public class OpenApiDocument(ILogger _logger)
+public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
 {
+    private readonly string[] _excludedDomains = excludedDomains ?? [];
+
+    /// <summary>
+    /// Determines if a path should be excluded based on the excluded domains configuration
+    /// </summary>
+    private bool ShouldExcludePath(JsonNode pathValue)
+    {
+        if (_excludedDomains.Length == 0)
+        {
+            return false;
+        }
+
+        // Check if the path has the x-Ed-Fi-domains extension property
+        if (pathValue["x-Ed-Fi-domains"] is JsonArray domainsArray)
+        {
+            var domainsList = domainsArray
+                .Where(node =>
+                    node != null
+                    && node.AsValue().TryGetValue(out string? domainName)
+                    && !string.IsNullOrWhiteSpace(domainName)
+                )
+                .Select(node => node?.GetValue<string>())
+                .ToList();
+
+            // If there are valid domains and all of them are in the excluded list, exclude the path
+            if (
+                domainsList.Count > 0
+                && domainsList.TrueForAll(d => _excludedDomains.Contains(d, StringComparer.OrdinalIgnoreCase))
+            )
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Filters out paths from a JsonObject based on excluded domains
+    /// </summary>
+    private void FilterPathsByDomain(JsonObject paths)
+    {
+        if (_excludedDomains.Length == 0)
+        {
+            return;
+        }
+
+        var pathsToRemove = paths
+            .Where(kvp => kvp.Value != null && ShouldExcludePath(kvp.Value))
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var pathToRemove in pathsToRemove)
+        {
+            paths.Remove(pathToRemove);
+            _logger.LogDebug(
+                "Excluded path '{Path}' from OpenAPI specification due to domain filtering",
+                pathToRemove
+            );
+        }
+    }
+
+    /// <summary>
+    /// Removes tags that are not referenced by any paths in the OpenAPI specification
+    /// </summary>
+    private void RemoveUnusedTags(JsonNode openApiSpecification)
+    {
+        if (
+            openApiSpecification["tags"] is not JsonArray tags
+            || openApiSpecification["paths"] is not JsonObject paths
+        )
+        {
+            return;
+        }
+
+        // Collect all tag names used in paths
+        HashSet<string> usedTagNames = [];
+
+        foreach ((string pathKey, JsonNode? pathValue) in paths)
+        {
+            if (pathValue is not JsonObject pathObject)
+            {
+                continue;
+            }
+
+            // Check each HTTP method in the path
+            foreach ((string methodKey, JsonNode? methodValue) in pathObject)
+            {
+                if (
+                    methodValue is not JsonObject methodObject
+                    || methodObject["tags"] is not JsonArray pathTags
+                )
+                {
+                    continue;
+                }
+
+                // Add all tag names from this path's tags array
+                foreach (JsonNode? tag in pathTags)
+                {
+                    if (
+                        tag != null
+                        && tag.AsValue().TryGetValue(out string? tagName)
+                        && !string.IsNullOrWhiteSpace(tagName)
+                    )
+                    {
+                        usedTagNames.Add(tagName);
+                    }
+                }
+            }
+        }
+
+        // Remove unused tags
+        var tagsToRemove = new List<int>();
+        for (int i = 0; i < tags.Count; i++)
+        {
+            if (
+                tags[i] is JsonObject tagObject
+                && tagObject["name"]?.GetValue<string>() is string tagName
+                && !usedTagNames.Contains(tagName)
+            )
+            {
+                tagsToRemove.Add(i);
+                _logger.LogDebug("Removed unused tag '{TagName}' from OpenAPI specification", tagName);
+            }
+        }
+
+        for (int i = tagsToRemove.Count - 1; i >= 0; i--)
+        {
+            tags.RemoveAt(tagsToRemove[i]);
+        }
+    }
+
     /// <summary>
     /// Inserts exts from extension OpenAPI fragments into the _ext section of the corresponding
     /// core OpenAPI endpoint.
@@ -440,6 +572,15 @@ public class OpenApiDocument(ILogger _logger)
                 }
             }
         }
+
+        // Apply domain filtering to exclude specified domains from the OpenAPI specification
+        if (openApiSpecification["paths"] is JsonObject specificationPaths)
+        {
+            FilterPathsByDomain(specificationPaths);
+        }
+
+        // Remove unused tags after domain filtering
+        RemoveUnusedTags(openApiSpecification);
 
         return openApiSpecification;
     }
