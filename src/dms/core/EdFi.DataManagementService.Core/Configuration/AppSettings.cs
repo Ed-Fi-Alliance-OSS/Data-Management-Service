@@ -51,5 +51,5 @@ public class AppSettings
     /// Comma-separated list of domain names to exclude from OpenAPI documentation generation.
     /// Domains listed here will not appear in the generated OpenAPI specifications.
     /// </summary>
-    public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
+    public string? DomainsExcludedFromOpenApi { get; set; }
 }
