@@ -10,19 +10,24 @@
       <PackageReference Include="Dapper" />
       <PackageReference Include="dbup-core" />
       <PackageReference Include="dbup-postgresql" />
+      <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
       <PackageReference Include="Microsoft.CodeAnalysis" />
       <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
         <PrivateAssets>all</PrivateAssets>
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
+      <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+      <PackageReference Include="Microsoft.IdentityModel.Protocols" />
       <PackageReference Include="Npgsql" />
       <PackageReference Include="Npgsql.DependencyInjection" />
+      <PackageReference Include="OpenIddict.Core" />
       <PackageReference Include="Polly" />
       <PackageReference Include="Polly.Extensions" />
       <PackageReference Include="SonarAnalyzer.CSharp">
         <PrivateAssets>all</PrivateAssets>
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
+      <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +36,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj" />
+    <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.OpenIddict\EdFi.DmsConfigurationService.Backend.OpenIddict.csproj" />
     <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
   </ItemGroup>
 
@@ -38,6 +44,24 @@
       <EmbeddedResource Include="Deploy\Scripts\*.sql">
           <CopyToOutputDirectory>Never</CopyToOutputDirectory>
       </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="OpenIddict\Repositories\**" />
+    <EmbeddedResource Remove="OpenIddict\Repositories\**" />
+    <None Remove="OpenIddict\Repositories\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="OpenIddict\SampleController.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="OpenIddict\test-jwt-tokens.http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="OpenIddict\PostgresOidcServiceExtensions.cs" />
   </ItemGroup>
 
 </Project>
