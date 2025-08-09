@@ -85,13 +85,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
                 // Validate client credentials and get application details
                 string applicationSql =
-                    @"SELECT a.id, a.display_name, a.permissions,
-                             array_agg(s.name) as scopes
-                      FROM dmscs.openiddict_application a
-                      LEFT JOIN dmscs.openiddict_application_scope aps ON a.id = aps.application_id
-                      LEFT JOIN dmscs.openiddict_scope s ON aps.scope_id = s.id
-                      WHERE a.client_id = @ClientId AND a.client_secret = @ClientSecret
-                      GROUP BY a.id, a.display_name, a.permissions";
+                    @"SELECT a.Id, a.DisplayName, a.Permissions,
+                             array_agg(s.Name) as Scopes
+                      FROM dmscs.OpenIddictApplication a
+                      LEFT JOIN dmscs.OpenIddictApplicationScope aps ON a.Id = aps.ApplicationId
+                      LEFT JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
+                      WHERE a.ClientId = @ClientId AND a.ClientSecret = @ClientSecret
+                      GROUP BY a.Id, a.DisplayName, a.Permissions";
 
                 var applicationInfo = await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
                     applicationSql,
@@ -158,12 +158,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             var now = DateTimeOffset.UtcNow;
             var expiration = now.AddHours(_jwtSettings.ExpirationHours);
 
-            // Prepare roles from openiddict_client_rol/openiddict_rol tables
+            // Prepare roles from OpenIddictClientRole/OpenIddictRole tables
             var roles = (await connection.QueryAsync<string>(
-                    @"SELECT r.name
-                      FROM dmscs.openiddict_client_rol cr
-                      JOIN dmscs.openiddict_rol r ON cr.rol_id = r.id
-                      WHERE cr.client_id = @ClientId",
+                    @"SELECT r.Name
+                      FROM dmscs.OpenIddictClientRole cr
+                      JOIN dmscs.OpenIddictRole r ON cr.RoleId = r.Id
+                      WHERE cr.ClientId = @ClientId",
                     new { ClientId = applicationInfo.Id }
                 )
             ).ToArray();
@@ -198,8 +198,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             DateTimeOffset expiration)
         {
             string insertSql = @"
-                INSERT INTO dmscs.openiddict_token
-                (id, application_id, subject, type, payload, creation_date, expiration_date, status, reference_id)
+                INSERT INTO dmscs.OpenIddictToken
+                (Id, ApplicationId, Subject, Type, Payload, CreationDate, ExpirationDate, Status, ReferenceId)
                 VALUES
                 (@Id, @ApplicationId, @Subject, @Type, @Payload, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
 
@@ -251,7 +251,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                     await connection.OpenAsync();
                     var status = await connection.QuerySingleOrDefaultAsync<string>(
-                        "SELECT status FROM dmscs.openiddict_token WHERE id = @Id",
+                        "SELECT Status FROM dmscs.OpenIddictToken WHERE Id = @Id",
                         new { Id = Guid.Parse(jti) }
                     );
                     return status == "valid";
@@ -282,7 +282,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     await connection.OpenAsync();
 
                     var result = await connection.ExecuteAsync(
-                        "UPDATE dmscs.openiddict_token SET status = 'revoked', redemption_date = CURRENT_TIMESTAMP WHERE id = @Id",
+                        "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = CURRENT_TIMESTAMP WHERE Id = @Id",
                         new { Id = Guid.Parse(jti) }
                     );
 
