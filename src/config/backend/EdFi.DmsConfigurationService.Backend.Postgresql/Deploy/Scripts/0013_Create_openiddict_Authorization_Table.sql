@@ -2,23 +2,22 @@
 -- Licensed to the Ed-Fi Alliance under one or more agreements.
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
-CREATE TABLE if not exists dmscs.openiddict_authorization (
-    id uuid NOT NULL,
-    application_id uuid NOT NULL,
-    subject text NOT NULL,
-    status text NOT NULL,
-    type text NOT NULL,
-    CONSTRAINT openiddict_authorization_pkey PRIMARY KEY (id)
+CREATE TABLE IF NOT EXISTS dmscs.OpenIddictAuthorization (
+    Id uuid NOT NULL PRIMARY KEY,
+    ApplicationId uuid NOT NULL,
+    Subject varchar(100) NOT NULL,
+    Status varchar(50) NOT NULL,
+    Type varchar(50) NOT NULL
 );
 
-comment on Table dmscs.openiddict_authorization is 'OpenIddict authorizations storage.';
+COMMENT ON TABLE dmscs.OpenIddictAuthorization IS 'OpenIddict authorizations storage.';
 
-comment on Column dmscs.openiddict_authorization.id is 'Authorization unique identifier.';
+COMMENT ON COLUMN dmscs.OpenIddictAuthorization.Id IS 'Authorization unique identifier.';
 
-comment on Column dmscs.openiddict_authorization.application_id is 'Associated application id.';
+COMMENT ON COLUMN dmscs.OpenIddictAuthorization.ApplicationId IS 'Associated application id.';
 
-comment on Column dmscs.openiddict_authorization.subject is 'Subject (user or client id).';
+COMMENT ON COLUMN dmscs.OpenIddictAuthorization.Subject IS 'Subject (user or client id).';
 
-comment on Column dmscs.openiddict_authorization.status is 'Authorization status.';
+COMMENT ON COLUMN dmscs.OpenIddictAuthorization.Status IS 'Authorization status.';
 
-comment on Column dmscs.openiddict_authorization.type is 'Authorization type.';
+COMMENT ON COLUMN dmscs.OpenIddictAuthorization.Type IS 'Authorization type.';

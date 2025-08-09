@@ -47,12 +47,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="OpenIddict\Repositories\**" />
-    <EmbeddedResource Remove="OpenIddict\Repositories\**" />
-    <None Remove="OpenIddict\Repositories\**" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Compile Remove="OpenIddict\SampleController.cs" />
   </ItemGroup>
 
