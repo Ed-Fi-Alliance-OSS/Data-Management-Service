@@ -3,17 +3,16 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
-CREATE TABLE if not exists dmscs.openiddict_scope (
-    id uuid NOT NULL,
-    name text NOT NULL,
-    description text,
-    CONSTRAINT openiddict_scope_pkey PRIMARY KEY (id)
+CREATE TABLE IF NOT EXISTS dmscs.OpenIddictScope (
+    Id uuid NOT NULL PRIMARY KEY,
+    Name varchar(100) NOT NULL,
+    Description varchar(200)
 );
 
-comment on Table dmscs.openiddict_scope is 'OpenIddict scopes storage.';
+COMMENT ON TABLE dmscs.OpenIddictScope IS 'OpenIddict scopes storage.';
 
-comment on Column dmscs.openiddict_scope.id is 'Scope unique identifier.';
+COMMENT ON COLUMN dmscs.OpenIddictScope.Id IS 'Scope unique identifier.';
 
-comment on Column dmscs.openiddict_scope.name is 'Scope name.';
+COMMENT ON COLUMN dmscs.OpenIddictScope.Name IS 'Scope name.';
 
-comment on Column dmscs.openiddict_scope.description is 'Scope description.';
+COMMENT ON COLUMN dmscs.OpenIddictScope.Description IS 'Scope description.';

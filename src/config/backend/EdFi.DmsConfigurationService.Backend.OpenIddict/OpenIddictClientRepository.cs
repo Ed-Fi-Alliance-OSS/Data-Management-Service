@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 
-namespace EdFi.DmsConfigurationService.Backend.OpenIddict
+namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repository
 {
     public class OpenIddictClientRepository : IClientRepository
     {

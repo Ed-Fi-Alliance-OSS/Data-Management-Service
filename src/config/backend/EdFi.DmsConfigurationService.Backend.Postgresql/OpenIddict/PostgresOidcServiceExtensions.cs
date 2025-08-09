@@ -5,6 +5,7 @@
 using System.Data;
 using EdFi.DmsConfigurationService.Backend.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -15,7 +16,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
     {
         public static IServiceCollection AddPostgresOpenIddictStores(this IServiceCollection services, IConfiguration configuration, string authority)
         {
-            services.AddSingleton<IClientRepository, PostgresClientSqlProvider>();
+            services.AddSingleton<IClientRepository, PostgresOpenIddictClientRepository>();
             services.AddSingleton<ITokenManager, PostgresTokenManager>();
 
             // Register JWT authentication with default settings
@@ -50,7 +51,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             string authority,
             JwtSettings jwtSettings)
         {
-            services.AddSingleton<IClientRepository, PostgresClientSqlProvider>();
+            services.AddSingleton<IClientRepository, PostgresOpenIddictClientRepository>();
             services.AddSingleton<ITokenManager, PostgresTokenManager>();
             services.AddJwtAuthentication(jwtSettings, configuration);
 

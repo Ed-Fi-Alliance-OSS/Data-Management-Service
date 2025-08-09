@@ -13,16 +13,16 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using System.Text.Json;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories
 {
-    public class PostgresClientSqlProvider : IClientRepository
+    public class PostgresOpenIddictClientRepository : IClientRepository
     {
         private readonly IOptions<DatabaseOptions> _databaseOptions;
-        private readonly ILogger<PostgresClientSqlProvider> _logger;
+        private readonly ILogger<PostgresOpenIddictClientRepository> _logger;
 
-        public PostgresClientSqlProvider(
+        public PostgresOpenIddictClientRepository(
             IOptions<DatabaseOptions> databaseOptions,
-            ILogger<PostgresClientSqlProvider> logger)
+            ILogger<PostgresOpenIddictClientRepository> logger)
         {
             _databaseOptions = databaseOptions;
             _logger = logger;
@@ -47,7 +47,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 // 1. Ensure role exists (openiddict_rol)
                 Guid rolId;
                 var existingRolId = await connection.ExecuteScalarAsync<Guid?>(
-                    "SELECT id FROM dmscs.openiddict_rol WHERE name = @Name",
+                    "SELECT Id FROM dmscs.OpenIddictRole WHERE Name = @Name",
                     new { Name = role },
                     transaction
                 );
@@ -55,7 +55,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 {
                     rolId = Guid.NewGuid();
                     await connection.ExecuteAsync(
-                        "INSERT INTO dmscs.openiddict_rol (id, name) VALUES (@Id, @Name)",
+                        "INSERT INTO dmscs.OpenIddictRole (Id, Name) VALUES (@Id, @Name)",
                         new { Id = rolId, Name = role },
                         transaction
                     );
@@ -73,8 +73,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     educationOrgClaim
                 };
                 string sql = @"
-INSERT INTO dmscs.openiddict_application
-    (id, client_id, client_secret, display_name, permissions, requirements, type, created_at, protocolmappers)
+INSERT INTO dmscs.OpenIddictApplication
+    (Id, ClientId, ClientSecret, DisplayName, Permissions, Requirements, Type, CreatedAt, ProtocolMappers)
 VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, CURRENT_TIMESTAMP, @ProtocolMappers::jsonb)
 ";
                 var permissions = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
@@ -104,7 +104,7 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                     {
                         // Insert scope if not exists
                         var scopeId = await connection.ExecuteScalarAsync<Guid?>(
-                            "SELECT id FROM dmscs.openiddict_scope WHERE name = @Name",
+                            "SELECT Id FROM dmscs.OpenIddictScope WHERE Name = @Name",
                             new { Name = scopeName },
                             transaction
                         );
@@ -112,14 +112,14 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                         {
                             scopeId = Guid.NewGuid();
                             await connection.ExecuteAsync(
-                                "INSERT INTO dmscs.openiddict_scope (id, name) VALUES (@Id, @Name)",
+                                "INSERT INTO dmscs.OpenIddictScope (Id, Name) VALUES (@Id, @Name)",
                                 new { Id = scopeId, Name = scopeName },
                                 transaction
                             );
                         }
                         // Insert into join table
                         await connection.ExecuteAsync(
-                            "INSERT INTO dmscs.openiddict_application_scope (application_id, scope_id) VALUES (@AppId, @ScopeId)",
+                            "INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES (@AppId, @ScopeId)",
                             new { AppId = clientUuid, ScopeId = scopeId },
                             transaction
                         );
@@ -128,8 +128,8 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
 
                 // 4. Assign role to client (openiddict_client_rol)
                 await connection.ExecuteAsync(
-                    "INSERT INTO dmscs.openiddict_client_rol (client_id, rol_id) VALUES (@ClientId, @RolId)",
-                    new { ClientId = clientUuid, RolId = rolId },
+                    "INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES (@ClientId, @RoleId)",
+                    new { ClientId = clientUuid, RoleId = rolId },
                     transaction
                 );
 
@@ -193,7 +193,7 @@ UPDATE dmscs.openiddict_application
                 {
                     // Remove existing associations
                     await connection.ExecuteAsync(
-                        "DELETE FROM dmscs.openiddict_application_scope WHERE application_id = @AppId",
+                        "DELETE FROM dmscs.OpenIddictApplicationScope WHERE ApplicationId = @AppId",
                         new { AppId = Guid.Parse(clientUuid) },
                         transaction
                     );
@@ -202,7 +202,7 @@ UPDATE dmscs.openiddict_application
                     {
                         // Insert scope if not exists
                         var scopeId = await connection.ExecuteScalarAsync<Guid?>(
-                            "SELECT id FROM dmscs.openiddict_scope WHERE name = @Name",
+                        "SELECT Id FROM dmscs.OpenIddictScope WHERE Name = @Name",
                             new { Name = scopeName },
                             transaction
                         );
@@ -210,14 +210,14 @@ UPDATE dmscs.openiddict_application
                         {
                             scopeId = Guid.NewGuid();
                             await connection.ExecuteAsync(
-                                "INSERT INTO dmscs.openiddict_scope (id, name) VALUES (@Id, @Name)",
+                                "INSERT INTO dmscs.OpenIddictScope (Id, Name) VALUES (@Id, @Name)",
                                 new { Id = scopeId, Name = scopeName },
                                 transaction
                             );
                         }
                         // Insert into join table
                         await connection.ExecuteAsync(
-                            "INSERT INTO dmscs.openiddict_application_scope (application_id, scope_id) VALUES (@AppId, @ScopeId)",
+                            "INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES (@AppId, @ScopeId)",
                             new { AppId = Guid.Parse(clientUuid), ScopeId = scopeId },
                             transaction
                         );
@@ -250,9 +250,9 @@ UPDATE dmscs.openiddict_application
                 var protocolMappersJson = System.Text.Json.JsonSerializer.Serialize(protocolMappers);
 
                 string sql = @"
-UPDATE dmscs.openiddict_application
-    SET protocolmappers = @ProtocolMappers::jsonb
-    WHERE id = @Id
+UPDATE dmscs.OpenIddictApplication
+    SET ProtocolMappers = @ProtocolMappers::jsonb
+    WHERE Id = @Id
 ";
                 var rows = await connection.ExecuteAsync(
                     sql,
@@ -285,7 +285,7 @@ UPDATE dmscs.openiddict_application
             {
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 await connection.OpenAsync();
-                string sql = "SELECT client_id FROM dmscs.openiddict_application";
+                string sql = "SELECT ClientId FROM dmscs.OpenIddictApplication";
                 var clients = await connection.QueryAsync<string>(sql);
                 return new ClientClientsResult.Success(clients);
             }
@@ -302,7 +302,7 @@ UPDATE dmscs.openiddict_application
             {
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 await connection.OpenAsync();
-                string sql = "DELETE FROM dmscs.openiddict_application WHERE id = @Id";
+                string sql = "DELETE FROM dmscs.OpenIddictApplication WHERE Id = @Id";
                 var rows = await connection.ExecuteAsync(sql, new { Id = Guid.Parse(clientUuid) });
                 if (rows == 0)
                 {
@@ -326,9 +326,9 @@ UPDATE dmscs.openiddict_application
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 await connection.OpenAsync();
                 string sql = @"
-                UPDATE dmscs.openiddict_application
-                SET client_secret = @ClientSecret
-                WHERE id = @Id
+                UPDATE dmscs.OpenIddictApplication
+                SET ClientSecret = @ClientSecret
+                WHERE Id = @Id
                 ";
                 var rows = await connection.ExecuteAsync(
                     sql,
