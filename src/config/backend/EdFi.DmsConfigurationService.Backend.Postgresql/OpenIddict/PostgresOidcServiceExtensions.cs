@@ -3,13 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Data;
-using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 {
