@@ -5,9 +5,9 @@
 # 4. Run everything here from top to bottom.
 
 @dmsPort=8080
-@configPort=5126
+@configPort=8081
 
-@sysAdminId=sys-admin3
+@sysAdminId=sys-admin
 @sysAdminSecret=SdfH)98&Jk
 @encodedSysAdminSecret=SdfH%2998%26Jk
 
