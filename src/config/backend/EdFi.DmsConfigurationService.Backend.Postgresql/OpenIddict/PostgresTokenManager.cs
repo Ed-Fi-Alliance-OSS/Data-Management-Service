@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

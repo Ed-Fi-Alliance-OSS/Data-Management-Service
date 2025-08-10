@@ -3,17 +3,15 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System;
-using System.Linq;
 using System.Security.Claims;
 using System.Text;
-using System.Threading.Tasks;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
-namespace EdFi.DmsConfigurationService.Backend.OpenIddict
+namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
 {
     /// <summary>
     /// JWT Authentication configuration for validating tokens issued by ITokenManager implementations
@@ -154,15 +152,5 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict
                 AuthenticationSchemes = JwtSchemeName
             };
         }
-    }
-
-    /// <summary>
-    /// JWT token settings - moved here to be backend-agnostic
-    /// </summary>
-    public class JwtSettings
-    {
-        public string Issuer { get; set; } = "https://dms-config-service";
-        public string Audience { get; set; } = "dms-api";
-        public int ExpirationHours { get; set; } = 1;
     }
 }
