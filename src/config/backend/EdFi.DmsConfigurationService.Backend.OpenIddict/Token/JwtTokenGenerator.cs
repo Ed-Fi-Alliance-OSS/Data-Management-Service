@@ -3,17 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System;
-using System.Collections.Generic;
 using System.IdentityModel.Tokens.Jwt;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Security.Claims;
-using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
-using static Dapper.SqlMapper;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
 {

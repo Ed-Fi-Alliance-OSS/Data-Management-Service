@@ -7,15 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Client\**" />
     <Compile Remove="Connect\**" />
+    <EmbeddedResource Remove="Client\**" />
     <EmbeddedResource Remove="Connect\**" />
+    <None Remove="Client\**" />
     <None Remove="Connect\**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Client\" />
-    <Folder Include="Models\" />
-    <Folder Include="Repository\" />
   </ItemGroup>
 
   <ItemGroup>
@@ -29,6 +26,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Extensions\" />
   </ItemGroup>
 
 </Project>
