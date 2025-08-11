@@ -19,7 +19,10 @@ env:
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   PROVENANCE_FILE: "populated.template.intoto.jsonl"
 
-permissions: read-all
+permissions:
+  contents: write
+  actions: read
+  id-token: write
 
 jobs:
   build-populated-template:
