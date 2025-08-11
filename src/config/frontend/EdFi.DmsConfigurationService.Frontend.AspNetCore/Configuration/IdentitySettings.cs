@@ -18,7 +18,6 @@ public class IdentitySettings
     public required string RoleClaimType { get; set; }
     public required string ConfigServiceRole { get; set; }
     public required string ClientRole { get; set; }
-    public required string SigningKey { get; set; }
 }
 
 public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
@@ -58,11 +57,6 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
         if (string.IsNullOrEmpty(options.ClientRole))
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientRole");
-        }
-        if (string.Equals(_identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase)
-            && string.IsNullOrWhiteSpace(options.SigningKey))
-        {
-            return ValidateOptionsResult.Fail("Missing required IdentitySettings value: SigningKey");
         }
         return ValidateOptionsResult.Success;
     }

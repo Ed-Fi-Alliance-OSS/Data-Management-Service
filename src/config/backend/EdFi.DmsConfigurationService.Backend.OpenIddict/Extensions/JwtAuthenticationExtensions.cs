@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Claims;
-using System.Text;
+using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,14 +25,22 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
             JwtSettings jwtSettings,
             Microsoft.Extensions.Configuration.IConfiguration configuration)
         {
-            var signingKey = configuration["IdentitySettings:SigningKey"];
-            if (string.IsNullOrEmpty(signingKey))
+            var tokenManager = services.BuildServiceProvider().GetService<ITokenManager>();
+            if (tokenManager == null)
             {
-                throw new InvalidOperationException(
-                    "JWT signing key is not configured in IdentitySettings:SigningKey."
-                );
+                throw new InvalidOperationException("ITokenManager is not registered.");
             }
-            var key = Encoding.UTF8.GetBytes(signingKey);
+            List<(RSAParameters rsaParameters, string keyId)> publicKeysList = tokenManager.GetPublicKeys().ToList();
+            var publicKeys = publicKeysList
+                .Select(rsaParams =>
+                {
+                    var key = new RsaSecurityKey(rsaParams.rsaParameters)
+                    {
+                        KeyId = rsaParams.keyId
+                    };
+                    return (SecurityKey)key;
+                })
+                .ToList();
 
             // Add authentication without setting a default scheme to avoid conflicts
             services.AddAuthentication()
@@ -42,7 +50,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuerSigningKey = true,
-                        IssuerSigningKey = new SymmetricSecurityKey(key),
+                        IssuerSigningKeys = publicKeys,
                         ValidateIssuer = true,
                         ValidIssuer = jwtSettings.Issuer,
                         ValidateAudience = true,

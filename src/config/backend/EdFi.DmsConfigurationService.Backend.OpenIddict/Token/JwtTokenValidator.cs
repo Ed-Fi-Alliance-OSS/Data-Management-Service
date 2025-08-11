@@ -9,9 +9,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
 {
     public static class JwtTokenValidator
     {
+        /// <summary>
+        /// Validates a JWT token using a dictionary of public keys, selecting the correct key by 'kid' in the JWT header.
+        /// </summary>
+        /// <param name="token">JWT token string</param>
+        /// <param name="publicKeys">Dictionary of KeyId to SecurityKey</param>
+        /// <param name="issuer">Expected issuer</param>
+        /// <param name="audience">Expected audience</param>
+        /// <param name="jwtToken">Out: parsed JwtSecurityToken</param>
+        /// <returns>True if valid, false otherwise</returns>
         public static bool ValidateToken(
             string token,
-            SecurityKey signingKey,
+            IDictionary<string, SecurityKey> publicKeys,
             string issuer,
             string audience,
             out JwtSecurityToken? jwtToken)
@@ -20,6 +29,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             try
             {
                 var tokenHandler = new JwtSecurityTokenHandler();
+                var parsedToken = tokenHandler.ReadJwtToken(token);
+                var kid = parsedToken.Header.TryGetValue("kid", out var kidObj) ? kidObj?.ToString() : null;
+                if (string.IsNullOrEmpty(kid) || !publicKeys.TryGetValue(kid, out var signingKey))
+                {
+                    // No kid or key not found
+                    return false;
+                }
                 var validationParameters = new TokenValidationParameters
                 {
                     ValidateIssuerSigningKey = true,

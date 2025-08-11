@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Licensed to the Ed-Fi Alliance under one or more agreements.
+-- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+-- See the LICENSE and NOTICES files in the project root for more information
+DO $$
+DECLARE
+    v_keyid TEXT := 'sample-key-id-001';
+    v_encryptionKey TEXT := 'QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIzNDU2Nzg5MDEyMw==';
+    v_publickey TEXT := 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA8Vv0YDbGdIE00BFAxI0MT5pWD3DDsl/nWjqY9dionqkmHWo1q6JhDhXb3hYQZTdo3laEg4TroqkPv1FWYoF8HSSzKiOMgGB8M9nTMtHhHLDBoRO6Uxataoms6LkTM5U7BMwp8ik23DJKtae1B9hJokvcq6HI3zC/KVHWKDi7ehzNaBqGXBC4rB0FTgDgwbTXynDRdTCCEqCFVOnla1FzkrLogw3q+VXjDKrU1tbz08Vcwe6W/RBXB4yjBjWVTgjl6yqO7RdJT8+C16UQYFnizdYl0jFULAlohdvKeqomafFLp/n5piG5iCdNl1aVLe0PKfGrH7CroGAS1WfiBRIUuQIDAQAB';
+    v_privatekey TEXT := 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCu1OEMYKOkEt+5iy8bY8jQeIWPMExD1oyMxtxASzViQ9/x45XTwrdh5SmTJYBWdU6pl7q/70d0yyHAREJ9BYpD5SNQK3HSyxd5C2pSm9F0EM8SFlOT3Mpdg7uynWOfum3c+LaLRFLoPXvgfTZizK22NPASsiMDSNNNb3ZROs7F6Rm906yNRxx/9v6xFPAZRBWCoVsKGv6cCXMG2t5oXKMuA6bYfyDJt+BlMw9R86G5B1dmdpdADwBgjL8r4Yrqj74j666JhP+uJ3AeMHbQHSKOrnSa0a5ptdg6fongIPrMOA46DfoiUdj4vSviU7gN40ujPiXmAUaiwHly0jW4aRDlAgMBAAECggEBAJmwshW7bp9xqBLn9AVT9tis2lxBzQlltjCbMEuk0c0MdfWiZ7e8WJFKbv3X3bYjcX9MzvKjWmGloInwd7KICEAfUqfLSUhRGNVj35e3Oq2ZiS8RSW+WjJ8giwQ9r7JepO24BmDvMyLNyfRSnljELYEbkGAfEQB2KKrN7WkDFXqMNokwjBm4OiBiZ71PCmeDqxlp/Sai20ldDoUCEqNBvR1L6ZZqEs3LeDj0YZQNbAacy/aWHG1fl922XyNor82s0qUSqKXVkElJzS+TkWTLhwkAaYBy2dTZlsimLQ6smlWA1ddPJRm2VG9t+d8zQwiKpBq2bVwPJULMlI7h3xuq/RECgYEA54ApVeq891EjCTgHFmeLFav//ygUsLFISa0jdHnvsqaxwL3NDTcF95uQ6SRXTyQjge3pb/XiKKKx2SCiqleIJM73Cq5WoaHPjCzfE67rYk4wfiGhiYJWW/gnGf2xWSeSxD2pXwqZntRI5ZJym3Jyk5Wy9T5jvOqon6a0u1ZbWVcCgYEAwVVu8xJ/QBuhLYQLPSWHgTYJZZ7NlCi/vXhtbAFIPAT11YdL9X/4AFYd87vBHVSP25H1hvhKN8BZ7ReiijwzVutjvPgAN2mYOLgHWpi0AAps/sUilxX2H07+D7kWEDldcvjnpvrNwn9N9zrdh3vLhhoLoA01sioNZwhSqsHYtiMCgYEAjAJC/adeaeU0X1r3TmGJCK5hwRuoh8Rwh76i9srYYR/X2U3xOdDRVxNK7PYBp+efYfFVgVUgVpsvHLZUKtmNiVVyq48M7exC7fAlam4cBfRr95y3acbeG/lVDK8WF2mLpgv053ottpWFEPMlRUZObVvYQ+Jbx+HT4dqc68AqtzkCgYAlKf0X8LhRZH5JN5bJfEteBTstM6elEWg6TcoK9vwhvXpcP5PUb3MG7Yb4cWEf+D9nH9moxlXN/cXLk72FASmFTd5wVuQDwuKmFIolWjFPyLFHEDIkBO64+gBQmW2qVLyn+zzcll2zQ7GDEue+wYdQEfWmIKPvybGl2q25cWXtLQKBgBYXc+dv1iRWSrmMK5btnIS41DCqrxagD7MOOTT2iz+X/dtZTt+miuc7gAaXq2LxGP5Ci3aMGAhYaJezV4grY2BQKx+HH+wkKie8QNuLEWOLk6kYtAvU4ZOQ7b7Mutg2oUULWzy4cC/7RgWtUzxmIyHkw+EayhpR7mvg28rskGEb';
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM dmscs.OpenIddictKey WHERE KeyId = v_keyid
+    ) THEN
+        INSERT INTO dmscs.OpenIddictKey (KeyId, PublicKey, PrivateKey, IsActive)
+        VALUES (v_keyid, v_publickey, pgp_sym_encrypt(v_privatekey, 'QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIzNDU2Nzg5MDEyMw=='), TRUE);
+    END IF;
+END $$;

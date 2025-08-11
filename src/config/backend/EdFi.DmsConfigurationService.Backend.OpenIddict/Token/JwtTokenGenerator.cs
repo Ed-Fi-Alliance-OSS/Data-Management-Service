@@ -38,6 +38,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             string issuer,
             string audience,
             SecurityKey signingKey,
+            string keyId,
             IConfiguration? configuration = null
         )
         {
@@ -88,14 +89,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             {
                 claim.SetDestinations(OpenIddictConstants.Destinations.AccessToken);
             }
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(claims),
-                Expires = expiresAt.DateTime,
-                SigningCredentials = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256),
-                Issuer = issuer,
-                Audience = audience,
-            };
+            // Set KeyId on signing key to ensure kid is included in JWT header
+            signingKey.KeyId = keyId;
+
+            var signingCredentials = new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256);
 
             // Prevent claim type mapping so that claim types like the role URI are not mapped to short names
             JwtSecurityTokenHandler.DefaultMapInboundClaims = false;
@@ -118,8 +115,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 payload.Add(rolesClaim, roles);
             }
 
-            // Create the JWT with header and payload
-            var header = new JwtHeader(new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256));
+            // Create the JWT with header and payload, including kid
+            var header = new JwtHeader(signingCredentials);
             var token = new JwtSecurityToken(
                 header,
                 payload

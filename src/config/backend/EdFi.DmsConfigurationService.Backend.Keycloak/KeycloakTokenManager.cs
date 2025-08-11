@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Security.Cryptography;
 using Keycloak.Net.Models.Clients;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -57,5 +58,10 @@ public class KeycloakTokenManager(
             logger.LogError(ex, "Get access token error");
             return new TokenResult.FailureUnknown(ex.Message);
         }
+    }
+
+    IEnumerable<(RSAParameters RsaParameters, string KeyId)> ITokenManager.GetPublicKeys()
+    {
+        throw new NotImplementedException();
     }
 }
