@@ -22,5 +22,9 @@ public record QueryElement(
     /// <summary>
     /// The value being searched for
     /// </summary>
-    string Value
+    string Value,
+    /// <summary>
+    /// The type name of the value being searched for
+    /// </summary>
+    string Type
 );

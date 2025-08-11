@@ -24,7 +24,8 @@ public class QueryOpenSearchTests
             new(
                 "path.to.field", // QueryFieldName
                 [new JsonPath("$.path.to.field")], // DocumentPaths
-                "testValue" // Value
+                "testValue", // Value
+                "string" // Type
             ),
         ];
 
@@ -51,8 +52,8 @@ public class QueryOpenSearchTests
         // Arrange
         List<QueryElement> queryElements =
         [
-            new("path.to.field1", [new JsonPath("$.path.to.field1")], "value1"),
-            new("path.to.field2", [new JsonPath("$.path.to.field2")], "value2"),
+            new("path.to.field1", [new JsonPath("$.path.to.field1")], "value1", "string"),
+            new("path.to.field2", [new JsonPath("$.path.to.field2")], "value2", "string"),
         ];
 
         // Act
@@ -391,8 +392,8 @@ public class QueryOpenSearchTests
         // Arrange
         var queryElements = new[]
         {
-            new QueryElement("field1", new[] { new JsonPath("$.field1") }, "value1"),
-            new QueryElement("field2", new[] { new JsonPath("$.field2") }, "value2"),
+            new QueryElement("field1", new[] { new JsonPath("$.field1") }, "value1", "string"),
+            new QueryElement("field2", new[] { new JsonPath("$.field2") }, "value2", "string"),
         };
         var pagination = new PaginationParameters(
             Limit: 10,
@@ -550,7 +551,7 @@ public class QueryOpenSearchTests
         // Arrange
         var queryElements = new[]
         {
-            new QueryElement("field1", new[] { new JsonPath("$.field1") }, "value1"),
+            new QueryElement("field1", new[] { new JsonPath("$.field1") }, "value1", "string"),
         };
         var pagination = new PaginationParameters(
             Limit: null,
@@ -621,7 +622,12 @@ public class QueryOpenSearchTests
         const int ElementCount = 15000; // Simulates over than 10,000 elements
         var queryElements = Enumerable
             .Range(1, ElementCount)
-            .Select(i => new QueryElement($"field{i}", new[] { new JsonPath($"$.field{i}") }, $"value{i}"))
+            .Select(i => new QueryElement(
+                $"field{i}",
+                new[] { new JsonPath($"$.field{i}") },
+                $"value{i}",
+                "string"
+            ))
             .ToArray();
 
         var pagination = new PaginationParameters(
