@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.IdentityModel.Tokens.Jwt;
+using System.Security.Cryptography;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using Microsoft.Extensions.Configuration;
@@ -23,7 +24,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         private readonly IOptions<DatabaseOptions> _databaseOptions;
         private readonly ILogger<PostgresTokenManager> _logger;
         private readonly JwtSettings _jwtSettings;
-        private readonly SecurityKey _signingKey;
 
         public PostgresTokenManager(
             IOptions<DatabaseOptions> databaseOptions,
@@ -34,10 +34,27 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             _logger = logger;
             _jwtSettings = new JwtSettings();
             _jwtSettings = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenGenerator.GetJwtSettings(configuration);
-            _signingKey = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtSigningKeyHelper.GenerateSigningKey(configuration["IdentitySettings:SigningKey"]);
-
             _logger.LogInformation("PostgresTokenManager initialized with JWT settings - Issuer: {Issuer}, Audience: {Audience}",
                 _jwtSettings.Issuer, _jwtSettings.Audience);
+        }
+
+        /// <summary>
+        /// Loads and decrypts the active private key from the database, returning a SecurityKey for JWT signing.
+        /// </summary>
+        private async Task<(SecurityKey, string)> LoadActiveSigningKey()
+        {
+            await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            // Fetch and decrypt the private key using pgcrypto
+            var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(
+                "SELECT pgp_sym_decrypt(PrivateKey::bytea, @EncryptionKey) AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1",
+                new { EncryptionKey = "QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIzNDU2Nzg5MDEyMw==" });
+            if (string.IsNullOrEmpty(keyRecord.PrivateKey) || string.IsNullOrEmpty(keyRecord.KeyId))
+            {
+                throw new InvalidOperationException("No active private key or key id found in OpenIddictKey table.");
+            }
+            var signingKey = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtSigningKeyHelper.GenerateSigningKey(keyRecord.PrivateKey);
+            return (signingKey, keyRecord.KeyId);
         }
 
         public async Task<TokenResult> GetAccessTokenAsync(
@@ -150,7 +167,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             var tokenId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
             var expiration = now.AddHours(_jwtSettings.ExpirationHours);
-
+            var (signingKey, keyId) = await LoadActiveSigningKey();
             // Prepare roles from OpenIddictClientRole/OpenIddictRole tables
             var roles = (await connection.QueryAsync<string>(
                     @"SELECT r.Name
@@ -173,7 +190,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 expiration,
                 _jwtSettings.Issuer,
                 _jwtSettings.Audience,
-                _signingKey
+                signingKey,
+                keyId
             );
 
             // Store token in database
@@ -224,9 +242,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             try
             {
+                var signingKey = GetPublicKeys();
                 if (!EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenValidator.ValidateToken(
                         token,
-                        _signingKey,
+                        (IDictionary<string, SecurityKey>)signingKey,
                         _jwtSettings.Issuer,
                         _jwtSettings.Audience,
                         out var jwtToken
@@ -289,6 +308,32 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 _logger.LogError(ex, "Failed to revoke token");
                 return false;
             }
+        }
+        /// <summary>
+        /// Returns all active public keys for JWKS endpoint
+        /// </summary>
+        public IEnumerable<(RSAParameters RsaParameters, string KeyId)> GetPublicKeys()
+        {
+            var keys = new List<(RSAParameters, string)>();
+            try
+            {
+                using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+                connection.Open();
+                var keyRecords = connection.Query<(string KeyId, string PublicKey)>(
+                    "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = TRUE");
+                foreach (var record in keyRecords)
+                {
+                    var keyBytes = Convert.FromBase64String(record.PublicKey);
+                    using var rsa = RSA.Create();
+                    rsa.ImportSubjectPublicKeyInfo(keyBytes, out _);
+                    keys.Add((rsa.ExportParameters(false), record.KeyId));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to fetch public keys for JWKS");
+            }
+            return keys;
         }
     }
 

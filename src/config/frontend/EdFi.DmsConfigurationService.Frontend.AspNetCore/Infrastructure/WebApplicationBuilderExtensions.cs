@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
@@ -13,6 +14,7 @@ using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
+using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -26,7 +28,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
-using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -132,6 +133,7 @@ public static class WebApplicationBuilderExtensions
                     ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
+            webAppBuilder.Services.AddTransient<ITokenManager, Backend.Postgresql.OpenIddict.PostgresTokenManager>();
             webAppBuilder.Services.AddTransient<
                 IClaimsTableValidator,
                 Backend.Postgresql.ClaimsDataLoader.ClaimsTableValidator
@@ -164,6 +166,20 @@ public static class WebApplicationBuilderExtensions
         // Configure JWT Bearer based on identity provider
         if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
         {
+            var tokenManager = webApplicationBuilder.Services.BuildServiceProvider().GetService<ITokenManager>();
+
+            List<(RSAParameters rsaParameters, string keyId)> publicKeysList = tokenManager?.GetPublicKeys()?.ToList() ?? new List<(RSAParameters rsaParameters, string keyId)>();
+            var publicKeys = publicKeysList
+                .Select(rsaParams =>
+                {
+                    var key = new RsaSecurityKey(rsaParams.rsaParameters)
+                    {
+                        KeyId = rsaParams.keyId
+                    };
+                    return (SecurityKey)key;
+                })
+                .ToList();
+
             // For OpenIddict, we use our own validation
             webApplicationBuilder
                 .Services.AddAuthentication(options =>
@@ -192,9 +208,7 @@ public static class WebApplicationBuilderExtensions
                         ValidateIssuerSigningKey = true,
                         ValidIssuer = identitySettings.Authority,
                         RoleClaimType = identitySettings.RoleClaimType,
-                        IssuerSigningKey = new SymmetricSecurityKey(
-                            System.Text.Encoding.UTF8.GetBytes(identitySettings.SigningKey)
-                        )
+                        IssuerSigningKeys = publicKeys
                     };
 
                     options.Events = new JwtBearerEvents
