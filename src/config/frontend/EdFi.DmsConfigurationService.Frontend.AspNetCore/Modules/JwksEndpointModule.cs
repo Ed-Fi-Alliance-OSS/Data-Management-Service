@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Cryptography;
+using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -17,51 +18,28 @@ public class JwksEndpointModule : IEndpointModule
         endpoints.MapGet("/.well-known/jwks.json", GetJwksConfiguration);
     }
 
-    private IResult GetJwksConfiguration(IOptions<IdentitySettings> identitySettings)
+    private IResult GetJwksConfiguration(HttpContext httpContext, ITokenManager tokenManager)
     {
-        // Use the signing key from settings to create JWKS
-        var signingKey = identitySettings.Value.SigningKey;
-
-        if (string.IsNullOrEmpty(signingKey))
+        // Fetch public keys from the token manager (database-backed)
+        var publicKeys = tokenManager.GetPublicKeys();
+        if (publicKeys == null || !publicKeys.Any())
         {
-            // If no signing key is available, return an empty JWKS
             return Results.Ok(new { keys = Array.Empty<object>() });
         }
 
-        try
+        var jwks = new
         {
-            // Create RSA key from the base64 encoded key
-            using var rsa = RSA.Create();
-
-            // The signing key is stored as base64 in the settings
-            var keyBytes = Convert.FromBase64String(signingKey);
-            rsa.ImportRSAPrivateKey(keyBytes, out _);
-
-            // Export the RSA public key parameters
-            var rsaParameters = rsa.ExportParameters(false);
-
-            // Create JSON Web Key from RSA parameters
-            var jwk = new JsonWebKey
+            keys = publicKeys.Select(pk => new JsonWebKey
             {
                 Kty = "RSA",
                 Use = "sig",
-                Kid = CreateKeyId(rsaParameters),
-                E = Base64UrlEncoder.Encode(rsaParameters.Exponent ?? Array.Empty<byte>()),
-                N = Base64UrlEncoder.Encode(rsaParameters.Modulus ?? Array.Empty<byte>()),
-                Alg = "RS256"
-            };
-
-            // Return JWKS
-            var jwks = new { keys = new[] { jwk } };
-            return Results.Ok(jwks);
-        }
-        catch (Exception ex)
-        {
-            // In case of errors parsing the key, log and return empty JWKS
-            // In production, errors should be properly logged
-            Console.WriteLine($"Error creating JWKS: {ex.Message}");
-            return Results.Ok(new { keys = Array.Empty<object>() });
-        }
+                Kid = pk.KeyId,
+                E = Base64UrlEncoder.Encode(pk.RsaParameters.Exponent ?? Array.Empty<byte>()),
+                N = Base64UrlEncoder.Encode(pk.RsaParameters.Modulus ?? Array.Empty<byte>()),
+                Alg = "RS256",
+            }).ToArray()
+        };
+        return Results.Ok(jwks);
     }
 
     // Create a key ID from the RSA parameters
