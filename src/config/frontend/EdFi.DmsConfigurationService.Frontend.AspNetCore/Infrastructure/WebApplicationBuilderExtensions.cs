@@ -180,6 +180,8 @@ public static class WebApplicationBuilderExtensions
                 options =>
                 {
                     options.Authority = identitySettings.Authority;
+                    options.MetadataAddress =
+                        $"{identitySettings.Authority}/.well-known/openid-configuration";
                     options.SaveToken = true;
                     options.Audience = identitySettings.Audience;
                     options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
