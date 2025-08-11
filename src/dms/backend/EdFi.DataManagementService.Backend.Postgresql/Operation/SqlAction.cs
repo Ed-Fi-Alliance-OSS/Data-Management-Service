@@ -261,10 +261,10 @@ public partial class SqlAction() : ISqlAction
                 return;
             }
 
-            andConditions.Add(
-                $@"(SELECT hierarchy FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1}))
-                                         ? (SecurityElements->'EducationOrganization'->0->>'Id')"
-            );
+            andConditions.Add($@"
+                SecurityElements->'EducationOrganization'->0->>'Id' = ANY(
+                    ARRAY(SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1}))::text[]
+                )");
             parameters.Add(new NpgsqlParameter { Value = edOrgIds.Select(long.Parse).ToArray() });
         }
 
