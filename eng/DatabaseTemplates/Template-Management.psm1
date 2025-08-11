@@ -80,7 +80,9 @@ function Get-KeySecret() {
         [string]$CmsToken,
 
         [Parameter(Mandatory = $true)]
-        [string]$ClaimSetName
+        [string]$ClaimSetName,
+
+        [string]$ApplicationName = "Demo application"
     )
 
     $params = @{
@@ -93,6 +95,7 @@ function Get-KeySecret() {
 
     # Add an Application and get Key and Secret
     $params.ClaimSetName = $ClaimSetName
+    $params.ApplicationName = $ApplicationName
     $keySecret = Add-Application @params
 
     return $keySecret
@@ -472,13 +475,15 @@ function Build-Template {
         [string]$StandardVersion,
 
         [Parameter(Mandatory = $true)]
-        [string]$PackageVersion
+        [string]$PackageVersion,
+
+        [string]$ApplicationName = "Demo application"
     )
 
     Add-CmsClient -CmsUrl $CmsUrl
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    $keySecret = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs'
+    $keySecret = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap"
     $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $keySecret.Key -Secret $keySecret.Secret
 
     Invoke-SchoolYearLoader -DmsUrl $DmsUrl -DmsToken $dmsToken
@@ -500,7 +505,7 @@ function Build-Template {
             throw "PopulatedSampleDataDirectory must be specified when TemplateType is 'Populated'."
         }
 
-        $keySecret = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox'
+        $keySecret = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox"
         $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $keySecret.Key -Secret $keySecret.Secret
 
         Invoke-BulkLoad -BaseUrl $DmsUrl `
