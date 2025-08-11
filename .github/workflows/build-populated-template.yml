@@ -267,12 +267,34 @@ jobs:
 
       - name: Install-credential-handler
         run: |
-          Import-Module ./package-helpers.psm1
-          InstallCredentialHandler
+          Write-Host "Current directory: $(Get-Location)"
+          Write-Host "Files in current directory:"
+          Get-ChildItem | Select-Object Name, Length
+          Write-Host "Environment variables:"
+          Write-Host "ARTIFACTS_FEED_URL: $env:ARTIFACTS_FEED_URL"
+          Write-Host "ARTIFACTS_API_KEY length: $($env:ARTIFACTS_API_KEY.Length)"
+          Write-Host "VSS_NUGET_EXTERNAL_FEED_ENDPOINTS length: $($env:VSS_NUGET_EXTERNAL_FEED_ENDPOINTS.Length)"
+          
+          if (Test-Path "./package-helpers.psm1") {
+            Write-Host "package-helpers.psm1 found"
+            Import-Module ./package-helpers.psm1
+            InstallCredentialHandler
+          } else {
+            Write-Host "package-helpers.psm1 not found in current directory"
+            Write-Host "Looking for it in parent directories..."
+            $found = Get-ChildItem -Recurse -Name "package-helpers.psm1" | Select-Object -First 1
+            if ($found) {
+              Write-Host "Found at: $found"
+              Import-Module $found
+              InstallCredentialHandler
+            } else {
+              Write-Error "package-helpers.psm1 not found anywhere"
+            }
+          }
 
       - name: Push Populated Template Package to Azure
         run: |
-          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
+          $artifact = (Get-ChildItem -Name -Include *.nupkg)
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
             NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
