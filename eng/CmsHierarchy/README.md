@@ -1,3 +1,9 @@
+# NOTE: This utility is no longer the mechanism for adding new claimsets to the CMS
+CMS now loads claimset JSON files directly on startup, and has configuration settings
+for how to load them.
+# DO NOT create SQL scripts for claimset loading
+
+
 # CmsHierarchy
 
 The CmsHierarchy project provides tools for parsing XML files and transforming

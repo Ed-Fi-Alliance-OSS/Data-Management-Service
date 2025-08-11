@@ -46,6 +46,18 @@ param (
     $AddSmokeTestCredentials
 )
 
+
+# Configure environment variables for new claimset loading approach
+if($AddExtensionSecurityMetadata)
+{
+    # Set environment variables for file-based claimset loading
+    $env:DMS_CONFIG_DANGEROUSLY_ENABLE_DYNAMIC_CLAIMS_LOADING = "true"
+    $env:DMS_CONFIG_USE_CLAIMS_PATH = "true"
+    $env:DMS_CONFIG_CLAIMS_PATH = "/app/test-claims"
+    $env:DMS_CONFIG_USE_EMBEDDED_BASE_CLAIMS = "true"
+    Write-Output "Configured environment variables for file-based extension claimset loading"
+}
+
 $files = @(
     "-f",
     "postgresql.yml",
@@ -132,17 +144,6 @@ else {
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to load initial data, with exit code $LASTEXITCODE."
         }
-    }
-
-    if($AddExtensionSecurityMetadata)
-    {
-        Write-Output "Updating Claim Hierarchy..."
-        Import-Module ./setup-extension-security-metadata.psm1 -Force
-        UpdateExtensionSecurityMetadata -EnvironmentFile $EnvironmentFile
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to set up extension security metadata, with exit code $LASTEXITCODE."
-        }
-        docker restart dms-published-dms-1
     }
 
     Start-Sleep 10
