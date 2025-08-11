@@ -10,11 +10,26 @@ on:
   schedule:
     - cron: "30 8 * * 6" # Scheduled the job to run every Saturday at 8 AM UTC
 
-permissions: read-all
+permissions:
+  contents: write
+  actions: read
+  id-token: write
 
 jobs:
+  build-populated-template:
+    name: Build Populated Template Package
+    uses: ./.github/workflows/build-populated-template.yml
+    with:
+      standard_version: "5.2.0"
+      package_name: "EdFi.Dms.Populated.Template.PostgreSQL.5.2.0"
+      manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
+      provenance_file: "populated.template.intoto.jsonl"
+    secrets:
+      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+
   smoke-test:
     name: Smoke Tests - ${{ matrix.search-engine.name }}
+    needs: build-populated-template
     runs-on: ubuntu-latest
     strategy:
       matrix:
