@@ -123,6 +123,9 @@ jobs:
 
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
 
+          # Create unique application name using GitHub run information
+          $uniqueAppName = "Demo application ${{ github.run_id }}-${{ github.run_attempt }}"
+
           $buildArgs = @{
               TemplateType = '${{ inputs.template-type }}'
               DmsUrl = 'http://localhost:8080'
@@ -132,6 +135,7 @@ jobs:
               ConfigFilePath = './${{ inputs.template-type }}TemplateSettings.psd1'
               StandardVersion = '${{ env.STANDARD_VERSION }}'
               PackageVersion = $packageVersion
+              ApplicationName = $uniqueAppName
           }
 
           # Add PopulatedSampleDataDirectory only for Populated template
