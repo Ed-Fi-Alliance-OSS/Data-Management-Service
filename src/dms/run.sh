@@ -7,7 +7,6 @@
 set -e
 set +x
 
-envsubst < /app/appsettings.template.json > /app/appsettings.json
 # Safely extract a few environment variables from the admin connection string
 host=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
 port=$(echo ${DATABASE_CONNECTION_STRING_ADMIN} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
@@ -25,7 +24,7 @@ if [ "$NEED_DATABASE_SETUP" = true ]; then
   echo "Installing Data Management Service schema."
 
   installer_args="-e postgresql -c ${DATABASE_CONNECTION_STRING_ADMIN}"
-  if [ "$DMS_QUERYHANDLER" = "postgresql" ]; then
+  if [ "$AppSettings__QueryHandler" = "postgresql" ]; then
     installer_args="$installer_args --optimizeForQueryHandler"
   fi
 
@@ -37,7 +36,7 @@ else
   echo "Skipping Data Management Service schema installation."
 fi
 
-if [ "$USE_API_SCHEMA_PATH" = true ]; then
+if [ "$AppSettings__UseApiSchemaPath" = true ]; then
     echo "Using Api Schema Path."
 
     echo "$SCHEMA_PACKAGES" | jq -c '.[]' | while read -r item
@@ -47,7 +46,7 @@ if [ "$USE_API_SCHEMA_PATH" = true ]; then
         name=$(echo "$item" | jq -r '.name')
 
         echo "Downloading Package $name..."
-        dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p "$name" -d "${API_SCHEMA_PATH}" -v "$version" -f "$feedUrl"
+        dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p "$name" -d "${AppSettings__ApiSchemaPath}" -v "$version" -f "$feedUrl"
     done
 fi
 
