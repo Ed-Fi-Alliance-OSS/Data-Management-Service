@@ -328,14 +328,43 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             {
                 using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 connection.Open();
-                var keyRecords = connection.Query<(string KeyId, string PublicKey)>(
+                var keyRecords = connection.Query<(string KeyId, byte[] PublicKey)>(
                     "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = TRUE");
                 foreach (var record in keyRecords)
                 {
-                    var keyBytes = Convert.FromBase64String(record.PublicKey);
-                    using var rsa = RSA.Create();
-                    rsa.ImportSubjectPublicKeyInfo(keyBytes, out _);
-                    keys.Add((rsa.ExportParameters(false), record.KeyId));
+                    try
+                    {
+                        using var rsa = RSA.Create();
+                        // First try importing as SubjectPublicKeyInfo format (spki)
+                        try
+                        {
+                            rsa.ImportSubjectPublicKeyInfo(record.PublicKey, out _);
+                        }
+                        catch
+                        {
+                            // If that fails, try as PKCS#1 format
+                            try
+                            {
+                                rsa.ImportRSAPublicKey(record.PublicKey, out _);
+                            }
+                            catch
+                            {
+                                // Finally, try as Base64 string that needs decoding
+                                var publicKeyString = System.Text.Encoding.UTF8.GetString(record.PublicKey);
+                                var decodedKey = Convert.FromBase64String(publicKeyString);
+                                rsa.ImportSubjectPublicKeyInfo(decodedKey, out _);
+                            }
+                        }
+                        keys.Add((rsa.ExportParameters(false), record.KeyId));
+                        _logger.LogInformation(
+                            "Successfully loaded public key with ID: {KeyId}",
+                            record.KeyId
+                        );
+                    }
+                    catch (Exception keyEx)
+                    {
+                        _logger.LogError(keyEx, "Failed to process key with ID {KeyId}", record.KeyId);
+                    }
                 }
             }
             catch (Exception ex)
