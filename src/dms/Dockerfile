@@ -52,9 +52,6 @@ RUN apk --no-cache add bash=~5 postgresql16-client=~16 jq=~1.7
 FROM runtimebase AS setup
 
 ENV ASPNETCORE_HTTP_PORTS=8080
-ENV START_YEAR=1991
-ENV END_YEAR=2037
-ENV CURRENT_SCHOOL_YEAR=2025
 
 WORKDIR /app
 

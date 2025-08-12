@@ -43,6 +43,7 @@ See the [docs folder](./docs/) for additional developer-oriented documentation.
 - [Docker](./docs/DOCKER.md)
 - [Removing reference validation](./docs/REFERENCE-VALIDATION.md)
 - [Setting Up Development Environment](./docs/SETUP-DEV-ENVIRONMENT.md)
+- [School Year Loader](./docs/SCHOOL-YEAR-LOADER.md)
 
 ## Legal Information
 

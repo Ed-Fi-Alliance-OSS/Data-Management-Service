@@ -303,19 +303,19 @@ jobs:
           Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/discovery-spec.json" -OutFile "specs/discovery-spec.json"
 
       - name: Upload Resources Spec
-        uses: actions/upload-artifact@v4.5
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
           name: resources-spec
           path: specs/resources-spec.json
 
       - name: Upload Descriptors Spec
-        uses: actions/upload-artifact@v4.5
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
           name: descriptors-spec
           path: specs/descriptors-spec.json
 
       - name: Upload Discovery Spec
-        uses: actions/upload-artifact@v4.5
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
           name: discovery-spec
           path: specs/discovery-spec.json
