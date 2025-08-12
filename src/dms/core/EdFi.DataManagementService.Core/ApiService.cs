@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -361,9 +362,24 @@ internal class ApiService : IApiService
         return new PipelineProvider(steps);
     }
 
+    /// <summary>
+    /// Parses the excluded domains configuration setting into an array of domain names
+    /// </summary>
+    private string[] GetExcludedDomainsFromConfiguration()
+    {
+        return string.IsNullOrWhiteSpace(_appSettings.Value.DomainsExcludedFromOpenApi)
+            ? []
+            : _appSettings
+                .Value.DomainsExcludedFromOpenApi.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(d => d.Trim())
+                .ToArray();
+    }
+
     private JsonNode CreateResourceOpenApiSpecification()
     {
-        OpenApiDocument openApiDocument = new(_logger);
+        string[] excludedDomains = GetExcludedDomainsFromConfiguration();
+
+        OpenApiDocument openApiDocument = new(_logger, excludedDomains);
         return openApiDocument.CreateDocument(
             _apiSchemaProvider.GetApiSchemaNodes(),
             OpenApiDocument.OpenApiDocumentType.Resource
@@ -372,7 +388,9 @@ internal class ApiService : IApiService
 
     private JsonNode CreateDescriptorOpenApiSpecification()
     {
-        OpenApiDocument descriptorOpenApiDocument = new(_logger);
+        string[] excludedDomains = GetExcludedDomainsFromConfiguration();
+
+        OpenApiDocument descriptorOpenApiDocument = new(_logger, excludedDomains);
         return descriptorOpenApiDocument.CreateDocument(
             _apiSchemaProvider.GetApiSchemaNodes(),
             OpenApiDocument.OpenApiDocumentType.Descriptor

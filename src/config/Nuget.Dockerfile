@@ -7,7 +7,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0.12-alpine3.21@sha256:accc7352721d44ef62
 
 LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
-RUN apk --no-cache add gettext=~0 postgresql16-client=~16
+RUN apk --no-cache add postgresql16-client=~16
 
 FROM runtimebase AS setup
 
@@ -21,7 +21,6 @@ RUN echo "Tag Version:" $VERSION
 RUN wget -O /app/EdFi.DmsConfigurationService.zip "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_apis/packaging/feeds/EdFi/nuget/packages/EdFi.DmsConfigurationService/versions/${VERSION}/content" && \
     unzip /app/EdFi.DmsConfigurationService.zip -d /app/ && \
     rm -f /app/EdFi.DmsConfigurationService.zip
-COPY --chmod=600 appsettings.template.json /app/appsettings.template.json
 
 COPY --chmod=700 run.sh /app/run.sh
 EXPOSE ${ASPNETCORE_HTTP_PORTS}
