@@ -2,6 +2,7 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 
@@ -9,24 +10,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
 {
     public static class JwtSigningKeyHelper
     {
-        private const int MinimumKeyLengthBytes = 32;
-
-        public static SecurityKey GenerateSigningKey(string? key = null)
+        public static SecurityKey GenerateSigningKey(string key)
         {
-            key = key
-                ?? Environment.GetEnvironmentVariable("JWT_SIGNING_KEY");
-            if (string.IsNullOrEmpty(key))
-            {
-                throw new InvalidOperationException("JWT signing key is not configured.");
-            }
-            var keyBytes = Encoding.UTF8.GetBytes(key);
-            if (keyBytes.Length < MinimumKeyLengthBytes)
-            {
-                throw new InvalidOperationException(
-                    $"JWT signing key must be at least {MinimumKeyLengthBytes} bytes long. Current length: {keyBytes.Length}"
-                );
-            }
-            return new SymmetricSecurityKey(keyBytes);
+            var keyBytes = Convert.FromBase64String(key);
+            var rsa = RSA.Create();
+            rsa.ImportPkcs8PrivateKey(keyBytes, out _);
+            return new RsaSecurityKey(rsa) { CryptoProviderFactory = { CacheSignatureProviders = false } };
         }
     }
 }

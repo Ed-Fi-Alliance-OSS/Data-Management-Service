@@ -6,13 +6,33 @@ DO $$
 DECLARE
     v_keyid TEXT := 'sample-key-id-001';
     v_encryptionKey TEXT := 'QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIzNDU2Nzg5MDEyMw==';
-    v_publickey TEXT := 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA8Vv0YDbGdIE00BFAxI0MT5pWD3DDsl/nWjqY9dionqkmHWo1q6JhDhXb3hYQZTdo3laEg4TroqkPv1FWYoF8HSSzKiOMgGB8M9nTMtHhHLDBoRO6Uxataoms6LkTM5U7BMwp8ik23DJKtae1B9hJokvcq6HI3zC/KVHWKDi7ehzNaBqGXBC4rB0FTgDgwbTXynDRdTCCEqCFVOnla1FzkrLogw3q+VXjDKrU1tbz08Vcwe6W/RBXB4yjBjWVTgjl6yqO7RdJT8+C16UQYFnizdYl0jFULAlohdvKeqomafFLp/n5piG5iCdNl1aVLe0PKfGrH7CroGAS1WfiBRIUuQIDAQAB';
-    v_privatekey TEXT := 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCu1OEMYKOkEt+5iy8bY8jQeIWPMExD1oyMxtxASzViQ9/x45XTwrdh5SmTJYBWdU6pl7q/70d0yyHAREJ9BYpD5SNQK3HSyxd5C2pSm9F0EM8SFlOT3Mpdg7uynWOfum3c+LaLRFLoPXvgfTZizK22NPASsiMDSNNNb3ZROs7F6Rm906yNRxx/9v6xFPAZRBWCoVsKGv6cCXMG2t5oXKMuA6bYfyDJt+BlMw9R86G5B1dmdpdADwBgjL8r4Yrqj74j666JhP+uJ3AeMHbQHSKOrnSa0a5ptdg6fongIPrMOA46DfoiUdj4vSviU7gN40ujPiXmAUaiwHly0jW4aRDlAgMBAAECggEBAJmwshW7bp9xqBLn9AVT9tis2lxBzQlltjCbMEuk0c0MdfWiZ7e8WJFKbv3X3bYjcX9MzvKjWmGloInwd7KICEAfUqfLSUhRGNVj35e3Oq2ZiS8RSW+WjJ8giwQ9r7JepO24BmDvMyLNyfRSnljELYEbkGAfEQB2KKrN7WkDFXqMNokwjBm4OiBiZ71PCmeDqxlp/Sai20ldDoUCEqNBvR1L6ZZqEs3LeDj0YZQNbAacy/aWHG1fl922XyNor82s0qUSqKXVkElJzS+TkWTLhwkAaYBy2dTZlsimLQ6smlWA1ddPJRm2VG9t+d8zQwiKpBq2bVwPJULMlI7h3xuq/RECgYEA54ApVeq891EjCTgHFmeLFav//ygUsLFISa0jdHnvsqaxwL3NDTcF95uQ6SRXTyQjge3pb/XiKKKx2SCiqleIJM73Cq5WoaHPjCzfE67rYk4wfiGhiYJWW/gnGf2xWSeSxD2pXwqZntRI5ZJym3Jyk5Wy9T5jvOqon6a0u1ZbWVcCgYEAwVVu8xJ/QBuhLYQLPSWHgTYJZZ7NlCi/vXhtbAFIPAT11YdL9X/4AFYd87vBHVSP25H1hvhKN8BZ7ReiijwzVutjvPgAN2mYOLgHWpi0AAps/sUilxX2H07+D7kWEDldcvjnpvrNwn9N9zrdh3vLhhoLoA01sioNZwhSqsHYtiMCgYEAjAJC/adeaeU0X1r3TmGJCK5hwRuoh8Rwh76i9srYYR/X2U3xOdDRVxNK7PYBp+efYfFVgVUgVpsvHLZUKtmNiVVyq48M7exC7fAlam4cBfRr95y3acbeG/lVDK8WF2mLpgv053ottpWFEPMlRUZObVvYQ+Jbx+HT4dqc68AqtzkCgYAlKf0X8LhRZH5JN5bJfEteBTstM6elEWg6TcoK9vwhvXpcP5PUb3MG7Yb4cWEf+D9nH9moxlXN/cXLk72FASmFTd5wVuQDwuKmFIolWjFPyLFHEDIkBO64+gBQmW2qVLyn+zzcll2zQ7GDEue+wYdQEfWmIKPvybGl2q25cWXtLQKBgBYXc+dv1iRWSrmMK5btnIS41DCqrxagD7MOOTT2iz+X/dtZTt+miuc7gAaXq2LxGP5Ci3aMGAhYaJezV4grY2BQKx+HH+wkKie8QNuLEWOLk6kYtAvU4ZOQ7b7Mutg2oUULWzy4cC/7RgWtUzxmIyHkw+EayhpR7mvg28rskGEb';
+    -- This is the correct public key that matches the private key below
+    v_publickey TEXT := 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1/3QW79ZA8nfZS2XMvAsDg5n87alrhA29HVYGgzzeNlPuNKjrLiMiX8GJDLSJ/eYf9KOyWyMkHzCclN7ZoUTFDc1lTBk0oJL+pRPvbt+ORrW7oEWD4sq4NxUGVGbxsUf0R6FH8VScmWtoyoIqb0vxl6QLX4RccNLJVylD8/N4fNGKLFsVfPRxZlzuU0kPvdcosIKnuTBZWTt+b5DRu5ZJwD8BWVrUgm/1p/JM2wkA0jYgRAs/IVWMbq/VxYJOnXKEehjyDcc8yyGJuKn5J7MQuy8BlgtFndB2J+B2sWyNiYXVrz2SYOLQ8DU91pmUc4WF2f1GNkdZ8IdMZ9ZcBt0dQIDAQAB';
+    v_privatekey TEXT := 'MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDX/dBbv1kDyd9lLZcy8CwODmfztqWuEDb0dVgaDPN42U+40qOsuIyJfwYkMtIn95h/0o7JbIyQfMJyU3tmhRMUNzWVMGTSgkv6lE+9u345GtbugRYPiyrg3FQZUZvGxR/RHoUfxVJyZa2jKgipvS/GXpAtfhFxw0slXKUPz83h80YosWxV89HFmXO5TSQ+91yiwgqe5MFlZO35vkNG7lknAPwFZWtSCb/Wn8kzbCQDSNiBECz8hVYxur9XFgk6dcoR6GPINxzzLIYm4qfknsxC7LwGWC0Wd0HYn4HaxbI2JhdWvPZJg4tDwNT3WmZRzhYXZ/UY2R1nwh0xn1lwG3R1AgMBAAECggEAWFGS11FA5smvLUIdJ1kJyp2daAxxZuF+dytcYRqWm/3QGXUYNFIqNTbZngeh43Hcy7efZ0GZoKNDJ1h3hw43JPcGVAC72VAqHUZz7NMz48nTxSbHjIeNevDc+pViKz8DqZDfQoR/GAP3olZXwIB5fpXAQrngDDKdEaP2YqbIOvFsg6CaYDCI6GtWK1ybgXdbfHeFAQtzt7yOiR8yGNBlALszPWfLFJBd1YiwYJZdlGJkrvg9eMX7kJxqsK+0zi27j+ud1bxt2+6hClItXemHKKFCxWe3i/sJzyHLDk5xbpME5VK+qfW82tuXgFrWMAoEPPs27BeKv2JB19bhqZIRqQKBgQDkDo/CRcEWoeDWwixHGwv1Hc1LjA5mRJh4MFJC4Y98fFjykEcO7RgpVgstUPn+kwMN/TKbDypqXaOUSU+QffsytcROqEF37FxPLPk/MRj2q2Sp6AOguXHMorcS8KzFqJY/9Xm/VMcgHwAHSL6PWgaRlmqo9zYU3O2CfsLcdqNWwwKBgQDydMwlcQ5wPDtPnjO7b9GtwRxlbFz87LaelLr5RPZV2DjXQrAxDwec+ukdfJ+Y++E1GArFN4Kog0Dr10gNfvPlqMNye4M0QpdO3l5XEM7xQXl6xjWMpyClxrI/Q2wYM0NYqpNJooT8CXwYXhfevFHhQOT1F24LcAPq+xMd4U2EZwKBgGbPrb2ORssWNU98AAwaRFy/j7KUNFWkbPwaBKvEFjSvtkW8B1zSREc2VBmc3OcIjaL715mRz7Rd/IW4OxdPxDQLP7GaJtGSi9bh1ofHcZKal+oE/8WwdH4liNUQDUOaignRd45rAM4ZS6D9CXOEyVtO7Uy5Dfd/1c8zqFNNZLuTAoGAQAn1edY4uBBQoiDpDRLl0Pz2oRtUHEHxokUqdXhvkBECQmkM3IhZvG7Rb8Zg6SluPHXTMnANBLFWTnSYRWhIx1oh9XUGHKGSEXTOejSoVDS0/2am8jWae+7VWbxXKrUvjpXPPV29vkxLCKyhpWUcQ2C+mLXNjRvTDRev3u6JaPUCgYAT8JlV3G1pCh71LC7sUBZSh2Sh/3Za3078NmMlkModwaH1PKR+XEd/rHxnYDfZ+vmuZ2sMepnsTiVS0wSpCwgJXa8hemol/9tn02OYyYk1Q6CtTYLSjMexOf3BG43UWD8FQUJhqCzzhq4MT40SiSwL27clXM81r1td/GJHTtbBVA==';
 BEGIN
+    -- Update table schema to use bytea for binary storage
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'dmscs'
+        AND table_name = 'openiddictkey'
+        AND column_name = 'publickey'
+        AND data_type = 'bytea'
+    ) THEN
+        ALTER TABLE dmscs.OpenIddictKey
+        ALTER COLUMN PublicKey TYPE bytea USING PublicKey::bytea;
+    END IF;
+
     IF NOT EXISTS (
         SELECT 1 FROM dmscs.OpenIddictKey WHERE KeyId = v_keyid
     ) THEN
         INSERT INTO dmscs.OpenIddictKey (KeyId, PublicKey, PrivateKey, IsActive)
-        VALUES (v_keyid, v_publickey, pgp_sym_encrypt(v_privatekey, 'QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIzNDU2Nzg5MDEyMw=='), TRUE);
+        VALUES (v_keyid, decode(v_publickey, 'base64'), pgp_sym_encrypt(v_privatekey, v_encryptionKey), TRUE);
+    ELSE
+        -- Update existing key
+        UPDATE dmscs.OpenIddictKey
+        SET PublicKey = decode(v_publickey, 'base64'),
+            PrivateKey = pgp_sym_encrypt(v_privatekey, v_encryptionKey),
+            IsActive = TRUE
+        WHERE KeyId = v_keyid;
     END IF;
 END $$;

@@ -8,8 +8,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE TABLE IF NOT EXISTS dmscs.OpenIddictKey (
     Id SERIAL PRIMARY KEY,
     KeyId VARCHAR(64) NOT NULL,
-    PublicKey  VARCHAR(512) NOT NULL, -- base64-encoded
-    PrivateKey TEXT NOT NULL, -- base64-encoded PKCS#8
+    PublicKey BYTEA NOT NULL, -- binary format for public key
+    PrivateKey TEXT NOT NULL, -- encrypted with pgcrypto
     CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
     ExpiresAt TIMESTAMP,
     IsActive BOOLEAN NOT NULL DEFAULT TRUE
