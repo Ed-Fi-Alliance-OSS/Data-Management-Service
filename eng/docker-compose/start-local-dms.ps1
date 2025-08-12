@@ -184,4 +184,15 @@ else {
         Write-Output "Secret: $($credentials.Secret)"
         Write-Output "These credentials can be used for smoke testing the DMS API."
     }
+    Start-Sleep 20
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Restart config and dms apis to refresh openIddict keys"
+        Write-Output "Restarting dms-config-service"
+        docker restart dms-config-service
+        Start-Sleep 10
+        Write-Output "Restarting dms-local"
+        docker restart dms-local-dms-1
+    }
+
 }
