@@ -3,32 +3,56 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-name: Pkg EdFi.Dms.Minimal.Template.PostgreSQL
+name: Build Populated Template Package
+
 on:
-  release:
-    types:
-      - released
-  push:
-    tags:
-      - "v*.*.*"
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      standard_version:
+        description: "Ed-Fi Data Standard version"
+        required: true
+        type: string
+      package_name:
+        description: "Package name"
+        required: true
+        type: string
+      manifest_file:
+        description: "Manifest file path"
+        required: true
+        type: string
+      provenance_file:
+        description: "Provenance file name"
+        required: true
+        type: string
+    secrets:
+      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:
+        required: true
+    outputs:
+      hash-code:
+        description: "Hash code of the built package"
+        value: ${{ jobs.build-template.outputs.hash-code }}
+      dms-version:
+        description: "DMS version"
+        value: ${{ jobs.build-template.outputs.dms-version }}
+      sbom-hash-code:
+        description: "SBOM hash code"
+        value: ${{ jobs.generate-package-sbom.outputs.sbom-hash-code }}
 
 env:
-  STANDARD_VERSION: "5.2.0"
-  PACKAGE_NAME: "EdFi.Dms.Minimal.Template.PostgreSQL.5.2.0"
-  MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
-  PROVENANCE_FILE: "minimal.template.intoto.jsonl"
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
   ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
   ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
 
-permissions: read-all
+permissions:
+  contents: write
+  actions: read
+  id-token: write
 
 jobs:
   build-template:
-    name: Build Minimal Template Package
+    name: Build Populated Template Package
     if: ${{ github.event_name != 'release' }}
     runs-on: ubuntu-latest
     defaults:
@@ -46,9 +70,9 @@ jobs:
       - name: Checkout Ed-Fi-Data-Standard
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-            repository: Ed-Fi-Alliance-OSS/Ed-Fi-Data-Standard
-            path: Ed-Fi-Data-Standard/
-            ref: v${{ env.STANDARD_VERSION }} # Added v prefix to match the tag format
+          repository: Ed-Fi-Alliance-OSS/Ed-Fi-Data-Standard
+          path: Ed-Fi-Data-Standard/
+          ref: v${{ inputs.standard_version }} # Added v prefix to match the tag format
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
@@ -86,7 +110,7 @@ jobs:
           ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -enableConfig
         working-directory: eng/docker-compose/
 
-      - name: Generate Minimal Template package
+      - name: Generate Populated Template package
         run: |
           Import-Module ./Template-Management.psm1 -Force
 
@@ -95,13 +119,14 @@ jobs:
 
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
           Build-Template `
-                  -TemplateType Minimal `
+                  -TemplateType Populated `
                   -DmsUrl 'http://localhost:8080' `
                   -CmsUrl 'http://localhost:8081' `
                   -MinimalSampleDataDirectory '${{ github.workspace }}/Ed-Fi-Data-Standard/Descriptors' `
+                  -PopulatedSampleDataDirectory '${{ github.workspace }}/Ed-Fi-Data-Standard/Samples/Sample XML' `
                   -Extension 'ed-fi'`
-                  -ConfigFilePath './MinimalTemplateSettings.psd1' `
-                  -StandardVersion '${{ env.STANDARD_VERSION }}'`
+                  -ConfigFilePath './PopulatedTemplateSettings.psd1' `
+                  -StandardVersion '${{ inputs.standard_version }}'`
                   -PackageVersion $packageVersion `
                   -ApplicationName $uniqueAppName
         working-directory: eng/DatabaseTemplates/
@@ -127,7 +152,7 @@ jobs:
           }
         shell: pwsh
 
-      - name: Upload Logs
+      - name: Upload Docker Logs
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
@@ -141,33 +166,36 @@ jobs:
           "hash-code=$(sha256sum *.nupkg | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
         working-directory: eng/DatabaseTemplates/
 
-      - name: Upload Minimal Template Package as Artifact
+      - name: Upload Populated Template Package as Artifact
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: "${{ env.PACKAGE_NAME }}-NuGet"
+          name: "${{ inputs.package_name }}-NuGet"
           path: ${{ github.workspace }}/eng/DatabaseTemplates/*.nupkg
           if-no-files-found: error
           retention-days: 30
 
   generate-package-sbom:
-    name: Create Minimal Template SBOM
+    name: Create Populated Template SBOM
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: pwsh
     needs: build-template
+    permissions:
+      actions: read
+      contents: write
     outputs:
       sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
     steps:
-      - name: Get Minimal Template Package Artifacts
+      - name: Get Populated Template Package Artifacts
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
-          name: ${{ env.PACKAGE_NAME }}-NuGet
+          name: ${{ inputs.package_name }}-NuGet
 
-      - name: Generate Minimal Template Software Bill of Materials (SBOM)
+      - name: Generate Populated Template Software Bill of Materials (SBOM)
         run: |
-          $packageName = "${{ env.PACKAGE_NAME }}"
+          $packageName = "${{ inputs.package_name }}"
           $version = "${{ needs.build-template.outputs.dms-version }}"
 
           Get-ChildItem -Include "$packageName.*.nupkg" -Recurse | ForEach-Object { $_.FullName } > buildfilelist.txt
@@ -186,25 +214,25 @@ jobs:
 
           cp _manifest/spdx_2.2/manifest.spdx.* .
 
-      - name: Upload Minimal Template SBOM
+      - name: Upload Populated Template SBOM
         if: success()
         uses: actions/upload-artifact@26f96dfa697d77e81fd5907df203aa23a56210a8 # v4.3.0
         with:
-          name: ${{ env.PACKAGE_NAME }}-SBOM
-          path: ${{ env.MANIFEST_FILE }}
+          name: ${{ inputs.package_name }}-SBOM
+          path: ${{ inputs.manifest_file }}
           if-no-files-found: error
           retention-days: 30
 
-      - name: Generate Minimal Template SBOM Hash Code
+      - name: Generate Populated Template SBOM Hash Code
         id: sbom-hash-code
         shell: bash
         run: |
           # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
-          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
+          sbom_hash=$(sha256sum ./${{ inputs.manifest_file }} | awk '{split($0,a); print a[1]}')
           echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
 
   generate-package-provenance:
-    name: Create Minimal Template Provenance
+    name: Create DMS Provenance
     needs: build-template
     permissions:
       actions: read
@@ -213,13 +241,13 @@ jobs:
     uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
     with:
       base64-subjects: ${{ needs.build-template.outputs.hash-code }}
-      provenance-name: minimal.template.intoto.jsonl # env.PROVENANCE_FILE cannot be used in this context
+      provenance-name: ${{ inputs.provenance_file }}
       upload-assets: false
       # TODO: remove this after this issue is resolved: https://github.com/slsa-framework/slsa-github-generator/issues/876
       compile-generator: true
 
   publish-template-package:
-    name: Publish Minimal Template Package
+    name: Publish Populated Template Package
     needs:
       - build-template
       - generate-package-sbom
@@ -232,28 +260,28 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Get Minimal Template Package Artifact
+      - name: Get Populated Template Package Artifact
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
-          name: ${{ env.PACKAGE_NAME }}-NuGet
+          name: ${{ inputs.package_name }}-NuGet
 
       - name: Install-credential-handler
         run: |
-            Import-Module ./package-helpers.psm1
-            InstallCredentialHandler
+          Import-Module ./package-helpers.psm1
+          InstallCredentialHandler
 
-      - name: Push Minimal Template Package to Azure
+      - name: Push Populated Template Package to Azure
         run: |
-         $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
-         $arguments = @{
-           EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
-         }
-
-         $artifact | ForEach-Object {
-             $arguments.PackageFile = $_
-             ./build-dms.ps1 Push @arguments
+          $artifact = (Get-ChildItem -Name -Include *.nupkg)
+          $arguments = @{
+            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
           }
+
+          $artifact | ForEach-Object {
+              $arguments.PackageFile = $_
+              ./build-dms.ps1 Push @arguments
+           }
 
   promote-azure-package:
     name: Promote Azure Package
@@ -263,7 +291,7 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Promote Minimal Template Azure Package
+      - name: Promote Populated Template Azure Package
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
@@ -271,33 +299,33 @@ jobs:
             ViewId      = "release"
             ReleaseRef  = "${{ github.ref_name }}"
             Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
-            PackageName = "${{ env.PACKAGE_NAME}}"
+            PackageName = "${{ inputs.package_name}}"
           }
 
           Import-Module ./package-helpers.psm1
           Invoke-Promote @arguments
 
   attach-sbom-and-provenance-to-release:
-    name: Attach Minimal Template SBOM and Provenance to GitHub Release
+    name: Attach Populated Template SBOM and Provenance to GitHub Release
     runs-on: ubuntu-latest
     needs:
       - generate-package-sbom
       - generate-package-provenance
-    if: ${{ github.event_name == 'push' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/') }} # Only run on releases
     permissions:
       contents: write
     steps:
       - name: Download SBOM Artifact
         uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
         with:
-          name: "${{ env.PACKAGE_NAME }}-SBOM"
-          path: ${{ env.MANIFEST_FILE }}
+          name: "${{ inputs.package_name }}-SBOM"
+          path: ${{ inputs.manifest_file }}
           sha256: "${{ needs.generate-package-sbom.outputs.sbom-hash-code }}"
 
       - name: Download Provenance Artifact
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
         with:
-          name: ${{ env.PROVENANCE_FILE }}
+          name: ${{ inputs.provenance_file }}
 
       - name: Attach SBOM to Release
         shell: pwsh
@@ -305,8 +333,8 @@ jobs:
           $release = "${{ github.ref_name }}"
           $repo = "${{ github.repository }}"
           $token = "${{ secrets.GITHUB_TOKEN }}"
-          $file = "${{ env.MANIFEST_FILE }}"
-          $uploadName = "${{ env.PACKAGE_NAME }}-SBOM.zip"
+          $file = "${{ inputs.manifest_file }}"
+          $uploadName = "${{ inputs.package_name }}-SBOM.zip"
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
@@ -330,8 +358,8 @@ jobs:
           $release = "${{ github.ref_name }}"
           $repo = "${{ github.repository }}"
           $token = "${{ secrets.GITHUB_TOKEN }}"
-          $file = "${{ env.PROVENANCE_FILE }}"
-          $uploadName = "${{ env.PROVENANCE_FILE }}"
+          $file = "${{ inputs.provenance_file }}"
+          $uploadName = "${{ inputs.provenance_file }}"
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
