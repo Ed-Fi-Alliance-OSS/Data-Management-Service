@@ -20,7 +20,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
-    <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="OpenIddict.Abstractions" />
   </ItemGroup>
 
