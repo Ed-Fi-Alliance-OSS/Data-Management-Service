@@ -47,7 +47,12 @@ param (
 
     # Add smoke test credentials
     [Switch]
-    $AddSmokeTestCredentials
+    $AddSmokeTestCredentials,
+
+    # Add smoke test credentials
+    [string]
+    [ValidateSet("keycloak", "self-contained")]
+    $IdentityProvider="keycloak"
 )
 
 
@@ -109,23 +114,24 @@ else {
     )
     if ($r) { $upArgs += @("--build") }
 
+    if($IdentityProvider -eq "keycloak")
+    {
+        Write-Output "Starting Keycloak..."
+        docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
+        }
 
-    Write-Output "Starting Keycloak..."
-    docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
+        Write-Output "Running setup-keycloak.ps1 scripts..."
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-keycloak.ps1
+
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
-
-    Write-Output "Running setup-keycloak.ps1 scripts..."
-    # Create client with default edfi_admin_api/full_access scope
-    ./setup-keycloak.ps1
-
-    # Create client with edfi_admin_api/readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
-
-    # Create client with edfi_admin_api/authMetadata_readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
-
     Write-Output "Starting Postgresql..."
     docker compose -f postgresql.yml --env-file $EnvironmentFile -p dms-local up $upArgs
     if ($LASTEXITCODE -ne 0) {
@@ -142,6 +148,8 @@ else {
             throw "Failed to load initial data, with exit code $LASTEXITCODE."
         }
     }
+
+
     Write-Output "Starting locally-built DMS"
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
 
@@ -150,7 +158,18 @@ else {
     }
 
     Start-Sleep 20
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Starting self-contained initialization script..."
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-openiddict.ps1
 
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+    }
     Write-Output "Running connector setup..."
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 
@@ -159,7 +178,7 @@ else {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
         Write-Output "Creating smoke test credentials..."
         $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
-        
+
         Write-Output "Smoke test credentials created successfully!"
         Write-Output "Key: $($credentials.Key)"
         Write-Output "Secret: $($credentials.Secret)"
