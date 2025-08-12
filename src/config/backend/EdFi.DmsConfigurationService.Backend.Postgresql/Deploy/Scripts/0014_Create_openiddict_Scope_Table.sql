@@ -5,7 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS dmscs.OpenIddictScope (
     Id uuid NOT NULL PRIMARY KEY,
-    Name varchar(100) NOT NULL,
+    Name varchar(100) NOT NULL  UNIQUE,
     Description varchar(200)
 );
 

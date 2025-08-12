@@ -6,7 +6,7 @@
 
 CREATE TABLE IF NOT EXISTS dmscs.OpenIddictApplication (
     Id uuid NOT NULL PRIMARY KEY,
-    ClientId varchar(100) NOT NULL,
+    ClientId varchar(100) NOT NULL UNIQUE,
     ClientSecret varchar(256),
     DisplayName varchar(200),
     RedirectUris varchar(200)[],
