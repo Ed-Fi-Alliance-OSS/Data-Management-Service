@@ -1,11 +1,5 @@
 # School Year Loader
 
-# Load custom range of school years with auto-calculated current year
-.\eng\Load-SchoolYears.ps1 -StartYear 2020 -EndYear 2030
-
-# Load custom range with explicit current school year
-.\eng\Load-SchoolYears.ps1 -StartYear 2020 -EndYear 2030 -CurrentSchoolYear 2024
-
 The School Year Loader is a PowerShell-based utility that loads school year data into the Ed-Fi Data Management Service (DMS). This replaces the previous C# application with a more maintainable PowerShell solution that is automatically tested through the database template management system.
 
 ## Components
