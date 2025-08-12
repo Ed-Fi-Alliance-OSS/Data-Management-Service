@@ -80,19 +80,11 @@ try {
         throw "StartYear ($StartYear) cannot be greater than EndYear ($EndYear)"
     }
 
+    Import-Module (Join-Path $PSScriptRoot "Dms-Management.psm1") -Force
+
     # Auto-calculate CurrentSchoolYear if not provided (0 means auto-calculate)
     if ($CurrentSchoolYear -eq 0) {
-        $currentDate = Get-Date
-        $currentYear = $currentDate.Year
-        $currentMonth = $currentDate.Month
-
-        # If current date is after June, use the next school year
-        if ($currentMonth -gt 6) {
-            $CurrentSchoolYear = $currentYear + 1
-        } else {
-            $CurrentSchoolYear = $currentYear
-        }
-
+        $CurrentSchoolYear = Get-CurrentSchoolYear
         Write-Host "Auto-calculated Current School Year: $CurrentSchoolYear (based on current date)" -ForegroundColor Cyan
     } else {
         # Validate explicitly provided CurrentSchoolYear
@@ -114,7 +106,6 @@ try {
     Write-Host "  Claim Set: $ClaimSetName"
     Write-Host
 
-    Import-Module (Join-Path $PSScriptRoot "Dms-Management.psm1") -Force
     # Step 1: Setup CMS client and get token
     Write-Host "Step 1: Connecting to Configuration Management Service..." -ForegroundColor Yellow
     Add-CmsClient -CmsUrl $CmsUrl

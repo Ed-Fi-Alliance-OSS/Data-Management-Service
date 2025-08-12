@@ -58,17 +58,7 @@ function Invoke-SchoolYearLoader {
 
     # Auto-calculate CurrentSchoolYear if not provided (0 means auto-calculate)
     if ($CurrentSchoolYear -eq 0) {
-        $currentDate = Get-Date
-        $currentYear = $currentDate.Year
-        $currentMonth = $currentDate.Month
-
-        # If current date is after June, use the next school year
-        if ($currentMonth -gt 6) {
-            $CurrentSchoolYear = $currentYear + 1
-        } else {
-            $CurrentSchoolYear = $currentYear
-        }
-
+        $CurrentSchoolYear = Get-CurrentSchoolYear
         Write-Host "Auto-calculated Current School Year: $CurrentSchoolYear (based on current date)" -ForegroundColor Cyan
     }
 
