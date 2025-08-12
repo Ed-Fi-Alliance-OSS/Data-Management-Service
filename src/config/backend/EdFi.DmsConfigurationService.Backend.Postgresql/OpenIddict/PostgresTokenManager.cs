@@ -7,6 +7,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -23,6 +24,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
     {
         private readonly IOptions<DatabaseOptions> _databaseOptions;
         private readonly ILogger<PostgresTokenManager> _logger;
+        private readonly IConfiguration _configuration;
         private readonly JwtSettings _jwtSettings;
 
         public PostgresTokenManager(
@@ -32,6 +34,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             _databaseOptions = databaseOptions;
             _logger = logger;
+            _configuration = configuration;
             _jwtSettings = new JwtSettings();
             _jwtSettings = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenGenerator.GetJwtSettings(configuration);
             _logger.LogInformation("PostgresTokenManager initialized with JWT settings - Issuer: {Issuer}, Audience: {Audience}",
@@ -47,7 +50,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             await connection.OpenAsync();
             // Fetch and decrypt the private key using pgcrypto
             // Get encryption key from IdentitySettings section in configuration
-            var encryptionKey = _jwtSettings.EncryptionKey;
+            var encryptionKey = _configuration.GetValue<string>("IdentitySettings:EncryptionKey") ?? string.Empty;
+            if (string.IsNullOrEmpty(encryptionKey))
+            {
+                throw new InvalidOperationException("No active EncryptionKey found.");
+            }
             var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(
                 "SELECT pgp_sym_decrypt(PrivateKey::bytea, @EncryptionKey) AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1",
                 new { EncryptionKey = encryptionKey });
@@ -55,7 +62,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             {
                 throw new InvalidOperationException("No active private key or key id found in OpenIddictKey table.");
             }
-            var signingKey = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtSigningKeyHelper.GenerateSigningKey(keyRecord.PrivateKey);
+            var signingKey = JwtSigningKeyHelper.GenerateSigningKey(keyRecord.PrivateKey);
             return (signingKey, keyRecord.KeyId);
         }
 
