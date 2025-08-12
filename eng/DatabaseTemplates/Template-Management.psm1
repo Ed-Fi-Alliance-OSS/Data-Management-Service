@@ -7,6 +7,7 @@
 
 Import-Module ../Package-Management.psm1 -Force
 Import-Module ../Dms-Management.psm1 -Force
+Import-Module ../SchoolYear-Loader.psm1 -Force -Global
 
 <#
 .SYNOPSIS
@@ -268,69 +269,6 @@ function Invoke-DatabaseDump {
     Write-Host
     Write-Host "Backup Created: " -ForegroundColor Green -NoNewline
     Write-Host (Resolve-Path $backupPath)
-    Write-Host
-}
-
-<#
-.SYNOPSIS
-    Loads school year types into the Ed-Fi Data Management Service (DMS).
-
-.DESCRIPTION
-    Iterates through a range of school years and posts each as a `schoolYearType` entity
-    to the DMS API. Marks one year as the current school year. This function helps seed
-    the system with school year data typically required before loading other sample data.
-
-.PARAMETER StartYear
-    The first school year to load. Defaults to 1991.
-
-.PARAMETER EndYear
-    The last school year to load. Defaults to 2037.
-
-.PARAMETER CurrentSchoolYear
-    The school year to mark as the current one. Defaults to 2025.
-
-.PARAMETER DmsUrl
-    The base URL of the Data Management Service API.
-
-.PARAMETER DmsToken
-    The authentication token used to authorize requests to the DMS API.
-
-.EXAMPLE
-    Invoke-SchoolYearLoader -DmsUrl "http://localhost:8080" -DmsToken $token
-
-.NOTES
-    This function requires the helper function `Invoke-Api` to send HTTP requests.
-#>
-function Invoke-SchoolYearLoader {
-    param (
-        [int]$StartYear = 1991,
-        [int]$EndYear = 2037,
-        [int]$CurrentSchoolYear = 2025,
-        [string]$DmsUrl,
-        [string]$DmsToken
-    )
-
-    for ($year = $StartYear; $year -le $EndYear; $year++) {
-        $schoolYearType = @{
-            schoolYear            = $year
-            currentSchoolYear     = ($year -eq $CurrentSchoolYear)
-            schoolYearDescription = "$($year - 1)-$year"
-        }
-
-        $invokeParams = @{
-            Method      = 'Post'
-            BaseUrl     = $DmsUrl
-            RelativeUrl = 'data/ed-fi/schoolYearTypes'
-            ContentType = 'application/json'
-            Body        = ($schoolYearType | ConvertTo-Json -Depth 5)
-            Headers     = @{ Authorization = "bearer $DmsToken" }
-        }
-
-        Invoke-Api @invokeParams | Out-Null
-    }
-
-    Write-Host
-    Write-Host "School Years Loaded" -ForegroundColor Green -NoNewline
     Write-Host
 }
 

@@ -449,4 +449,40 @@ function Get-DmsToken {
     return $response.access_token
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Invoke-Api
+<#
+.SYNOPSIS
+    Calculates the current school year based on the current date.
+
+.DESCRIPTION
+    Determines the school year using the logic: if current month > June,
+    use next calendar year; otherwise use current calendar year.
+    This follows the typical academic year pattern where the school year
+    begins in late summer/early fall and ends the following spring/summer.
+
+.OUTPUTS
+    [int] The calculated school year
+
+.EXAMPLE
+    $currentSchoolYear = Get-CurrentSchoolYear
+    # Returns 2026 if current date is August 2025 (month > 6)
+    # Returns 2025 if current date is March 2025 (month <= 6)
+
+.NOTES
+    The cutoff is June (month 6). Any date after June is considered to be
+    in the next school year cycle.
+#>
+function Get-CurrentSchoolYear {
+    param()
+
+    $currentDate = Get-Date
+    $currentYear = $currentDate.Year
+    $currentMonth = $currentDate.Month
+
+    if ($currentMonth -gt 6) {
+        return $currentYear + 1
+    } else {
+        return $currentYear
+    }
+}
+
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Invoke-Api

@@ -52,8 +52,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Postgresql.Tests.Integration", "backend\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj", "{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Frontend.SchoolYearLoader", "frontend\EdFi.DataManagementService.Frontend.SchoolYearLoader\EdFi.DataManagementService.Frontend.SchoolYearLoader.csproj", "{83396000-28B3-19EC-29E1-90CBCB7C2C2B}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.OpenSearch.Tests.Unit", "backend\EdFi.DataManagementService.Backend.OpenSearch.Tests.Unit\EdFi.DataManagementService.Backend.OpenSearch.Tests.Unit.csproj", "{64EB383E-E689-4C7C-B0BA-16790DE03F97}"
 EndProject
 Global
@@ -130,10 +128,6 @@ Global
 		{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC}.Release|Any CPU.Build.0 = Release|Any CPU
-		{83396000-28B3-19EC-29E1-90CBCB7C2C2B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{83396000-28B3-19EC-29E1-90CBCB7C2C2B}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{83396000-28B3-19EC-29E1-90CBCB7C2C2B}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{83396000-28B3-19EC-29E1-90CBCB7C2C2B}.Release|Any CPU.Build.0 = Release|Any CPU
 		{64EB383E-E689-4C7C-B0BA-16790DE03F97}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{64EB383E-E689-4C7C-B0BA-16790DE03F97}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{64EB383E-E689-4C7C-B0BA-16790DE03F97}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -160,7 +154,6 @@ Global
 		{CEACE0CE-FE27-4039-9F30-F585B418FCEB} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
 		{116E8864-FF2F-B2C0-8009-741468CA9346} = {2B193382-DF21-4223-888A-CE5CD3B52C25}
 		{30E62A03-302F-95A5-32B8-E2D4D5E0A3AC} = {75AE8F7B-B980-48AE-8518-073830FA6471}
-		{83396000-28B3-19EC-29E1-90CBCB7C2C2B} = {5B7BB270-905C-4D2F-BD3C-3374707FE1E3}
 		{64EB383E-E689-4C7C-B0BA-16790DE03F97} = {75AE8F7B-B980-48AE-8518-073830FA6471}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
