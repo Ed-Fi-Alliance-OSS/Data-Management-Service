@@ -30,6 +30,7 @@ services:
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       AppSettings__PathBase: ${DMS_CONFIG_PATH_BASE:-}
       AppSettings__UseReverseProxyHeaders: ${DMS_CONFIG_USE_REVERSE_PROXY_HEADERS:-false}
+      IdentitySettings__EncryptionKey: ${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:-}
     ports:
       - '127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}'
     networks:
