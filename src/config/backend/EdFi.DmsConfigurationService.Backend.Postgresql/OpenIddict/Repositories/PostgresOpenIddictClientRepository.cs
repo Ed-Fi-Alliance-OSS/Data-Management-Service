@@ -333,7 +333,7 @@ UPDATE dmscs.OpenIddictApplication
                 );
                 if (rows == 0)
                 {
-                    return new ClientResetResult.FailureUnknown($"Client {clientUuid} not found");
+                    return new ClientResetResult.FailureClientNotFound($"Client {clientUuid} not found");
                 }
 
                 return new ClientResetResult.Success(newSecret);
