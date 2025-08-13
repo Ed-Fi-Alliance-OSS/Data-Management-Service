@@ -13,7 +13,7 @@ using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 {
-    public static class PostgresOidcServiceExtensions
+    public static class PostgresOpenIddictServiceExtensions
     {
         public static IServiceCollection AddPostgresOpenIddictStores(this IServiceCollection services, IConfiguration configuration, string authority)
         {
