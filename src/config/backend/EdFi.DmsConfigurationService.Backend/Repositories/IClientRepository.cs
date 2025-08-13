@@ -48,6 +48,8 @@ public record ClientDeleteResult
 
     public record FailureIdentityProvider(IdentityProviderError IdentityProviderError) : ClientDeleteResult();
 
+    public record FailureClientNotFound(string FailureMessage) : ClientDeleteResult();
+
     public record FailureUnknown(string FailureMessage) : ClientDeleteResult();
 }
 
