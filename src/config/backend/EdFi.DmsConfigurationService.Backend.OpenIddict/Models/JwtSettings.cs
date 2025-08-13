@@ -9,6 +9,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
     {
         public string Issuer { get; set; } = string.Empty;
         public string Audience { get; set; } = string.Empty;
-        public int ExpirationHours { get; set; } = 1;
+        public int ExpirationMinutes { get; set; } = 30;
     }
 }

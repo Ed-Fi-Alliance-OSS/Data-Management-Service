@@ -49,7 +49,7 @@ param (
     [Switch]
     $AddSmokeTestCredentials,
 
-    # Add smoke test credentials
+    # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
     $IdentityProvider="keycloak"
