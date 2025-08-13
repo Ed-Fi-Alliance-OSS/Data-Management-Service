@@ -133,6 +133,10 @@ public class IdentityModule : IEndpointModule
             TokenResult.FailureIdentityProvider failureIdentityProvider =>
                 failureIdentityProvider.IdentityProviderError switch
                 {
+                    InvalidClient unauthorized => FailureResults.InvalidClient(
+                        unauthorized.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
                     Unauthorized unauthorized => FailureResults.Unauthorized(
                         unauthorized.FailureMessage,
                         httpContext.TraceIdentifier
