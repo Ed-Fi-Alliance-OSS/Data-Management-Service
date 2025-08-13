@@ -29,7 +29,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 {
                     Issuer = issuer ?? String.Empty,
                     Audience = audience ?? String.Empty,
-                    ExpirationHours = 1,
+                    ExpirationMinutes = 30,
                 },
                 configuration
             );

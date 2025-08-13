@@ -119,10 +119,28 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
                 if (applicationInfo == null)
                 {
-                    _logger.LogWarning("Invalid client credentials for client: {ClientId}", clientId);
-                    return new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unauthorized("Invalid client credentials")
+                    string applicationSqlByClientId =
+                    @"SELECT a.ClientId
+                      FROM dmscs.OpenIddictApplication a
+                      WHERE a.ClientId = @ClientId";
+                    var applicationInfoByClient = await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
+                        applicationSqlByClientId,
+                        new { ClientId = clientId }
                     );
+                    if (applicationInfoByClient == null)
+                    {
+                        _logger.LogWarning("Invalid client: {ClientId}", clientId);
+                        return new TokenResult.FailureIdentityProvider(
+                            new IdentityProviderError.InvalidClient("Invalid client or Invalid client credentials")
+                        );
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Invalid client credentials for client: {ClientId}", clientId);
+                        return new TokenResult.FailureIdentityProvider(
+                            new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials")
+                        );
+                    }
                 }
 
                 _logger.LogDebug("Application found: {ApplicationId}, Display Name: {DisplayName}",
@@ -137,7 +155,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 );
 
                 // Calculate expires_in (seconds)
-                var expiresIn = (_jwtSettings.ExpirationHours * 3600);
+                var expiresIn = (_jwtSettings.ExpirationMinutes * 60);
                 // Compose the response object
                 var response = new
                 {
@@ -145,7 +163,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     expires_in = expiresIn,
                     refresh_expires_in = 0,
                     token_type = "Bearer",
-                    // ["not-before-policy"] = 0,
                     scope = scope ?? string.Join(",", applicationInfo.Scopes ?? new string[0])
                 };
 
@@ -175,7 +192,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             var tokenId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
-            var expiration = now.AddHours(_jwtSettings.ExpirationHours);
+            var expiration = now.AddMinutes(_jwtSettings.ExpirationMinutes);
             var (signingKey, keyId) = await LoadActiveSigningKey();
             // Prepare roles from OpenIddictClientRole/OpenIddictRole tables
             var roles = (await connection.QueryAsync<string>(
