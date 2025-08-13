@@ -54,8 +54,4 @@
     <None Remove="OpenIddict\test-jwt-tokens.http" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="OpenIddict\PostgresOidcServiceExtensions.cs" />
-  </ItemGroup>
-
 </Project>
