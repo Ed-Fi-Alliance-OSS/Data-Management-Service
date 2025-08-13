@@ -59,6 +59,8 @@ public record ClientResetResult
 
     public record FailureIdentityProvider(IdentityProviderError IdentityProviderError) : ClientResetResult();
 
+    public record FailureClientNotFound(string FailureMessage) : ClientResetResult();
+
     public record FailureUnknown(string FailureMessage) : ClientResetResult();
 }
 
