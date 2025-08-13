@@ -303,7 +303,7 @@ UPDATE dmscs.OpenIddictApplication
                 var rows = await connection.ExecuteAsync(sql, new { Id = Guid.Parse(clientUuid) });
                 if (rows == 0)
                 {
-                    return new ClientDeleteResult.FailureUnknown($"Client {clientUuid} not found");
+                    return new ClientDeleteResult.FailureClientNotFound($"Client {clientUuid} not found");
                 }
 
                 return new ClientDeleteResult.Success();
