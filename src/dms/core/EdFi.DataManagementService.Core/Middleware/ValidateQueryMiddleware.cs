@@ -199,8 +199,9 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
             string jsonPathString = queryElementAndType.DocumentPathsAndTypes[0].JsonPathString;
             string queryFieldName = queryElementAndType.QueryFieldName;
             string queryFieldValue = queryElementAndType.Value;
+            string type = queryElementAndType.DocumentPathsAndTypes[0].Type;
 
-            switch (queryElementAndType.DocumentPathsAndTypes[0].Type)
+            switch (type)
             {
                 case "boolean":
                     if (!bool.TryParse(queryFieldValue, out _))
@@ -271,7 +272,7 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
                     break;
                 default:
                     throw new InvalidOperationException(
-                        $"ValidateQueryMiddleware found an unsupported type {queryElementAndType.DocumentPathsAndTypes[0].Type}"
+                        $"ValidateQueryMiddleware found an unsupported type {type}"
                     );
             }
 
@@ -282,7 +283,8 @@ internal class ValidateQueryMiddleware(ILogger _logger, int _maximumPageSize) : 
                     queryElementAndType
                         .DocumentPathsAndTypes.Select(x => new JsonPath(x.JsonPathString))
                         .ToArray(),
-                    queryFieldValue
+                    queryFieldValue,
+                    type
                 )
             );
         }

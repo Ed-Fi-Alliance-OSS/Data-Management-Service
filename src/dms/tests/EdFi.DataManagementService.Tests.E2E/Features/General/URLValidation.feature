@@ -378,7 +378,8 @@ Feature: Validation of the structure of the URLs
                     }
                   """
 
-        @API-235
+        # Review if we need to delete this scenario in DMS-799
+        @API-235 @ignore
         Scenario: 12 Ensure client can retrieve information through a case insensitive query
              When a GET request is made to "/ed-fi/classPeriods?classPeriodName=CLASS+pERIOD+test"
              Then it should respond with 200
