@@ -40,7 +40,7 @@ window.EdFiCustomFields = function () {
         return schema[key];
     };
 
-    // Helper function to extract and display Ed-Fi custom fields
+    // Helper function to extract and display Ed-Fi custom fields from schema
     const extractEdFiFields = (schema, system) => {
         if (!schema) return [];
 

@@ -13,7 +13,7 @@ window.onload = function () {
         ],
         dom_id: '#swagger-ui',
         presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-        plugins: [window.EdFiCustomFields],
+        plugins: [window.EdFiCustomFields, window.EdFiCustomDomains],
         layout: "StandaloneLayout",
         docExpansion: "none",
         onComplete: function () {
