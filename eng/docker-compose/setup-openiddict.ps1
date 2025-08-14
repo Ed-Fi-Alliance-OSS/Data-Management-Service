@@ -6,7 +6,7 @@
 [CmdletBinding()]
 param (
     [string] $DbType = "Postgresql", # or "MSSQL"
-    [string] $ConnectionString = "Host=localhost;Port=5435;Database=edfi_datamanagementservice;Username=postgres;Password=abcdefgh1!",
+    [string] $ConnectionString = "Host=localhost;Port=5435;Database=edfi_configurationservice3;Username=postgres;Password=abcdefgh1!",
     [string] $NewClientId = "DmsConfigurationService",
     [string] $NewClientName = "DMS Configuration Service",
     [string] $NewClientSecret = "s3creT@09",

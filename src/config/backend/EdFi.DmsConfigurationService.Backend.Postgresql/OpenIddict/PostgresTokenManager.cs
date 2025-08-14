@@ -35,8 +35,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             _databaseOptions = databaseOptions;
             _logger = logger;
             _configuration = configuration;
-            _jwtSettings = new JwtSettings();
-            _jwtSettings = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenGenerator.GetJwtSettings(configuration);
+            _jwtSettings = JwtTokenGenerator.GetJwtSettings(configuration);
             _logger.LogInformation("PostgresTokenManager initialized with JWT settings - Issuer: {Issuer}, Audience: {Audience}",
                 _jwtSettings.Issuer, _jwtSettings.Audience);
         }
@@ -268,10 +267,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             try
             {
-                var signingKey = GetPublicKeys();
-                if (!EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenValidator.ValidateToken(
+                var signingKeys = GetPublicKeys()
+                    .ToDictionary(
+                        k => k.Item2,
+                        k => (SecurityKey)new RsaSecurityKey(k.Item1)
+                    );
+                if (!JwtTokenValidator.ValidateToken(
                         token,
-                        (IDictionary<string, SecurityKey>)signingKey,
+                        signingKeys,
                         _jwtSettings.Issuer,
                         _jwtSettings.Audience,
                         out var jwtToken
