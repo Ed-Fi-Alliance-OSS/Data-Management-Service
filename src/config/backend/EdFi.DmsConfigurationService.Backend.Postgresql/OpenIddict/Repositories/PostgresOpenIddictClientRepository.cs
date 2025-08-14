@@ -161,7 +161,7 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                 var protocolMappersJson = System.Text.Json.JsonSerializer.Serialize(protocolMappers);
 
                 string sql = @"
-UPDATE dmscs.openiddict_application
+UPDATE dmscs.OpenIddictApplication
     SET display_name = @DisplayName,
         permissions = @Permissions,
         protocolmappers = @ProtocolMappers::jsonb

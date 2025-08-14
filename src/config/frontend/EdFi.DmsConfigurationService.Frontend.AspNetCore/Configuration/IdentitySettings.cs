@@ -22,10 +22,8 @@ public class IdentitySettings
 
 public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
 {
-    private readonly string _identityProvider;
     public IdentitySettingsValidator(IOptions<AppSettings> appSettings)
     {
-        _identityProvider = appSettings.Value.IdentityProvider.ToLowerInvariant();
     }
     public ValidateOptionsResult Validate(string? name, IdentitySettings options)
     {
@@ -37,8 +35,7 @@ public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientId");
         }
-        if (string.Equals(_identityProvider, "keycloak", StringComparison.OrdinalIgnoreCase)
-            && string.IsNullOrWhiteSpace(options.ClientSecret))
+        if (string.IsNullOrWhiteSpace(options.ClientSecret))
         {
             return ValidateOptionsResult.Fail("Missing required IdentitySettings value: ClientSecret");
         }

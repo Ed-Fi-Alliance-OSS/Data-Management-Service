@@ -150,7 +150,9 @@ public static class WebApplicationBuilderExtensions
         // Configure JWT Bearer based on identity provider
         if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
         {
-            var tokenManager = webApplicationBuilder.Services.BuildServiceProvider().GetService<ITokenManager>();
+            webApplicationBuilder.Services.AddSingleton<Func<ITokenManager>>(sp => () => sp.GetRequiredService<ITokenManager>());
+            var tokenManagerFactory = webApplicationBuilder.Services.BuildServiceProvider().GetService<Func<ITokenManager>>();
+            var tokenManager = tokenManagerFactory?.Invoke();
 
             List<(RSAParameters rsaParameters, string keyId)> publicKeysList = tokenManager?.GetPublicKeys()?.ToList() ?? new List<(RSAParameters rsaParameters, string keyId)>();
             var publicKeys = publicKeysList

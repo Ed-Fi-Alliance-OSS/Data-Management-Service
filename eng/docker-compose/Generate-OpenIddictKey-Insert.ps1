@@ -7,7 +7,7 @@
 
 param(
     [string]$KeyId = "key-$(Get-Random)",
-    [string]$EncryptionKey = "QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIzNDU2Nzg5MDEyMw=="
+    [string]$EncryptionKey = ""
 )
 
 $rsa = [System.Security.Cryptography.RSA]::Create(2048)
