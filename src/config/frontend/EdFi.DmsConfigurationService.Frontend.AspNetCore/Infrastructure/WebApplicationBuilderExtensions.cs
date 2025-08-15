@@ -166,21 +166,23 @@ public static class WebApplicationBuilderExtensions
         // Configure JWT Bearer based on identity provider
         if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
         {
-            webApplicationBuilder.Services.AddSingleton<Func<ITokenManager>>(sp => () => sp.GetRequiredService<ITokenManager>());
-            var tokenManagerFactory = webApplicationBuilder.Services.BuildServiceProvider().GetService<Func<ITokenManager>>();
-            var tokenManager = tokenManagerFactory?.Invoke();
-
-            List<(RSAParameters rsaParameters, string keyId)> publicKeysList = tokenManager?.GetPublicKeys()?.ToList() ?? new List<(RSAParameters rsaParameters, string keyId)>();
-            var publicKeys = publicKeysList
-                .Select(rsaParams =>
-                {
-                    var key = new RsaSecurityKey(rsaParams.rsaParameters)
+            // Resolve ITokenManager using a scope to avoid BuildServiceProvider during registration
+            List<SecurityKey> publicKeys;
+            using (var scope = webApplicationBuilder.Services.BuildServiceProvider().CreateScope())
+            {
+                var tokenManager = scope.ServiceProvider.GetRequiredService<ITokenManager>();
+                var publicKeysList = tokenManager.GetPublicKeys()?.ToList() ?? new List<(RSAParameters rsaParameters, string keyId)>();
+                publicKeys = publicKeysList
+                    .Select(rsaParams =>
                     {
-                        KeyId = rsaParams.keyId
-                    };
-                    return (SecurityKey)key;
-                })
-                .ToList();
+                        var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                        {
+                            KeyId = rsaParams.KeyId
+                        };
+                        return (SecurityKey)key;
+                    })
+                    .ToList();
+            }
 
             // For OpenIddict, we use our own validation
             webApplicationBuilder
