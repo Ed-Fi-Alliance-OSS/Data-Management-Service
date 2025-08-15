@@ -7,9 +7,7 @@ window.EdFiCustomDomains = function () {
 
     // Helper function to safely get values from schema
     const safeGet = (schema, key) => {
-        if (!schema) {
-            return undefined;
-        }
+        if (!schema) return undefined;
         if (typeof schema.get === 'function') {
             return schema.get(key);
         }
@@ -17,10 +15,64 @@ window.EdFiCustomDomains = function () {
         return schema[key];
     };
 
+    // Process spec only once
+    const processSpecOnce = (system) => {
+        if (window.__edfiSpecProcessed) {
+            return;
+        }
+        if (!system || !system.getSystem) {
+            return;
+        }
+
+        try {
+            const specSelectors = system.getSystem().specSelectors;
+            const spec = specSelectors && specSelectors.spec();
+            if (!spec) {
+                return;
+            }
+
+            // Initialize global maps
+            window.__edfiDomainsByTag = {};
+            window.__edfiTagDescriptions = {};
+
+            // Process paths and extract domains
+            const paths = spec.get ? spec.get('paths') : spec.paths;
+            if (paths && typeof paths.entrySeq === 'function') {
+                paths.entrySeq().forEach(([pathKey, pathValue]) => {
+                    const tagMatch = pathKey.match(/\/ed-fi\/([^\/]+)/i);
+                    if (tagMatch) {
+                        const tagName = tagMatch[1];
+                        const pathDomains = safeGet(pathValue, "x-Ed-Fi-domains");
+                        if (pathDomains) {
+                            window.__edfiDomainsByTag[tagName] = pathDomains.toArray ? pathDomains.toArray() : pathDomains;
+                        }
+                    }
+                });
+            }
+
+            // PProcess tags and map descriptions → tag
+            const tags = spec.get ? spec.get('tags').toArray() : (spec.tags || []);
+            if (Array.isArray(tags)) {
+                tags.forEach(tag => {
+                    const plainTag = tag.toJS ? tag.toJS() : tag;
+                    if (plainTag.name && plainTag.description) {
+                        // Store description as the key and tagName as the value.
+                        window.__edfiTagDescriptions[plainTag.description] = plainTag.name;
+                    }
+                });
+            }
+
+            window.__edfiSpecProcessed = true;
+
+        } catch (err) {
+            console.warn("Error processing spec:", err);
+        }
+    };
+
     return {
         wrapComponents: {
 
-            // Store domain information when processing OperationTag
+            // OperationTag ahora solo asegura que spec se procese
             OperationTag: (Original, system) => {
                 return function OperationTagWrapper(props) {
                     const React = system.React || window.React;
@@ -28,54 +80,13 @@ window.EdFiCustomDomains = function () {
                         return React.createElement(Original, props);
                     }
 
-                    // Get tag name and find domains, store them correctly by tag
-                    const tagName = props.tag;
-
-                    if (tagName && system.getSystem) {
-                        try {
-                            const specSelectors = system.getSystem().specSelectors;
-                            if (specSelectors) {
-                                const spec = specSelectors.spec();
-                                if (spec) {
-                                    const paths = spec.get ? spec.get('paths') : spec.paths;
-                                    if (paths && typeof paths.entrySeq === 'function') {
-                                        paths.entrySeq().forEach(([pathKey, pathValue]) => {
-                                            if (pathKey.toLowerCase().includes(`/ed-fi/${tagName.toLowerCase()}`)) {
-                                                const pathDomains = safeGet(pathValue, "x-Ed-Fi-domains");
-                                                if (pathDomains) {
-                                                    // Store domains by specific tag name
-                                                    if (!window.__edfiDomainsByTag) {
-                                                        window.__edfiDomainsByTag = {};
-                                                    }
-                                                    window.__edfiDomainsByTag[tagName] = pathDomains;
-                                                }
-                                            }
-                                            /*
-                                            if (pathKey.toLowerCase().includes(`/tpdm/${tagName.toLowerCase()}`)) {
-                                                const pathDomains = safeGet(pathValue, "x-Ed-Fi-domains");
-                                                if (pathDomains) {
-                                                    // Store domains by specific tag name
-                                                    if (!window.__edfiDomainsByTag) {
-                                                        window.__edfiDomainsByTag = {};
-                                                    }
-                                                    window.__edfiDomainsByTag[tagName] = pathDomains;
-                                                }
-                                            }
-                                            */
-                                        });
-                                    }
-                                }
-                            }
-                        } catch (specError) {
-                            console.warn('Error accessing spec for domains:', specError);
-                        }
-                    }
+                    processSpecOnce(system); // Process spec just once
 
                     return React.createElement(Original, props);
                 };
             },
 
-            // Intercept Markdown component that renders description
+            // Markdown adds domains next to the description
             Markdown: (Original, system) => {
                 return function MarkdownWrapper(props) {
                     const React = system.React || window.React;
@@ -83,33 +94,21 @@ window.EdFiCustomDomains = function () {
                         return React.createElement(Original, props);
                     }
 
+                    processSpecOnce(system);
+
                     if (
                         props.source &&
                         typeof props.source === 'string' &&
-                        //props.source.length > 30 &&
-                        //props.source.length < 500 &&
-                        !props.source.includes('Note:') &&
-                        !props.source.includes('Consumers of DMS') &&
-                        !props.source.includes('safeguards') &&
+                        window.__edfiTagDescriptions &&
                         window.__edfiDomainsByTag
                     ) {
-                        let matchingDomains = null;
-                        const availableTags = Object.keys(window.__edfiDomainsByTag);
-                        if (availableTags.length > 0) {
-                            const tag = availableTags[0];
-                            matchingDomains = window.__edfiDomainsByTag[tag];
-                            delete window.__edfiDomainsByTag[tag];
-                        }
+                        const tagName = window.__edfiTagDescriptions[props.source];
+                        const matchingDomains = tagName ? window.__edfiDomainsByTag[tagName] : null;
 
-                        if (matchingDomains) {
-                            const domainsArray = matchingDomains && typeof matchingDomains.toArray === 'function'
-                                ? matchingDomains.toArray()
-                                : matchingDomains;
+                        if (matchingDomains && matchingDomains.length > 0) {
+                            const firstDomain = matchingDomains[0];
+                            const remainingCount = matchingDomains.length - 1;
 
-                            const firstDomain = domainsArray[0];
-                            const remainingCount = domainsArray.length - 1;
-
-                            // Tooltip
                             const tooltip = remainingCount > 0
                                 ? React.createElement(
                                     "span",
@@ -122,7 +121,7 @@ window.EdFiCustomDomains = function () {
                                             fontSize: "14px",
                                             fontWeight: "500",
                                             whiteSpace: "normal",
-                                            boxShadow: "0 4px 12px rgba(0, 0, 0, 0.2)",
+                                            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
                                             position: "absolute",
                                             top: "-80px",
                                             left: "0px",
@@ -134,19 +133,13 @@ window.EdFiCustomDomains = function () {
                                         },
                                         className: "large-domain-tooltip"
                                     },
-                                    `Domains: ${domainsArray.join(", ")}`
+                                    `Domains: ${matchingDomains.join(", ")}`
                                 )
                                 : null;
 
-                            //`${descriptionDomain.length == 0 ? "" : descriptionDomain} ${firstDomain}${remainingCount > 0 ? ` +${remainingCount}` : ""}`,
-                            let descriptionDomain;
-                            if (domainsArray.length === 0) {
-                                descriptionDomain = "";
-                            } else if (domainsArray.length === 1) {
-                                descriptionDomain = `Domain: ${firstDomain}`;
-                            } else {
-                                descriptionDomain = `Domains: ${firstDomain}${remainingCount > 0 ? ` +${remainingCount}` : ""}`;
-                            }
+                            const descriptionDomain = matchingDomains.length === 1
+                                ? `Domain: ${firstDomain}`
+                                : `Domains: ${firstDomain}${remainingCount > 0 ? ` +${remainingCount}` : ""}`;
 
                             const domainElement = React.createElement(
                                 "span",
@@ -159,20 +152,16 @@ window.EdFiCustomDomains = function () {
                                         position: "relative",
                                         display: "inline"
                                     },
-                                    onMouseEnter: function (e) {
+                                    onMouseEnter: e => {
                                         if (remainingCount > 0) {
                                             const tt = e.target.querySelector(".large-domain-tooltip");
-                                            if (tt) {
-                                                tt.style.display = "block";
-                                            }
+                                            if (tt) tt.style.display = "block";
                                         }
                                     },
-                                    onMouseLeave: function (e) {
+                                    onMouseLeave: e => {
                                         if (remainingCount > 0) {
                                             const tt = e.target.querySelector(".large-domain-tooltip");
-                                            if (tt) {
-                                                tt.style.display = "none";
-                                            }
+                                            if (tt) tt.style.display = "none";
                                         }
                                     }
                                 },
@@ -194,5 +183,6 @@ window.EdFiCustomDomains = function () {
                 };
             },
         }
-    }
+    };
 };
+
