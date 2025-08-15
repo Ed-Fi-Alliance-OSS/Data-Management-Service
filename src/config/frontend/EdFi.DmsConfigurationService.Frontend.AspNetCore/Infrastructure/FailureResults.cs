@@ -34,9 +34,19 @@ internal static class FailureResults
         );
     }
 
+    public static IResult InvalidClient(string detail, string correlationId)
+    {
+        var errors = GetIdentityErrorDetails(detail, "invalid_client");
+        return Results.Json(
+            FailureResponse.ForUnauthorized("Authentication Failed", _errorDetail, correlationId, errors),
+            contentType: _errorContentType,
+            statusCode: 401
+        );
+    }
+
     public static IResult Unauthorized(string detail, string correlationId)
     {
-        var errors = GetIdentityErrorDetails(detail, "Unauthorized");
+        var errors = GetIdentityErrorDetails(detail, "unauthorized_client");
         return Results.Json(
             FailureResponse.ForUnauthorized("Authentication Failed", _errorDetail, correlationId, errors),
             contentType: _errorContentType,

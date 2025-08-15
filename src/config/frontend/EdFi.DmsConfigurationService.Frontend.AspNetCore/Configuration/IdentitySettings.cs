@@ -22,6 +22,9 @@ public class IdentitySettings
 
 public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
 {
+    public IdentitySettingsValidator()
+    {
+    }
     public ValidateOptionsResult Validate(string? name, IdentitySettings options)
     {
         if (string.IsNullOrWhiteSpace(options.Authority))

@@ -13,6 +13,7 @@ COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config ./
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/*.csproj ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/*.csproj ./backend/EdFi.DmsConfigurationService.Backend/
 COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/*.csproj ./backend/EdFi.DmsConfigurationService.Backend.Keycloak/
+COPY backend/EdFi.DmsConfigurationService.Backend.OpenIddict/*.csproj ./backend/EdFi.DmsConfigurationService.Backend.OpenIddict/
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/*.csproj ./backend/EdFi.DmsConfigurationService.Backend.Mssql/
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/*.csproj ./backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/*.csproj ./datamodel/EdFi.DmsConfigurationService.DataModel/
@@ -22,6 +23,7 @@ RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdF
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/ ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/ ./backend/EdFi.DmsConfigurationService.Backend/
 COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/ ./backend/EdFi.DmsConfigurationService.Backend.Keycloak/
+COPY backend/EdFi.DmsConfigurationService.Backend.OpenIddict/ ./backend/EdFi.DmsConfigurationService.Backend.OpenIddict/
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ ./backend/EdFi.DmsConfigurationService.Backend.Mssql/
 COPY backend/EdFi.DmsConfigurationService.Backend.Postgresql/ ./backend/EdFi.DmsConfigurationService.Backend.Postgresql/
 COPY datamodel/EdFi.DmsConfigurationService.DataModel/ ./datamodel/EdFi.DmsConfigurationService.DataModel/

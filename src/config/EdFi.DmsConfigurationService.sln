@@ -32,6 +32,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DmsConfigurationServic
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.Tests.Unit", "backend\EdFi.DmsConfigurationService.Backend.Tests.Unit\EdFi.DmsConfigurationService.Backend.Tests.Unit.csproj", "{503022E4-0DD6-4B83-AC81-17F3F646C3A6}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DmsConfigurationService.Backend.OpenIddict", "backend\EdFi.DmsConfigurationService.Backend.OpenIddict\EdFi.DmsConfigurationService.Backend.OpenIddict.csproj", "{6BA3C4F5-865C-1650-D84A-C9FBB8522305}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -82,6 +84,10 @@ Global
 		{503022E4-0DD6-4B83-AC81-17F3F646C3A6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{503022E4-0DD6-4B83-AC81-17F3F646C3A6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{503022E4-0DD6-4B83-AC81-17F3F646C3A6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6BA3C4F5-865C-1650-D84A-C9FBB8522305}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6BA3C4F5-865C-1650-D84A-C9FBB8522305}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6BA3C4F5-865C-1650-D84A-C9FBB8522305}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6BA3C4F5-865C-1650-D84A-C9FBB8522305}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -98,6 +104,7 @@ Global
 		{EE23DFFB-C61D-48FE-B821-2442D67D7AF9} = {82B01A63-4B8A-4965-9806-001128050FB5}
 		{334D8F2D-4D9D-4B8B-8F56-3F8EA7FDC218} = {C3055527-CED8-4831-8ED4-CCB03E353281}
 		{503022E4-0DD6-4B83-AC81-17F3F646C3A6} = {82B01A63-4B8A-4965-9806-001128050FB5}
+		{6BA3C4F5-865C-1650-D84A-C9FBB8522305} = {82B01A63-4B8A-4965-9806-001128050FB5}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BB22426B-6AA8-4C58-9557-376F107B547B}
