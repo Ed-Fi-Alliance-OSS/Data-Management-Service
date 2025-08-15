@@ -25,22 +25,22 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
             JwtSettings jwtSettings,
             Microsoft.Extensions.Configuration.IConfiguration configuration)
         {
-            var tokenManager = services.BuildServiceProvider().GetService<ITokenManager>();
-            if (tokenManager == null)
+            List<SecurityKey> publicKeys;
+            using (var scope = services.BuildServiceProvider().CreateScope())
             {
-                throw new InvalidOperationException("ITokenManager is not registered.");
-            }
-            List<(RSAParameters rsaParameters, string keyId)> publicKeysList = tokenManager.GetPublicKeys().ToList();
-            var publicKeys = publicKeysList
-                .Select(rsaParams =>
-                {
-                    var key = new RsaSecurityKey(rsaParams.rsaParameters)
+                var tokenManager = scope.ServiceProvider.GetRequiredService<ITokenManager>();
+                var publicKeysList = tokenManager.GetPublicKeys()?.ToList() ?? new List<(RSAParameters rsaParameters, string keyId)>();
+                publicKeys = publicKeysList
+                    .Select(rsaParams =>
                     {
-                        KeyId = rsaParams.keyId
-                    };
-                    return (SecurityKey)key;
-                })
-                .ToList();
+                        var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                        {
+                            KeyId = rsaParams.KeyId
+                        };
+                        return (SecurityKey)key;
+                    })
+                    .ToList();
+            }
 
             // Add authentication without setting a default scheme to avoid conflicts
             services.AddAuthentication()

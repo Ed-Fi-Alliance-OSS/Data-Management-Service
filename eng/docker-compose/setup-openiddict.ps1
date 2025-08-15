@@ -62,13 +62,13 @@ function New-OpenIddictApplication {
 
 function Add-OpenIddictClientRole {
     param([string]$AppId, [string]$RoleId)
-    $sql = "INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES ('$AppId', '$RoleId') ON CONFLICT DO NOTHING;"
+    $sql = "INSERT INTO dmscs.OpenIddictClientRole (ClientId, RoleId) VALUES ('$AppId', '$RoleId') ON CONFLICT (ClientId, RoleId) DO NOTHING;"
     Invoke-DbQuery $sql
 }
 
 function Add-OpenIddictApplicationScope {
     param([string]$AppId, [string]$ScopeId)
-    $sql = "INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES ('$AppId', '$ScopeId') ON CONFLICT DO NOTHING;"
+    $sql = "INSERT INTO dmscs.OpenIddictApplicationScope (ApplicationId, ScopeId) VALUES ('$AppId', '$ScopeId') ON CONFLICT (ApplicationId, ScopeId) DO NOTHING;"
     Invoke-DbQuery $sql
 }
 
@@ -215,7 +215,8 @@ CREATE TABLE IF NOT EXISTS dmscs.OpenIddictKey (
 
     Write-Host "Create extension if not exists: pgcrypto"
     Invoke-DbQuery @'
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE SCHEMA IF NOT EXISTS extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA extensions;
 '@
     # Generate and output OpenIddictKey insert SQL
     Write-Host "Generating OpenIddictKey insert statement..."

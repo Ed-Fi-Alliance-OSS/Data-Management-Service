@@ -22,7 +22,7 @@ public class IdentitySettings
 
 public class IdentitySettingsValidator : IValidateOptions<IdentitySettings>
 {
-    public IdentitySettingsValidator(IOptions<AppSettings> appSettings)
+    public IdentitySettingsValidator()
     {
     }
     public ValidateOptionsResult Validate(string? name, IdentitySettings options)

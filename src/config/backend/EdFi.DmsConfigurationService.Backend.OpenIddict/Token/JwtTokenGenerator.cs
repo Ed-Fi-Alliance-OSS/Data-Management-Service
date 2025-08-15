@@ -72,12 +72,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 claims.Add(new Claim("client_name", displayName));
             }
 
-            if (roles != null && roles.Length > 0)
-            {
-                // Read the role claim type from configuration (JSON), fallback to default if not set
-                var rolesClaim = configuration?.GetValue<string>("Authentication:RoleClaimAttribute")
-                    ?? "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
-            }
             if (permissions != null && permissions.Length > 0)
             {
                 foreach (var permission in permissions)
