@@ -307,13 +307,8 @@ public static class WebApplicationBuilderExtensions
             }
             else
             {
-                logger.Warning("Unknown identity provider: {IdentityProvider}. Defaulting to Keycloak.", identityProvider);
-                webApplicationBuilder.Services.AddKeycloakServices(
-                    identitySettings.Authority,
-                    identitySettings.ClientId,
-                    identitySettings.ClientSecret,
-                    Regex.Escape(identitySettings.RoleClaimType) // Escape the claim type for regex usage
-                );
+                logger.Warning("Unknown identity provider: {IdentityProvider}.", identityProvider);
+                throw new InvalidOperationException($"Unknown identity provider: {identityProvider}");
             }
         }
     }
