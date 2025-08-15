@@ -6,13 +6,12 @@
 [CmdletBinding()]
 param (
     [string] $DbType = "Postgresql", # or "MSSQL"
-    [string] $ConnectionString = "Host=localhost;Port=5435;Database=edfi_datamanagementservice;Username=postgres;Password=abcdefgh1!",
+    [string] $ConnectionString = "Host=localhost;Port=5435;Database=edfi_datamanagementservice;Username=postgres;",
     [string] $EnvironmentFile = "./.env",
     [string] $DbHost = "localhost",
     [string] $DbPort = "ENV:POSTGRES_PORT",
     [string] $DbName = "ENV:POSTGRES_DB_NAME",
     [string] $DbUser = "postgres",
-    [string]$DbPassword = "ENV:POSTGRES_PASSWORD",
     [string] $NewClientId = "DmsConfigurationService",
     [string] $NewClientName = "DMS Configuration Service",
     [string] $NewClientSecret = "s3creT@09",
@@ -114,20 +113,17 @@ function Build-ConnectionString {
         [string]$DbHost,
         [string]$DbPort,
         [string]$DbName,
-        [string]$DbUser,
-        [string]$DbPassword,
-        [string]$EnvironmentFile = $null
+        [string]$DbUser
     )
     $DbHost = Resolve-EnvValue $DbHost
     $DbPort = Resolve-EnvValue $DbPort
     $DbName = Resolve-EnvValue $DbName
     $DbUser = Resolve-EnvValue $DbUser
-    $DbPassword = Resolve-EnvValue $DbPassword
     if ($DbType -eq "Postgresql") {
-        return "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;Password=$DbPassword"
+        return "Host=$DbHost;Port=$DbPort;Database=$DbName;Username=$DbUser;"
     }
     elseif ($DbType -eq "MSSQL") {
-        return "Server=$DbHost,$DbPort;Database=$DbName;User Id=$DbUser;Password=$DbPassword"
+        return "Server=$DbHost,$DbPort;Database=$DbName;User Id=$DbUser;"
     }
     else {
         throw "Unsupported DbType: $DbType"
@@ -136,18 +132,16 @@ function Build-ConnectionString {
 
 function Get-EffectiveConnectionString {
     param(
-        [string]$EnvironmentFile,
         [string]$ConnectionString,
         [string]$DbType,
         [string]$DbHost,
         [string]$DbPort,
         [string]$DbName,
-        [string]$DbUser,
-        [string]$DbPassword
+        [string]$DbUser
     )
     # If EnvironmentFile is set, always use DB param group and ignore ConnectionString
     if ($EnvironmentFile) {
-        return Build-ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser -DbPassword $DbPassword -EnvironmentFile $EnvironmentFile
+        return Build-ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser
     }
     # If ConnectionString starts with ENV:, read from env file
     if ($ConnectionString -like "ENV:*") {
@@ -160,7 +154,7 @@ function Get-EffectiveConnectionString {
     }
     # If ConnectionString is empty, build from parameters (which may use ENV: prefix)
     if (-not $ConnectionString) {
-        return Build-ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser -DbPassword $DbPassword -EnvironmentFile $EnvironmentFile
+        return Build-ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser
     }
     # Otherwise, use the provided ConnectionString
     return $ConnectionString
@@ -168,7 +162,7 @@ function Get-EffectiveConnectionString {
 
 function Invoke-DbQuery {
     param([string]$Sql)
-    $effectiveConnectionString = Get-EffectiveConnectionString -EnvironmentFile $EnvironmentFile -ConnectionString $ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser -DbPassword $DbPassword
+    $effectiveConnectionString = Get-EffectiveConnectionString -ConnectionString $ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser
     if ($DbType -eq "Postgresql") {
         # Parse semicolon-separated connection string
         $params = @{}
@@ -179,13 +173,14 @@ function Invoke-DbQuery {
             }
         }
         $dbHost = $params['Host']
-        $port = $params['Port']
         $db = $params['Database']
         $user = $params['Username']
-        $pass = $params['Password']
-        $env:PGPASSWORD = $pass
-        psql -h $dbHost -p $port -U $user -d $db -c "$Sql"
-        Remove-Item Env:PGPASSWORD
+        # Run SQL directly on the PostgreSQL container using docker exec
+        $containerName = "dms-postgresql"
+        # Escape double quotes in SQL for safe shell execution
+        $escapedSql = $Sql.Replace('"', '\"')
+        $execCmd = 'docker exec {0} psql -U {1} -d {2} -c "{3}"' -f $containerName, $user, $db, $escapedSql
+        Invoke-Expression $execCmd
     }
     elseif ($DbType -eq "MSSQL") {
         # Use sqlcmd or Invoke-Sqlcmd for MSSQL
