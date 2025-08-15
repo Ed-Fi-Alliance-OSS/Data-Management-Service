@@ -50,7 +50,7 @@ window.EdFiCustomDomains = function () {
                 });
             }
 
-            // PProcess tags and map descriptions → tag
+            // Process tags and map descriptions → tag
             const tags = spec.get ? spec.get('tags').toArray() : (spec.tags || []);
             if (Array.isArray(tags)) {
                 tags.forEach(tag => {
@@ -72,7 +72,7 @@ window.EdFiCustomDomains = function () {
     return {
         wrapComponents: {
 
-            // OperationTag ahora solo asegura que spec se procese
+            // OperationTag Now just make sure that spec is processed.
             OperationTag: (Original, system) => {
                 return function OperationTagWrapper(props) {
                     const React = system.React || window.React;
