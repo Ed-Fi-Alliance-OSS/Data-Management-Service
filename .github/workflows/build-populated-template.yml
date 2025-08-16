@@ -273,14 +273,10 @@ jobs:
       - name: Push Populated Template Package to Azure
         run: |
           $artifact = (Get-ChildItem -Name -Include *.nupkg)
-          $arguments = @{
-            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
-          }
-
+          
           $artifact | ForEach-Object {
-              $arguments.PackageFile = $_
-              ./build-dms.ps1 Push @arguments
+              Write-Host "Pushing $_ to ${{ env.ARTIFACTS_FEED_URL }}"
+              dotnet nuget push $_ --api-key "${{ env.ARTIFACTS_API_KEY }}" --source "${{ env.ARTIFACTS_FEED_URL }}" --skip-duplicate
            }
 
   promote-azure-package:
@@ -374,3 +370,29 @@ jobs:
               -Uri "$($url)?name=$($uploadName)" `
               -Headers $gh_headers `
               -InFile $file
+
+  notify-results:
+    name: Notify Build Results
+    runs-on: ubuntu-latest
+    needs: [build-template, generate-package-sbom, generate-package-provenance, publish-template-package]
+    if: always() && github.event_name == 'schedule'
+    steps:
+      - name: Notify Slack on failure
+        if: contains(needs.*.result, 'failure')
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d #v2.0.0
+        with:
+          payload: |
+            {
+              "text": "❌ Scheduled Populated Template build failed",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "❌ Scheduled Populated Template build failed\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Workflow:* ${{ github.workflow }}\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                  }
+                }
+              ]
+            }
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
