@@ -158,7 +158,9 @@ public static class WebApplicationBuilderExtensions
             logger.Error("Error reading IdentitySettings");
             throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
         }
-        var identityProvider = config.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant() ?? "keycloak";
+        var identityProvider = config
+            .GetValue<string>("AppSettings:IdentityProvider")
+            ?.ToLowerInvariant() ?? "keycloak";
         webApplicationBuilder
             .Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
             .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
@@ -166,25 +168,7 @@ public static class WebApplicationBuilderExtensions
         // Configure JWT Bearer based on identity provider
         if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
         {
-            // Resolve ITokenManager using a scope to avoid BuildServiceProvider during registration
-            List<SecurityKey> publicKeys;
-            using (var scope = webApplicationBuilder.Services.BuildServiceProvider().CreateScope())
-            {
-                var tokenManager = scope.ServiceProvider.GetRequiredService<ITokenManager>();
-                var publicKeysList = tokenManager.GetPublicKeys()?.ToList() ?? new List<(RSAParameters rsaParameters, string keyId)>();
-                publicKeys = publicKeysList
-                    .Select(rsaParams =>
-                    {
-                        var key = new RsaSecurityKey(rsaParams.RsaParameters)
-                        {
-                            KeyId = rsaParams.KeyId
-                        };
-                        return (SecurityKey)key;
-                    })
-                    .ToList();
-            }
-
-            // For OpenIddict, we use our own validation
+            // For OpenIddict, we use our own validation with proper DI
             webApplicationBuilder
                 .Services.AddAuthentication(options =>
                 {
@@ -196,35 +180,59 @@ public static class WebApplicationBuilderExtensions
                     }
                 })
                 .AddJwtBearer(
-                JwtBearerDefaults.AuthenticationScheme,
-                options =>
-                {
-                    options.Authority = identitySettings.Authority;
-                    options.MetadataAddress =
-                        $"{identitySettings.Authority}/.well-known/openid-configuration";
-                    options.SaveToken = true;
-                    options.Audience = identitySettings.Audience;
-                    options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
-                    options.TokenValidationParameters = new TokenValidationParameters
+                    JwtBearerDefaults.AuthenticationScheme,
+                    options =>
                     {
-                        ValidateAudience = true,
-                        ValidateIssuer = true,
-                        ValidateIssuerSigningKey = true,
-                        ValidIssuer = identitySettings.Authority,
-                        RoleClaimType = identitySettings.RoleClaimType,
-                        IssuerSigningKeys = publicKeys
-                    };
-
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnAuthenticationFailed = context =>
+                        options.Authority = identitySettings.Authority;
+                        options.MetadataAddress =
+                            $"{identitySettings.Authority}/.well-known/openid-configuration";
+                        options.SaveToken = true;
+                        options.Audience = identitySettings.Audience;
+                        options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+                        options.TokenValidationParameters = new TokenValidationParameters
                         {
-                            logger.Error("Authentication failed: {Message}", context.Exception.Message);
-                            return Task.CompletedTask;
-                        }
-                    };
-                }
-            );
+                            ValidateAudience = true,
+                            ValidateIssuer = true,
+                            ValidateIssuerSigningKey = true,
+                            ValidIssuer = identitySettings.Authority,
+                            RoleClaimType = identitySettings.RoleClaimType,
+                        };
+
+                        options.Events = new JwtBearerEvents
+                        {
+                            OnAuthenticationFailed = context =>
+                            {
+                                logger.Error("Authentication failed: {Message}", context.Exception.Message);
+                                return Task.CompletedTask;
+                            },
+                        };
+                    }
+                );
+
+            // Configure JWT options post-configuration to resolve signing keys at runtime
+            webApplicationBuilder
+                .Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+                .Configure<ITokenManager>(
+                    (options, tokenManager) =>
+                    {
+                        var publicKeysList =
+                            tokenManager.GetPublicKeys()?.ToList()
+                            ?? new List<(RSAParameters rsaParameters, string keyId)>();
+
+                        var publicKeys = publicKeysList
+                            .Select(rsaParams =>
+                            {
+                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                                {
+                                    KeyId = rsaParams.KeyId,
+                                };
+                                return (SecurityKey)key;
+                            })
+                            .ToList();
+
+                        options.TokenValidationParameters.IssuerSigningKeys = publicKeys;
+                    }
+                );
 
             // Add authorization services for OpenIddict (same as Keycloak)
             webApplicationBuilder.Services.AddAuthorization(options =>
