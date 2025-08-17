@@ -197,10 +197,10 @@ public static class WebApplicationBuilderExtensions
             webApplicationBuilder
                 .Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
                 .Configure<ITokenManager>(
-                    (options, tokenManager) =>
+                    async (options, tokenManager) =>
                     {
                         var publicKeysList =
-                            tokenManager.GetPublicKeys()?.ToList()
+                            (await tokenManager.GetPublicKeysAsync())?.ToList()
                             ?? new List<(RSAParameters rsaParameters, string keyId)>();
 
                         var publicKeys = publicKeysList
