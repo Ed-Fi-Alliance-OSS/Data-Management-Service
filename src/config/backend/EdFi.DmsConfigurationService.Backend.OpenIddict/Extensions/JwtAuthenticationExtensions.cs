@@ -88,22 +88,31 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 .Configure<ITokenManager>(
                     (options, tokenManager) =>
                     {
-                        var publicKeysList =
-                            tokenManager.GetPublicKeys()?.ToList()
-                            ?? new List<(RSAParameters rsaParameters, string keyId)>();
-
-                        var publicKeys = publicKeysList
-                            .Select(rsaParams =>
+                        // For startup configuration, we'll set up a dynamic key resolver
+                        // that loads keys on demand during token validation
+                        options.TokenValidationParameters.IssuerSigningKeyResolver = (token, securityToken, kid, validationParameters) =>
+                        {
+                            // This will be called during actual token validation
+                            // Load keys synchronously here as this is a callback during validation
+                            try
                             {
-                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                                var publicKeys = Task.Run(async () => await tokenManager.GetPublicKeysAsync()).GetAwaiter().GetResult();
+                                return publicKeys.Select(rsaParams =>
                                 {
-                                    KeyId = rsaParams.KeyId,
-                                };
-                                return (SecurityKey)key;
-                            })
-                            .ToList();
-
-                        options.TokenValidationParameters.IssuerSigningKeys = publicKeys;
+                                    var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                                    {
+                                        KeyId = rsaParams.KeyId,
+                                    };
+                                    return (SecurityKey)key;
+                                }).ToList();
+                            }
+                            catch
+                            {
+                                // Log error and return empty list to fail validation gracefully
+                                // Note: Logger is not available in this context, but validation will fail appropriately
+                                return new List<SecurityKey>();
+                            }
+                        };
                     }
                 );
 

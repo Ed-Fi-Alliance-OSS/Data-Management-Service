@@ -267,10 +267,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             try
             {
-                var signingKeys = GetPublicKeys()
+                var publicKeys = await GetPublicKeysAsync();
+                var signingKeys = publicKeys
                     .ToDictionary(
-                        k => k.Item2,
-                        k => (SecurityKey)new RsaSecurityKey(k.Item1)
+                        k => k.KeyId,
+                        k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
                     );
                 if (!JwtTokenValidator.ValidateToken(
                         token,
@@ -341,14 +342,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// <summary>
         /// Returns all active public keys for JWKS endpoint
         /// </summary>
-        public IEnumerable<(RSAParameters RsaParameters, string KeyId)> GetPublicKeys()
+        public async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysAsync()
         {
             var keys = new List<(RSAParameters, string)>();
             try
             {
-                using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
-                connection.Open();
-                var keyRecords = connection.Query<(string KeyId, byte[] PublicKey)>(
+                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+                await connection.OpenAsync();
+                var keyRecords = await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
                     "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = TRUE");
                 foreach (var record in keyRecords)
                 {

@@ -18,10 +18,10 @@ public class JwksEndpointModule : IEndpointModule
         endpoints.MapGet("/.well-known/jwks.json", GetJwksConfiguration);
     }
 
-    private IResult GetJwksConfiguration(HttpContext httpContext, ITokenManager tokenManager)
+    private async Task<IResult> GetJwksConfiguration(HttpContext httpContext, ITokenManager tokenManager)
     {
         // Fetch public keys from the token manager (database-backed)
-        var publicKeys = tokenManager.GetPublicKeys();
+        var publicKeys = await tokenManager.GetPublicKeysAsync();
         if (publicKeys == null || !publicKeys.Any())
         {
             return Results.Ok(new { keys = Array.Empty<object>() });
