@@ -25,32 +25,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
             JwtSettings jwtSettings,
             Microsoft.Extensions.Configuration.IConfiguration configuration)
         {
-            List<SecurityKey> publicKeys;
-            using (var scope = services.BuildServiceProvider().CreateScope())
-            {
-                var tokenManager = scope.ServiceProvider.GetRequiredService<ITokenManager>();
-                var publicKeysList = tokenManager.GetPublicKeys()?.ToList() ?? new List<(RSAParameters rsaParameters, string keyId)>();
-                publicKeys = publicKeysList
-                    .Select(rsaParams =>
-                    {
-                        var key = new RsaSecurityKey(rsaParams.RsaParameters)
-                        {
-                            KeyId = rsaParams.KeyId
-                        };
-                        return (SecurityKey)key;
-                    })
-                    .ToList();
-            }
-
             // Add authentication without setting a default scheme to avoid conflicts
             services.AddAuthentication()
-
                 .AddJwtBearer(JwtSchemeName, options =>
                 {
                     options.TokenValidationParameters = new TokenValidationParameters
                     {
                         ValidateIssuerSigningKey = true,
-                        IssuerSigningKeys = publicKeys,
+                        // IssuerSigningKeys will be set via options pattern below
                         ValidateIssuer = true,
                         ValidIssuer = jwtSettings.Issuer,
                         ValidateAudience = true,
@@ -100,6 +82,30 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                         }
                     };
                 });
+
+            // Configure JWT options post-configuration to resolve signing keys at runtime
+            services.AddOptions<JwtBearerOptions>(JwtSchemeName)
+                .Configure<ITokenManager>(
+                    (options, tokenManager) =>
+                    {
+                        var publicKeysList =
+                            tokenManager.GetPublicKeys()?.ToList()
+                            ?? new List<(RSAParameters rsaParameters, string keyId)>();
+
+                        var publicKeys = publicKeysList
+                            .Select(rsaParams =>
+                            {
+                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                                {
+                                    KeyId = rsaParams.KeyId,
+                                };
+                                return (SecurityKey)key;
+                            })
+                            .ToList();
+
+                        options.TokenValidationParameters.IssuerSigningKeys = publicKeys;
+                    }
+                );
 
             return services;
         }
