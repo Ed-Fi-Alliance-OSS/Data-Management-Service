@@ -30,13 +30,9 @@ window.EdFiCustomFields = function () {
         );
     };
 
-    // Helper function to safely get values from schema
-    const safeGet = (schema, key) => {
+    const safeGet = window.EdfiCommonHelper ? window.EdfiCommonHelper.safeGet : (schema, key) => {
         if (!schema) return undefined;
-        if (typeof schema.get === 'function') {
-            return schema.get(key);
-        }
-        // Fallback for plain objects
+        if (typeof schema.get === 'function') return schema.get(key);
         return schema[key];
     };
 

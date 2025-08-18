@@ -6,6 +6,16 @@
 window.onload = function () {
     const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
 
+    // Configuration for Ed-Fi Custom Domains plugin from environment variable
+    const enableCustomDomains = (window.DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS || "true") === "true";
+
+    // Configure plugins based on settings
+    const plugins = [window.EdFiCustomFields];
+    if (enableCustomDomains && window.EdFiCustomDomains) {
+        plugins.push(window.EdFiCustomDomains);
+        console.log('Ed-Fi Custom Domains plugin enabled');
+    }
+
     window.ui = SwaggerUIBundle({
         urls: [
             { url: `http://localhost:${dmsPort}/metadata/specifications/resources-spec.json`, name: "Resources" },
@@ -13,7 +23,7 @@ window.onload = function () {
         ],
         dom_id: '#swagger-ui',
         presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
-        plugins: [window.EdFiCustomFields, window.EdFiCustomDomains],
+        plugins: plugins,
         layout: "StandaloneLayout",
         docExpansion: "none",
         onComplete: function () {

@@ -5,13 +5,9 @@
 
 window.EdFiCustomDomains = function () {
 
-    // Helper function to safely get values from schema
-    const safeGet = (schema, key) => {
+    const safeGet = window.EdfiCommonHelper ? window.EdfiCommonHelper.safeGet : (schema, key) => {
         if (!schema) return undefined;
-        if (typeof schema.get === 'function') {
-            return schema.get(key);
-        }
-        // Fallback for plain objects
+        if (typeof schema.get === 'function') return schema.get(key);
         return schema[key];
     };
 
@@ -51,7 +47,8 @@ window.EdFiCustomDomains = function () {
             }
 
             // Process tags and map descriptions → tag
-            const tags = spec.get ? spec.get('tags').toArray() : (spec.tags || []);
+            //const tags = spec.get ? spec.get('tags').toArray() : (spec.tags || []);
+            const tags = spec.get ? (spec.get('tags')?.toArray() || []) : (spec.tags || []);
             if (Array.isArray(tags)) {
                 tags.forEach(tag => {
                     const plainTag = tag.toJS ? tag.toJS() : tag;
@@ -72,7 +69,7 @@ window.EdFiCustomDomains = function () {
     return {
         wrapComponents: {
 
-            // OperationTag Now just make sure that spec is processed.
+            // Now just make sure that spec is processed.
             OperationTag: (Original, system) => {
                 return function OperationTagWrapper(props) {
                     const React = system.React || window.React;
@@ -86,7 +83,7 @@ window.EdFiCustomDomains = function () {
                 };
             },
 
-            // Markdown adds domains next to the description
+            // Adds domains next to the description
             Markdown: (Original, system) => {
                 return function MarkdownWrapper(props) {
                     const React = system.React || window.React;
