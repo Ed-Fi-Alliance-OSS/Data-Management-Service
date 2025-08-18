@@ -47,7 +47,6 @@ window.EdFiCustomDomains = function () {
             }
 
             // Process tags and map descriptions → tag
-            //const tags = spec.get ? spec.get('tags').toArray() : (spec.tags || []);
             const tags = spec.get ? (spec.get('tags')?.toArray() || []) : (spec.tags || []);
             if (Array.isArray(tags)) {
                 tags.forEach(tag => {
