@@ -85,13 +85,10 @@ function Add-OpenIddictCustomClaim {
 
     # Create JSON object and properly escape for PostgreSQL
     $jsonObj = @{ $ClaimName = $ClaimValue } | ConvertTo-Json -Compress
-
     # Double escape: first for PowerShell string and then for PostgreSQL
     # Replace single quotes with double single quotes for PostgreSQL
     $escapedJson = $jsonObj.Replace("'", "''")
     # Replace double quotes with escaped double quotes for PowerShell
-    $escapedJson = $escapedJson.Replace('"', '\"')
-
     # Use dollar-quoted string literals for PostgreSQL to avoid most escaping issues
     $sql = @"
 UPDATE dmscs.OpenIddictApplication
@@ -274,6 +271,5 @@ if ($InsertData) {
     Add-OpenIddictClientRole -AppId $appId.Trim() -RoleId $configRoleId.Trim()
     Add-OpenIddictApplicationScope -AppId $appId.Trim() -ScopeId $scopeId.Trim()
     Update-OpenIddictApplicationPermissions -AppId $appId.Trim() -Scope  $ClientScopeName
-    Add-OpenIddictCustomClaim -AppId $appId.Trim() -ClaimName $ClaimName -ClaimValue $ClaimValue
     Write-Output "OpenIddict client, roles, scope, and claim created successfully."
 }
