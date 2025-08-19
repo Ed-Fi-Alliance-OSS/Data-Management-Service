@@ -520,7 +520,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                                         if (keyToRemove != null)
                                         {
                                             _keyFormatCache.TryRemove(keyToRemove, out _);
-                                            _logger.LogDebug("Cache full, removed entry for key: {KeyId}", keyToRemove);
                                         }
                                     }
                                 }
