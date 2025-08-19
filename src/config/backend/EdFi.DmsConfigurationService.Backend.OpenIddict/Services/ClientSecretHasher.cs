@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.IO;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 
@@ -16,6 +17,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 /// </summary>
 public class ClientSecretHasher : IClientSecretHasher
 {
+    private readonly ILogger<ClientSecretHasher> _logger;
+
+    public ClientSecretHasher(ILogger<ClientSecretHasher> logger)
+    {
+        _logger = logger;
+    }
+
     /// <summary>
     /// Hashes a plain-text client secret using a secure hashing algorithm.
     /// </summary>
@@ -23,8 +31,12 @@ public class ClientSecretHasher : IClientSecretHasher
     {
         if (string.IsNullOrEmpty(plainTextSecret))
         {
+            _logger.LogWarning("Attempt to hash null or empty client secret");
             throw new ArgumentException("Secret cannot be null or empty", nameof(plainTextSecret));
         }
+
+        _logger.LogDebug("Hashing client secret");
+
         const byte Version = 1;
         const int SaltLength = 16;
         const int SubkeyLength = 32;
@@ -50,6 +62,8 @@ public class ClientSecretHasher : IClientSecretHasher
         writer.Flush();
         byte[] finalBytes = memoryStream.ToArray();
         var hashedSecret = Convert.ToBase64String(finalBytes);
+
+        _logger.LogDebug("Client secret hashed successfully");
         return Task.FromResult(hashedSecret);
     }
 
@@ -60,39 +74,54 @@ public class ClientSecretHasher : IClientSecretHasher
     {
         if (string.IsNullOrEmpty(plainTextSecret))
         {
+            _logger.LogWarning("Attempt to verify null or empty client secret");
             return Task.FromResult(false);
         }
 
         if (string.IsNullOrEmpty(hashedSecret))
         {
+            _logger.LogWarning("Attempt to verify against null or empty hashed secret");
             return Task.FromResult(false);
         }
+
+        _logger.LogDebug("Verifying client secret");
 
         // If the stored secret doesn't appear to be hashed, do direct comparison for backward compatibility
         if (!IsSecretHashed(hashedSecret))
         {
-            return Task.FromResult(string.Equals(plainTextSecret, hashedSecret, StringComparison.Ordinal));
+            _logger.LogDebug("Client secret is not hashed, using direct comparison for backward compatibility");
+            var result = string.Equals(plainTextSecret, hashedSecret, StringComparison.Ordinal);
+            _logger.LogDebug("Client secret verification result: {Result}", result);
+            return Task.FromResult(result);
         }
 
-        byte[] decoded = Convert.FromBase64String(hashedSecret);
-        using var reader = new BinaryReader(new MemoryStream(decoded));
+        try
+        {
+            byte[] decoded = Convert.FromBase64String(hashedSecret);
+            using var reader = new BinaryReader(new MemoryStream(decoded));
 
-        byte version = reader.ReadByte();
-        int saltLength = reader.ReadInt32();
-        byte[] salt = reader.ReadBytes(saltLength);
-        byte[] expectedSubkey = reader.ReadBytes(32);
+            byte version = reader.ReadByte();
+            int saltLength = reader.ReadInt32();
+            byte[] salt = reader.ReadBytes(saltLength);
+            byte[] expectedSubkey = reader.ReadBytes(32);
 
-        byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(
-            plainTextSecret,
-            salt,
-            10000,
-            HashAlgorithmName.SHA256,
-            32
-        );
+            byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(
+                plainTextSecret,
+                salt,
+                10000,
+                HashAlgorithmName.SHA256,
+                32
+            );
 
-        var result = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);
-
-        return Task.FromResult(result);
+            var result = CryptographicOperations.FixedTimeEquals(actualSubkey, expectedSubkey);
+            _logger.LogDebug("Client secret verification result: {Result}", result);
+            return Task.FromResult(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error verifying client secret: {ErrorMessage}", ex.Message);
+            return Task.FromResult(false);
+        }
     }
 
     /// <summary>
@@ -142,10 +171,10 @@ public class ClientSecretHasher : IClientSecretHasher
 
             return true;
         }
-        catch
+        catch(Exception ex)
         {
+            _logger.LogWarning(ex, "Error verifying hash: {ErrorMessage}", ex.Message);
             return false;
         }
-
     }
 }

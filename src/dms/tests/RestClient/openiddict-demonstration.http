@@ -157,16 +157,3 @@ Content-Type: application/json
     "lastSurname": "Washington",
     "birthDate": "1982-02-22"
 }
-
-# Try using an invalid data type, like a number instead of a string
-
-###
-POST {{dataApi}}/ed-fi/localEducationAgencyCategoryDescriptors
-Authorization: bearer {{edOrgToken}}
-Content-Type: application/json
-
-{
-  "namespace": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
-  "codeValue": "Regular public school district",
-  "shortDescription": 1
-}

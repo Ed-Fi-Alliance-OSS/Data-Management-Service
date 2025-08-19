@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
@@ -236,13 +237,12 @@ public class IdentityModule : IEndpointModule
             );
         }
 
-        // Check if token manager supports revocation
-        var revocationMethod = tokenManager.GetType().GetMethod("RevokeTokenAsync");
-        if (revocationMethod != null)
+        // Check if token manager supports revocation via interface
+        if (tokenManager is ITokenRevocationManager revocationManager)
         {
             try
             {
-                await (Task)revocationMethod.Invoke(tokenManager, new object[] { model.Token })!;
+                await revocationManager.RevokeTokenAsync(model.Token);
                 return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
             }
             catch
