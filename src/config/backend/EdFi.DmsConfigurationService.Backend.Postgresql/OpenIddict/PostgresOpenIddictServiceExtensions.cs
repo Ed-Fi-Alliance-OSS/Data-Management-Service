@@ -20,6 +20,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
     {
         public static IServiceCollection AddPostgresOpenIddictStores(this IServiceCollection services, IConfiguration configuration, string authority)
         {
+            // Add identity options
+            services.AddOpenIddictIdentityOptions(configuration);
             services.AddSingleton<IClientRepository, PostgresOpenIddictClientRepository>();
             services.AddSingleton<ITokenManager, PostgresTokenManager>();
             services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
@@ -70,6 +72,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             string authority,
             JwtSettings jwtSettings)
         {
+            // Add identity options
+            services.AddOpenIddictIdentityOptions(configuration);
+
             services.AddSingleton<IClientRepository, PostgresOpenIddictClientRepository>();
             services.AddSingleton<ITokenManager, PostgresTokenManager>();
             services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
