@@ -10,7 +10,6 @@ using System.Security.Cryptography.X509Certificates;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -25,8 +24,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
     public class PostgresTokenManager : ITokenManager, ITokenRevocationManager
     {
         private readonly IOptions<DatabaseOptions> _databaseOptions;
+        private readonly IOptions<IdentityOptions> _identityOptions;
         private readonly ILogger<PostgresTokenManager> _logger;
-        private readonly IConfiguration _configuration;
         private readonly IClientSecretHasher _secretHasher;
 
         // Cache for key formats with a maximum size limit to prevent unbounded growth
@@ -44,13 +43,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
         public PostgresTokenManager(
             IOptions<DatabaseOptions> databaseOptions,
+            IOptions<IdentityOptions> identityOptions,
             ILogger<PostgresTokenManager> logger,
-            IConfiguration configuration,
             IClientSecretHasher secretHasher)
         {
             _databaseOptions = databaseOptions;
+            _identityOptions = identityOptions;
             _logger = logger;
-            _configuration = configuration;
             _secretHasher = secretHasher;
             _logger.LogInformation("PostgresTokenManager initialized");
         }
@@ -74,8 +73,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// </summary>
         private async Task<(SecurityKey, string)> LoadActiveSigningKey()
         {
-            var useCertificates = _configuration.GetValue<bool>("IdentitySettings:UseCertificates", false);
-            if (useCertificates)
+            if (_identityOptions.Value.UseCertificates)
             {
                 return await LoadActiveSigningKeyFromCertificatesAsync();
             }
@@ -90,11 +88,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// </summary>
         private async Task<(SecurityKey, string)> LoadActiveSigningKeyFromCertificatesAsync()
         {
-            var useDevCerts = _configuration.GetValue<bool>("IdentitySettings:UseDevelopmentCertificates");
-            if (useDevCerts)
+            if (_identityOptions.Value.UseDevelopmentCertificates)
             {
-                var certPath = _configuration.GetValue<string>("IdentitySettings:DevCertificatePath") ?? "devcert.pfx";
-                var certPassword = _configuration.GetValue<string>("IdentitySettings:DevCertificatePassword") ?? "password";
+                var certPath = _identityOptions.Value.DevCertificatePath;
+                var certPassword = _identityOptions.Value.DevCertificatePassword;
                 X509Certificate2 cert;
                 if (!System.IO.File.Exists(certPath))
                 {
@@ -114,8 +111,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             else
             {
                 // Load certificate from configured path
-                var certPath = _configuration.GetValue<string>("IdentitySettings:CertificatePath");
-                var certPassword = _configuration.GetValue<string>("IdentitySettings:CertificatePassword");
+                var certPath = _identityOptions.Value.CertificatePath;
+                var certPassword = _identityOptions.Value.CertificatePassword;
                 if (string.IsNullOrEmpty(certPath))
                 {
                     throw new InvalidOperationException("CertificatePath must be set when not using development certificates.");
@@ -135,7 +132,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             try
             {
-                var encryptionKey = _configuration.GetValue<string>("IdentitySettings:EncryptionKey");
+                var encryptionKey = _identityOptions.Value.EncryptionKey;
                 if (string.IsNullOrEmpty(encryptionKey))
                 {
                     throw new InvalidOperationException("IdentitySettings:EncryptionKey must be set when using database keys.");
@@ -234,7 +231,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     clientId,
                     scope ?? string.Join(",", applicationInfo.Scopes ?? new string[0])
                 );
-                int tokenExpirationMinutes = _configuration.GetValue<int>("IdentitySettings:TokenExpirationMinutes");
+                int tokenExpirationMinutes = _identityOptions.Value.TokenExpirationMinutes;
                 // Calculate expires_in (seconds)
                 var expiresIn = (tokenExpirationMinutes * 60);
                 // Compose the response object
@@ -273,9 +270,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             var tokenId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
-            string audience = _configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
-            string issuer = _configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
-            int tokenExpirationMinutes = _configuration.GetValue<int>("IdentitySettings:TokenExpirationMinutes");
+            string audience = _identityOptions.Value.Audience;
+            string issuer = _identityOptions.Value.Authority;
+            int tokenExpirationMinutes = _identityOptions.Value.TokenExpirationMinutes;
             var expiration = now.AddMinutes(tokenExpirationMinutes);
             var (signingKey, keyId) = await LoadActiveSigningKey();
             // Prepare roles from OpenIddictClientRole/OpenIddictRole tables
@@ -352,8 +349,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             try
             {
-                string audience = _configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
-                string issuer = _configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
+                string audience = _identityOptions.Value.Audience;
+                string issuer = _identityOptions.Value.Authority;
                 var publicKeys = await GetPublicKeysAsync();
                 var signingKeys = publicKeys
                     .ToDictionary(
@@ -432,8 +429,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// </summary>
         public async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysAsync()
         {
-            var useCertificates = _configuration.GetValue<bool>("IdentitySettings:UseCertificates", false);
-            if (useCertificates)
+            if (_identityOptions.Value.UseCertificates)
             {
                 return await GetPublicKeysFromCertificatesAsync();
             }
@@ -448,11 +444,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// </summary>
         private async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysFromCertificatesAsync()
         {
-            var useDevCerts = _configuration.GetValue<bool>("IdentitySettings:UseDevelopmentCertificates");
-            if (useDevCerts)
+            if (_identityOptions.Value.UseDevelopmentCertificates)
             {
-                var certPath = _configuration.GetValue<string>("IdentitySettings:DevCertificatePath") ?? "devcert.pfx";
-                var certPassword = _configuration.GetValue<string>("IdentitySettings:DevCertificatePassword") ?? "password";
+                var certPath = _identityOptions.Value.DevCertificatePath;
+                var certPassword = _identityOptions.Value.DevCertificatePassword;
                 X509Certificate2 cert;
                 if (!System.IO.File.Exists(certPath))
                 {
@@ -471,8 +466,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             }
             else
             {
-                var certPath = _configuration.GetValue<string>("IdentitySettings:CertificatePath");
-                var certPassword = _configuration.GetValue<string>("IdentitySettings:CertificatePassword");
+                var certPath = _identityOptions.Value.CertificatePath;
+                var certPassword = _identityOptions.Value.CertificatePassword;
                 if (string.IsNullOrEmpty(certPath))
                 {
                     throw new InvalidOperationException("CertificatePath must be set when not using development certificates.");
@@ -493,7 +488,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             var keys = new List<(RSAParameters, string)>();
             try
             {
-                int maxCacheSize = _configuration.GetValue<int>("IdentitySettings:UseDevelopmentCertificates");
+                int maxCacheSize = _identityOptions.Value.KeyFormatCacheSize;
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 await connection.OpenAsync();
                 var keyRecords = await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
