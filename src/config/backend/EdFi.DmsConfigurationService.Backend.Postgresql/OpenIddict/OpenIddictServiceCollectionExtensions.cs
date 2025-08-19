@@ -23,7 +23,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             {
                 options.Audience = configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
                 options.Authority = configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
-                options.TokenExpirationMinutes = configuration.GetValue<int>("IdentitySettings:TokenExpirationMinutes", 60);
+                options.TokenExpirationMinutes = configuration.GetValue<int>("IdentitySettings:TokenExpirationMinutes", 30);
                 options.UseCertificates = configuration.GetValue<bool>("IdentitySettings:UseCertificates", false);
                 options.UseDevelopmentCertificates = configuration.GetValue<bool>("IdentitySettings:UseDevelopmentCertificates", false);
                 options.DevCertificatePath = configuration.GetValue<string>("IdentitySettings:DevCertificatePath") ?? "devcert.pfx";
