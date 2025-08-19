@@ -90,9 +90,9 @@ public class OpenIdConfigurationModule : IEndpointModule
         var basicConfig = new
         {
             issuer = identitySettings.Value.Authority,
-            register_endpoint = $"{baseUrl}/connect/register",
+            registration_endpoint = $"{baseUrl}/connect/register",
             token_endpoint = $"{baseUrl}/connect/token",
-            revoke_endpoint = $"{baseUrl}/connect/revoke",
+            revocation_endpoint = $"{baseUrl}/connect/revoke",
             jwks_uri = $"{baseUrl}/.well-known/jwks.json",
             frontchannel_logout_supported = false,
             frontchannel_logout_session_supported = false,

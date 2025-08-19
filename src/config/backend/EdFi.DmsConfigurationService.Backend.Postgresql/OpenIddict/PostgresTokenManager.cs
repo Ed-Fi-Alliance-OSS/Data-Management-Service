@@ -31,7 +31,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
         // Cache for key formats with a maximum size limit to prevent unbounded growth
         private readonly ConcurrentDictionary<string, KeyFormat> _keyFormatCache = new ConcurrentDictionary<string, KeyFormat>();
-        private const int MaxCacheSize = 100; // Limit cache to 100 entries to prevent memory issues
         private readonly object _cacheLock = new object();
 
         // Key format enumeration to cache detected formats
@@ -143,8 +142,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 }
 
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
-                var query = $"SELECT pgp_sym_decrypt(PrivateKey::bytea, '{encryptionKey}') AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1";
-                var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(query);
+                var query = "SELECT pgp_sym_decrypt(PrivateKey::bytea, @encryptionKey) AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1";
+                var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(query, new { encryptionKey });
                 if (string.IsNullOrEmpty(keyRecord.PrivateKey) || string.IsNullOrEmpty(keyRecord.KeyId))
                 {
                     throw new InvalidOperationException("No active private key or key id found in OpenIddictKey table.");
@@ -494,6 +493,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             var keys = new List<(RSAParameters, string)>();
             try
             {
+                int maxCacheSize = _configuration.GetValue<int>("IdentitySettings:UseDevelopmentCertificates");
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 await connection.OpenAsync();
                 var keyRecords = await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
@@ -514,12 +514,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                             keyFormat = DetectKeyFormat(record.PublicKey);
 
                             // Check cache size before adding
-                            if (_keyFormatCache.Count >= MaxCacheSize)
+                            if (_keyFormatCache.Count >= maxCacheSize)
                             {
                                 // Cache full, remove a random entry before adding new one
                                 lock (_cacheLock)
                                 {
-                                    if (_keyFormatCache.Count >= MaxCacheSize)
+                                    if (_keyFormatCache.Count >= maxCacheSize)
                                     {
                                         var keyToRemove = _keyFormatCache.Keys.FirstOrDefault();
                                         if (keyToRemove != null)
