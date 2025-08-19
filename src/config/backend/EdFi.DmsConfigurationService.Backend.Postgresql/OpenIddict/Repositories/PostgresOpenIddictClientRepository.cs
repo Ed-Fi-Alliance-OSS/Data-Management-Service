@@ -6,6 +6,7 @@
 using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -16,13 +17,16 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
     {
         private readonly IOptions<DatabaseOptions> _databaseOptions;
         private readonly ILogger<PostgresOpenIddictClientRepository> _logger;
+        private readonly IClientSecretHasher _secretHasher;
 
         public PostgresOpenIddictClientRepository(
             IOptions<DatabaseOptions> databaseOptions,
-            ILogger<PostgresOpenIddictClientRepository> logger)
+            ILogger<PostgresOpenIddictClientRepository> logger,
+            IClientSecretHasher secretHasher)
         {
             _databaseOptions = databaseOptions;
             _logger = logger;
+            _secretHasher = secretHasher;
         }
 
         public async Task<ClientCreateResult> CreateClientAsync(
@@ -69,6 +73,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
                     namespacePrefixClaim,
                     educationOrgClaim
                 };
+
+                // Hash the client secret for secure storage
+                var hashedClientSecret = await _secretHasher.HashSecretAsync(clientSecret);
+
                 string sql = @"
 INSERT INTO dmscs.OpenIddictApplication
     (Id, ClientId, ClientSecret, DisplayName, Permissions, Requirements, Type, CreatedAt, ProtocolMappers)
@@ -83,7 +91,7 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                     {
                         Id = clientUuid,
                         ClientId = clientId,
-                        ClientSecret = clientSecret,
+                        ClientSecret = hashedClientSecret,
                         DisplayName = displayName,
                         Permissions = permissions,
                         Requirements = requirementsArray,
@@ -155,7 +163,6 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
                 // Build protocol mappers (simulate Keycloak workflow)
                 var protocolMappers = new List<Dictionary<string, string>>
                 {
-                    ClientClaimHelper.CreateNamespacePrefixClaim(displayName),
                     ClientClaimHelper.CreateEducationOrganizationClaim(educationOrganizationIds)
                 };
                 var protocolMappersJson = System.Text.Json.JsonSerializer.Serialize(protocolMappers);
@@ -320,6 +327,7 @@ UPDATE dmscs.OpenIddictApplication
             try
             {
                 var newSecret = Guid.NewGuid().ToString("N");
+                var hashedNewSecret = await _secretHasher.HashSecretAsync(newSecret);
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 await connection.OpenAsync();
                 string sql = @"
@@ -329,7 +337,7 @@ UPDATE dmscs.OpenIddictApplication
                 ";
                 var rows = await connection.ExecuteAsync(
                     sql,
-                    new { Id = Guid.Parse(clientUuid), ClientSecret = newSecret }
+                    new { Id = Guid.Parse(clientUuid), ClientSecret = hashedNewSecret }
                 );
                 if (rows == 0)
                 {

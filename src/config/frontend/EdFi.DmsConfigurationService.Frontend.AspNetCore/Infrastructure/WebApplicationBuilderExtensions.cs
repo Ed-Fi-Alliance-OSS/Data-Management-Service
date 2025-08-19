@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
@@ -122,6 +123,7 @@ public static class WebApplicationBuilderExtensions
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
             webAppBuilder.Services.AddTransient<ITokenManager, Backend.Postgresql.OpenIddict.PostgresTokenManager>();
+            webAppBuilder.Services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
         }
         else
         {
@@ -189,34 +191,49 @@ public static class WebApplicationBuilderExtensions
                                 logger.Error("Authentication failed: {Message}", context.Exception.Message);
                                 return Task.CompletedTask;
                             },
+                            OnTokenValidated = async context =>
+                            {
+                                var tokenManager = context.HttpContext.RequestServices.GetService<ITokenManager>();
+                                if (tokenManager != null)
+                                {
+                                    // Extract the raw token from the Authorization header
+                                    var authHeader = context.Request.Headers["Authorization"].ToString();
+                                    var rawToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                                        ? authHeader.Substring("Bearer ".Length).Trim()
+                                        : authHeader.Trim();
+                                    var isValid = await tokenManager.ValidateTokenAsync(rawToken);
+                                    if (!isValid)
+                                    {
+                                        context.Fail("Token has been revoked or is invalid.");
+                                    }
+                                }
+                            }
                         };
                     }
                 );
 
-            // Configure JWT options post-configuration to resolve signing keys at runtime
+            // Fetch public keys synchronously before configuring JwtBearerOptions
+            var serviceProvider = webApplicationBuilder.Services.BuildServiceProvider();
+            var tokenManager = serviceProvider.GetRequiredService<ITokenManager>();
+            var publicKeysList = tokenManager.GetPublicKeysAsync().GetAwaiter().GetResult()?.ToList()
+                ?? new List<(RSAParameters rsaParameters, string keyId)>();
+            var publicKeys = publicKeysList
+                .Select(rsaParams =>
+                {
+                    var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                    {
+                        KeyId = rsaParams.KeyId,
+                    };
+                    return (SecurityKey)key;
+                })
+                .ToList();
+
             webApplicationBuilder
                 .Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-                .Configure<ITokenManager>(
-                    async (options, tokenManager) =>
-                    {
-                        var publicKeysList =
-                            (await tokenManager.GetPublicKeysAsync())?.ToList()
-                            ?? new List<(RSAParameters rsaParameters, string keyId)>();
-
-                        var publicKeys = publicKeysList
-                            .Select(rsaParams =>
-                            {
-                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
-                                {
-                                    KeyId = rsaParams.KeyId,
-                                };
-                                return (SecurityKey)key;
-                            })
-                            .ToList();
-
-                        options.TokenValidationParameters.IssuerSigningKeys = publicKeys;
-                    }
-                );
+                .Configure(options =>
+                {
+                    options.TokenValidationParameters.IssuerSigningKeys = publicKeys;
+                });
 
             // Add authorization services for OpenIddict (same as Keycloak)
             webApplicationBuilder.Services.AddAuthorization(options =>

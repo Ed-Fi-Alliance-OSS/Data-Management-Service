@@ -5,9 +5,11 @@
 
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -26,18 +28,35 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         private readonly ILogger<PostgresTokenManager> _logger;
         private readonly IConfiguration _configuration;
         private readonly JwtSettings _jwtSettings;
+        private readonly IClientSecretHasher _secretHasher;
 
         public PostgresTokenManager(
             IOptions<DatabaseOptions> databaseOptions,
             ILogger<PostgresTokenManager> logger,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            IClientSecretHasher secretHasher)
         {
             _databaseOptions = databaseOptions;
             _logger = logger;
             _configuration = configuration;
+            _secretHasher = secretHasher;
             _jwtSettings = JwtTokenGenerator.GetJwtSettings(configuration);
             _logger.LogInformation("PostgresTokenManager initialized with JWT settings - Issuer: {Issuer}, Audience: {Audience}",
                 _jwtSettings.Issuer, _jwtSettings.Audience);
+        }
+
+        /// <summary>
+        /// Static helper to validate a JWT token and check its revocation status using a service provider.
+        /// This allows easy integration into authentication middleware or endpoint handlers.
+        /// </summary>
+        public static async Task<bool> ValidateTokenWithRevocationAsync(string token, IServiceProvider serviceProvider)
+        {
+            var tokenManager = (PostgresTokenManager?)serviceProvider.GetService(typeof(PostgresTokenManager));
+            if (tokenManager == null)
+            {
+                throw new InvalidOperationException("PostgresTokenManager is not registered in the service provider.");
+            }
+            return await tokenManager.ValidateTokenAsync(token);
         }
 
         /// <summary>
@@ -45,24 +64,89 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// </summary>
         private async Task<(SecurityKey, string)> LoadActiveSigningKey()
         {
-            await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
-            await connection.OpenAsync();
-            // Fetch and decrypt the private key using pgcrypto
-            // Get encryption key from IdentitySettings section in configuration
-            var encryptionKey = _configuration.GetValue<string>("IdentitySettings:EncryptionKey") ?? string.Empty;
-            if (string.IsNullOrEmpty(encryptionKey))
+            var useCertificates = _configuration.GetValue<bool>("IdentitySettings:UseCertificates", false);
+            if (useCertificates)
             {
-                throw new InvalidOperationException("No active EncryptionKey found.");
+                return await LoadActiveSigningKeyFromCertificatesAsync();
             }
-            var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(
+            else
+            {
+                return await LoadActiveSigningKeyFromDatabaseAsync();
+            }
+        }
+
+        /// <summary>
+        /// Loads signing key from X.509 certificates (existing implementation)
+        /// </summary>
+        private async Task<(SecurityKey, string)> LoadActiveSigningKeyFromCertificatesAsync()
+        {
+            var useDevCerts = _configuration.GetValue<bool>("IdentitySettings:UseDevelopmentCertificates");
+            if (useDevCerts)
+            {
+                var certPath = _configuration.GetValue<string>("IdentitySettings:DevCertificatePath") ?? "devcert.pfx";
+                var certPassword = _configuration.GetValue<string>("IdentitySettings:DevCertificatePassword") ?? "password";
+                X509Certificate2 cert;
+                if (!System.IO.File.Exists(certPath))
+                {
+                    using var rsa = RSA.Create(2048);
+                    var certRequest = new CertificateRequest("CN=DevCert", rsa, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+                    cert = certRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+                    var bytes = cert.Export(X509ContentType.Pfx, certPassword);
+                    await System.IO.File.WriteAllBytesAsync(certPath, bytes);
+                }
+                else
+                {
+                    cert = new X509Certificate2(certPath, certPassword);
+                }
+                var signingKey = new X509SecurityKey(cert);
+                return await Task.FromResult((signingKey, cert.Thumbprint));
+            }
+            else
+            {
+                // Load certificate from configured path
+                var certPath = _configuration.GetValue<string>("IdentitySettings:CertificatePath");
+                var certPassword = _configuration.GetValue<string>("IdentitySettings:CertificatePassword");
+                if (string.IsNullOrEmpty(certPath))
+                {
+                    throw new InvalidOperationException("CertificatePath must be set when not using development certificates.");
+                }
+                var cert = string.IsNullOrEmpty(certPassword)
+                    ? new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath)
+                    : new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath, certPassword);
+                var signingKey = new X509SecurityKey(cert);
+                return await Task.FromResult((signingKey, cert.Thumbprint));
+            }
+        }
+
+        /// <summary>
+        /// Loads signing key from database (OpenIddictKey table)
+        /// </summary>
+        private async Task<(SecurityKey, string)> LoadActiveSigningKeyFromDatabaseAsync()
+        {
+            try
+            {
+                var encryptionKey = _configuration.GetValue<string>("IdentitySettings:EncryptionKey");
+                if (string.IsNullOrEmpty(encryptionKey))
+                {
+                    throw new InvalidOperationException("IdentitySettings:EncryptionKey must be set when using database keys.");
+                }
+
+                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
+                var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(
                 "SELECT pgp_sym_decrypt(PrivateKey::bytea, @EncryptionKey) AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1",
                 new { EncryptionKey = encryptionKey });
-            if (string.IsNullOrEmpty(keyRecord.PrivateKey) || string.IsNullOrEmpty(keyRecord.KeyId))
-            {
-                throw new InvalidOperationException("No active private key or key id found in OpenIddictKey table.");
+                if (string.IsNullOrEmpty(keyRecord.PrivateKey) || string.IsNullOrEmpty(keyRecord.KeyId))
+                {
+                    throw new InvalidOperationException("No active private key or key id found in OpenIddictKey table.");
+                }
+                var signingKey = JwtSigningKeyHelper.GenerateSigningKey(keyRecord.PrivateKey);
+                return (signingKey, keyRecord.KeyId);
             }
-            var signingKey = JwtSigningKeyHelper.GenerateSigningKey(keyRecord.PrivateKey);
-            return (signingKey, keyRecord.KeyId);
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load private key from database");
+                throw new InvalidOperationException("Failed to load private key from database. Please check the database connection, OpenIddictKey table, and encryption key.", ex);
+            }
         }
 
         public async Task<TokenResult> GetAccessTokenAsync(
@@ -101,45 +185,34 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 await connection.OpenAsync();
 
-                // Validate client credentials and get application details
+                // First, get the application by client ID to retrieve the stored (potentially hashed) secret
                 string applicationSql =
-                    @"SELECT a.Id, a.DisplayName, a.Permissions,
+                    @"SELECT a.Id, a.DisplayName, a.Permissions, a.ClientSecret,
                              array_agg(s.Name) as Scopes
                       FROM dmscs.OpenIddictApplication a
                       LEFT JOIN dmscs.OpenIddictApplicationScope aps ON a.Id = aps.ApplicationId
                       LEFT JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
-                      WHERE a.ClientId = @ClientId AND a.ClientSecret = @ClientSecret
-                      GROUP BY a.Id, a.DisplayName, a.Permissions";
+                      WHERE a.ClientId = @ClientId
+                      GROUP BY a.Id, a.DisplayName, a.Permissions, a.ClientSecret";
 
                 var applicationInfo = await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
                     applicationSql,
-                    new { ClientId = clientId, ClientSecret = clientSecret }
+                    new { ClientId = clientId }
                 );
 
                 if (applicationInfo == null)
                 {
-                    string applicationSqlByClientId =
-                    @"SELECT a.ClientId
-                      FROM dmscs.OpenIddictApplication a
-                      WHERE a.ClientId = @ClientId";
-                    var applicationInfoByClient = await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
-                        applicationSqlByClientId,
-                        new { ClientId = clientId }
-                    );
-                    if (applicationInfoByClient == null)
-                    {
-                        _logger.LogWarning("Invalid client: {ClientId}", clientId);
-                        return new TokenResult.FailureIdentityProvider(
-                            new IdentityProviderError.InvalidClient("Invalid client or Invalid client credentials")
-                        );
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Invalid client credentials for client: {ClientId}", clientId);
-                        return new TokenResult.FailureIdentityProvider(
-                            new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials")
-                        );
-                    }
+                    _logger.LogWarning("Client not found: {ClientId}", clientId);
+                    return new TokenResult.FailureIdentityProvider(
+                            new IdentityProviderError.InvalidClient("Invalid client or Invalid client credentials"));
+                }
+                // Verify the client secret using the hasher (supports both hashed and plain text for backward compatibility)
+                var isValidSecret = await _secretHasher.VerifySecretAsync(clientSecret, applicationInfo.ClientSecret ?? string.Empty);
+                if (!isValidSecret)
+                {
+                    _logger.LogWarning("Invalid client secret for client: {ClientId}", clientId);
+                    return new TokenResult.FailureIdentityProvider(
+                           new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials"));
                 }
 
                 _logger.LogDebug("Application found: {ApplicationId}, Display Name: {DisplayName}",
@@ -204,7 +277,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             ).ToArray();
 
             // Use shared JwtTokenGenerator
-            var tokenString = EdFi.DmsConfigurationService.Backend.OpenIddict.Token.JwtTokenGenerator.GenerateJwtToken(
+            var tokenString = JwtTokenGenerator.GenerateJwtToken(
                 tokenId,
                 clientId,
                 applicationInfo.DisplayName,
@@ -263,7 +336,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// <summary>
         /// Validates a JWT token and checks its status in the database
         /// </summary>
-        public async Task<bool> ValidateTokenAsync(string token)
+        public async Task<bool> ValidateTokenAsync(string rawToken)
         {
             try
             {
@@ -274,7 +347,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                         k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
                     );
                 if (!JwtTokenValidator.ValidateToken(
-                        token,
+                        rawToken,
                         signingKeys,
                         _jwtSettings.Issuer,
                         _jwtSettings.Audience,
@@ -344,6 +417,64 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// </summary>
         public async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysAsync()
         {
+            var useCertificates = _configuration.GetValue<bool>("IdentitySettings:UseCertificates", false);
+            if (useCertificates)
+            {
+                return await GetPublicKeysFromCertificatesAsync();
+            }
+            else
+            {
+                return await GetPublicKeysFromDatabaseAsync();
+            }
+        }
+
+        /// <summary>
+        /// Gets public keys from X.509 certificates (existing implementation)
+        /// </summary>
+        private async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysFromCertificatesAsync()
+        {
+            var useDevCerts = _configuration.GetValue<bool>("IdentitySettings:UseDevelopmentCertificates");
+            if (useDevCerts)
+            {
+                var certPath = _configuration.GetValue<string>("IdentitySettings:DevCertificatePath") ?? "devcert.pfx";
+                var certPassword = _configuration.GetValue<string>("IdentitySettings:DevCertificatePassword") ?? "password";
+                X509Certificate2 cert;
+                if (!System.IO.File.Exists(certPath))
+                {
+                    using var rsa = RSA.Create(2048);
+                    var certRequest = new CertificateRequest("CN=DevCert", rsa, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+                    cert = certRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+                    var bytes = cert.Export(X509ContentType.Pfx, certPassword);
+                    await System.IO.File.WriteAllBytesAsync(certPath, bytes);
+                }
+                else
+                {
+                    cert = new X509Certificate2(certPath, certPassword);
+                }
+                using var pubRsa = cert.GetRSAPublicKey();
+                return await Task.FromResult(new[] { (pubRsa!.ExportParameters(false), cert.Thumbprint) });
+            }
+            else
+            {
+                var certPath = _configuration.GetValue<string>("IdentitySettings:CertificatePath");
+                var certPassword = _configuration.GetValue<string>("IdentitySettings:CertificatePassword");
+                if (string.IsNullOrEmpty(certPath))
+                {
+                    throw new InvalidOperationException("CertificatePath must be set when not using development certificates.");
+                }
+                var cert = string.IsNullOrEmpty(certPassword)
+                    ? new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath)
+                    : new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath, certPassword);
+                using var pubRsa = cert.GetRSAPublicKey();
+                return await Task.FromResult(new[] { (pubRsa!.ExportParameters(false), cert.Thumbprint) });
+            }
+        }
+
+        /// <summary>
+        /// Gets public keys from database (OpenIddictKey table)
+        /// </summary>
+        private async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysFromDatabaseAsync()
+        {
             var keys = new List<(RSAParameters, string)>();
             try
             {
@@ -405,5 +536,24 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         public string? DisplayName { get; set; }
         public string[]? Permissions { get; set; }
         public string[]? Scopes { get; set; }
+        public string? ClientSecret { get; set; }
+    }
+
+    /// <summary>
+    /// Database key information retrieved from OpenIddictKey table
+    /// </summary>
+    public class DatabaseKeyInfo
+    {
+        public string KeyId { get; set; } = string.Empty;
+        public byte[] PublicKey { get; set; } = Array.Empty<byte>();
+    }
+
+    /// <summary>
+    /// Database private key information retrieved from OpenIddictKey table
+    /// </summary>
+    public class DatabasePrivateKeyInfo
+    {
+        public string KeyId { get; set; } = string.Empty;
+        public string PrivateKey { get; set; } = string.Empty;
     }
 }

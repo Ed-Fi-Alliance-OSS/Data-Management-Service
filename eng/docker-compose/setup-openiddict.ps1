@@ -8,6 +8,7 @@ param (
     [string] $DbType = "Postgresql", # or "MSSQL"
     [string] $ConnectionString = "Host=localhost;Port=5435;Database=edfi_datamanagementservice;Username=postgres;",
     [string] $EnvironmentFile = "./.env",
+    [string] $PostgresContainerName = "dms-postgresql",
     [string] $DbHost = "localhost",
     [string] $DbPort = "ENV:POSTGRES_PORT",
     [string] $DbName = "ENV:POSTGRES_DB_NAME",
@@ -26,6 +27,7 @@ param (
     [switch] $InsertData = $true
 )
 Import-Module ./env-utility.psm1
+Import-Module ./OpenIddict-Crypto.psm1
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 
 function New-OpenIddictRole {
@@ -52,7 +54,9 @@ function New-OpenIddictScope {
 function New-OpenIddictApplication {
     param([string]$ClientId, [string]$ClientName, [string]$ClientSecret)
     $appId = [guid]::NewGuid().ToString()
-    $sqlInsert = "INSERT INTO dmscs.OpenIddictApplication (Id, ClientId, ClientSecret, DisplayName, Type) VALUES ('$appId', '$ClientId', '$ClientSecret', '$ClientName', 'confidential') ON CONFLICT (ClientId) DO NOTHING RETURNING Id; "
+    # Hash the client secret using ASP.NET Core Identity compatible hashing
+    $hashedSecret = New-AspNetPasswordHash -Password $ClientSecret
+    $sqlInsert = "INSERT INTO dmscs.OpenIddictApplication (Id, ClientId, ClientSecret, DisplayName, Type) VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential') ON CONFLICT (ClientId) DO NOTHING RETURNING Id; "
     $result = Invoke-DbQuery $sqlInsert
 
     $sqlSelect = "SELECT Id FROM dmscs.OpenIddictApplication WHERE ClientId = '$ClientId';"
@@ -74,14 +78,28 @@ function Add-OpenIddictApplicationScope {
 
 function Add-OpenIddictCustomClaim {
     param([string]$AppId, [string]$ClaimName, [string]$ClaimValue)
-    $protocolMapper = @{ $ClaimName = $ClaimValue } | ConvertTo-Json -Compress
-    $escapedJson = $protocolMapper -replace "'", "''"
+    if (-not $ClaimValue) {
+        Write-Host "ClaimValue is empty, skipping claim addition."
+        return
+    }
+
+    # Create JSON object and properly escape for PostgreSQL
+    $jsonObj = @{ $ClaimName = $ClaimValue } | ConvertTo-Json -Compress
+
+    # Double escape: first for PowerShell string and then for PostgreSQL
+    # Replace single quotes with double single quotes for PostgreSQL
+    $escapedJson = $jsonObj.Replace("'", "''")
+    # Replace double quotes with escaped double quotes for PowerShell
+    $escapedJson = $escapedJson.Replace('"', '\"')
+
+    # Use dollar-quoted string literals for PostgreSQL to avoid most escaping issues
     $sql = @"
 UPDATE dmscs.OpenIddictApplication
 SET ProtocolMappers = COALESCE(ProtocolMappers, '{}'::jsonb) || '$escapedJson'::jsonb
 WHERE Id = '$AppId';
 "@
-    Invoke-DbQuery $sql
+    # Use debug mode for this complex query to help troubleshoot any issues
+    Invoke-DbQuery -Sql $sql -Debug
 }
 
 function Update-OpenIddictApplicationPermissions {
@@ -161,7 +179,16 @@ function Get-EffectiveConnectionString {
 }
 
 function Invoke-DbQuery {
-    param([string]$Sql)
+    param(
+        [string]$Sql,
+        [switch]$Debug
+    )
+
+    if ($Debug) {
+        Write-Host "Debug: Raw SQL to execute:" -ForegroundColor Yellow
+        Write-Host $Sql -ForegroundColor Gray
+    }
+
     $effectiveConnectionString = Get-EffectiveConnectionString -ConnectionString $ConnectionString -DbType $DbType -DbHost $DbHost -DbPort $DbPort -DbName $DbName -DbUser $DbUser
     if ($DbType -eq "Postgresql") {
         # Parse semicolon-separated connection string
@@ -176,10 +203,18 @@ function Invoke-DbQuery {
         $db = $params['Database']
         $user = $params['Username']
         # Run SQL directly on the PostgreSQL container using docker exec
-        $containerName = "dms-postgresql"
-        # Escape double quotes in SQL for safe shell execution
+        $containerName = $PostgresContainerName
+
+        # More robust SQL escaping for shell command
+        # 1. Escape double quotes for shell command
         $escapedSql = $Sql.Replace('"', '\"')
+        # 2. Escape backticks for PowerShell
+        $escapedSql = $escapedSql.Replace('`', '``')
+        # 3. Escape dollar signs for PowerShell
+        $escapedSql = $escapedSql.Replace('$', '`$')
+
         $execCmd = 'docker exec {0} psql -U {1} -d {2} -c "{3}"' -f $containerName, $user, $db, $escapedSql
+        Write-Verbose "Executing: $execCmd"
         Invoke-Expression $execCmd
     }
     elseif ($DbType -eq "MSSQL") {
@@ -215,13 +250,12 @@ CREATE TABLE IF NOT EXISTS dmscs.OpenIddictKey (
 
     Write-Host "Create extension if not exists: pgcrypto"
     Invoke-DbQuery @'
-CREATE SCHEMA IF NOT EXISTS extensions;
-CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 '@
     # Generate and output OpenIddictKey insert SQL
     Write-Host "Generating OpenIddictKey insert statement..."
     $encryptionKey = Resolve-EnvValue $EncryptionKey
-    $keyInsertSql = & "$PSScriptRoot/Generate-OpenIddictKey-Insert.ps1" -EncryptionKey $encryptionKey
+    $keyInsertSql = New-OpenIddictKeyInsertSql -EncryptionKey $encryptionKey
     Write-Host "Insert public and private keys into dmscs.OpenIddictKey"
     Invoke-DbQuery $keyInsertSql
     Write-Host "Database initialization scripts completed."

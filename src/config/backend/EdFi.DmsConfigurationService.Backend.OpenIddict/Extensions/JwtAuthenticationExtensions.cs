@@ -6,26 +6,48 @@
 using System.Security.Claims;
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
+using OpenIddict.Validation;
+using OpenIddict.Validation.AspNetCore;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
 {
     /// <summary>
-    /// JWT Authentication configuration for validating tokens issued by ITokenManager implementations
+    /// Enhanced JWT Authentication configuration using OpenIddict validation components
     /// </summary>
     public static class JwtAuthenticationExtensions
     {
         public const string JwtSchemeName = "DmsJwtBearer";
+        public const string OpenIddictValidationSchemeName = "DmsOpenIddictValidation";
 
         public static IServiceCollection AddJwtAuthentication(
             this IServiceCollection services,
             JwtSettings jwtSettings,
             Microsoft.Extensions.Configuration.IConfiguration configuration)
         {
-            // Add authentication without setting a default scheme to avoid conflicts
+            // Add enhanced token validator
+            services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
+
+            // Add OpenIddict validation support
+            services.AddOpenIddict()
+                .AddValidation(options =>
+                {
+                    // Configure the OpenIddict validation component to use the local
+                    // token validation endpoint (for future extensibility)
+                    options.SetIssuer(jwtSettings.Issuer);
+
+                    // Register the System.Net.Http integration
+                    options.UseSystemNetHttp();
+
+                    // Register the ASP.NET Core host
+                    options.UseAspNetCore();
+                });
+
+            // Add authentication with both schemes
             services.AddAuthentication()
                 .AddJwtBearer(JwtSchemeName, options =>
                 {
@@ -47,9 +69,23 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     {
                         OnTokenValidated = async context =>
                         {
-                            // Additional validation against database using any ITokenManager implementation
-                            var tokenManager = context.HttpContext.RequestServices.GetService<ITokenManager>();
+                            // Use enhanced token validator for additional validation
+                            var enhancedValidator = context.HttpContext.RequestServices.GetService<IEnhancedTokenValidator>();
 
+                            if (enhancedValidator != null)
+                            {
+                                var token = context.Request.Headers["Authorization"]
+                                    .ToString().Replace("Bearer ", "");
+
+                                var validationResult = await enhancedValidator.ValidateTokenAsync(token);
+                                if (!validationResult.IsValid)
+                                {
+                                    context.Fail($"Enhanced validation failed: {validationResult.ErrorDescription}");
+                                }
+                            }
+
+                            // Additional validation using existing token manager (backward compatibility)
+                            var tokenManager = context.HttpContext.RequestServices.GetService<ITokenManager>();
                             if (tokenManager != null)
                             {
                                 var token = context.Request.Headers["Authorization"]
@@ -88,31 +124,35 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 .Configure<ITokenManager>(
                     (options, tokenManager) =>
                     {
-                        // For startup configuration, we'll set up a dynamic key resolver
-                        // that loads keys on demand during token validation
-                        options.TokenValidationParameters.IssuerSigningKeyResolver = (token, securityToken, kid, validationParameters) =>
+                        // Create a static cache for public keys that loads only once
+                        var keysCache = new Lazy<IEnumerable<SecurityKey>>(FetchPublicKeys);
+
+                        // Function to fetch keys synchronously but only once during initialization
+                        IEnumerable<SecurityKey> FetchPublicKeys()
                         {
-                            // This will be called during actual token validation
-                            // Load keys synchronously here as this is a callback during validation
                             try
                             {
-                                var publicKeys = Task.Run(async () => await tokenManager.GetPublicKeysAsync()).GetAwaiter().GetResult();
-                                return publicKeys.Select(rsaParams =>
-                                {
-                                    var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                                // This still blocks, but only happens once at startup
+                                var keys = tokenManager.GetPublicKeysAsync()
+                                    .ConfigureAwait(false)
+                                    .GetAwaiter()
+                                    .GetResult()
+                                    .Select(rsaParams => new RsaSecurityKey(rsaParams.RsaParameters)
                                     {
-                                        KeyId = rsaParams.KeyId,
-                                    };
-                                    return (SecurityKey)key;
-                                }).ToList();
+                                        KeyId = rsaParams.KeyId
+                                    });
+
+                                return keys.Cast<SecurityKey>().ToList();
                             }
                             catch
                             {
-                                // Log error and return empty list to fail validation gracefully
-                                // Note: Logger is not available in this context, but validation will fail appropriately
                                 return new List<SecurityKey>();
                             }
-                        };
+                        }
+
+                        // Use the cached keys for all token validations
+                        options.TokenValidationParameters.IssuerSigningKeyResolver =
+                            (token, securityToken, kid, validationParameters) => keysCache.Value;
                     }
                 );
 

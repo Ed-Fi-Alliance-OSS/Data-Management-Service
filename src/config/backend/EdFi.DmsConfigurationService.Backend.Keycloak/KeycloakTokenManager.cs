@@ -62,8 +62,13 @@ public class KeycloakTokenManager(
 
     async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> ITokenManager.GetPublicKeysAsync()
     {
-        // TODO: Implement async public key retrieval from Keycloak
-        await Task.CompletedTask; // Placeholder to avoid async warning
+        await Task.CompletedTask;
         throw new NotImplementedException("GetPublicKeysAsync not yet implemented for Keycloak");
+    }
+
+    async Task<bool> ITokenManager.ValidateTokenAsync(string rawToken)
+    {
+        await Task.CompletedTask;
+        throw new NotImplementedException();
     }
 }
