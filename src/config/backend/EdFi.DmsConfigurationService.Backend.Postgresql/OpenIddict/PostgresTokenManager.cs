@@ -143,9 +143,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 }
 
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
-                var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(
-                "SELECT pgp_sym_decrypt(PrivateKey::bytea, @EncryptionKey) AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1",
-                new { EncryptionKey = encryptionKey });
+                var query = $"SELECT pgp_sym_decrypt(PrivateKey::bytea, '{encryptionKey}') AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1";
+                var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(query);
                 if (string.IsNullOrEmpty(keyRecord.PrivateKey) || string.IsNullOrEmpty(keyRecord.KeyId))
                 {
                     throw new InvalidOperationException("No active private key or key id found in OpenIddictKey table.");
