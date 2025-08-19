@@ -3,11 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Dapper;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using Microsoft.Extensions.Configuration;
@@ -22,13 +22,22 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
     /// PostgreSQL implementation of ITokenManager that generates and validates JWT tokens using OpenIddict standards.
     /// Stores tokens in dmscs.openiddict_token table and includes custom scope claims.
     /// </summary>
-    public class PostgresTokenManager : ITokenManager
+    public class PostgresTokenManager : ITokenManager, ITokenRevocationManager
     {
         private readonly IOptions<DatabaseOptions> _databaseOptions;
         private readonly ILogger<PostgresTokenManager> _logger;
         private readonly IConfiguration _configuration;
-        private readonly JwtSettings _jwtSettings;
         private readonly IClientSecretHasher _secretHasher;
+        private readonly ConcurrentDictionary<string, KeyFormat> _keyFormatCache = new ConcurrentDictionary<string, KeyFormat>();
+
+        // Key format enumeration to cache detected formats
+        private enum KeyFormat
+        {
+            SubjectPublicKeyInfo,
+            Pkcs1,
+            Base64Encoded,
+            Unknown
+        }
 
         public PostgresTokenManager(
             IOptions<DatabaseOptions> databaseOptions,
@@ -40,9 +49,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             _logger = logger;
             _configuration = configuration;
             _secretHasher = secretHasher;
-            _jwtSettings = JwtTokenGenerator.GetJwtSettings(configuration);
-            _logger.LogInformation("PostgresTokenManager initialized with JWT settings - Issuer: {Issuer}, Audience: {Audience}",
-                _jwtSettings.Issuer, _jwtSettings.Audience);
+            _logger.LogInformation("PostgresTokenManager initialized");
         }
 
         /// <summary>
@@ -225,9 +232,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     clientId,
                     scope ?? string.Join(",", applicationInfo.Scopes ?? new string[0])
                 );
-
+                int tokenExpirationMinutes = _configuration.GetValue<int>("IdentitySettings:TokenExpirationMinutes");
                 // Calculate expires_in (seconds)
-                var expiresIn = (_jwtSettings.ExpirationMinutes * 60);
+                var expiresIn = (tokenExpirationMinutes * 60);
                 // Compose the response object
                 var response = new
                 {
@@ -264,7 +271,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             var tokenId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
-            var expiration = now.AddMinutes(_jwtSettings.ExpirationMinutes);
+            string audience = _configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
+            string issuer = _configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
+            int tokenExpirationMinutes = _configuration.GetValue<int>("IdentitySettings:TokenExpirationMinutes");
+            var expiration = now.AddMinutes(tokenExpirationMinutes);
             var (signingKey, keyId) = await LoadActiveSigningKey();
             // Prepare roles from OpenIddictClientRole/OpenIddictRole tables
             var roles = (await connection.QueryAsync<string>(
@@ -286,8 +296,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 scope ?? "",
                 now,
                 expiration,
-                _jwtSettings.Issuer,
-                _jwtSettings.Audience,
+                issuer,
+                audience,
                 signingKey,
                 keyId
             );
@@ -340,6 +350,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             try
             {
+                string audience = _configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
+                string issuer = _configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
                 var publicKeys = await GetPublicKeysAsync();
                 var signingKeys = publicKeys
                     .ToDictionary(
@@ -349,9 +361,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 if (!JwtTokenValidator.ValidateToken(
                         rawToken,
                         signingKeys,
-                        _jwtSettings.Issuer,
-                        _jwtSettings.Audience,
-                        out var jwtToken
+                        issuer,
+                        audience,
+                        out var jwtToken,
+                        _logger
                     )
                 )
                 {
@@ -487,26 +500,37 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     try
                     {
                         using var rsa = RSA.Create();
-                        // First try importing as SubjectPublicKeyInfo format (spki)
-                        try
+
+                        // Check if we've already determined the format for this key
+                        var keyFormat = _keyFormatCache.GetOrAdd(
+                            record.KeyId,
+                            _ => DetectKeyFormat(record.PublicKey)
+                        );
+
+                        _logger.LogDebug("Key {KeyId} format detected as: {Format}", record.KeyId, keyFormat);
+
+                        // Import the key using the detected format
+                        switch (keyFormat)
                         {
-                            rsa.ImportSubjectPublicKeyInfo(record.PublicKey, out _);
-                        }
-                        catch
-                        {
-                            // If that fails, try as PKCS#1 format
-                            try
-                            {
+                            case KeyFormat.SubjectPublicKeyInfo:
+                                rsa.ImportSubjectPublicKeyInfo(record.PublicKey, out _);
+                                break;
+
+                            case KeyFormat.Pkcs1:
                                 rsa.ImportRSAPublicKey(record.PublicKey, out _);
-                            }
-                            catch
-                            {
-                                // Finally, try as Base64 string that needs decoding
+                                break;
+
+                            case KeyFormat.Base64Encoded:
                                 var publicKeyString = System.Text.Encoding.UTF8.GetString(record.PublicKey);
                                 var decodedKey = Convert.FromBase64String(publicKeyString);
                                 rsa.ImportSubjectPublicKeyInfo(decodedKey, out _);
-                            }
+                                break;
+
+                            default:
+                                _logger.LogWarning("Unknown key format for key ID: {KeyId}", record.KeyId);
+                                continue; // Skip this key
                         }
+
                         keys.Add((rsa.ExportParameters(false), record.KeyId));
                         _logger.LogInformation(
                             "Successfully loaded public key with ID: {KeyId}",
@@ -524,6 +548,59 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 _logger.LogError(ex, "Failed to fetch public keys for JWKS");
             }
             return keys;
+        }
+
+        /// <summary>
+        /// Detects the format of a public key
+        /// </summary>
+        private KeyFormat DetectKeyFormat(byte[] keyData)
+        {
+            try
+            {
+                // Try importing as SubjectPublicKeyInfo (X.509) format
+                using (var rsa = RSA.Create())
+                {
+                    try
+                    {
+                        rsa.ImportSubjectPublicKeyInfo(keyData, out _);
+                        return KeyFormat.SubjectPublicKeyInfo;
+                    }
+                    catch
+                    {
+                        // Not in SPKI format, continue to next check
+                    }
+
+                    // Try importing as PKCS#1 format
+                    try
+                    {
+                        rsa.ImportRSAPublicKey(keyData, out _);
+                        return KeyFormat.Pkcs1;
+                    }
+                    catch
+                    {
+                        // Not in PKCS#1 format, continue to next check
+                    }
+
+                    // Try as Base64 encoded string
+                    try
+                    {
+                        var publicKeyString = System.Text.Encoding.UTF8.GetString(keyData);
+                        var decodedKey = Convert.FromBase64String(publicKeyString);
+                        rsa.ImportSubjectPublicKeyInfo(decodedKey, out _);
+                        return KeyFormat.Base64Encoded;
+                    }
+                    catch
+                    {
+                        // Not a Base64 encoded string
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error while detecting key format");
+            }
+
+            return KeyFormat.Unknown;
         }
     }
 

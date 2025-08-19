@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.IdentityModel.Tokens.Jwt;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
@@ -17,13 +18,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
         /// <param name="issuer">Expected issuer</param>
         /// <param name="audience">Expected audience</param>
         /// <param name="jwtToken">Out: parsed JwtSecurityToken</param>
+        /// <param name="logger">Optional logger for diagnostic information</param>
         /// <returns>True if valid, false otherwise</returns>
         public static bool ValidateToken(
             string token,
             IDictionary<string, SecurityKey> publicKeys,
             string issuer,
             string audience,
-            out JwtSecurityToken? jwtToken)
+            out JwtSecurityToken? jwtToken,
+            ILogger? logger = null)
         {
             jwtToken = null;
             try
@@ -34,6 +37,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 if (string.IsNullOrEmpty(kid) || !publicKeys.TryGetValue(kid, out var signingKey))
                 {
                     // No kid or key not found
+                    logger?.LogWarning(
+                        "JWT validation failed: Missing or invalid 'kid' header. Kid: {Kid}, Available keys: {AvailableKeys}",
+                        kid,
+                        string.Join(", ", publicKeys.Keys)
+                    );
                     return false;
                 }
                 var validationParameters = new TokenValidationParameters
@@ -45,14 +53,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                     ValidateAudience = true,
                     ValidAudience = audience,
                     ValidateLifetime = true,
-                    ClockSkew = TimeSpan.FromMinutes(5)
+                    ClockSkew = TimeSpan.FromMinutes(5),
                 };
                 tokenHandler.ValidateToken(token, validationParameters, out var validatedToken);
                 jwtToken = validatedToken as JwtSecurityToken;
+                logger?.LogDebug(
+                    "JWT token validated successfully. Issuer: {Issuer}, Audience: {Audience}, Subject: {Subject}",
+                    jwtToken?.Issuer,
+                    jwtToken?.Audiences?.FirstOrDefault(),
+                    jwtToken?.Subject
+                );
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                logger?.LogWarning(ex, "JWT token validation failed: {ErrorMessage}", ex.Message);
                 return false;
             }
         }
