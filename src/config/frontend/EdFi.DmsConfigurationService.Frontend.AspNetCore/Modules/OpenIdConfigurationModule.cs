@@ -29,10 +29,14 @@ public class OpenIdConfigurationModule : IEndpointModule
 
         // If PathBase is configured, include it
         var pathBase = configuration.GetValue<string>("AppSettings:PathBase");
-        if (!string.IsNullOrEmpty(pathBase))
+        var uriBuilder = new UriBuilder
         {
-            baseUrl = $"{baseUrl}/{pathBase.Trim('/')}";
-        }
+            Scheme = request.Scheme,
+            Host = request.Host.Host,
+            Port = request.Host.Port ?? (request.Scheme == "https" ? 443 : 80),
+            Path = string.IsNullOrEmpty(pathBase) ? "" : pathBase
+        };
+        baseUrl = uriBuilder.Uri.ToString().TrimEnd('/');
 
         // Use enhanced configuration provider if available, otherwise fallback to basic implementation
         if (configurationProvider != null)

@@ -28,7 +28,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         private readonly ILogger<PostgresTokenManager> _logger;
         private readonly IConfiguration _configuration;
         private readonly IClientSecretHasher _secretHasher;
+
+        // Cache for key formats with a maximum size limit to prevent unbounded growth
         private readonly ConcurrentDictionary<string, KeyFormat> _keyFormatCache = new ConcurrentDictionary<string, KeyFormat>();
+        private const int MaxCacheSize = 100; // Limit cache to 100 entries to prevent memory issues
+        private readonly object _cacheLock = new object();
 
         // Key format enumeration to cache detected formats
         private enum KeyFormat
@@ -502,10 +506,35 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                         using var rsa = RSA.Create();
 
                         // Check if we've already determined the format for this key
-                        var keyFormat = _keyFormatCache.GetOrAdd(
-                            record.KeyId,
-                            _ => DetectKeyFormat(record.PublicKey)
-                        );
+                        KeyFormat keyFormat;
+
+                        // Try to get from cache first
+                        if (!_keyFormatCache.TryGetValue(record.KeyId, out keyFormat))
+                        {
+                            // Cache miss, detect format
+                            keyFormat = DetectKeyFormat(record.PublicKey);
+
+                            // Check cache size before adding
+                            if (_keyFormatCache.Count >= MaxCacheSize)
+                            {
+                                // Cache full, remove a random entry before adding new one
+                                lock (_cacheLock)
+                                {
+                                    if (_keyFormatCache.Count >= MaxCacheSize)
+                                    {
+                                        var keyToRemove = _keyFormatCache.Keys.FirstOrDefault();
+                                        if (keyToRemove != null)
+                                        {
+                                            _keyFormatCache.TryRemove(keyToRemove, out _);
+                                            _logger.LogDebug("Cache full, removed entry for key: {KeyId}", keyToRemove);
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Now add the new entry
+                            _keyFormatCache.TryAdd(record.KeyId, keyFormat);
+                        }
 
                         _logger.LogDebug("Key {KeyId} format detected as: {Format}", record.KeyId, keyFormat);
 

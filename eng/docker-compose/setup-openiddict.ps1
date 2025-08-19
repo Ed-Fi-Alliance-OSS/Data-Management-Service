@@ -54,7 +54,7 @@ function New-OpenIddictScope {
 function New-OpenIddictApplication {
     param([string]$ClientId, [string]$ClientName, [string]$ClientSecret)
     $appId = [guid]::NewGuid().ToString()
-    # Hash the client secret using ASP.NET Core Identity compatible hashing
+    # Hash the client secret using ASP.NET password hashing
     $hashedSecret = New-AspNetPasswordHash -Password $ClientSecret
     $sqlInsert = "INSERT INTO dmscs.OpenIddictApplication (Id, ClientId, ClientSecret, DisplayName, Type) VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential') ON CONFLICT (ClientId) DO NOTHING RETURNING Id; "
     $result = Invoke-DbQuery $sqlInsert

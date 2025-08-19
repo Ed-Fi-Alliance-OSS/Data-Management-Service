@@ -228,28 +228,34 @@ public static class WebApplicationBuilderExtensions
                     }
                 );
 
-            // Fetch public keys synchronously before configuring JwtBearerOptions
-            var serviceProvider = webApplicationBuilder.Services.BuildServiceProvider();
-            var tokenManager = serviceProvider.GetRequiredService<ITokenManager>();
-            var publicKeysList = tokenManager.GetPublicKeysAsync().GetAwaiter().GetResult()?.ToList()
-                ?? new List<(RSAParameters rsaParameters, string keyId)>();
-            var publicKeys = publicKeysList
-                .Select(rsaParams =>
-                {
-                    var key = new RsaSecurityKey(rsaParams.RsaParameters)
-                    {
-                        KeyId = rsaParams.KeyId,
-                    };
-                    return (SecurityKey)key;
-                })
-                .ToList();
-
+            // Configure dynamic key resolution using IssuerSigningKeyResolver
             webApplicationBuilder
                 .Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-                .Configure(options =>
-                {
-                    options.TokenValidationParameters.IssuerSigningKeys = publicKeys;
-                });
+                .Configure<ITokenManager>(
+                    (options, tokenManager) =>
+                    {
+                        options.TokenValidationParameters.IssuerSigningKeyResolver = (
+                            token,
+                            securityToken,
+                            kid,
+                            validationParameters
+                        ) =>
+                        {
+                            // This resolver will be called when a token needs to be validated
+                            // Using ConfigureAwait(false) to avoid deadlocks in the sync context
+                            var keysTask = tokenManager.GetPublicKeysAsync();
+                            var publicKeysList = keysTask.ConfigureAwait(false).GetAwaiter().GetResult();
+
+                            return publicKeysList.Select(rsaParams =>
+                            {
+                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                                {
+                                    KeyId = rsaParams.KeyId,
+                                };
+                                return (SecurityKey)key;
+                            });
+                        };
+                    });
 
             // Add authorization services for OpenIddict (same as Keycloak)
             webApplicationBuilder.Services.AddAuthorization(options =>
