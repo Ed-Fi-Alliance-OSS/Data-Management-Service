@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
@@ -16,6 +17,7 @@ using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using OpenIddict.Abstractions;
 using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -26,6 +28,8 @@ public class IdentityModule : IEndpointModule
     {
         endpoints.MapPost("/connect/register", RegisterClient).DisableAntiforgery();
         endpoints.MapPost("/connect/token", GetClientAccessToken).DisableAntiforgery();
+        endpoints.MapPost("/connect/introspect", IntrospectToken).DisableAntiforgery();
+        endpoints.MapPost("/connect/revoke", RevokeToken).DisableAntiforgery();
     }
 
     private async Task<IResult> RegisterClient(
@@ -110,11 +114,24 @@ public class IdentityModule : IEndpointModule
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         [FromForm] TokenRequest model,
-        ITokenManager tokenManager,
+        [FromServices] ITokenManager tokenManager,
         HttpContext httpContext
     )
     {
         await validator.GuardAsync(model);
+
+        // Validate grant type (OAuth 2.0 compliance)
+        if (!string.Equals(model.grant_type, OpenIddictConstants.GrantTypes.ClientCredentials, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Json(
+                new
+                {
+                    error = OpenIddictConstants.Errors.UnsupportedGrantType,
+                    error_description = "The specified grant type is not supported."
+                },
+                statusCode: 400
+            );
+        }
 
         var tokenResult = await tokenManager.GetAccessTokenAsync(
             [
@@ -152,5 +169,102 @@ public class IdentityModule : IEndpointModule
                 },
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
+    }
+
+    private static async Task<IResult> IntrospectToken(
+        [FromForm] IntrospectionRequest model,
+        [FromServices] IEnhancedTokenValidator? tokenValidator,
+        HttpContext httpContext
+    )
+    {
+        if (string.IsNullOrEmpty(model.Token))
+        {
+            return Results.Json(
+                new
+                {
+                    error = OpenIddictConstants.Errors.InvalidRequest,
+                    error_description = "The token parameter is missing."
+                },
+                statusCode: 400
+            );
+        }
+
+        if (tokenValidator == null)
+        {
+            return Results.Json(new { active = false });
+        }
+
+        var validationResult = await tokenValidator.ValidateTokenAsync(model.Token);
+
+        if (!validationResult.IsValid || validationResult.Principal == null)
+        {
+            return Results.Json(new { active = false });
+        }
+
+        // Build introspection response according to RFC 7662
+        var response = new
+        {
+            active = true,
+            client_id = validationResult.Principal.FindFirst("client_id")?.Value,
+            scope = string.Join(" ", validationResult.Principal.FindAll("scope").Select(c => c.Value)),
+            exp = validationResult.Principal.FindFirst("exp")?.Value,
+            iat = validationResult.Principal.FindFirst("iat")?.Value,
+            sub = validationResult.Principal.FindFirst("sub")?.Value,
+            aud = validationResult.Principal.FindFirst("aud")?.Value,
+            iss = validationResult.Principal.FindFirst("iss")?.Value,
+            token_type = "Bearer"
+        };
+
+        return Results.Json(response);
+    }
+
+    private static async Task<IResult> RevokeToken(
+        [FromForm] RevocationRequest model,
+        [FromServices] ITokenManager tokenManager,
+        HttpContext httpContext
+    )
+    {
+        if (string.IsNullOrEmpty(model.Token))
+        {
+            return Results.Json(
+                new
+                {
+                    error = OpenIddictConstants.Errors.InvalidRequest,
+                    error_description = "The token parameter is missing."
+                },
+                statusCode: 400
+            );
+        }
+
+        // Check if token manager supports revocation
+        var revocationMethod = tokenManager.GetType().GetMethod("RevokeTokenAsync");
+        if (revocationMethod != null)
+        {
+            try
+            {
+                await (Task)revocationMethod.Invoke(tokenManager, new object[] { model.Token })!;
+                return Results.Ok(); // RFC 7009: Always return 200 OK for revocation
+            }
+            catch
+            {
+                // Even if revocation fails, return 200 OK (RFC 7009 requirement)
+                return Results.Ok();
+            }
+        }
+
+        // If revocation is not supported, still return 200 OK
+        return Results.Ok();
+    }
+
+    public class IntrospectionRequest
+    {
+        public string Token { get; set; } = string.Empty;
+        public string? Token_Type_Hint { get; set; }
+    }
+
+    public class RevocationRequest
+    {
+        public string Token { get; set; } = string.Empty;
+        public string? Token_Type_Hint { get; set; }
     }
 }

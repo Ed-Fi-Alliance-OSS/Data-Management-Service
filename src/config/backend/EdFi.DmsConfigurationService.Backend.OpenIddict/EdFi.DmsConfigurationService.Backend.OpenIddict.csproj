@@ -21,6 +21,10 @@
     <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="OpenIddict.Abstractions" />
+    <PackageReference Include="OpenIddict.Validation" />
+    <PackageReference Include="OpenIddict.Validation.AspNetCore" />
+    <PackageReference Include="OpenIddict.Validation.SystemNetHttp" />
+    <PackageReference Include="OpenIddict.Core" />
   </ItemGroup>
 
   <ItemGroup>

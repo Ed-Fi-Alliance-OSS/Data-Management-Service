@@ -76,7 +76,7 @@ GET http://localhost:{{dmsPort}}
 
 ### Read the base URL for all Descriptors and Resources from the Discovery API response
 @dataApi={{discovery.response.body.urls.dataManagementApi}}
-@dataApi=http://localhost:8080/data
+@dataApi=http://localhost:{{dmsPort}}/data
 # At last, we can authenticate with the DMS using the client credentials we
 # generated with the DMS Configuration Service.
 
@@ -170,4 +170,3 @@ Content-Type: application/json
   "codeValue": "Regular public school district",
   "shortDescription": 1
 }
-

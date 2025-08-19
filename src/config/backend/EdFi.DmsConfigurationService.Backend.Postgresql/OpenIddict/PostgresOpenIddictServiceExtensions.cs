@@ -5,7 +5,10 @@
 using System.Data;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,11 +22,26 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             services.AddSingleton<IClientRepository, PostgresOpenIddictClientRepository>();
             services.AddSingleton<ITokenManager, PostgresTokenManager>();
+            services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
 
-            // Register JWT authentication with default settings
-            // Read Issuer and Audience from IdentitySettings in configuration
+            // Add enhanced OpenIddict-compatible services
+            services.AddScoped<IOpenIdConnectConfigurationProvider, OpenIdConnectConfigurationProvider>();
+            services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
+
+            // Add minimal OpenIddict validation support
             var issuer = configuration["IdentitySettings:Authority"];
             var audience = configuration["IdentitySettings:Audience"];
+
+            services
+                .AddOpenIddict()
+                .AddValidation(options =>
+                {
+                    options.SetIssuer(issuer ?? string.Empty);
+                    options.UseSystemNetHttp();
+                    options.UseAspNetCore();
+                });
+
+            // Register JWT authentication with default settings (keeping existing implementation)
             services.AddJwtAuthentication(
                 new JwtSettings
                 {
@@ -54,6 +72,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             services.AddSingleton<IClientRepository, PostgresOpenIddictClientRepository>();
             services.AddSingleton<ITokenManager, PostgresTokenManager>();
+            services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+
+            // Add enhanced OpenIddict-compatible services
+            services.AddScoped<IOpenIdConnectConfigurationProvider, OpenIdConnectConfigurationProvider>();
+            services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
+
             services.AddJwtAuthentication(jwtSettings, configuration);
 
             services.AddTransient<IDbConnection>(sp =>

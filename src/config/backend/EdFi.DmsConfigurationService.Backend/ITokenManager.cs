@@ -9,13 +9,10 @@ namespace EdFi.DmsConfigurationService.Backend;
 
 public interface ITokenManager
 {
-#pragma warning disable IDE0040 // Remove accessibility modifiers
     public Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials);
-#pragma warning restore IDE0040 // Remove accessibility modifiers
-
     // For JWKS endpoint
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0040:Remove accessibility modifiers", Justification = "<Pending>")]
-    public Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysAsync();
+    Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysAsync();
+    Task<bool> ValidateTokenAsync(string rawToken);
 }
 
 public record TokenResult
