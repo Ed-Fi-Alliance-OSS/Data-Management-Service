@@ -161,7 +161,7 @@ authorization hierarchy to enable authorization for your extension resources. To
 do this:
 
 1. Author your security claims hierarchy JSON file. See `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`
-for examples.
+for examples. Files must follow the pattern: `{number}-{description}-claimset.json` and will be processed in order.
 
 2. Place it in a directory mounted as a Docker volume named `app/additional-claims` for CMS to see at runtime. The default behavior of the docker compose
 scripts is to mount `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`.
