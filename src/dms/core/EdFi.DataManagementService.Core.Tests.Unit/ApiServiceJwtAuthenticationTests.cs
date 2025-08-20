@@ -63,7 +63,8 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<ResourceLoadOrderCalculator>(),
             A.Fake<IUploadApiSchemaService>(),
             serviceProvider,
-            A.Fake<ClaimSetsCache>()
+            A.Fake<ClaimSetsCache>(),
+            A.Fake<IResourceDependencyGraphMLFactory>()
         );
 
         // Act - Use reflection to call the private GetCommonInitialSteps method
@@ -110,7 +111,8 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<ResourceLoadOrderCalculator>(),
             A.Fake<IUploadApiSchemaService>(),
             serviceProvider,
-            A.Fake<ClaimSetsCache>()
+            A.Fake<ClaimSetsCache>(),
+            A.Fake<IResourceDependencyGraphMLFactory>()
         );
 
         // Act & Assert - Should throw InvalidOperationException

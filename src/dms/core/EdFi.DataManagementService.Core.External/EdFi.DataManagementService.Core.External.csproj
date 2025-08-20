@@ -18,6 +18,7 @@
         </PackageReference>
         <PackageReference Include="Microsoft.Extensions.Logging" />
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+        <PackageReference Include="Sandwych.QuickGraph.Core" />
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
     </ItemGroup>
 </Project>

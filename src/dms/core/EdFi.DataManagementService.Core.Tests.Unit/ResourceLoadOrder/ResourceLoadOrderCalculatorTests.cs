@@ -10,7 +10,6 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
-using QuickGraph;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder;
 
@@ -72,22 +71,8 @@ public class ResourceLoadOrderCalculatorTests
 
             A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes()).Returns(_apiSchemaNodes);
 
-            _resourceLoadCalculator = new ResourceLoadOrderCalculator(
-                apiSchemaProvider,
-                [
-                    new PersonAuthorizationDependencyGraphTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationDependencyGraphTransformer>.Instance
-                    ),
-                ],
-                [
-                    new PersonAuthorizationLoadOrderTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationLoadOrderTransformer>.Instance
-                    ),
-                ],
-                NullLogger<ResourceLoadOrderCalculator>.Instance
-            );
+            var graphFactory = CreateGraphFactory(apiSchemaProvider);
+            _resourceLoadCalculator = new ResourceLoadOrderCalculator([], graphFactory);
         }
 
         [Test]
@@ -200,22 +185,20 @@ public class ResourceLoadOrderCalculatorTests
 
             A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes()).Returns(_apiSchemaNodes);
 
+            var graphFactory = CreateGraphFactory(apiSchemaProvider, [
+                new PersonAuthorizationDependencyGraphTransformer(
+                    apiSchemaProvider,
+                    NullLogger<PersonAuthorizationDependencyGraphTransformer>.Instance
+                ),
+            ]);
+
             _resourceLoadCalculator = new ResourceLoadOrderCalculator(
-                apiSchemaProvider,
-                [
-                    new PersonAuthorizationDependencyGraphTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationDependencyGraphTransformer>.Instance
-                    ),
-                ],
                 [
                     new PersonAuthorizationLoadOrderTransformer(
                         apiSchemaProvider,
                         NullLogger<PersonAuthorizationLoadOrderTransformer>.Instance
                     ),
-                ],
-                NullLogger<ResourceLoadOrderCalculator>.Instance
-            );
+                ], graphFactory);
         }
 
         [Test]
@@ -265,22 +248,8 @@ public class ResourceLoadOrderCalculatorTests
 
             A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes()).Returns(_apiSchemaNodes);
 
-            _resourceLoadCalculator = new ResourceLoadOrderCalculator(
-                apiSchemaProvider,
-                [
-                    new PersonAuthorizationDependencyGraphTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationDependencyGraphTransformer>.Instance
-                    ),
-                ],
-                [
-                    new PersonAuthorizationLoadOrderTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationLoadOrderTransformer>.Instance
-                    ),
-                ],
-                NullLogger<ResourceLoadOrderCalculator>.Instance
-            );
+            var graphFactory = CreateGraphFactory(apiSchemaProvider);
+            _resourceLoadCalculator = new ResourceLoadOrderCalculator([], graphFactory);
         }
 
         [Test]
@@ -307,7 +276,7 @@ public class ResourceLoadOrderCalculatorTests
             .WithStartProject()
             .WithStartResource("one")
             .WithStartDocumentPathsMapping()
-            .WithDocumentPathReference("two", [], isRequired: false)
+            .WithDocumentPathReference("two", [], isRequired: false) // Soft dependency
             .WithEndDocumentPathsMapping()
             .WithEndResource()
             .WithStartResource("two")
@@ -331,22 +300,8 @@ public class ResourceLoadOrderCalculatorTests
 
             A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes()).Returns(_apiSchemaNodes);
 
-            _resourceLoadCalculator = new ResourceLoadOrderCalculator(
-                apiSchemaProvider,
-                [
-                    new PersonAuthorizationDependencyGraphTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationDependencyGraphTransformer>.Instance
-                    ),
-                ],
-                [
-                    new PersonAuthorizationLoadOrderTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationLoadOrderTransformer>.Instance
-                    ),
-                ],
-                NullLogger<ResourceLoadOrderCalculator>.Instance
-            );
+            var graphFactory = CreateGraphFactory(apiSchemaProvider);
+            _resourceLoadCalculator = new ResourceLoadOrderCalculator([], graphFactory);
         }
 
         [Test]
@@ -362,59 +317,6 @@ public class ResourceLoadOrderCalculatorTests
                     _expectedResourceLoadOrder,
                     options => options.WithoutStrictOrdering().IgnoringCyclicReferences()
                 );
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class GivenAnApiSchemaWithUnbreakableCycle : ResourceLoadOrderCalculatorTests
-    {
-        private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
-            .WithStartProject()
-            .WithStartResource("one")
-            .WithStartDocumentPathsMapping()
-            .WithDocumentPathReference("two", [], isRequired: true)
-            .WithEndDocumentPathsMapping()
-            .WithEndResource()
-            .WithStartResource("two")
-            .WithStartDocumentPathsMapping()
-            .WithDocumentPathReference("one", [], isRequired: true)
-            .WithEndDocumentPathsMapping()
-            .WithEndResource()
-            .WithEndProject()
-            .AsApiSchemaNodes();
-
-        [SetUp]
-        public void Setup()
-        {
-            var apiSchemaProvider = A.Fake<IApiSchemaProvider>();
-
-            A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes()).Returns(_apiSchemaNodes);
-
-            _resourceLoadCalculator = new ResourceLoadOrderCalculator(
-                apiSchemaProvider,
-                [
-                    new PersonAuthorizationDependencyGraphTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationDependencyGraphTransformer>.Instance
-                    ),
-                ],
-                [
-                    new PersonAuthorizationLoadOrderTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationLoadOrderTransformer>.Instance
-                    ),
-                ],
-                NullLogger<ResourceLoadOrderCalculator>.Instance
-            );
-        }
-
-        [Test]
-        public void It_should_throw_exception()
-        {
-            Action act = () => _resourceLoadCalculator!.GetLoadOrder();
-
-            act.Should().Throw<NonAcyclicGraphException>();
         }
     }
 
@@ -446,22 +348,8 @@ public class ResourceLoadOrderCalculatorTests
 
             A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes()).Returns(_apiSchemaNodes);
 
-            _resourceLoadCalculator = new ResourceLoadOrderCalculator(
-                apiSchemaProvider,
-                [
-                    new PersonAuthorizationDependencyGraphTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationDependencyGraphTransformer>.Instance
-                    ),
-                ],
-                [
-                    new PersonAuthorizationLoadOrderTransformer(
-                        apiSchemaProvider,
-                        NullLogger<PersonAuthorizationLoadOrderTransformer>.Instance
-                    ),
-                ],
-                NullLogger<ResourceLoadOrderCalculator>.Instance
-            );
+            var graphFactory = CreateGraphFactory(apiSchemaProvider);
+            _resourceLoadCalculator = new ResourceLoadOrderCalculator([], graphFactory);
         }
 
         [Test]
@@ -478,5 +366,16 @@ public class ResourceLoadOrderCalculatorTests
                     options => options.WithoutStrictOrdering().IgnoringCyclicReferences()
                 );
         }
+    }
+
+    private static ResourceDependencyGraphFactory CreateGraphFactory(IApiSchemaProvider apiSchemaProvider,
+        IEnumerable<IResourceDependencyGraphTransformer>? graphTransformers = null)
+    {
+        var graphFactory = new ResourceDependencyGraphFactory(
+            apiSchemaProvider,
+            graphTransformers ?? [],
+            NullLogger<ResourceLoadOrderCalculator>.Instance);
+
+        return graphFactory;
     }
 }

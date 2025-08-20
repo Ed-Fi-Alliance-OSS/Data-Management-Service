@@ -10,7 +10,32 @@ namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
 /// <summary>
 /// Represents the fully qualified resource name that includes the project name and the resource name.
 /// </summary>
-internal record FullResourceName(ProjectName ProjectName, ResourceName ResourceName)
+internal record FullResourceName(ProjectName ProjectName, ResourceName ResourceName) : IComparable<FullResourceName>
 {
+    public int CompareTo(FullResourceName? other)
+    {
+        if (other is null)
+        {
+            return 1;
+        }
+
+        // Compare ProjectName first
+        int projectComparison = string.Compare(
+            ProjectName.Value,
+            other.ProjectName.Value,
+            StringComparison.OrdinalIgnoreCase);
+
+        if (projectComparison != 0)
+        {
+            return projectComparison;
+        }
+
+        // If ProjectName is the same, compare ResourceName
+        return string.Compare(
+            ResourceName.Value,
+            other.ResourceName.Value,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     public override string ToString() => $"{ProjectName.Value}.{ResourceName.Value}";
 }

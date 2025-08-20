@@ -30,7 +30,6 @@
         <PackageReference Include="Npgsql" />
         <PackageReference Include="Polly.Core" />
         <PackageReference Include="Polly.Extensions" />
-        <PackageReference Include="Sandwych.QuickGraph.Core" />
         <PackageReference Include="Serilog" />
         <PackageReference Include="Serilog.Extensions.Logging" />
         <PackageReference Include="Serilog.Settings.Configuration" />
