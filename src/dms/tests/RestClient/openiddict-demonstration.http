@@ -12,6 +12,7 @@
 #
 # This will allow you to test authentication, token generation, and API access as described below.
 @dmsPort=8080
+@configPort=8081
 
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=s3creT@09
@@ -23,6 +24,7 @@ Authorization: basic {{sysAdminId}}:{{sysAdminSecret}}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=client_credentials
+
 ### Create a Configuration Service token
 # @name configTokenRequest
 POST http://localhost:{{configPort}}/connect/token
@@ -31,7 +33,7 @@ Content-Type: application/x-www-form-urlencoded
 client_id={{sysAdminId}}
 &client_secret={{sysAdminSecret}}
 &grant_type=client_credentials
-&scope=edfi_admin_api/authMetadata_readonly_access
+&scope=edfi_admin_api/full_access
 
 ### Read the token from the response body
 @configToken={{configTokenRequest.response.body.access_token}}
