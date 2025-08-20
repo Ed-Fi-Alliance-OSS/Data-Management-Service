@@ -34,6 +34,7 @@ public class DatabaseDeploy : IDatabaseDeploy
                         || !script.EndsWith("QueryHandler.sql", StringComparison.OrdinalIgnoreCase)
                     )
             )
+            .JournalToPostgresqlTable("public", "dms_SchemaVersions")
             .WithVariablesDisabled()
             .LogScriptOutput()
             .LogToAutodetectedLog()

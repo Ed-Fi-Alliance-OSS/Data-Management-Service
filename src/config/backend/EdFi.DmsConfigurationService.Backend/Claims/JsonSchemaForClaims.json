@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Claims",
+  "description": "Schema for Ed-Fi DMS Configuration Service Claims structure",
+  "type": "object",
+  "required": ["claimSets", "claimsHierarchy"],
+  "properties": {
+    "claimSets": {
+      "description": "Array of claim set definitions",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claimSet"
+      },
+      "minItems": 1
+    },
+    "claimsHierarchy": {
+      "description": "Hierarchical structure of claims",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "claimSet": {
+      "type": "object",
+      "required": ["claimSetName", "isSystemReserved"],
+      "properties": {
+        "claimSetName": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The unique name of the claim set"
+        },
+        "isSystemReserved": {
+          "type": "boolean",
+          "description": "Indicates if this claim set is system reserved"
+        }
+      },
+      "additionalProperties": false
+    },
+    "claim": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { 
+          "type": "string",
+          "minLength": 1,
+          "description": "The name of the claim"
+        },
+        "defaultAuthorization": { 
+          "$ref": "#/$defs/defaultAuthorization" 
+        },
+        "claimSets": {
+          "type": "array",
+          "items": { 
+            "$ref": "#/$defs/claimSetReference" 
+          }
+        },
+        "claims": {
+          "type": "array",
+          "items": { 
+            "$ref": "#/$defs/claim" 
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaultAuthorization": {
+      "type": "object",
+      "required": ["actions"],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": { 
+            "$ref": "#/$defs/defaultAction" 
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "defaultAction": {
+      "type": "object",
+      "required": ["name", "authorizationStrategies"],
+      "properties": {
+        "name": { 
+          "type": "string",
+          "minLength": 1,
+          "description": "The action name"
+        },
+        "authorizationStrategies": {
+          "type": "array",
+          "items": { 
+            "$ref": "#/$defs/authorizationStrategy" 
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "claimSetReference": {
+      "type": "object",
+      "required": ["name", "actions"],
+      "properties": {
+        "name": { 
+          "type": "string",
+          "minLength": 1,
+          "description": "The claim set name"
+        },
+        "actions": {
+          "type": "array",
+          "items": { 
+            "$ref": "#/$defs/claimSetAction" 
+          },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "claimSetAction": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { 
+          "type": "string",
+          "minLength": 1,
+          "description": "The action name"
+        },
+        "authorizationStrategyOverrides": {
+          "type": "array",
+          "items": { 
+            "$ref": "#/$defs/authorizationStrategy" 
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "authorizationStrategy": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { 
+          "type": "string",
+          "minLength": 1,
+          "description": "The authorization strategy name"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -26,10 +26,10 @@ public class ClaimsHierarchyRepository(
         try
         {
             // Initial implementation assumes a basic implementation with single record.
-            string sql = "SELECT Hierarchy, LastModifiedDate FROM dmscs.ClaimsHierarchy";
+            string sql = "SELECT Id, Hierarchy, LastModifiedDate FROM dmscs.ClaimsHierarchy";
 
             var hierarchyTuples = (
-                await connection.QueryAsync<(string hierarchyJson, DateTime lastModifiedDate)>(sql)
+                await connection.QueryAsync<(long id, string hierarchyJson, DateTime lastModifiedDate)>(sql)
             ).ToList();
 
             if (hierarchyTuples.Count == 0)
@@ -51,13 +51,28 @@ public class ClaimsHierarchyRepository(
                 );
             }
 
-            return new ClaimsHierarchyGetResult.Success(hierarchy, hierarchyTuples[0].lastModifiedDate);
+            return new ClaimsHierarchyGetResult.Success(
+                hierarchy,
+                hierarchyTuples[0].lastModifiedDate,
+                hierarchyTuples[0].id
+            );
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
-            logger.LogError(ex, "Unable to get claims hierarchy");
-
-            return new ClaimsHierarchyGetResult.FailureUnknown(ex.Message);
+            logger.LogError(ex, "JSON deserialization error in claims hierarchy");
+            return new ClaimsHierarchyGetResult.FailureUnknown(
+                "Invalid JSON format in claims hierarchy: " + ex.Message
+            );
+        }
+        catch (NpgsqlException ex)
+        {
+            logger.LogError(ex, "Database error getting claims hierarchy");
+            return new ClaimsHierarchyGetResult.FailureUnknown("Database error: " + ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Invalid operation getting claims hierarchy");
+            return new ClaimsHierarchyGetResult.FailureUnknown("Invalid operation: " + ex.Message);
         }
         finally
         {
@@ -137,10 +152,22 @@ public class ClaimsHierarchyRepository(
 
             return new ClaimsHierarchySaveResult.Success();
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
-            logger.LogError(ex, "Unable to save claims hierarchy");
-            return new ClaimsHierarchySaveResult.FailureUnknown(ex.Message);
+            logger.LogError(ex, "JSON serialization error saving claims hierarchy");
+            return new ClaimsHierarchySaveResult.FailureUnknown(
+                "Invalid JSON format in claims hierarchy: " + ex.Message
+            );
+        }
+        catch (NpgsqlException ex)
+        {
+            logger.LogError(ex, "Database error saving claims hierarchy");
+            return new ClaimsHierarchySaveResult.FailureUnknown("Database error: " + ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogError(ex, "Invalid operation saving claims hierarchy");
+            return new ClaimsHierarchySaveResult.FailureUnknown("Invalid operation: " + ex.Message);
         }
         finally
         {

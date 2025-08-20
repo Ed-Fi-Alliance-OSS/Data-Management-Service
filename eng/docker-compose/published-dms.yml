@@ -55,6 +55,8 @@ services:
       JwtAuthentication__AutomaticRefreshIntervalHours: ${DMS_JWT_AUTOMATIC_REFRESH_INTERVAL_HOURS:-24}
     ports:
       - '127.0.0.1:${DMS_HTTP_PORTS}:${DMS_HTTP_PORTS}'
+    volumes:
+      - ../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets:/app/additional-claims
     networks:
       - dms
     restart: unless-stopped

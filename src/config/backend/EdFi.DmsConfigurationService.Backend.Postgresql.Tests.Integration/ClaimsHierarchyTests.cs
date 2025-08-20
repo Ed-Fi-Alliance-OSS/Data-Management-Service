@@ -12,7 +12,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public class ClaimsHierarchyTests : DatabaseTest
 {

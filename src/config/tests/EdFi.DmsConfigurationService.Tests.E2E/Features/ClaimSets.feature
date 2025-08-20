@@ -11,19 +11,19 @@ Feature: ClaimSets endpoints
                   """
                   [
                       {
-                          "id": 1,
+                          "id": {claimSetId:E2E-NameSpaceBasedClaimSet},
                           "name": "E2E-NameSpaceBasedClaimSet",
                           "_isSystemReserved": true,
                           "_applications": {}
                       },
                       {
-                          "id": 2,
+                          "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
                           "name": "E2E-NoFurtherAuthRequiredClaimSet",
                           "_isSystemReserved": true,
                           "_applications": {}
                       },
                       {
-                          "id": 3,
+                          "id": {claimSetId:E2E-RelationshipsWithEdOrgsOnlyClaimSet},
                           "name": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
                           "_isSystemReserved": true,
                           "_applications": {}
@@ -38,7 +38,7 @@ Feature: ClaimSets endpoints
                   """
                   [
                       {
-                          "id": 2,
+                          "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
                           "name": "E2E-NoFurtherAuthRequiredClaimSet",
                           "_isSystemReserved": true,
                           "_applications": {}
@@ -47,12 +47,12 @@ Feature: ClaimSets endpoints
                   """
 
         Scenario: 03 Ensure clients can GET a claim set by ID
-             When a GET request is made to "/v2/claimSets/2"
+             When a GET request is made to "/v2/claimSets/{claimSetId:E2E-NoFurtherAuthRequiredClaimSet}"
              Then it should respond with 200
               And the response body is
                   """
                   {
-                      "id": 2,
+                      "id": {claimSetId:E2E-NoFurtherAuthRequiredClaimSet},
                       "name": "E2E-NoFurtherAuthRequiredClaimSet",
                       "_isSystemReserved": true,
                       "_applications": {}
@@ -138,10 +138,10 @@ Feature: ClaimSets endpoints
                   """
 
         Scenario: 07 Verify error handling when trying to update a system-reserved claim set
-             When a PUT request is made to "/v2/claimSets/1" with
+             When a PUT request is made to "/v2/claimSets/8" with
                   """
                   {
-                      "id": 1,
+                      "id": 8,
                       "name": "UpdatedSystemReservedClaimSet"
                   }
                   """
@@ -159,7 +159,7 @@ Feature: ClaimSets endpoints
                   """
 
         Scenario: 08 Verify error handling when trying to delete a system-reserved claim set
-             When a DELETE request is made to "/v2/claimSets/1"
+             When a DELETE request is made to "/v2/claimSets/8"
              Then it should respond with 400
               And the response body is
                   """

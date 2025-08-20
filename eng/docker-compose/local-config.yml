@@ -30,8 +30,13 @@ services:
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       AppSettings__PathBase: ${DMS_CONFIG_PATH_BASE:-}
       AppSettings__UseReverseProxyHeaders: ${DMS_CONFIG_USE_REVERSE_PROXY_HEADERS:-false}
+      ClaimsOptions__ClaimsSource: ${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}
+      ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: ${DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING:-false}
+      ClaimsOptions__ClaimsDirectory: ${DMS_CONFIG_CLAIMS_DIRECTORY:-}
     ports:
       - '127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}'
+    volumes:
+      - ../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets:/app/additional-claims
     networks:
       - dms
     restart: unless-stopped
