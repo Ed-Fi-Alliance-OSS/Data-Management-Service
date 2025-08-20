@@ -223,13 +223,15 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
                 _logger.LogDebug("Application found: {ApplicationId}, Display Name: {DisplayName}",
                     applicationInfo.Id, applicationInfo.DisplayName);
-
+                var listOfScopes = !string.IsNullOrEmpty(scope)
+                    ? string.Join(",", scope)
+                    : string.Join(",", applicationInfo.Permissions ?? new string[0]);
                 // Generate JWT token
                 var token = await GenerateJwtTokenAsync(
                     connection,
                     applicationInfo,
                     clientId,
-                    scope ?? string.Join(",", applicationInfo.Scopes ?? new string[0])
+                    listOfScopes
                 );
                 int tokenExpirationMinutes = _identityOptions.Value.TokenExpirationMinutes;
                 // Calculate expires_in (seconds)
@@ -317,9 +319,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             string insertSql = @"
                 INSERT INTO dmscs.OpenIddictToken
-                (Id, ApplicationId, Subject, Type, Payload, CreationDate, ExpirationDate, Status, ReferenceId)
+                (Id, ApplicationId, Subject, Type, CreationDate, ExpirationDate, Status, ReferenceId)
                 VALUES
-                (@Id, @ApplicationId, @Subject, @Type, @Payload, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
+                (@Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
 
             await connection.ExecuteAsync(
                 insertSql,

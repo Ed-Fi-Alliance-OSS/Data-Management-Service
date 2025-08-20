@@ -12,11 +12,17 @@
 #
 # This will allow you to test authentication, token generation, and API access as described below.
 @dmsPort=8080
-@configPort=8081
 
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=s3creT@09
 
+###
+# Create a token to test basic authentication with the DMS (only for self-contained OpenIddict server)
+POST {{tokenUrl}}
+Authorization: basic {{sysAdminId}}:{{sysAdminSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
 ### Create a Configuration Service token
 # @name configTokenRequest
 POST http://localhost:{{configPort}}/connect/token
@@ -25,7 +31,7 @@ Content-Type: application/x-www-form-urlencoded
 client_id={{sysAdminId}}
 &client_secret={{sysAdminSecret}}
 &grant_type=client_credentials
-&scope=edfi_admin_api/full_access
+&scope=edfi_admin_api/authMetadata_readonly_access
 
 ### Read the token from the response body
 @configToken={{configTokenRequest.response.body.access_token}}
@@ -72,7 +78,7 @@ Authorization: bearer {{configToken}}
 GET http://localhost:{{dmsPort}}
 
 ### Read the Token URL from the Discovery API
-@tokenUrl=http://localhost:{{configPort}}/connect/token
+@tokenUrl={{discovery.response.body.urls.oauth}}
 
 ### Read the base URL for all Descriptors and Resources from the Discovery API response
 @dataApi={{discovery.response.body.urls.dataManagementApi}}
@@ -80,15 +86,14 @@ GET http://localhost:{{dmsPort}}
 # At last, we can authenticate with the DMS using the client credentials we
 # generated with the DMS Configuration Service.
 
+
 ###
 # @name edOrgTokenRequest
 POST {{tokenUrl}}
+Authorization: basic {{edOrgClientId}}:{{edOrgSecret}}
 Content-Type: application/x-www-form-urlencoded
 
-client_id={{edOrgClientId}}
-&client_secret={{edOrgSecret}}
-&grant_type=client_credentials
-
+grant_type=client_credentials
 
 ### Read the DMS token from the response body
 @edOrgToken={{edOrgTokenRequest.response.body.access_token}}

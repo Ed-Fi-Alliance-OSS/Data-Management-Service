@@ -116,13 +116,93 @@ public class IdentityModule : IEndpointModule
         TokenRequest.Validator validator,
         [FromForm] TokenRequest model,
         [FromServices] ITokenManager tokenManager,
+        [FromServices] IConfiguration configuration,
         HttpContext httpContext
     )
     {
+        var identityProvider =
+            configuration.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant() ?? "keycloak";
+
+        // For self-contained mode, support both form and HTTP Basic authentication
+        if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
+        {
+            // Extract client credentials from either form body or Authorization header
+            string clientId = model.client_id ?? string.Empty;
+            string clientSecret = model.client_secret ?? string.Empty;
+            string grantType = model.grant_type ?? string.Empty;
+            string scope = model.scope ?? string.Empty;
+
+            // Check for Authorization header (HTTP Basic auth) - only for self-contained
+            httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
+            if (
+                !string.IsNullOrEmpty(authHeader.ToString())
+                && authHeader.ToString().StartsWith("basic ", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                try
+                {
+                    var base64Credentials = authHeader.ToString().Substring(6); // Remove "basic "
+                    var credentialBytes = Convert.FromBase64String(base64Credentials);
+                    var credentials = System.Text.Encoding.UTF8.GetString(credentialBytes);
+                    var parts = credentials.Split(':', 2);
+                    if (parts.Length == 2)
+                    {
+                        clientId = parts[0];
+                        clientSecret = parts[1];
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log the exception for debugging purposes
+                    Console.Error.WriteLine($"Failed to parse Basic Auth credentials: {ex}");
+                }
+            }
+
+            // Read form data for other parameters (and as fallback for credentials)
+            if (httpContext.Request.HasFormContentType)
+            {
+                var form = await httpContext.Request.ReadFormAsync();
+
+                // Use form credentials if Basic auth didn't provide them
+                if (string.IsNullOrEmpty(clientId))
+                {
+                    clientId = form["client_id"].ToString();
+                }
+                if (string.IsNullOrEmpty(clientSecret))
+                {
+                    clientSecret = form["client_secret"].ToString();
+                }
+
+                if (string.IsNullOrEmpty(grantType))
+                {
+                    grantType = form["grant_type"].ToString();
+                }
+                if (string.IsNullOrEmpty(scope))
+                {
+                    scope = form["scope"].ToString();
+                }
+            }
+
+            // Create updated model for self-contained validation
+            model = new TokenRequest
+            {
+                client_id = clientId,
+                client_secret = clientSecret,
+                grant_type = grantType,
+                scope = scope,
+            };
+        }
+
         await validator.GuardAsync(model);
 
         // Validate grant type (OAuth 2.0 compliance)
-        if (!string.Equals(model.grant_type, OpenIddictConstants.GrantTypes.ClientCredentials, StringComparison.OrdinalIgnoreCase))
+        if (
+            !string.Equals(
+                model.grant_type,
+                OpenIddictConstants.GrantTypes.ClientCredentials,
+                StringComparison.OrdinalIgnoreCase
+            )
+        )
         {
             return Results.Json(
                 new

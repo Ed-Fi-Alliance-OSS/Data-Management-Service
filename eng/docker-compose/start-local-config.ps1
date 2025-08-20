@@ -19,7 +19,12 @@ param (
 
     # Force a rebuild
     [Switch]
-    $r
+    $r,
+
+    # Identity provider type
+    [string]
+    [ValidateSet("keycloak", "self-contained")]
+    $IdentityProvider="keycloak"
 )
 
 $files = @(
@@ -53,6 +58,12 @@ else {
     )
     if ($r) { $upArgs += @("--build") }
 
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Init db public and private keys for OpenIddict..."
+        ./setup-openiddict.ps1 -InitDb -InsertData:$false -EnvironmentFile $EnvironmentFile
+    }
+
     Write-Output "Starting locally-built DMS config service"
 
     docker compose $files --env-file $EnvironmentFile -p cs-local up $upArgs
@@ -62,12 +73,21 @@ else {
     }
 
     Start-Sleep 25
-    # Create client with default edfi_admin_api/full_access scope
-    ./setup-keycloak.ps1
+    if($IdentityProvider -eq "keycloak")
+    {
+        Write-Output "Starting self-contained initialization script..."
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
 
-    # Create client with edfi_admin_api/readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
 
-    # Create client with edfi_admin_api/authMetadata_readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+    }
+    elseif ($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Setup self-contained OpenIddict..."
+        ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
+    }
 }
