@@ -17,11 +17,6 @@ using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 {
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input)) return string.Empty;
-        return input.Replace("\r", "").Replace("\n", "");
-    }
     /// <summary>
     /// PostgreSQL implementation of ITokenManager that generates and validates JWT tokens using OpenIddict standards.
     /// Stores tokens in dmscs.openiddict_token table and includes custom scope claims.
@@ -630,6 +625,19 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             }
 
             return KeyFormat.Unknown;
+        }
+        /// <summary>
+        /// Metodo to sanitize input for logging purposes
+        /// </summary>
+        /// <param name="input"></param>
+        /// <returns></returns>
+        private static string SanitizeForLog(string? input)
+        {
+            if (string.IsNullOrEmpty(input))
+            {
+                return string.Empty;
+            }
+            return input.Replace("\r", "").Replace("\n", "");
         }
     }
 
