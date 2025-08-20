@@ -30,11 +30,7 @@ window.EdFiCustomFields = function () {
         );
     };
 
-    const safeGet = window.EdfiCommonHelper ? window.EdfiCommonHelper.safeGet : (schema, key) => {
-        if (!schema) return undefined;
-        if (typeof schema.get === 'function') return schema.get(key);
-        return schema[key];
-    };
+    const safeGet = window.EdfiCommonHelper.safeGet;
 
     // Helper function to extract and display Ed-Fi custom fields from schema
     const extractEdFiFields = (schema, system) => {

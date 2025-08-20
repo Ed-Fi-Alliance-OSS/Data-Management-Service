@@ -5,11 +5,7 @@
 
 window.EdFiCustomDomains = function () {
 
-    const safeGet = window.EdfiCommonHelper ? window.EdfiCommonHelper.safeGet : (schema, key) => {
-        if (!schema) return undefined;
-        if (typeof schema.get === 'function') return schema.get(key);
-        return schema[key];
-    };
+    const safeGet = window.EdfiCommonHelper.safeGet;
 
     // Process spec only once
     const processSpecOnce = (system) => {
