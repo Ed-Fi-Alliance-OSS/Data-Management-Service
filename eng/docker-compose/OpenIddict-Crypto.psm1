@@ -139,7 +139,7 @@ function New-OpenIddictKeyInsertSql {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $false)]
-        [string]$KeyId = "key-$(Get-Random)",
+        [string]$KeyId = [guid]::NewGuid().ToString(),
 
         [Parameter(Mandatory = $true)]
         [string]$EncryptionKey,
@@ -150,10 +150,12 @@ function New-OpenIddictKeyInsertSql {
 
     try {
         $keyPair = New-OpenIddictKeyPair -KeySize $KeySize
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($KeyId)
+        $encodedKey = [Convert]::ToBase64String($bytes)
 
         $sql = @"
 INSERT INTO dmscs.OpenIddictKey (KeyId, PublicKey, PrivateKey, IsActive)
-VALUES ('$KeyId', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encrypt('$($keyPair.PrivateKey)', '$EncryptionKey'), TRUE);
+VALUES ('$encodedKey', decode('$($keyPair.PublicKey)', 'base64'), pgp_sym_encrypt('$($keyPair.PrivateKey)', '$EncryptionKey'), TRUE);
 "@
 
         return $sql

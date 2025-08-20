@@ -124,35 +124,28 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 .Configure<ITokenManager>(
                     (options, tokenManager) =>
                     {
-                        // Create a static cache for public keys that loads only once
-                        var keysCache = new Lazy<IEnumerable<SecurityKey>>(FetchPublicKeys);
-
-                        // Function to fetch keys synchronously but only once during initialization
-                        IEnumerable<SecurityKey> FetchPublicKeys()
+                        // Configure dynamic key resolution using IssuerSigningKeyResolver
+                        options.TokenValidationParameters.IssuerSigningKeyResolver = (
+                            token,
+                            securityToken,
+                            kid,
+                            validationParameters
+                        ) =>
                         {
-                            try
-                            {
-                                // This still blocks, but only happens once at startup
-                                var keys = tokenManager.GetPublicKeysAsync()
-                                    .ConfigureAwait(false)
-                                    .GetAwaiter()
-                                    .GetResult()
-                                    .Select(rsaParams => new RsaSecurityKey(rsaParams.RsaParameters)
-                                    {
-                                        KeyId = rsaParams.KeyId
-                                    });
+                            // This resolver will be called when a token needs to be validated
+                            // Using ConfigureAwait(false) to avoid deadlocks in the sync context
+                            var keysTask = tokenManager.GetPublicKeysAsync();
+                            var publicKeysList = keysTask.ConfigureAwait(false).GetAwaiter().GetResult();
 
-                                return keys.Cast<SecurityKey>().ToList();
-                            }
-                            catch
+                            return publicKeysList.Select(rsaParams =>
                             {
-                                return new List<SecurityKey>();
-                            }
-                        }
-
-                        // Use the cached keys for all token validations
-                        options.TokenValidationParameters.IssuerSigningKeyResolver =
-                            (token, securityToken, kid, validationParameters) => keysCache.Value;
+                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                                {
+                                    KeyId = rsaParams.KeyId,
+                                };
+                                return (SecurityKey)key;
+                            });
+                        };
                     }
                 );
 

@@ -93,7 +93,6 @@ public static class WebApplicationBuilderExtensions
             AuthorizationMetadataResponseFactory
         >();
         webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
-
         webApplicationBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
@@ -346,5 +345,4 @@ public static class WebApplicationBuilderExtensions
         }
     }
 }
-
 

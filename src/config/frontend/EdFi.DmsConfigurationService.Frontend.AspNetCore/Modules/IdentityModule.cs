@@ -17,6 +17,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenIddict.Abstractions;
 using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
@@ -117,6 +118,7 @@ public class IdentityModule : IEndpointModule
         [FromForm] TokenRequest model,
         [FromServices] ITokenManager tokenManager,
         [FromServices] IConfiguration configuration,
+        [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
     {
@@ -154,7 +156,7 @@ public class IdentityModule : IEndpointModule
                 catch (Exception ex)
                 {
                     // Log the exception for debugging purposes
-                    Console.Error.WriteLine($"Failed to parse Basic Auth credentials: {ex}");
+                    logger.LogWarning("Failed to parse Basic Auth credentials: {Exception}", ex);
                 }
             }
 
@@ -208,7 +210,7 @@ public class IdentityModule : IEndpointModule
                 new
                 {
                     error = OpenIddictConstants.Errors.UnsupportedGrantType,
-                    error_description = "The specified grant type is not supported."
+                    error_description = "The specified grant type is not supported.",
                 },
                 statusCode: 400
             );
@@ -264,7 +266,7 @@ public class IdentityModule : IEndpointModule
                 new
                 {
                     error = OpenIddictConstants.Errors.InvalidRequest,
-                    error_description = "The token parameter is missing."
+                    error_description = "The token parameter is missing.",
                 },
                 statusCode: 400
             );
@@ -293,7 +295,7 @@ public class IdentityModule : IEndpointModule
             sub = validationResult.Principal.FindFirst("sub")?.Value,
             aud = validationResult.Principal.FindFirst("aud")?.Value,
             iss = validationResult.Principal.FindFirst("iss")?.Value,
-            token_type = "Bearer"
+            token_type = "Bearer",
         };
 
         return Results.Json(response);
@@ -311,7 +313,7 @@ public class IdentityModule : IEndpointModule
                 new
                 {
                     error = OpenIddictConstants.Errors.InvalidRequest,
-                    error_description = "The token parameter is missing."
+                    error_description = "The token parameter is missing.",
                 },
                 statusCode: 400
             );

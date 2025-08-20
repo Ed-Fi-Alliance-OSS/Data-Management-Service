@@ -171,7 +171,7 @@ public class ClientSecretHasher : IClientSecretHasher
 
             return true;
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error verifying hash: {ErrorMessage}", ex.Message);
             return false;
