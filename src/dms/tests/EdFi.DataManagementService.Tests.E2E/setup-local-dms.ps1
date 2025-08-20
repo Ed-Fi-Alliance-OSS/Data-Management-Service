@@ -9,7 +9,7 @@
 .DESCRIPTION
     This script is a convenience wrapper that runs start-local-dms.ps1 with the standard
     E2E testing configuration. It is the companion to teardown-local-dms.ps1.
-    
+
     The script runs:
     ./start-local-dms.ps1 -SearchEngine ElasticSearch -EnableSearchEngineUI -EnableConfig -EnvironmentFile ./.env.e2e -r -AddExtensionSecurityMetadata
 #>
@@ -52,7 +52,7 @@ $dockerComposeDir = Join-Path $PSScriptRoot "../../../../eng/docker-compose"
 
 try {
     Set-Location $dockerComposeDir
-    
+
     Write-Host "Starting DMS environment with E2E configuration..." -ForegroundColor Green
     Write-Host "Configuration:" -ForegroundColor Yellow
     Write-Host "  - Search Engine: ElasticSearch" -ForegroundColor Gray

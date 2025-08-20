@@ -6,7 +6,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
 {
     public static class Configuration
     {
@@ -34,9 +34,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration
             return _configuration;
         }
 
-        public static IOptions<DatabaseOptions> DatabaseOptions = Options.Create(new DatabaseOptions()
-        {
-            DatabaseConnection = Config().GetConnectionString("DatabaseConnection") ?? string.Empty
-        });
+        public static IOptions<DatabaseOptions> DatabaseOptions = Options.Create(
+            new DatabaseOptions()
+            {
+                DatabaseConnection = Config().GetConnectionString("DatabaseConnection") ?? string.Empty,
+            }
+        );
     }
 }

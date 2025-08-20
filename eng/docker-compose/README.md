@@ -160,13 +160,13 @@ You can also automatically include extension-specific metadata in the
 authorization hierarchy to enable authorization for your extension resources. To
 do this:
 
-1. Author your security claims hierarchy JSON file.
-2. Place it in the `.\eng\CmsHierarchy\ClaimSetFiles` folder  e.g.
-   :[SampleExtensionResourceClaims.json](../CmsHierarchy/ClaimSetFiles/SampleExtensionResourceClaims.json).
+1. Author your security claims hierarchy JSON file. See `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`
+for examples.
 
-Then, use the `-AddExtensionSecurityMetadata` parameter to include the setup
-from your JSON file:
+2. Place it in a directory mounted as a Docker volume named `app/additional-claims` for CMS to see at runtime. The default behavior of the docker compose
+scripts is to mount `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`.
 
+3. Use the `-AddExtensionSecurityMetadata` parameter to configure CMS to read claimsets from `app/additional-claims`:
 ```pwsh
 ./start-local-dms.ps1 -AddExtensionSecurityMetadata
 ```

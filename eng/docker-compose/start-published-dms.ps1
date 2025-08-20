@@ -46,6 +46,16 @@ param (
     $AddSmokeTestCredentials
 )
 
+
+# Configure environment variables for new claimset loading approach
+if($AddExtensionSecurityMetadata)
+{
+    # Set environment variables for hybrid claimset loading
+    $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
+    $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
+    Write-Output "Configured environment variables for file-based extension claimset loading"
+}
+
 $files = @(
     "-f",
     "postgresql.yml",
@@ -134,17 +144,6 @@ else {
         }
     }
 
-    if($AddExtensionSecurityMetadata)
-    {
-        Write-Output "Updating Claim Hierarchy..."
-        Import-Module ./setup-extension-security-metadata.psm1 -Force
-        UpdateExtensionSecurityMetadata -EnvironmentFile $EnvironmentFile
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to set up extension security metadata, with exit code $LASTEXITCODE."
-        }
-        docker restart dms-published-dms-1
-    }
-
     Start-Sleep 10
 
     Write-Output "Running connector setup..."
@@ -155,7 +154,7 @@ else {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
         Write-Output "Creating smoke test credentials..."
         $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
-        
+
         Write-Output "Smoke test credentials created successfully!"
         Write-Output "Key: $($credentials.Key)"
         Write-Output "Secret: $($credentials.Secret)"

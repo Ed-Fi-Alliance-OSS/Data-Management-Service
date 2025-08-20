@@ -135,7 +135,8 @@ public class ClaimSetModuleTests
                 .Returns(
                     new ClaimsHierarchyGetResult.Success(
                         [new() { Name = "Testing-POST-for-ClaimSet" }],
-                        DateTime.Now
+                        DateTime.Now,
+                        1
                     )
                 );
         }
@@ -227,7 +228,8 @@ public class ClaimSetModuleTests
                 .Returns(
                     new ClaimsHierarchyGetResult.Success(
                         [new() { Name = "Test ResourceClaim" }],
-                        DateTime.Now
+                        DateTime.Now,
+                        1
                     )
                 );
         }
@@ -587,7 +589,8 @@ public class ClaimSetModuleTests
                             new() { Name = "Testing-POST-for-ClaimSet" },
                             new() { Name = "Testing-Import-for-ClaimSet" },
                         ],
-                        DateTime.Now
+                        DateTime.Now,
+                        1
                     )
                 );
 
@@ -703,7 +706,7 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
                 .Returns(
-                    new ClaimsHierarchyGetResult.Success([new() { Name = "Test-Duplicate" }], DateTime.Now)
+                    new ClaimsHierarchyGetResult.Success([new() { Name = "Test-Duplicate" }], DateTime.Now, 1)
                 );
 
             _client = SetUpClient();

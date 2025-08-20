@@ -12,7 +12,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public class ApplicationTests : DatabaseTest
 {

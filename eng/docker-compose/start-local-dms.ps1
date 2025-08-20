@@ -51,13 +51,14 @@ param (
 )
 
 
+# Configure environment variables for new claimset loading approach
 if($AddExtensionSecurityMetadata)
 {
-    Import-Module ./setup-extension-security-metadata.psm1 -Force
-    AddExtensionSecurityMetadata -EnvironmentFile $EnvironmentFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to set up extension security metadata, with exit code $LASTEXITCODE."
-    }
+    # Set environment variables for hybrid claimset loading
+    $env:DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING = "true"
+    $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
+    $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
+    Write-Output "Configured environment variables for file-based extension claimset loading"
 }
 
 $files = @(
@@ -159,7 +160,7 @@ else {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
         Write-Output "Creating smoke test credentials..."
         $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
-        
+
         Write-Output "Smoke test credentials created successfully!"
         Write-Output "Key: $($credentials.Key)"
         Write-Output "Secret: $($credentials.Secret)"

@@ -1,0 +1,734 @@
+{
+  "name": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+  "resourceClaims": [
+    {
+      "id": 1,
+      "name": "ed-fi/schools",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    },
+    {
+      "id": 2,
+      "name": "ed-fi/gradeLevelDescriptors",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    },
+    {
+      "id": 3,
+      "name": "ed-fi/educationOrganizationCategoryDescriptors",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    },
+    {
+      "id": 4,
+      "name": "ed-fi/localEducationAgencyCategoryDescriptors",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    },
+    {
+      "id": 5,
+      "name": "ed-fi/stateEducationAgencies",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    },
+    {
+      "id": 6,
+      "name": "ed-fi/localEducationAgencies",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    },
+    {
+      "id": 7,
+      "name": "ed-fi/classPeriods",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "NoFurtherAuthorizationRequired",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    },
+    {
+      "id": 8,
+      "name": "ed-fi/academicWeeks",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    },
+    {
+      "id": 9,
+      "name": "ed-fi/bellSchedules",
+      "actions": [
+        {
+          "name": "Create",
+          "enabled": true
+        },
+        {
+          "name": "Delete",
+          "enabled": true
+        },
+        {
+          "name": "Update",
+          "enabled": true
+        },
+        {
+          "name": "Read",
+          "enabled": true
+        }
+      ],
+      "children": [],
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionId": 1,
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 2,
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 3,
+          "actionName": "Update",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 2,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 4,
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 1,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        },
+        {
+          "actionId": 5,
+          "actionName": "ReadChanges",
+          "authorizationStrategies": [
+            {
+              "authStrategyId": 9,
+              "name": "RelationshipsWithEdOrgsOnly",
+              "isInheritedFromParent": false
+            }
+          ]
+        }
+      ],
+      "_defaultAuthorizationStrategiesForCRUD": []
+    }
+  ]
+}

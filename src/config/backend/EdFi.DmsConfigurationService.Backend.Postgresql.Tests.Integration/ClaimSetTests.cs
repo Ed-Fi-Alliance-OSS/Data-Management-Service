@@ -4,7 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
+using EdFi.DmsConfigurationService.Backend.Postgresql.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -13,8 +16,9 @@ using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public class ClaimSetTests : DatabaseTest
 {
@@ -27,6 +31,59 @@ public class ClaimSetTests : DatabaseTest
         ),
         new ClaimsHierarchyManager()
     );
+
+    protected async Task EnsureClaimsDataLoaded()
+    {
+        // Set up ClaimsDataLoader to load initial claims data
+        var claimsOptions = Options.Create(
+            new ClaimsOptions
+            {
+                ClaimsSource = ClaimsSource.Embedded, // Use embedded resource
+                ClaimsDirectory = "",
+            }
+        );
+
+        var claimsValidator = new ClaimsValidator(NullLogger<ClaimsValidator>.Instance);
+        var claimsFragmentComposer = new ClaimsFragmentComposer(NullLogger<ClaimsFragmentComposer>.Instance);
+
+        var claimsHierarchyRepository = new ClaimsHierarchyRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimsHierarchyRepository>.Instance
+        );
+
+        var claimsTableValidator = new ClaimsTableValidator(
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimsTableValidator>.Instance
+        );
+
+        var claimsDocumentRepository = new ClaimsDocumentRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimsDocumentRepository>.Instance
+        );
+
+        var claimsProvider = new ClaimsProvider(
+            NullLogger<ClaimsProvider>.Instance,
+            claimsOptions,
+            claimsValidator,
+            claimsFragmentComposer
+        );
+
+        var claimsDataLoader = new Backend.ClaimsDataLoader.ClaimsDataLoader(
+            claimsProvider,
+            _repository,
+            claimsHierarchyRepository,
+            claimsTableValidator,
+            claimsDocumentRepository,
+            NullLogger<Backend.ClaimsDataLoader.ClaimsDataLoader>.Instance
+        );
+
+        // Load claims data - it will return AlreadyLoaded if data exists
+        var result = await claimsDataLoader.LoadInitialClaimsAsync();
+        if (result is not ClaimsDataLoadResult.Success and not ClaimsDataLoadResult.AlreadyLoaded)
+        {
+            throw new InvalidOperationException($"Failed to load claims data: {result}");
+        }
+    }
 
     [TestFixture]
     public class InsertTest : ClaimSetTests
@@ -94,6 +151,9 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
+            // Ensure claims data is loaded first
+            await EnsureClaimsDataLoaded();
+
             IVendorRepository repository = new VendorRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<VendorRepository>.Instance
@@ -195,23 +255,22 @@ public class ClaimSetTests : DatabaseTest
         [Test]
         public async Task Should_get_updated_and_system_reserved_claimSets_from_get_all()
         {
-            var getResult = await _repository.QueryClaimSet(new PagingQuery() { Limit = 25, Offset = 0 });
+            var getResult = await _repository.QueryClaimSet(new PagingQuery() { Limit = 100, Offset = 0 });
             getResult.Should().BeOfType<ClaimSetQueryResult.Success>();
 
-            object claimSetFromDb = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses.First();
-            claimSetFromDb.Should().NotBeNull();
-            claimSetFromDb.Should().BeOfType<ClaimSetResponse>();
+            var claimSets = ((ClaimSetQueryResult.Success)getResult).ClaimSetResponses;
 
-            var reducedResponse = (ClaimSetResponse)claimSetFromDb;
-            reducedResponse.Name.Should().Be("Test-Update-ClaimSet");
-            reducedResponse.IsSystemReserved.Should().Be(false);
+            // Find the updated claim set
+            var updatedClaimSet = claimSets.FirstOrDefault(cs => cs.Name == "Test-Update-ClaimSet");
+            updatedClaimSet.Should().NotBeNull();
+            updatedClaimSet!.IsSystemReserved.Should().Be(false);
 
-            object reservedClaimSetFromDb = ((ClaimSetQueryResult.Success)getResult)
-                .ClaimSetResponses.Skip(1)
-                .First();
-            var reducedSystemReservedResponse = (ClaimSetResponse)reservedClaimSetFromDb;
-            reducedSystemReservedResponse.Name.Should().Be("Test-Insert-System-Reserved-ClaimSet");
-            reducedSystemReservedResponse.IsSystemReserved.Should().Be(true);
+            // Find the system reserved claim set
+            var systemReservedClaimSet = claimSets.FirstOrDefault(cs =>
+                cs.Name == "Test-Insert-System-Reserved-ClaimSet"
+            );
+            systemReservedClaimSet.Should().NotBeNull();
+            systemReservedClaimSet!.IsSystemReserved.Should().Be(true);
         }
 
         [Test]
@@ -296,6 +355,9 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
+            // Ensure claims data is loaded first
+            await EnsureClaimsDataLoaded();
+
             // Insert claim set
             _insertClaimSet = new ClaimSetInsertCommand() { Name = "Test-Retry-ClaimSet" };
             var insertResult = await _repository.InsertClaimSet(_insertClaimSet);
@@ -563,7 +625,8 @@ public class ClaimSetTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            await ClaimsHierarchyTestHelper.ReinitializeClaimsHierarchy();
+            // Ensure claims data is loaded first
+            await EnsureClaimsDataLoaded();
 
             ClaimSetImportCommand claimSet = new() { Name = "Test-Import-ClaimSet", ResourceClaims = [] };
 

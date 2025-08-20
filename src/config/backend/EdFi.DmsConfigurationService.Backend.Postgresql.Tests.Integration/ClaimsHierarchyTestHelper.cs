@@ -7,7 +7,7 @@ using System.Reflection;
 using Dapper;
 using Npgsql;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.Test.Integration;
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public static class ClaimsHierarchyTestHelper
 {

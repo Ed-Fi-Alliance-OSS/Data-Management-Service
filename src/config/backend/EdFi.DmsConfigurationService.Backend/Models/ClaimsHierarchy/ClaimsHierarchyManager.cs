@@ -77,7 +77,7 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
             }
 
             // Create and initialize the claim set
-            claimSet = new ClaimSet { Name = claimSetName, Actions = new List<ClaimSetAction>() };
+            claimSet = new ClaimSet { Name = claimSetName, Actions = [] };
 
             claim.ClaimSets.Add(claimSet);
 
@@ -89,8 +89,8 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
                     // Create the action for the claim set
                     var newAction = new ClaimSetAction
                     {
-                        Name = action.Name!,
-                        AuthorizationStrategyOverrides = new List<AuthorizationStrategy>(),
+                        Name = action.Name ?? "",
+                        AuthorizationStrategyOverrides = [],
                     };
 
                     // Look for overrides on import command
@@ -102,12 +102,15 @@ public class ClaimsHierarchyManager : IClaimsHierarchyManager
                     if (overrideForCrud is { AuthorizationStrategies: not null })
                     {
                         // Apply authorization strategy overrides
-                        newAction.AuthorizationStrategyOverrides = overrideForCrud
-                            .AuthorizationStrategies.Select(strat => new AuthorizationStrategy
-                            {
-                                Name = strat.AuthorizationStrategyName,
-                            })
-                            .ToList();
+                        newAction.AuthorizationStrategyOverrides =
+                        [
+                            .. overrideForCrud.AuthorizationStrategies.Select(
+                                strategy => new AuthorizationStrategy
+                                {
+                                    Name = strategy.AuthorizationStrategyName,
+                                }
+                            ),
+                        ];
                     }
 
                     claimSet.Actions.Add(newAction);

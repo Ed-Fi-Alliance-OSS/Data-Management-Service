@@ -27,7 +27,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 long id = 0;
                 bool isNewVendor = false;
                 var sql = "SELECT Id FROM dmscs.Vendor WHERE Company = @Company";
-                var existingVendorId = await connection.ExecuteScalarAsync<long?>(sql, new { command.Company });
+                var existingVendorId = await connection.ExecuteScalarAsync<long?>(
+                    sql,
+                    new { command.Company }
+                );
 
                 if (existingVendorId.HasValue)
                 {
@@ -36,12 +39,15 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         SET ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress
                         WHERE Id = @Id;
                         """;
-                    await connection.ExecuteAsync(sql, new
-                    {
-                        command.ContactName,
-                        command.ContactEmailAddress,
-                        Id = existingVendorId.Value
-                    });
+                    await connection.ExecuteAsync(
+                        sql,
+                        new
+                        {
+                            command.ContactName,
+                            command.ContactEmailAddress,
+                            Id = existingVendorId.Value,
+                        }
+                    );
 
                     sql = "DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId = @VendorId";
                     await connection.ExecuteAsync(sql, new { VendorId = existingVendorId.Value });
@@ -50,10 +56,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 else
                 {
                     sql = """
-                    INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress)
-                    VALUES (@Company, @ContactName, @ContactEmailAddress)
-                    RETURNING Id;
-                    """;
+                        INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress)
+                        VALUES (@Company, @ContactName, @ContactEmailAddress)
+                        RETURNING Id;
+                        """;
 
                     id = await connection.ExecuteScalarAsync<long>(sql, command);
                     isNewVendor = true;
@@ -97,7 +103,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             {
                 var sql = """
                     SELECT Id, Company, ContactName, ContactEmailAddress, NamespacePrefix
-                    FROM (SELECT * FROM dmscs.Vendor ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v 
+                    FROM (SELECT * FROM dmscs.Vendor ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v
                     LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
                     """;
                 var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
