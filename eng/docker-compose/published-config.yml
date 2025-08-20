@@ -30,7 +30,6 @@ services:
       ClaimsOptions__ClaimsSource: ${DMS_CONFIG_CLAIMS_SOURCE:-Embedded}
       ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: ${DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING:-false}
       ClaimsOptions__ClaimsDirectory: ${DMS_CONFIG_CLAIMS_DIRECTORY:-}
-
       IdentitySettings__EncryptionKey: ${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:-}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
     ports:

@@ -17,6 +17,11 @@ using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 {
+    private static string SanitizeForLog(string? input)
+    {
+        if (string.IsNullOrEmpty(input)) return string.Empty;
+        return input.Replace("\r", "").Replace("\n", "");
+    }
     /// <summary>
     /// PostgreSQL implementation of ITokenManager that generates and validates JWT tokens using OpenIddict standards.
     /// Stores tokens in dmscs.openiddict_token table and includes custom scope claims.
@@ -186,7 +191,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     return new TokenResult.FailureUnknown("Missing client_id or client_secret");
                 }
 
-                _logger.LogDebug("Attempting to generate token for client: {ClientId}", clientId);
+                _logger.LogDebug("Attempting to generate token for client: {ClientId}", SanitizeForLog(clientId));
 
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 await connection.OpenAsync();
@@ -208,7 +213,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
                 if (applicationInfo == null)
                 {
-                    _logger.LogWarning("Client not found: {ClientId}", clientId);
+                    _logger.LogDebug("Client not found: {ClientId}", SanitizeForLog(clientId));
                     return new TokenResult.FailureIdentityProvider(
                             new IdentityProviderError.InvalidClient("Invalid client or Invalid client credentials"));
                 }
@@ -216,7 +221,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 var isValidSecret = await _secretHasher.VerifySecretAsync(clientSecret, applicationInfo.ClientSecret ?? string.Empty);
                 if (!isValidSecret)
                 {
-                    _logger.LogWarning("Invalid client secret for client: {ClientId}", clientId);
+                    _logger.LogDebug("Invalid client secret for client: {ClientId}", SanitizeForLog(clientId));
                     return new TokenResult.FailureIdentityProvider(
                            new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials"));
                 }
