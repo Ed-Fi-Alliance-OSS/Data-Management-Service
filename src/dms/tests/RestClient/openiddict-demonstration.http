@@ -18,8 +18,8 @@
 @sysAdminSecret=s3creT@09
 
 ###
-# Create a token to test basic authentication with the DMS (only for self-contained OpenIddict server)
-POST {{tokenUrl}}
+# Create a token to test basic authentication with the DMS (only for self-contained OpenIddict server, for keycloak we use the endpoint /auth/realms/{realm}/protocol/openid-connect/token)
+POST http://localhost:{{configPort}}/connect/token
 Authorization: basic {{sysAdminId}}:{{sysAdminSecret}}
 Content-Type: application/x-www-form-urlencoded
 
