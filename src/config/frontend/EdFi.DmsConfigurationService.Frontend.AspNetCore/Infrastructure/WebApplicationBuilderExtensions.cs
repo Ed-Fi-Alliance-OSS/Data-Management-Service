@@ -96,7 +96,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
         webApplicationBuilder.Services.AddSingleton<IClaimsValidator, ClaimsValidator>();
         webApplicationBuilder.Services.AddSingleton<IClaimsFragmentComposer, ClaimsFragmentComposer>();
-        webApplicationBuilder.Services.AddScoped<IClaimsDataLoader, ClaimsDataLoader>();
+        webApplicationBuilder.Services.AddSingleton<IClaimsDataLoader, ClaimsDataLoader>();
         webApplicationBuilder.Services.AddSingleton<IClaimsUploadService, ClaimsUploadService>();
 
         Serilog.ILogger ConfigureLogging()
