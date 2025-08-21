@@ -442,6 +442,7 @@ src/dms/EdFi.DataStandard52.ApiSchema/
 CLAUDE.local.md
 .mcp.json
 .plans/
+.claude/
 
 # SDK generation artifacts
 /eng/sdkGen/csharp/*
