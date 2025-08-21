@@ -75,7 +75,19 @@ else {
     Start-Sleep 25
     if($IdentityProvider -eq "keycloak")
     {
-        Write-Output "Starting self-contained initialization script..."
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-keycloak.ps1
+
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+    }
+    elseif ($IdentityProvider -eq "self-contained")
+    {
+    	Write-Output "Starting self-contained initialization script..."
+
         # Create client with default edfi_admin_api/full_access scope
         ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
 
@@ -84,10 +96,5 @@ else {
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
-    }
-    elseif ($IdentityProvider -eq "self-contained")
-    {
-        Write-Output "Setup self-contained OpenIddict..."
-        ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
     }
 }

@@ -8,8 +8,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Dapper;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -38,7 +38,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             SubjectPublicKeyInfo,
             Pkcs1,
             Base64Encoded,
-            Unknown
+            Unknown,
         }
 
         public PostgresTokenManager(
@@ -63,7 +63,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             var tokenManager = (PostgresTokenManager?)serviceProvider.GetService(typeof(PostgresTokenManager));
             if (tokenManager == null)
             {
-                throw new InvalidOperationException("PostgresTokenManager is not registered in the service provider.");
+                throw new InvalidOperationException(
+                    "PostgresTokenManager is not registered in the service provider.");
             }
             return await tokenManager.ValidateTokenAsync(token);
         }
@@ -96,8 +97,16 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 if (!System.IO.File.Exists(certPath))
                 {
                     using var rsa = RSA.Create(2048);
-                    var certRequest = new CertificateRequest("CN=DevCert", rsa, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
-                    cert = certRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+                    var certRequest = new CertificateRequest(
+                        "CN=DevCert",
+                        rsa,
+                        System.Security.Cryptography.HashAlgorithmName.SHA256,
+                        System.Security.Cryptography.RSASignaturePadding.Pkcs1
+                    );
+                    cert = certRequest.CreateSelfSigned(
+                        DateTimeOffset.UtcNow.AddDays(-1),
+                        DateTimeOffset.UtcNow.AddYears(1)
+                    );
                     var bytes = cert.Export(X509ContentType.Pfx, certPassword);
                     await System.IO.File.WriteAllBytesAsync(certPath, bytes);
                 }
@@ -140,7 +149,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 var query = "SELECT pgp_sym_decrypt(PrivateKey::bytea, @encryptionKey) AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1";
-                var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(query, new { encryptionKey });
+                var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(
+                    query,
+                    new { encryptionKey }
+                );
                 if (string.IsNullOrEmpty(keyRecord.PrivateKey) || string.IsNullOrEmpty(keyRecord.KeyId))
                 {
                     throw new InvalidOperationException("No active private key or key id found in OpenIddictKey table.");
@@ -186,7 +198,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     return new TokenResult.FailureUnknown("Missing client_id or client_secret");
                 }
 
-                _logger.LogDebug("Attempting to generate token for client: {ClientId}", SanitizeForLog(clientId));
+                _logger.LogDebug(
+                    "Attempting to generate token for client: {ClientId}",
+                    SanitizeForLog(clientId)
+                );
 
                 await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
                 await connection.OpenAsync();
@@ -208,7 +223,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
                 if (applicationInfo == null)
                 {
-                    _logger.LogDebug("Client not found: {ClientId}", SanitizeForLog(clientId));
+                    _logger.LogDebug(
+                        "Client not found: {ClientId}",
+                        SanitizeForLog(clientId)
+                    );
                     return new TokenResult.FailureIdentityProvider(
                             new IdentityProviderError.InvalidClient("Invalid client or Invalid client credentials"));
                 }
@@ -216,13 +234,19 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 var isValidSecret = await _secretHasher.VerifySecretAsync(clientSecret, applicationInfo.ClientSecret ?? string.Empty);
                 if (!isValidSecret)
                 {
-                    _logger.LogDebug("Invalid client secret for client: {ClientId}", SanitizeForLog(clientId));
+                    _logger.LogDebug(
+                        "Invalid client secret for client: {ClientId}",
+                        SanitizeForLog(clientId)
+                    );
                     return new TokenResult.FailureIdentityProvider(
                            new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials"));
                 }
 
-                _logger.LogDebug("Application found: {ApplicationId}, Display Name: {DisplayName}",
-                    applicationInfo.Id, applicationInfo.DisplayName);
+                _logger.LogDebug(
+                    "Application found: {ApplicationId}, Display Name: {DisplayName}",
+                    applicationInfo.Id,
+                    applicationInfo.DisplayName
+                );
                 var listOfScopes = !string.IsNullOrEmpty(scope)
                     ? string.Join(",", scope)
                     : string.Join(",", applicationInfo.Permissions ?? new string[0]);
@@ -510,25 +534,19 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                             // Cache miss, detect format
                             keyFormat = DetectKeyFormat(record.PublicKey);
 
-                            // Check cache size before adding
-                            if (_keyFormatCache.Count >= maxCacheSize)
+                            // Atomically check cache size, remove if needed, and add new entry
+                            lock (_cacheLock)
                             {
-                                // Cache full, remove a random entry before adding new one
-                                lock (_cacheLock)
+                                if (_keyFormatCache.Count >= maxCacheSize)
                                 {
-                                    if (_keyFormatCache.Count >= maxCacheSize)
+                                    var keyToRemove = _keyFormatCache.Keys.FirstOrDefault();
+                                    if (keyToRemove != null)
                                     {
-                                        var keyToRemove = _keyFormatCache.Keys.FirstOrDefault();
-                                        if (keyToRemove != null)
-                                        {
-                                            _keyFormatCache.TryRemove(keyToRemove, out _);
-                                        }
+                                        _keyFormatCache.TryRemove(keyToRemove, out _);
                                     }
                                 }
+                                _keyFormatCache.TryAdd(record.KeyId, keyFormat);
                             }
-
-                            // Now add the new entry
-                            _keyFormatCache.TryAdd(record.KeyId, keyFormat);
                         }
 
                         _logger.LogDebug("Key {KeyId} format detected as: {Format}", record.KeyId, keyFormat);
