@@ -143,12 +143,12 @@ USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
  API_SCHEMA_PATH=/app/ApiSchema
  SCHEMA_PACKAGES='[
   {
-    "version": "1.0.293",
+    "version": "1.0.294",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.293",
+    "version": "1.0.294",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.Sample.ApiSchema",
     "extensionName": "Sample"
@@ -167,6 +167,7 @@ for examples. Files must follow the pattern: `{number}-{description}-claimset.js
 scripts is to mount `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`.
 
 3. Use the `-AddExtensionSecurityMetadata` parameter to configure CMS to read claimsets from `app/additional-claims`:
+
 ```pwsh
 ./start-local-dms.ps1 -AddExtensionSecurityMetadata
 ```
