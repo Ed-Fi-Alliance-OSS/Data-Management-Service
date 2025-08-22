@@ -15,6 +15,20 @@ using Microsoft.Extensions.Options;
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServices();
 
+// Add CORS policy to allow Swagger UI to access the Configuration Service
+string swaggerUiOrigin =
+    builder.Configuration.GetValue<string>("Cors:SwaggerUIOrigin") ?? "http://localhost:8082";
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy(
+        "AllowSwaggerUI",
+        policy =>
+        {
+            policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
+        }
+    );
+});
+
 var useReverseProxyHeaders = builder.Configuration.GetValue<bool>("AppSettings:UseReverseProxyHeaders");
 if (useReverseProxyHeaders)
 {
@@ -54,6 +68,7 @@ if (!ReportInvalidConfiguration(app))
 
 app.UseExceptionHandler(o => { });
 app.UseRouting();
+app.UseCors("AllowSwaggerUI");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapRouteEndpoints();

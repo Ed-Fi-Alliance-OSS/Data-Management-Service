@@ -19,9 +19,16 @@
         <PackageVersion Include="Keycloak.Net.Core" Version="1.0.29" />
         <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.8" />
         <PackageVersion Include="Microsoft.AspNetCore.Http" Version="2.2.2" />
-        <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="7.7.1" />
-        <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="7.7.1" />
-        <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="7.7.1" />
+        <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.12.0" />
+        <PackageVersion Include="Microsoft.IdentityModel.Protocols" Version="8.12.0" />
+        <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.12.0" />
+        <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.12.0" />
+        <PackageVersion Include="OpenIddict.Abstractions" Version="7.0.0" />
+        <PackageVersion Include="OpenIddict.Core" Version="7.0.0" />
+    <PackageVersion Include="OpenIddict.Validation" Version="7.0.0" />
+    <PackageVersion Include="OpenIddict.Validation.AspNetCore" Version="7.0.0" />
+    <PackageVersion Include="OpenIddict.Validation.SystemNetHttp" Version="7.0.0" />
+        <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.12.0" />
         <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.11.0" />
         <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.11.0" />
         <PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="9.0.1" />
@@ -43,7 +50,7 @@
         <PackageVersion Include="OpenSearch.Client" Version="1.8.0" />
         <PackageVersion Include="Polly" Version="8.5.2" />
         <PackageVersion Include="Polly.Core" Version="8.4.2" />
-        <PackageVersion Include="Polly.Extensions" Version="8.4.1" />
+    <PackageVersion Include="Polly.Extensions" Version="8.4.2" />
         <PackageVersion Include="Respawn" Version="6.2.1" />
         <PackageVersion Include="Sandwych.QuickGraph.Core" Version="1.0.0" />
         <PackageVersion Include="Serilog" Version="4.0.2" />
@@ -56,6 +63,7 @@
         <PackageVersion Include="JsonPath.Net" Version="1.1.6" />
         <PackageVersion Include="FluentValidation" Version="11.11.0" />
         <PackageVersion Include="FluentValidation.AspNetCore" Version="11.3.0" />
+    <PackageVersion Include="System.Linq.Async" Version="6.0.3" />
     </ItemGroup>
     <!-- Testing Packages -->
     <ItemGroup>

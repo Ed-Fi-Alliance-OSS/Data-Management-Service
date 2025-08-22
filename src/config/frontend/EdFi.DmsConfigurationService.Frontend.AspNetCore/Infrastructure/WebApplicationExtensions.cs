@@ -5,6 +5,7 @@
 
 using System.Reflection;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
+using Microsoft.AspNetCore.Routing;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -18,10 +19,19 @@ public static class WebApplicationExtensions
             .GetTypes()
             .Where(p => moduleInterface.IsAssignableFrom(p) && p.IsClass && !p.IsGenericType);
 
+        var identityProvider = application.Configuration["AppSettings:IdentityProvider"];
         var modules = new List<IEndpointModule>();
 
         foreach (var moduleClass in moduleClasses)
         {
+            if (!string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
+            {
+                if (moduleClass.Name == typeof(JwksEndpointModule).Name ||
+                    moduleClass.Name == typeof(OpenIdConfigurationModule).Name)
+                {
+                    continue;
+                }
+            }
             if (Activator.CreateInstance(moduleClass) is IEndpointModule module)
             {
                 modules.Add(module);
