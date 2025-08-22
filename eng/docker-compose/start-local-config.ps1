@@ -120,7 +120,5 @@ else {
             Write-Host "Restarting container: $containerName"
             docker restart $containerName
         }
-
-        docker restart dms-local-dms-1
     }
 }
