@@ -92,7 +92,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/careerpathwaydescriptor#other");
+                .Be("uri://ed-fi.org/CareerPathwayDescriptor#other");
         }
 
         [Test]
@@ -108,7 +108,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#basic");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#basic");
         }
 
         [Test]
@@ -124,7 +124,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#advanced");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#advanced");
         }
     }
 
@@ -243,7 +243,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#basic");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#basic");
         }
 
         [Test]
@@ -259,7 +259,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#advanced");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#advanced");
         }
     }
 
@@ -311,7 +311,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#advanced");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#advanced");
         }
     }
 
@@ -394,7 +394,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/careerpathwaydescriptor#other");
+                .Be("uri://ed-fi.org/CareerPathwayDescriptor#other");
         }
     }
 
@@ -426,152 +426,6 @@ public class DescriptorExtractorTests
         public void It_has_extracted_no_references()
         {
             descriptorReferences.Should().BeEmpty();
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
-    public class Given_Extracting_Descriptor_References_With_Mixed_Case_Namespace_Portions
-        : DescriptorExtractorTests
-    {
-        internal DescriptorReference[] descriptorReferences = [];
-
-        internal static ApiSchemaDocuments BuildMixedCaseApiSchemaDocuments()
-        {
-            return new ApiSchemaBuilder()
-                .WithStartProject()
-                .WithStartResource("TestResource")
-                .WithIdentityJsonPaths(["$.testTitle"])
-                .WithStartDocumentPathsMapping()
-                .WithDocumentPathScalar("TestTitle", "$.testTitle")
-                .WithDocumentPathDescriptor(
-                    "COURSEGPAApplicabilityDescriptor",
-                    "$.courseGpaApplicabilityDescriptor"
-                )
-                .WithDocumentPathDescriptor("AcademicSUBJECTDescriptor", "$.academicSubjectDescriptor")
-                .WithDocumentPathDescriptor("MixedCASEDescriptor", "$.mixedCaseDescriptor")
-                .WithDocumentPathDescriptor(
-                    "CollectionMIXEDCaseDescriptor",
-                    "$.testCollection[*].mixedCaseDescriptor"
-                )
-                .WithEndDocumentPathsMapping()
-                .WithEndResource()
-                .WithEndProject()
-                .ToApiSchemaDocuments();
-        }
-
-        [SetUp]
-        public void Setup()
-        {
-            ApiSchemaDocuments apiSchemaDocument = BuildMixedCaseApiSchemaDocuments();
-            ResourceSchema resourceSchema = BuildResourceSchema(apiSchemaDocument, "testResources");
-
-            descriptorReferences = resourceSchema.ExtractDescriptors(
-                JsonNode.Parse(
-                    """
-                    {
-                        "testTitle": "Test",
-                        "courseGpaApplicabilityDescriptor": "uri://ed-fi.org/COURSEGPAApplicabilityDescriptor#Applicable",
-                        "academicSubjectDescriptor": "uri://ed-fi.org/academicSUBJECTDescriptor#Mathematics", 
-                        "mixedCaseDescriptor": "uri://ed-fi.org/MixedCASEDescriptor#SomeValue",
-                        "testCollection": [
-                            {
-                                "mixedCaseDescriptor": "uri://ed-fi.org/CollectionMIXEDCaseDescriptor#First"
-                            },
-                            {
-                                "mixedCaseDescriptor": "uri://ed-fi.org/CollectionMIXEDCaseDescriptor#Second"
-                            }
-                        ]
-                    }
-"""
-                )!,
-                NullLogger.Instance
-            );
-        }
-
-        [Test]
-        public void It_has_extracted_five_references()
-        {
-            descriptorReferences.Should().HaveCount(5);
-        }
-
-        [Test]
-        public void It_normalizes_COURSEGPAApplicabilityDescriptor_to_lowercase()
-        {
-            var courseGpaDescriptor = Array.Find(
-                descriptorReferences,
-                r => r.ResourceInfo.ResourceName.Value == "COURSEGPAApplicabilityDescriptor"
-            );
-
-            courseGpaDescriptor.Should().NotBeNull();
-            courseGpaDescriptor!
-                .DocumentIdentity.DocumentIdentityElements[0]
-                .IdentityValue.Should()
-                .Be("uri://ed-fi.org/coursegpaapplicabilitydescriptor#applicable");
-        }
-
-        [Test]
-        public void It_normalizes_academicSUBJECTDescriptor_to_lowercase()
-        {
-            var academicSubjectDescriptor = Array.Find(
-                descriptorReferences,
-                r => r.ResourceInfo.ResourceName.Value == "AcademicSUBJECTDescriptor"
-            );
-
-            academicSubjectDescriptor.Should().NotBeNull();
-            academicSubjectDescriptor!
-                .DocumentIdentity.DocumentIdentityElements[0]
-                .IdentityValue.Should()
-                .Be("uri://ed-fi.org/academicsubjectdescriptor#mathematics");
-        }
-
-        [Test]
-        public void It_normalizes_MixedCASEDescriptor_to_lowercase()
-        {
-            var mixedCaseDescriptor = Array.Find(
-                descriptorReferences,
-                r => r.ResourceInfo.ResourceName.Value == "MixedCASEDescriptor"
-            );
-
-            mixedCaseDescriptor.Should().NotBeNull();
-            mixedCaseDescriptor!
-                .DocumentIdentity.DocumentIdentityElements[0]
-                .IdentityValue.Should()
-                .Be("uri://ed-fi.org/mixedcasedescriptor#somevalue");
-        }
-
-        [Test]
-        public void It_normalizes_collection_descriptor_references_to_lowercase()
-        {
-            var collectionDescriptors = descriptorReferences
-                .Where(r => r.ResourceInfo.ResourceName.Value == "CollectionMIXEDCaseDescriptor")
-                .ToArray();
-
-            collectionDescriptors.Should().HaveCount(2);
-
-            collectionDescriptors[0]
-                .DocumentIdentity.DocumentIdentityElements[0]
-                .IdentityValue.Should()
-                .Be("uri://ed-fi.org/collectionmixedcasedescriptor#first");
-
-            collectionDescriptors[1]
-                .DocumentIdentity.DocumentIdentityElements[0]
-                .IdentityValue.Should()
-                .Be("uri://ed-fi.org/collectionmixedcasedescriptor#second");
-        }
-
-        [Test]
-        public void It_preserves_original_resource_names_in_mixed_case()
-        {
-            var resourceNames = descriptorReferences
-                .Select(r => r.ResourceInfo.ResourceName.Value)
-                .Distinct()
-                .ToArray();
-
-            resourceNames.Should().Contain("COURSEGPAApplicabilityDescriptor");
-            resourceNames.Should().Contain("AcademicSUBJECTDescriptor");
-            resourceNames.Should().Contain("MixedCASEDescriptor");
-            resourceNames.Should().Contain("CollectionMIXEDCaseDescriptor");
         }
     }
 }

@@ -2,7 +2,6 @@
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
-
 [CmdletBinding()]
 param (
     # Stop services instead of starting them
@@ -47,7 +46,12 @@ param (
 
     # Add smoke test credentials
     [Switch]
-    $AddSmokeTestCredentials
+    $AddSmokeTestCredentials,
+
+    # Identity provider type
+    [string]
+    [ValidateSet("keycloak", "self-contained")]
+    $IdentityProvider="keycloak"
 )
 
 
@@ -60,7 +64,22 @@ if($AddExtensionSecurityMetadata)
     $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
     Write-Output "Configured environment variables for file-based extension claimset loading"
 }
-
+    # Identity provider configuration
+    Import-Module ./env-utility.psm1 -Force
+    $envValues = ReadValuesFromEnvFile $EnvironmentFile
+    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+    Write-Output "Identity Provider $IdentityProvider"
+    if($IdentityProvider -eq "keycloak")
+    {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
+    }
+    elseif ($identityProvider -eq "self-contained") {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
+    }
 $files = @(
     "-f",
     "postgresql.yml",
@@ -110,23 +129,24 @@ else {
     )
     if ($r) { $upArgs += @("--build") }
 
+    if($IdentityProvider -eq "keycloak")
+    {
+        Write-Output "Starting Keycloak..."
+        docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
+        }
 
-    Write-Output "Starting Keycloak..."
-    docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
+        Write-Output "Running setup-keycloak.ps1 scripts..."
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-keycloak.ps1
+
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
-
-    Write-Output "Running setup-keycloak.ps1 scripts..."
-    # Create client with default edfi_admin_api/full_access scope
-    ./setup-keycloak.ps1
-
-    # Create client with edfi_admin_api/readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
-
-    # Create client with edfi_admin_api/authMetadata_readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
-
     Write-Output "Starting Postgresql..."
     docker compose -f postgresql.yml --env-file $EnvironmentFile -p dms-local up $upArgs
     if ($LASTEXITCODE -ne 0) {
@@ -143,7 +163,12 @@ else {
             throw "Failed to load initial data, with exit code $LASTEXITCODE."
         }
     }
-    Write-Output "Starting locally-built DMS"
+
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Init db public and private keys for OpenIddict..."
+        ./setup-openiddict.ps1 -InitDb -InsertData:$false -EnvironmentFile $EnvironmentFile
+    }
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
 
     if ($LASTEXITCODE -ne 0) {
@@ -151,7 +176,18 @@ else {
     }
 
     Start-Sleep 20
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Starting self-contained initialization script..."
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
 
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+    }
     Write-Output "Running connector setup..."
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 
@@ -166,4 +202,15 @@ else {
         Write-Output "Secret: $($credentials.Secret)"
         Write-Output "These credentials can be used for smoke testing the DMS API."
     }
+    Start-Sleep 20
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Restart config and dms apis to refresh openIddict keys"
+        Write-Output "Restarting dms-config-service"
+        docker restart dms-config-service
+        Start-Sleep 10
+        Write-Output "Restarting dms-local"
+        docker restart dms-local-dms-1
+    }
+
 }
