@@ -152,7 +152,7 @@ function RunTests {
         # File search filter
         [string]
         $Filter,
-    
+
         [string]
         $IdentityProvider
     )
@@ -295,10 +295,11 @@ function Invoke-TestExecution {
             IgnoreCase = $true)]
         # File search filter
         [string]
-        $Filter
+        $Filter,
+        $IdentityProvider
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests } }
+        E2ETests { Invoke-Step { E2ETests -IdentityProvider $IdentityProvider} }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknow Test Type" }
@@ -384,7 +385,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests }
+        E2ETest { Invoke-TestExecution E2ETests -IdentityProvider $IdentityProvider}
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
