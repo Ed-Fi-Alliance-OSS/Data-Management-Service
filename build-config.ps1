@@ -296,10 +296,11 @@ function Invoke-TestExecution {
         # File search filter
         [string]
         $Filter,
+        [string]
         $IdentityProvider
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -IdentityProvider $IdentityProvider} }
+        E2ETests { Invoke-Step { E2ETests -IdentityProvider $IdentityProvider } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknow Test Type" }
@@ -385,7 +386,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -IdentityProvider $IdentityProvider}
+        E2ETest { Invoke-TestExecution E2ETests -IdentityProvider $IdentityProvider }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }

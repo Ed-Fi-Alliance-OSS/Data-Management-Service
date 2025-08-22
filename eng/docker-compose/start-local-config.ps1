@@ -74,12 +74,6 @@ else {
         $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
     }
 
-    if($IdentityProvider -eq "self-contained")
-    {
-        Write-Output "Init db public and private keys for OpenIddict..."
-        ./setup-openiddict.ps1 -InitDb -InsertData:$false -EnvironmentFile $EnvironmentFile
-    }
-
     Write-Output "Starting locally-built DMS config service"
 
     docker compose $files --env-file $EnvironmentFile -p cs-local up $upArgs
@@ -103,7 +97,9 @@ else {
     elseif ($IdentityProvider -eq "self-contained")
     {
     	Write-Output "Starting self-contained initialization script..."
-
+        Write-Output "Init db public and private keys for OpenIddict..."
+        ./setup-openiddict.ps1 -InitDb -InsertData:$false -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InitDb -InsertData:$false -EnvironmentFile $EnvironmentFile
         # Create client with default edfi_admin_api/full_access scope
         ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
 
@@ -112,5 +108,19 @@ else {
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+
+        Write-Output "Restart config and dms apis to refresh openIddict keys"
+        Write-Output "Restarting dms-config-service"
+        docker restart dms-config-service
+        Start-Sleep 10
+        $containerName = "dms-local-dms-1"
+        $containerExists = docker ps -a --format "{{.Names}}" | Where-Object { $_ -eq $containerName }
+
+        if ($containerExists) {
+            Write-Host "Restarting container: $containerName"
+            docker restart $containerName
+        }
+
+        docker restart dms-local-dms-1
     }
 }
