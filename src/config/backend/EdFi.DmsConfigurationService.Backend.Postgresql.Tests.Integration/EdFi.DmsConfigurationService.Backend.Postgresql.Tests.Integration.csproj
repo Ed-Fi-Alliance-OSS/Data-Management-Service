@@ -37,6 +37,9 @@
         </None>
     </ItemGroup>
     <ItemGroup>
+      <PackageReference Include="Azure.Identity" />
+      <PackageReference Include="System.Drawing.Common" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" VersionOverride="8.14.0" />
         <None Remove="ClaimsHierarchyMetadata.json" />
         <EmbeddedResource Include="ClaimsHierarchyMetadata.json" />
     </ItemGroup>
