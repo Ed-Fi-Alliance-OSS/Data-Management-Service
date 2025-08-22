@@ -57,6 +57,22 @@ else {
         "--detach"
     )
     if ($r) { $upArgs += @("--build") }
+    # Identity provider configuration
+    Import-Module ./env-utility.psm1 -Force
+    $envValues = ReadValuesFromEnvFile $EnvironmentFile
+    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+    Write-Output "Identity Provider $IdentityProvider"
+    if($IdentityProvider -eq "keycloak")
+    {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
+    }
+    elseif ($identityProvider -eq "self-contained") {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
+    }
 
     if($IdentityProvider -eq "self-contained")
     {

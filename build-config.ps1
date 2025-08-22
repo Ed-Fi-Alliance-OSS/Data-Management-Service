@@ -78,7 +78,12 @@ param(
 
     # Only required with local builds and testing.
     [switch]
-    $IsLocalBuild
+    $IsLocalBuild,
+
+    # Identity provider type
+    [string]
+    [ValidateSet("keycloak", "self-contained")]
+    $IdentityProvider="keycloak"
 )
 
 $solutionRoot = "$PSScriptRoot/src/config"
@@ -146,7 +151,10 @@ function RunTests {
     param (
         # File search filter
         [string]
-        $Filter
+        $Filter,
+    
+        [string]
+        $IdentityProvider
     )
 
     $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
@@ -209,10 +217,14 @@ function RunE2E {
 }
 
 function E2ETests {
+    param (
+        [string]
+        $IdentityProvider
+    )
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r
+            ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r -IdentityProvider $IdentityProvider
         }
         finally {
             Pop-Location
