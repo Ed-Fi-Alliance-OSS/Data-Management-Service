@@ -61,18 +61,8 @@ internal static class DescriptorExtractor
 
             foreach (JsonPathAndValue descriptorUri in descriptorUrisWithPath)
             {
-                var normalizedDescriptorUriValue = descriptorUri.value;
-                if (!string.IsNullOrEmpty(normalizedDescriptorUriValue))
-                {
-                    int hashIndex = normalizedDescriptorUriValue.IndexOf('#');
-                    if (hashIndex >= 0 && hashIndex < normalizedDescriptorUriValue.Length - 1)
-                    {
-                        string beforeHash = normalizedDescriptorUriValue.Substring(0, hashIndex + 1);
-                        string afterHash = normalizedDescriptorUriValue.Substring(hashIndex + 1);
-
-                        normalizedDescriptorUriValue = beforeHash + afterHash.ToLowerInvariant();
-                    }
-                }
+                // Normalize the entire URI to lowercase for case-insensitive matching
+                var normalizedDescriptorUriValue = descriptorUri.value?.ToLowerInvariant() ?? string.Empty;
 
                 // One descriptor reference per Uri
                 DocumentIdentityElement documentIdentityElement = new(
