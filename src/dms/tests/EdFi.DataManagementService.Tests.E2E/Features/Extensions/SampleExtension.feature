@@ -149,7 +149,7 @@ Feature: Sample extension resources
                             "operatingCost": 5,
                             "busRouteNumber": 102,
                             "busRouteDirection": "Southbound",
-                            "expectedTransitTime": 60,
+                            "expectedTransitTime": "60",
                             "serviceAreaPostalCodes": [
                                 {
                                     "serviceAreaPostalCode": "78704"
