@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
+using EdFi.DmsConfigurationService.Backend.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
@@ -133,7 +134,7 @@ public static class WebApplicationBuilderExtensions
                     ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
-            webAppBuilder.Services.AddTransient<ITokenManager, Backend.Postgresql.OpenIddict.PostgresTokenManager>();
+            webAppBuilder.Services.AddTransient<ITokenManager, OpenIddictTokenManager>();
             webAppBuilder.Services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
             webAppBuilder.Services.AddTransient<
                 IClaimsTableValidator,

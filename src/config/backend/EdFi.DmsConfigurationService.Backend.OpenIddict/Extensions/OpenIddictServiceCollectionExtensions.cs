@@ -3,10 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
+namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
 {
     /// <summary>
     /// Extension methods for registering OpenIddict-related services.

@@ -4,10 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Claims;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using OpenIddict.Abstractions;
-using OpenIddict.Validation.AspNetCore;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
 {

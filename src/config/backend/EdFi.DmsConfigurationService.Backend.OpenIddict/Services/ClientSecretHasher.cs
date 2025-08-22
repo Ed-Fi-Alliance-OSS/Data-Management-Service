@@ -2,12 +2,10 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
-using System;
 using System.Security.Cryptography;
-using System.Text;
-using System.IO;
-using System.Text.Json;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 
@@ -15,14 +13,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 /// Implementation of client secret hashing using a custom password hasher.
 /// Uses dependency injection to allow for flexible password hashing implementations.
 /// </summary>
-public class ClientSecretHasher : IClientSecretHasher
+public class ClientSecretHasher(
+    ILogger<ClientSecretHasher> logger,
+    IOptions<IdentityOptions> identityOptions) : IClientSecretHasher
 {
-    private readonly ILogger<ClientSecretHasher> _logger;
-
-    public ClientSecretHasher(ILogger<ClientSecretHasher> logger)
-    {
-        _logger = logger;
-    }
+    private readonly ILogger<ClientSecretHasher> _logger = logger;
+    private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
 
     /// <summary>
     /// Hashes a plain-text client secret using a secure hashing algorithm.
@@ -40,13 +36,13 @@ public class ClientSecretHasher : IClientSecretHasher
         const byte Version = 1;
         const int SaltLength = 16;
         const int SubkeyLength = 32;
-        const int Iterations = 10000;
+        int iterations = _identityOptions.Value.HashingIterations;
 
         byte[] salt = RandomNumberGenerator.GetBytes(SaltLength);
         byte[] subkey = Rfc2898DeriveBytes.Pbkdf2(
             plainTextSecret,
             salt,
-            Iterations,
+            iterations,
             HashAlgorithmName.SHA256,
             SubkeyLength
         );
@@ -86,15 +82,6 @@ public class ClientSecretHasher : IClientSecretHasher
 
         _logger.LogDebug("Verifying client secret");
 
-        // If the stored secret doesn't appear to be hashed, do direct comparison for backward compatibility
-        if (!IsSecretHashed(hashedSecret))
-        {
-            _logger.LogDebug("Client secret is not hashed, using direct comparison for backward compatibility");
-            var result = string.Equals(plainTextSecret, hashedSecret, StringComparison.Ordinal);
-            _logger.LogDebug("Client secret verification result: {Result}", result);
-            return Task.FromResult(result);
-        }
-
         try
         {
             byte[] decoded = Convert.FromBase64String(hashedSecret);
@@ -108,7 +95,7 @@ public class ClientSecretHasher : IClientSecretHasher
             byte[] actualSubkey = Rfc2898DeriveBytes.Pbkdf2(
                 plainTextSecret,
                 salt,
-                10000,
+                _identityOptions.Value.HashingIterations,
                 HashAlgorithmName.SHA256,
                 32
             );

@@ -4,15 +4,12 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Claims;
-using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
-using OpenIddict.Validation;
-using OpenIddict.Validation.AspNetCore;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
 {

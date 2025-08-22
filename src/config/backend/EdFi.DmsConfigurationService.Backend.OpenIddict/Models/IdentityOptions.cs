@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
+namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
 {
     /// <summary>
     /// Options for OpenIddict identity settings.
@@ -64,5 +64,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// Maximum size of key format cache.
         /// </summary>
         public int KeyFormatCacheSize { get; set; } = 100;
+
+        /// <summary>
+        /// Number of PBKDF2 iterations for client secret hashing.
+        /// Higher values increase security but also increase computation time.
+        /// Recommended minimum: 100,000 for SHA-256.
+        /// </summary>
+        public int HashingIterations { get; set; } = 210000;
     }
 }

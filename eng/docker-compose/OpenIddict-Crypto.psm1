@@ -33,18 +33,18 @@ function New-AspNetPasswordHash {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Password
+        [string]$Password,
+        [int]$Iterations = 210000
     )
     $version = 1
     $saltLength = 16
     $subkeyLength = 32
-
     $salt = New-Object byte[] $saltLength
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($salt)
 
     $passwordBytes = [System.Text.Encoding]::UTF8.GetBytes($Password)
     $pbkdf2 = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
-        $passwordBytes, $salt, 10000, [System.Security.Cryptography.HashAlgorithmName]::SHA256
+        $passwordBytes, $salt, $Iterations, [System.Security.Cryptography.HashAlgorithmName]::SHA256
     )
     $subkey = $pbkdf2.GetBytes($subkeyLength)
 
@@ -62,6 +62,7 @@ function New-AspNetPasswordHash {
     $encoded = [Convert]::ToBase64String($finalBytes)
     return $encoded;
 }
+
 
 <#
 .SYNOPSIS

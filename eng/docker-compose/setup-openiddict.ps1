@@ -24,7 +24,8 @@ param (
     [string] $EncryptionKey = "ENV:DMS_CONFIG_IDENTITY_ENCRYPTION_KEY",
     [int] $TokenLifespan = 1800,
     [switch] $InitDb = $false,
-    [switch] $InsertData = $true
+    [switch] $InsertData = $true,
+    [string] $HashIterations = "ENV:DMS_CONFIG_IDENTITY_HASHING_ITERATIONS"
 )
 Import-Module ./env-utility.psm1
 Import-Module ./OpenIddict-Crypto.psm1
@@ -54,8 +55,9 @@ function New-OpenIddictScope {
 function New-OpenIddictApplication {
     param([string]$ClientId, [string]$ClientName, [string]$ClientSecret)
     $appId = [guid]::NewGuid().ToString()
+    $iterations = [int32](Resolve-EnvValue $HashIterations)
     # Hash the client secret using ASP.NET password hashing
-    $hashedSecret = New-AspNetPasswordHash -Password $ClientSecret
+    $hashedSecret = New-AspNetPasswordHash -Password $ClientSecret -Iterations $iterations
     $sqlInsert = "INSERT INTO dmscs.OpenIddictApplication (Id, ClientId, ClientSecret, DisplayName, Type) VALUES ('$appId', '$ClientId', '$hashedSecret', '$ClientName', 'confidential') ON CONFLICT (ClientId) DO NOTHING RETURNING Id; "
     $result = Invoke-DbQuery $sqlInsert
 

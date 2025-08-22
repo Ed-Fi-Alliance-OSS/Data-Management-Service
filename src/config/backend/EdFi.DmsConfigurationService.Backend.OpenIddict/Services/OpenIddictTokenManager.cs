@@ -7,29 +7,33 @@ using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using Dapper;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
-using Npgsql;
 
-namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
+namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 {
     /// <summary>
-    /// PostgreSQL implementation of ITokenManager that generates and validates JWT tokens using OpenIddict standards.
-    /// Stores tokens in dmscs.openiddict_token table and includes custom scope claims.
+    /// Database-agnostic implementation of ITokenManager that generates and validates JWT tokens using OpenIddict standards.
+    /// Uses IOpenIddictTokenRepository for database operations to support multiple database providers.
     /// </summary>
-    public class PostgresTokenManager : ITokenManager, ITokenRevocationManager
+    public class OpenIddictTokenManager(
+        IOptions<IdentityOptions> identityOptions,
+        ILogger<OpenIddictTokenManager> logger,
+        IClientSecretHasher secretHasher,
+        IOpenIddictTokenRepository tokenRepository) : ITokenManager, ITokenRevocationManager
     {
-        private readonly IOptions<DatabaseOptions> _databaseOptions;
-        private readonly IOptions<IdentityOptions> _identityOptions;
-        private readonly ILogger<PostgresTokenManager> _logger;
-        private readonly IClientSecretHasher _secretHasher;
+        private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
+        private readonly ILogger<OpenIddictTokenManager> _logger = logger;
+        private readonly IClientSecretHasher _secretHasher = secretHasher;
+        private readonly IOpenIddictTokenRepository _tokenRepository = tokenRepository;
 
         // Cache for key formats with a maximum size limit to prevent unbounded growth
-        private readonly ConcurrentDictionary<string, KeyFormat> _keyFormatCache = new ConcurrentDictionary<string, KeyFormat>();
+        private readonly ConcurrentDictionary<string, KeyFormat> _keyFormatCache = new();
         private readonly object _cacheLock = new object();
 
         // Key format enumeration to cache detected formats
@@ -41,30 +45,17 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             Unknown,
         }
 
-        public PostgresTokenManager(
-            IOptions<DatabaseOptions> databaseOptions,
-            IOptions<IdentityOptions> identityOptions,
-            ILogger<PostgresTokenManager> logger,
-            IClientSecretHasher secretHasher)
-        {
-            _databaseOptions = databaseOptions;
-            _identityOptions = identityOptions;
-            _logger = logger;
-            _secretHasher = secretHasher;
-            _logger.LogInformation("PostgresTokenManager initialized");
-        }
-
         /// <summary>
         /// Static helper to validate a JWT token and check its revocation status using a service provider.
         /// This allows easy integration into authentication middleware or endpoint handlers.
         /// </summary>
         public static async Task<bool> ValidateTokenWithRevocationAsync(string token, IServiceProvider serviceProvider)
         {
-            var tokenManager = (PostgresTokenManager?)serviceProvider.GetService(typeof(PostgresTokenManager));
+            var tokenManager = serviceProvider.GetService<OpenIddictTokenManager>();
             if (tokenManager == null)
             {
                 throw new InvalidOperationException(
-                    "PostgresTokenManager is not registered in the service provider.");
+                    "OpenIddictTokenManager is not registered in the service provider.");
             }
             return await tokenManager.ValidateTokenAsync(token);
         }
@@ -72,7 +63,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// <summary>
         /// Loads and decrypts the active private key from the database, returning a SecurityKey for JWT signing.
         /// </summary>
-        private async Task<(SecurityKey, string)> LoadActiveSigningKey()
+        private async Task<SigningKeyResult> LoadActiveSigningKey()
         {
             if (_identityOptions.Value.UseCertificates)
             {
@@ -87,7 +78,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         /// <summary>
         /// Loads signing key from X.509 certificates (existing implementation)
         /// </summary>
-        private async Task<(SecurityKey, string)> LoadActiveSigningKeyFromCertificatesAsync()
+        private async Task<SigningKeyResult> LoadActiveSigningKeyFromCertificatesAsync()
         {
             if (_identityOptions.Value.UseDevelopmentCertificates)
             {
@@ -115,7 +106,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     cert = new X509Certificate2(certPath, certPassword);
                 }
                 var signingKey = new X509SecurityKey(cert);
-                return await Task.FromResult((signingKey, cert.Thumbprint));
+                return await Task.FromResult(new SigningKeyResult { SecurityKey = signingKey, KeyId = cert.Thumbprint });
             }
             else
             {
@@ -130,14 +121,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     ? new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath)
                     : new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath, certPassword);
                 var signingKey = new X509SecurityKey(cert);
-                return await Task.FromResult((signingKey, cert.Thumbprint));
+                return await Task.FromResult(new SigningKeyResult { SecurityKey = signingKey, KeyId = cert.Thumbprint });
             }
         }
 
         /// <summary>
         /// Loads signing key from database (OpenIddictKey table)
         /// </summary>
-        private async Task<(SecurityKey, string)> LoadActiveSigningKeyFromDatabaseAsync()
+        private async Task<SigningKeyResult> LoadActiveSigningKeyFromDatabaseAsync()
         {
             try
             {
@@ -147,18 +138,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     throw new InvalidOperationException("IdentitySettings:EncryptionKey must be set when using database keys.");
                 }
 
-                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
-                var query = "SELECT pgp_sym_decrypt(PrivateKey::bytea, @encryptionKey) AS PrivateKey, KeyId FROM dmscs.OpenIddictKey WHERE IsActive = TRUE ORDER BY CreatedAt DESC LIMIT 1";
-                var keyRecord = await connection.QuerySingleOrDefaultAsync<(string PrivateKey, string KeyId)>(
-                    query,
-                    new { encryptionKey }
-                );
-                if (string.IsNullOrEmpty(keyRecord.PrivateKey) || string.IsNullOrEmpty(keyRecord.KeyId))
+                var keyRecord = await _tokenRepository.GetActivePrivateKeyAsync(encryptionKey);
+                if (keyRecord == null)
                 {
                     throw new InvalidOperationException("No active private key or key id found in OpenIddictKey table.");
                 }
+
                 var signingKey = JwtSigningKeyHelper.GenerateSigningKey(keyRecord.PrivateKey);
-                return (signingKey, keyRecord.KeyId);
+                return new SigningKeyResult { SecurityKey = signingKey, KeyId = keyRecord.KeyId };
             }
             catch (Exception ex)
             {
@@ -198,46 +185,18 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     return new TokenResult.FailureUnknown("Missing client_id or client_secret");
                 }
 
-                _logger.LogDebug(
-                    "Attempting to generate token for client: {ClientId}",
-                    SanitizeForLog(clientId)
-                );
-
-                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
-                await connection.OpenAsync();
-
                 // First, get the application by client ID to retrieve the stored (potentially hashed) secret
-                string applicationSql =
-                    @"SELECT a.Id, a.DisplayName, a.Permissions, a.ClientSecret,
-                             array_agg(s.Name) as Scopes
-                      FROM dmscs.OpenIddictApplication a
-                      LEFT JOIN dmscs.OpenIddictApplicationScope aps ON a.Id = aps.ApplicationId
-                      LEFT JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
-                      WHERE a.ClientId = @ClientId
-                      GROUP BY a.Id, a.DisplayName, a.Permissions, a.ClientSecret";
-
-                var applicationInfo = await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
-                    applicationSql,
-                    new { ClientId = clientId }
-                );
+                var applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(clientId);
 
                 if (applicationInfo == null)
                 {
-                    _logger.LogDebug(
-                        "Client not found: {ClientId}",
-                        SanitizeForLog(clientId)
-                    );
                     return new TokenResult.FailureIdentityProvider(
                             new IdentityProviderError.InvalidClient("Invalid client or Invalid client credentials"));
                 }
-                // Verify the client secret using the hasher (supports both hashed and plain text for backward compatibility)
+                // Verify the client secret using the hasher
                 var isValidSecret = await _secretHasher.VerifySecretAsync(clientSecret, applicationInfo.ClientSecret ?? string.Empty);
                 if (!isValidSecret)
                 {
-                    _logger.LogDebug(
-                        "Invalid client secret for client: {ClientId}",
-                        SanitizeForLog(clientId)
-                    );
                     return new TokenResult.FailureIdentityProvider(
                            new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials"));
                 }
@@ -252,14 +211,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     : string.Join(",", applicationInfo.Permissions ?? new string[0]);
                 // Generate JWT token
                 var token = await GenerateJwtTokenAsync(
-                    connection,
                     applicationInfo,
                     clientId,
                     listOfScopes
                 );
                 int tokenExpirationMinutes = _identityOptions.Value.TokenExpirationMinutes;
                 // Calculate expires_in (seconds)
-                var expiresIn = (tokenExpirationMinutes * 60);
+                var expiresIn = tokenExpirationMinutes * 60;
                 // Compose the response object
                 var response = new
                 {
@@ -274,13 +232,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 var json = System.Text.Json.JsonSerializer.Serialize(response);
                 return new TokenResult.Success(json);
             }
-            catch (NpgsqlException ex)
-            {
-                _logger.LogError(ex, "Database error while retrieving access token");
-                return new TokenResult.FailureIdentityProvider(
-                    new IdentityProviderError.Unreachable(ex.Message)
-                );
-            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unknown error while retrieving access token");
@@ -289,7 +240,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         }
 
         private async Task<string> GenerateJwtTokenAsync(
-            NpgsqlConnection connection,
             ApplicationInfo applicationInfo,
             string clientId,
             string scope)
@@ -300,16 +250,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             string issuer = _identityOptions.Value.Authority;
             int tokenExpirationMinutes = _identityOptions.Value.TokenExpirationMinutes;
             var expiration = now.AddMinutes(tokenExpirationMinutes);
-            var (signingKey, keyId) = await LoadActiveSigningKey();
+            var signingKeyResult = await LoadActiveSigningKey();
+
             // Prepare roles from OpenIddictClientRole/OpenIddictRole tables
-            var roles = (await connection.QueryAsync<string>(
-                    @"SELECT r.Name
-                      FROM dmscs.OpenIddictClientRole cr
-                      JOIN dmscs.OpenIddictRole r ON cr.RoleId = r.Id
-                      WHERE cr.ClientId = @ClientId",
-                    new { ClientId = applicationInfo.Id }
-                )
-            ).ToArray();
+            var roles = (await _tokenRepository.GetClientRolesAsync(applicationInfo.Id)).ToArray();
 
             // Use shared JwtTokenGenerator
             var tokenString = JwtTokenGenerator.GenerateJwtToken(
@@ -323,50 +267,15 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 expiration,
                 issuer,
                 audience,
-                signingKey,
-                keyId
+                signingKeyResult.SecurityKey,
+                signingKeyResult.KeyId
             );
 
             // Store token in database
-            await StoreTokenInDatabaseAsync(connection, tokenId, applicationInfo.Id, clientId, tokenString, expiration);
+            await _tokenRepository.StoreTokenAsync(tokenId, applicationInfo.Id, clientId, tokenString, expiration);
 
             return tokenString;
         }
-
-        private async Task StoreTokenInDatabaseAsync(
-            NpgsqlConnection connection,
-            Guid tokenId,
-            Guid applicationId,
-            string subject,
-            string payload,
-            DateTimeOffset expiration)
-        {
-            string insertSql = @"
-                INSERT INTO dmscs.OpenIddictToken
-                (Id, ApplicationId, Subject, Type, CreationDate, ExpirationDate, Status, ReferenceId)
-                VALUES
-                (@Id, @ApplicationId, @Subject, @Type, @CreationDate, @ExpirationDate, @Status, @ReferenceId)";
-
-            await connection.ExecuteAsync(
-                insertSql,
-                new
-                {
-                    Id = tokenId,
-                    ApplicationId = applicationId,
-                    Subject = subject,
-                    Type = "access_token",
-                    Payload = payload,
-                    CreationDate = DateTimeOffset.UtcNow,
-                    ExpirationDate = expiration,
-                    Status = "valid",
-                    ReferenceId = tokenId.ToString("N"),
-                }
-            );
-
-            _logger.LogInformation("JWT token stored in database with ID: {TokenId}", tokenId);
-        }
-
-        // Signing key logic moved to JwtSigningKeyHelper
 
         /// <summary>
         /// Validates a JWT token and checks its status in the database
@@ -397,16 +306,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                     return false;
                 }
 
-                // Check token status in database
+                // Check token status in repository
                 var jti = jwtToken?.Claims?.FirstOrDefault(x => x.Type == JwtRegisteredClaimNames.Jti)?.Value;
                 if (!string.IsNullOrEmpty(jti))
                 {
-                    await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
-                    await connection.OpenAsync();
-                    var status = await connection.QuerySingleOrDefaultAsync<string>(
-                        "SELECT Status FROM dmscs.OpenIddictToken WHERE Id = @Id",
-                        new { Id = Guid.Parse(jti) }
-                    );
+                    var status = await _tokenRepository.GetTokenStatusAsync(Guid.Parse(jti));
                     return status == "valid";
                 }
                 return false;
@@ -431,15 +335,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
                 if (!string.IsNullOrEmpty(jti))
                 {
-                    await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
-                    await connection.OpenAsync();
-
-                    var result = await connection.ExecuteAsync(
-                        "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = CURRENT_TIMESTAMP WHERE Id = @Id",
-                        new { Id = Guid.Parse(jti) }
-                    );
-
-                    return result > 0;
+                    return await _tokenRepository.RevokeTokenAsync(Guid.Parse(jti));
                 }
 
                 return false;
@@ -450,6 +346,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
                 return false;
             }
         }
+
         /// <summary>
         /// Returns all active public keys for JWKS endpoint
         /// </summary>
@@ -515,10 +412,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             try
             {
                 int maxCacheSize = _identityOptions.Value.KeyFormatCacheSize;
-                await using var connection = new NpgsqlConnection(_databaseOptions.Value.DatabaseConnection);
-                await connection.OpenAsync();
-                var keyRecords = await connection.QueryAsync<(string KeyId, byte[] PublicKey)>(
-                    "SELECT KeyId, PublicKey FROM dmscs.OpenIddictKey WHERE IsActive = TRUE");
+                var keyRecords = await _tokenRepository.GetActivePublicKeysAsync();
                 foreach (var record in keyRecords)
                 {
                     try
@@ -644,31 +538,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
             return KeyFormat.Unknown;
         }
-        /// <summary>
-        /// Metodo to sanitize input for logging purposes
-        /// </summary>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        private static string SanitizeForLog(string? input)
-        {
-            if (string.IsNullOrEmpty(input))
-            {
-                return string.Empty;
-            }
-            return input.Replace("\r", "").Replace("\n", "");
-        }
-    }
-
-    /// <summary>
-    /// Application information retrieved from database
-    /// </summary>
-    public class ApplicationInfo
-    {
-        public Guid Id { get; set; }
-        public string? DisplayName { get; set; }
-        public string[]? Permissions { get; set; }
-        public string[]? Scopes { get; set; }
-        public string? ClientSecret { get; set; }
     }
 
     /// <summary>
@@ -687,5 +556,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
     {
         public string KeyId { get; set; } = string.Empty;
         public string PrivateKey { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Represents a signing key with its associated key identifier
+    /// </summary>
+    public class SigningKeyResult
+    {
+        public SecurityKey SecurityKey { get; set; } = null!;
+        public string KeyId { get; set; } = string.Empty;
     }
 }

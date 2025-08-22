@@ -3,12 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 using System.Data;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,8 +24,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
         {
             // Add identity options
             services.AddOpenIddictIdentityOptions(configuration);
-            services.AddSingleton<IClientRepository, PostgresOpenIddictClientRepository>();
-            services.AddSingleton<ITokenManager, PostgresTokenManager>();
+            services.AddSingleton<IOpenIddictDataRepository, OpenIddictDataRepository>();
+            services.AddSingleton<IClientRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
+            services.AddSingleton<OpenIddictTokenManager>();
+            services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
+            services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();
             services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
 
             // Add enhanced OpenIddict-compatible services
@@ -75,8 +81,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             // Add identity options
             services.AddOpenIddictIdentityOptions(configuration);
 
-            services.AddSingleton<IClientRepository, PostgresOpenIddictClientRepository>();
-            services.AddSingleton<ITokenManager, PostgresTokenManager>();
+            services.AddSingleton<IClientRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
+            services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
+            services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();
             services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
 
             // Add enhanced OpenIddict-compatible services
