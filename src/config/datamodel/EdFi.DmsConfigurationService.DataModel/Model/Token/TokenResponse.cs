@@ -17,4 +17,7 @@ public class TokenResponse
 
     [JsonPropertyName("token_type")]
     public string? TokenType { get; set; }
+
+    [JsonPropertyName("scope")]
+    public string? Scope { get; set; }
 }

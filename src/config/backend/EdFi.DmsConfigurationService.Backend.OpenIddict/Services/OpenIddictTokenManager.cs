@@ -209,6 +209,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 var listOfScopes = !string.IsNullOrEmpty(scope)
                     ? string.Join(",", scope)
                     : string.Join(",", applicationInfo.Permissions ?? new string[0]);
+
                 // Generate JWT token
                 var token = await GenerateJwtTokenAsync(
                     applicationInfo,
@@ -225,7 +226,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     expires_in = expiresIn,
                     refresh_expires_in = 0,
                     token_type = "Bearer",
-                    scope = scope ?? string.Join(",", applicationInfo.Scopes ?? new string[0])
+                    scope = listOfScopes
                 };
 
                 // Return as JSON string
@@ -263,6 +264,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 applicationInfo.Permissions,
                 roles,
                 scope ?? "",
+                applicationInfo.ProtocolMappers ?? "[]",
                 now,
                 expiration,
                 issuer,
@@ -468,10 +470,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                         }
 
                         keys.Add((rsa.ExportParameters(false), record.KeyId));
-                        _logger.LogInformation(
-                            "Successfully loaded public key with ID: {KeyId}",
-                            record.KeyId
-                        );
                     }
                     catch (Exception keyEx)
                     {

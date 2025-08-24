@@ -136,5 +136,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 
         // Application info operations
         Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId);
+
+        Task<ApplicationInfo?> GetApplicationByIdAsync(
+            Guid id,
+            IDbConnection connection,
+            IDbTransaction? transaction = null
+        );
     }
 }

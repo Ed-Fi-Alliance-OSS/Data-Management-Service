@@ -5,6 +5,7 @@
 
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Text.Json;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
@@ -33,6 +34,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             string[]? permissions,
             string[]? roles,
             string scope,
+            string protocolMappersJson,
             DateTimeOffset issuedAt,
             DateTimeOffset expiresAt,
             string issuer,
@@ -64,6 +66,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 new Claim(JwtRegisteredClaimNames.Aud, audience),
                 new Claim(JwtRegisteredClaimNames.Iss, issuer)
             };
+            // Deserialize and add claims
+            var protocolMappers = JsonSerializer.Deserialize<List<ProtocolMapper>>(protocolMappersJson);
+
+            if (protocolMappers != null)
+            {
+                foreach (var mapper in protocolMappers)
+                {
+                    claims.Add(new Claim(mapper.ClaimName, mapper.ClaimValue ?? string.Empty));
+                }
+            }
             // Remove any null claims (if audience or issuer is null)
             claims = claims.Where(c => c != null).ToList();
 

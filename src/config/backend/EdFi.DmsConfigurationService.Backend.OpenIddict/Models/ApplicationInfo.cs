@@ -11,8 +11,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 public class ApplicationInfo
 {
     public Guid Id { get; set; }
-    public string DisplayName { get; set; } = string.Empty;
-    public string[] Permissions { get; set; } = [];
+    public string ClientId { get; set; } = string.Empty;
     public string ClientSecret { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string[] RedirectUris { get; set; } = [];
+    public string[] PostLogoutRedirectUris { get; set; } = [];
+    public string[] Permissions { get; set; } = [];
+    public string[] Requirements { get; set; } = [];
+    public string Type { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; }
     public string[] Scopes { get; set; } = [];
+    public string ProtocolMappers { get; set; } = String.Empty;
 }
