@@ -199,7 +199,6 @@ public class ApplicationRepository(
                 SET ApplicationName=@ApplicationName, VendorId=@VendorId, ClaimSetName=@ClaimSetName
                 WHERE Id = @Id;
                 """;
-            logger.LogInformation("Executing SQL: {Sql} with parameters: {@Params}", sql, command);
             int affectedRows = await connection.ExecuteAsync(sql, command);
 
             if (affectedRows == 0)
