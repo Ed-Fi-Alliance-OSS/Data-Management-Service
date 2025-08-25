@@ -36,7 +36,7 @@ function Invoke-SmokeTestUtility {
         [string]
         $SdkPath,
 
-        [ValidateSet("EdFi.DmsApi.TestSdk", "EdFi.DmsApi.Sdk")]
+        [ValidateSet("EdFi.DmsApi.TestSdk", "EdFi.DmsApi.Sdk", "EdFi.OdsApi.Sdk")]
         [string]
         $SdkNamespace = "EdFi.DmsApi.TestSdk"
     )

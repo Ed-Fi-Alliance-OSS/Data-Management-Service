@@ -19,7 +19,11 @@ param(
 
   # Optional SDK path - if not provided, will download SDK
   [string]
-  $SdkPath
+  $SdkPath,
+
+  [ValidateSet("EdFi.DmsApi.TestSdk", "EdFi.DmsApi.Sdk", "EdFi.OdsApi.Sdk")]
+  [string]
+  $SdkNamespace = "EdFi.DmsApi.TestSdk"
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,6 +49,7 @@ $parameters = @{
   ToolPath = $path
   TestSet = "NonDestructiveSdk"
   SdkPath = $sdkDllPath
+  SdkNamespace = $SdkNamespace
 }
 
 Invoke-SmokeTestUtility @parameters
