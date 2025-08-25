@@ -831,7 +831,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             replacedBody = replacedBody
                 .Replace("{BASE_URL}/", _playwrightContext.ApiUrl)
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
-
+            replacedBody = replacedBody.Replace("{OAUTH_URL}", AppSettings.AuthenticationService);
             return replacedBody;
         }
 

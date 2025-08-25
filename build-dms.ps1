@@ -205,6 +205,24 @@ function SetQueryHandler {
     $json | ConvertTo-Json -Depth 32 | Set-Content $appSettingsPath
 }
 
+function SetAuthenticationServiceURL {
+    param (
+        # E2E test directory
+        [string]
+        $E2EDirectory
+    )
+
+    $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
+    $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
+    if ($IdentityProvider -or "self-contained") {
+        $json.QueryHandler = "opensearch"
+    }
+    else {
+        $json.QueryHandler = "postgresql"
+    }
+    $json | ConvertTo-Json -Depth 32 | Set-Content $appSettingsPath
+}
+
 function RunTests {
     param (
         # File search filter

@@ -489,6 +489,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                 );
             }
             replacedBody = replacedBody.Replace("{BASE_URL}/", playwrightContext.ApiUrl);
+            replacedBody = replacedBody.Replace("{OAUTH_URL}", AppSettings.AuthenticationService);
         }
 
         return replacedBody;
@@ -536,6 +537,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                 );
             }
             replacedBody = replacedBody.Replace("{BASE_URL}/", playwrightContext.ApiUrl);
+            replacedBody = replacedBody.Replace("{OAUTH_URL}", AppSettings.AuthenticationService);
         }
 
         return replacedBody;

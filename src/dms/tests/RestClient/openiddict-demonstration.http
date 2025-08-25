@@ -13,6 +13,7 @@
 # This will allow you to test authentication, token generation, and API access as described below.
 @dmsPort=8080
 @configPort=5126
+@configPort=8081
 
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=s3creT@09

@@ -25,5 +25,6 @@ namespace EdFi.DataManagementService.Tests.E2E
 
         public static string DmsPort = "8080"; //5198 for local
         public static string ConfigServicePort = "8081"; //5126 for local
+        public static string AuthenticationService = _configuration["AuthenticationService"] ?? "http://localhost:8045/realms/edfi/protocol/openid-connect/token";
     }
 }

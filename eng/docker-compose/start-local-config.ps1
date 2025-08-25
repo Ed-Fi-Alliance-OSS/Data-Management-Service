@@ -110,17 +110,5 @@ else {
 
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
-
-        Write-Output "Restart config and dms apis to refresh openIddict keys"
-        Write-Output "Restarting dms-config-service"
-        docker restart dms-config-service
-        Start-Sleep 10
-        $containerName = "dms-local-dms-1"
-        $containerExists = docker ps -a --format "{{.Names}}" | Where-Object { $_ -eq $containerName }
-
-        if ($containerExists) {
-            Write-Host "Restarting container: $containerName"
-            docker restart $containerName
-        }
     }
 }
