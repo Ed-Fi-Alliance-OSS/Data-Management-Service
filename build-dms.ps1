@@ -215,10 +215,10 @@ function SetAuthenticationServiceURL {
     $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
     $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
     if ($IdentityProvider -or "self-contained") {
-        $json.QueryHandler = "opensearch"
+        $json.AuthenticationService = "http://localhost:8081/connect/token"
     }
     else {
-        $json.QueryHandler = "postgresql"
+        $json.AuthenticationService = "http://localhost:8045/realms/edfi/protocol/openid-connect/token"
     }
     $json | ConvertTo-Json -Depth 32 | Set-Content $appSettingsPath
 }
@@ -283,6 +283,7 @@ function RunTests {
             if ($Filter -like "*E2E*") {
                 $dirPath = Split-Path -parent $($_)
                 SetQueryHandler($dirPath)
+                SetAuthenticationServiceURL($dirPath)
             }
 
             Invoke-Execute {
