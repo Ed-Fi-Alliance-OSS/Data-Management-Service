@@ -53,8 +53,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             services.AddJwtAuthentication(
                 new JwtSettings
                 {
-                    Issuer = issuer ?? String.Empty,
-                    Audience = audience ?? String.Empty,
+                    Issuer = issuer ?? string.Empty,
+                    Audience = audience ?? string.Empty,
                     ExpirationMinutes = 30,
                 },
                 configuration

@@ -21,5 +21,5 @@ public class ApplicationInfo
     public string Type { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public string[] Scopes { get; set; } = [];
-    public string ProtocolMappers { get; set; } = String.Empty;
+    public string ProtocolMappers { get; set; } = string.Empty;
 }

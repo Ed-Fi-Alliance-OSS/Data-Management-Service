@@ -66,7 +66,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 new Claim(JwtRegisteredClaimNames.Aud, audience),
                 new Claim(JwtRegisteredClaimNames.Iss, issuer)
             };
-            if (!String.IsNullOrEmpty(protocolMappersJson))
+            if (!string.IsNullOrEmpty(protocolMappersJson))
             {
                 // Deserialize and add claims
                 var protocolMappers = JsonSerializer.Deserialize<List<ProtocolMapper>>(protocolMappersJson);
