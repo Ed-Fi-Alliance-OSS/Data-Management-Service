@@ -183,10 +183,10 @@ VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements
             const string sql =
                 @"
 UPDATE dmscs.OpenIddictApplication
-    SET display_name = @DisplayName,
-        permissions = @Permissions,
-        protocolmappers = @ProtocolMappers::jsonb
-    WHERE id = @Id";
+    SET DisplayName = @DisplayName,
+        Permissions = @Permissions,
+        ProtocolMappers = @ProtocolMappers::jsonb
+    WHERE Id = @Id";
 
             return await connection.ExecuteAsync(
                 sql,
@@ -273,18 +273,44 @@ UPDATE dmscs.OpenIddictApplication
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
+
             const string applicationSql =
-                @"SELECT a.Id, a.DisplayName, a.Permissions, a.ClientSecret,
+                @"SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
+                         a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers::jsonb::text as ProtocolMappers,
                          array_agg(s.Name) as Scopes
                   FROM dmscs.OpenIddictApplication a
                   LEFT JOIN dmscs.OpenIddictApplicationScope aps ON a.Id = aps.ApplicationId
                   LEFT JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
                   WHERE a.ClientId = @ClientId
-                  GROUP BY a.Id, a.DisplayName, a.Permissions, a.ClientSecret";
+                  GROUP BY a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
+                           a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers";
 
             return await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
                 applicationSql,
                 new { ClientId = clientId }
+            );
+        }
+
+        public async Task<ApplicationInfo?> GetApplicationByIdAsync(
+            Guid id,
+            IDbConnection connection,
+            IDbTransaction? transaction = null)
+        {
+            const string applicationSql =
+                @"SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
+                         a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers::jsonb::text as ProtocolMappers,
+                         array_agg(s.Name) as Scopes
+                  FROM dmscs.OpenIddictApplication a
+                  LEFT JOIN dmscs.OpenIddictApplicationScope aps ON a.Id = aps.ApplicationId
+                  LEFT JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
+                  WHERE a.Id = @Id
+                  GROUP BY a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
+                           a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers";
+
+            return await connection.QuerySingleOrDefaultAsync<ApplicationInfo>(
+                applicationSql,
+                new { Id = id },
+                transaction
             );
         }
 
@@ -306,7 +332,7 @@ UPDATE dmscs.OpenIddictApplication
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
-            const string sql = "SELECT * FROM dmscs.openiddict_token WHERE Id = @Id";
+            const string sql = "SELECT * FROM dmscs.OpenIddictToken WHERE Id = @Id";
             return await connection.QuerySingleOrDefaultAsync<TokenInfo>(sql, new { Id = tokenId });
         }
 

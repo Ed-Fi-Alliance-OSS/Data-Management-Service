@@ -22,6 +22,9 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    strategy:
+      matrix:
+        identityprovider: [keycloak, self-contained]
     steps:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -63,9 +66,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: DMS Build
+      - name: DMS Build - IdentityProvider (${{matrix.identityprovider}})
         id: build_step
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Install Coverlet Reference
         if: success()
@@ -77,13 +80,13 @@ jobs:
         id: unit_test_step
         run: ./build-dms.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}
 
-      - name: Run ElasticSearch End to End Tests
+      - name: Run ElasticSearch End to End Tests - IdentityProvider (${{matrix.identityprovider}})
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableElasticSearch -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild
+        run: ./build-dms.ps1 E2ETest -EnableElasticSearch -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
 
-      - name: Run OpenSearch End to End Tests
+      - name: Run OpenSearch End to End Tests - IdentityProvider (${{matrix.identityprovider}})
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableOpenSearch -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild
+        run: ./build-dms.ps1 E2ETest -EnableOpenSearch -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs

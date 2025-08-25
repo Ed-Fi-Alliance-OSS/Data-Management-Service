@@ -145,6 +145,9 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    strategy:
+      matrix:
+        identityprovider: [keycloak, self-contained]
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -163,11 +166,11 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Build
-        run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+        run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
 
-      - name: Run End to End Tests
+      - name: Run End to End Tests - IdentityProvider (${{matrix.identityprovider}})
         if: success()
-        run: ./build-config.ps1 E2ETest  -Configuration ${{ env.CONFIGURATION }}
+        run: ./build-config.ps1 E2ETest  -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Upload Logs
         if: failure()

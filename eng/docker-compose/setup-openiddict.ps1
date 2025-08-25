@@ -85,20 +85,21 @@ function Add-OpenIddictCustomClaim {
         return
     }
 
-    # Create JSON object and properly escape for PostgreSQL
-    $jsonObj = @{ $ClaimName = $ClaimValue } | ConvertTo-Json -Compress
-    # Double escape: first for PowerShell string and then for PostgreSQL
-    # Replace single quotes with double single quotes for PostgreSQL
-    $escapedJson = $jsonObj.Replace("'", "''")
-    # Replace double quotes with escaped double quotes for PowerShell
-    # Use dollar-quoted string literals for PostgreSQL to avoid most escaping issues
+    # Use PostgreSQL jsonb_build functions to avoid shell escaping issues entirely
+    # This builds the equivalent of [{"claim.name": "...", "claim.value": "...", "jsonType.label": "String"}]
     $sql = @"
 UPDATE dmscs.OpenIddictApplication
-SET ProtocolMappers = COALESCE(ProtocolMappers, '{}'::jsonb) || '$escapedJson'::jsonb
+SET ProtocolMappers = COALESCE(ProtocolMappers, '[]'::jsonb) ||
+    jsonb_build_array(
+        jsonb_build_object(
+            'claim.name', '$ClaimName',
+            'claim.value', '$ClaimValue',
+            'jsonType.label', 'String'
+        )
+    )
 WHERE Id = '$AppId';
 "@
-    # Use debug mode for this complex query to help troubleshoot any issues
-    Invoke-DbQuery -Sql $sql -Debug
+    Invoke-DbQuery -Sql $sql
 }
 
 function Update-OpenIddictApplicationPermissions {
@@ -273,5 +274,6 @@ if ($InsertData) {
     Add-OpenIddictClientRole -AppId $appId.Trim() -RoleId $configRoleId.Trim()
     Add-OpenIddictApplicationScope -AppId $appId.Trim() -ScopeId $scopeId.Trim()
     Update-OpenIddictApplicationPermissions -AppId $appId.Trim() -Scope  $ClientScopeName
+    Add-OpenIddictCustomClaim -AppId $appId.Trim() -ClaimName $ClaimName -ClaimValue $ClaimValue
     Write-Output "OpenIddict client, roles, scope, and claim created successfully."
 }

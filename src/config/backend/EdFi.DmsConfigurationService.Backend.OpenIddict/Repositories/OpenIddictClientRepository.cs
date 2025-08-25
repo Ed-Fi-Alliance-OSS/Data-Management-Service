@@ -20,6 +20,67 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         IOpenIddictDataRepository dataRepository
     ) : IClientRepository
     {
+        /// <summary>
+        /// Updates or adds the namespacePrefixes claim in the protocol mappers JSON.
+        /// </summary>
+        /// <param name="existingProtocolMappersJson">Existing protocol mappers JSON string.</param>
+        /// <param name="namespacePrefixes">New namespacePrefixes value.</param>
+        /// <returns>Updated protocol mappers JSON string.</returns>
+        private static string MergeNamespacePrefixClaim(string existingProtocolMappersJson, string namespacePrefixes)
+        {
+            List<Dictionary<string, string>> protocolMappers = new();
+            if (!string.IsNullOrWhiteSpace(existingProtocolMappersJson))
+            {
+                try
+                {
+                    protocolMappers = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(
+                        existingProtocolMappersJson
+                    ) ?? new List<Dictionary<string, string>>();
+                }
+                catch
+                {
+                    protocolMappers = new List<Dictionary<string, string>>();
+                }
+            }
+            // Remove any existing namespacePrefixes claim
+            protocolMappers.RemoveAll(
+                m => m.ContainsKey("claim.name") && m["claim.name"] == "namespacePrefixes"
+            );
+            // Add the updated namespacePrefixes claim
+            protocolMappers.Add(ClientClaimHelper.CreateNamespacePrefixClaim(namespacePrefixes));
+            return JsonSerializer.Serialize(protocolMappers);
+        }
+
+        /// <summary>
+        /// Updates or adds the educationOrganizationIds claim in the protocol mappers JSON.
+        /// </summary>
+        /// <param name="existingProtocolMappersJson">Existing protocol mappers JSON string.</param>
+        /// <param name="educationOrganizationIds">New educationOrganizationIds value.</param>
+        /// <returns>Updated protocol mappers JSON string.</returns>
+        private static string MergeEducationOrganizationClaim(string existingProtocolMappersJson, string educationOrganizationIds)
+        {
+            List<Dictionary<string, string>> protocolMappers = new();
+            if (!string.IsNullOrWhiteSpace(existingProtocolMappersJson))
+            {
+                try
+                {
+                    protocolMappers = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(
+                        existingProtocolMappersJson
+                    ) ?? new List<Dictionary<string, string>>();
+                }
+                catch
+                {
+                    protocolMappers = new List<Dictionary<string, string>>();
+                }
+            }
+            // Remove any existing educationOrganizationIds claim
+            protocolMappers.RemoveAll(
+                m => m.ContainsKey("claim.name") && m["claim.name"] == "educationOrganizationIds"
+            );
+            // Add the updated educationOrganizationIds claim
+            protocolMappers.Add(ClientClaimHelper.CreateEducationOrganizationClaim(educationOrganizationIds));
+            return JsonSerializer.Serialize(protocolMappers);
+        }
         public async Task<ClientCreateResult> CreateClientAsync(
             string clientId,
             string clientSecret,
@@ -117,12 +178,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                 using var connection = await dataRepository.CreateConnectionAsync();
                 using var transaction = await dataRepository.BeginTransactionAsync(connection);
 
-                // Build protocol mappers (simulate Keycloak workflow)
-                var protocolMappers = new List<Dictionary<string, string>>
+                // Read existing protocol mappers from the application
+                var application = await dataRepository.GetApplicationByIdAsync(
+                    Guid.Parse(clientUuid),
+                    connection,
+                    transaction
+                );
+
+                if (application == null)
                 {
-                    ClientClaimHelper.CreateEducationOrganizationClaim(educationOrganizationIds)
-                };
-                var protocolMappersJson = JsonSerializer.Serialize(protocolMappers);
+                    transaction.Rollback();
+                    return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
+                }
+
+                // Merge the educationOrganizationIds claim with existing protocol mappers
+                var protocolMappersJson = MergeEducationOrganizationClaim(application.ProtocolMappers, educationOrganizationIds);
 
                 var permissions = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
                 var rows = await dataRepository.UpdateApplicationAsync(
@@ -184,12 +254,20 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                 using var connection = await dataRepository.CreateConnectionAsync();
                 using var transaction = await dataRepository.BeginTransactionAsync(connection);
 
-                // Build protocol mappers with updated namespacePrefixes
-                var protocolMappers = new List<Dictionary<string, string>>
+                // Read existing protocol mappers from the application
+                var application = await dataRepository.GetApplicationByIdAsync(
+                    Guid.Parse(clientUuid),
+                    connection,
+                    transaction
+                );
+
+                if (application == null)
                 {
-                    ClientClaimHelper.CreateNamespacePrefixClaim(namespacePrefixes)
-                };
-                var protocolMappersJson = JsonSerializer.Serialize(protocolMappers);
+                    transaction.Rollback();
+                    return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
+                }
+
+                var protocolMappersJson = MergeNamespacePrefixClaim(application.ProtocolMappers, namespacePrefixes);
 
                 var rows = await dataRepository.UpdateApplicationProtocolMappersAsync(
                     Guid.Parse(clientUuid),

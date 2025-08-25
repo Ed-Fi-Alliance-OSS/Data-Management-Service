@@ -75,3 +75,54 @@ BREAK_DURATION_SECONDS=30
 We provide a Docker Compose based local deployment out of the box. See
 [docker-compose/README.md](../eng/docker-compose/README.md) for detailed
 instructions.
+
+## Identity Provider Configuration
+
+The Data Management Service supports two identity provider modes: **keycloak** and **self-contained (OpenIddict)**. The relevant environment variables are:
+
+```none
+# keycloak
+KEYCLOAK_OAUTH_TOKEN_ENDPOINT=http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token
+KEYCLOAK_DMS_JWT_AUTHORITY=http://dms-keycloak:8080/realms/edfi
+KEYCLOAK_DMS_JWT_METADATA_ADDRESS=http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration
+
+# Self-contained (OpenIddict)
+SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT=http://dms-config-service:8081/connect/token
+SELF_CONTAINED_DMS_JWT_AUTHORITY=http://dms-config-service:8081
+SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS=http://dms-config-service:8081/.well-known/openid-configuration
+```
+
+When running the setup script (e.g., `start-local-dms.ps1`), you can specify the identity provider using the `-IdentityProvider` parameter:
+
+- If you use `-IdentityProvider keycloak`, the script will configure the service to use the keycloak endpoints above.
+- If you omit the parameter or use `self-contained`, the service will use the self-contained (OpenIddict) endpoints.
+
+The selected identity provider will determine the values for the following parameters:
+
+- `OAUTH_TOKEN_ENDPOINT`
+- `DMS_JWT_AUTHORITY`
+- `DMS_JWT_METADATA_ADDRESS`
+- `DMS_CONFIG_IDENTITY_AUTHORITY`
+
+These will be replaced with the corresponding keycloak or self-contained values based on your choice.
+
+> **Note:**
+> Advanced identity provider configuration can also be set directly in the `appsettings.json` files for each service (`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json` and `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/appsettings.json`).
+> For most deployments, environment variables and the setup script are sufficient, but for custom scenarios you may edit these files directly.
+
+**Relevant parameters in `appsettings.json` (config):**
+
+| Parameter                          | Description                                                      | Example (Keycloak)                                   | Example (Self-contained)                      |
+|------------------------------------|------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
+| `IdentityProvider`                 | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
+| `Authority`                        | URL of the identity provider's authority (issuer)                | `http://dms-keycloak:8080/realms/edfi`              | `http://dms-config-service:8081`              |
+| `EncryptionKey`                    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
+
+**JwtAuthentication parameters in `appsettings.json` (dms):**
+
+| Parameter                  | Description                                         | Example (Keycloak)                                   | Example (Self-contained)                      |
+|---------------------------|-----------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
+| `Authority`               | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi`              | `http://dms-config-service:8081`              |
+| `MetadataAddress`         | OpenID Connect metadata endpoint                    | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://dms-config-service:8081/.well-known/openid-configuration` |
+
+Refer to the API service's `appsettings.json` for additional options and defaults.

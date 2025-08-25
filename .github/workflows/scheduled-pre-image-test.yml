@@ -19,6 +19,9 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    strategy:
+      matrix:
+        identityprovider: [keycloak, self-contained]
     steps:
       - name: Checkout the repo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -38,15 +41,15 @@ jobs:
 
       - name: DMS Build
         id: build_step
-        run: ./build-dms.ps1 Build -Configuration Release
+        run: ./build-dms.ps1 Build -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Run OpenSearch End to End Tests
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableOpenSearch -UsePublishedImage -Configuration Release
+        run: ./build-dms.ps1 E2ETest -EnableOpenSearch -UsePublishedImage -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Run ElasticSearch End to End Tests
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableElasticSearch -UsePublishedImage -Configuration Release
+        run: ./build-dms.ps1 E2ETest -EnableElasticSearch -UsePublishedImage -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Notify Slack on success
         if: success() && github.event_name != 'workflow_dispatch'
