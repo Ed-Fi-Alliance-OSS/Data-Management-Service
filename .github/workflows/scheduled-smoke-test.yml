@@ -166,14 +166,19 @@ jobs:
           ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll"
         working-directory: eng/smoke_test/
 
+      - name: Run Destructive DMS SDK Tests
+        run: |
+          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll"
+        working-directory: eng/smoke_test/
+
       - name: Run NonDestructive ODS SDK Tests
         run: |
           ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk"
         working-directory: eng/smoke_test/
 
-      - name: Run Destructive SDK Tests
+      - name: Run Destructive ODS SDK Tests
         run: |
-          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll"
+          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkNamespace "EdFi.OdsApi.Sdk"
         working-directory: eng/smoke_test/
 
       - name: Export Docker Logs on Failure
