@@ -214,7 +214,7 @@ function SetAuthenticationServiceURL {
 
     $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
     $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
-    if ($IdentityProvider -or "self-contained") {
+    if ($IdentityProvider -eq  "self-contained") {
         $json.AuthenticationService = "http://localhost:8081/connect/token"
     }
     else {
