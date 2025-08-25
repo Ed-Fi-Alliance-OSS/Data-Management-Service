@@ -10,6 +10,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 /// </summary>
 public class PrivateKeyInfo
 {
+    /// <summary>
+    /// The private key in PEM or other encoded format, used for cryptographic signing of JWTs and other tokens.
+    /// This key should be kept secure and never exposed publicly.
+    /// </summary>
     public string PrivateKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The identifier for the key, typically used in JWT headers as "kid" to indicate which key was used to sign the token.
+    /// Useful for key rotation and validation.
+    /// </summary>
     public string KeyId { get; set; } = string.Empty;
 }
