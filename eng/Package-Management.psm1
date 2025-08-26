@@ -298,7 +298,7 @@ function Get-SmokeTestTool {
     Ed-Fi NuGet feed and extracts the EdFi.OdsApi.Sdk.dll file to the sdk directory.
 
 .PARAMETER PackageVersion
-    The version of the package to download. Defaults to "7.3.1264".
+    The version of the package to download. Defaults to "7.3.10132".
 
 .OUTPUTS
     String containing the sdk dll path, e.g.
@@ -314,7 +314,7 @@ function Get-ApiSdkDll {
     param(
         # Package version to download, defaults to latest available
         [string]
-        $PackageVersion = "7.3.1264"
+        $PackageVersion = "7.3.10132"
     )
 
     $packageName = "EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0"
@@ -333,7 +333,7 @@ function Get-ApiSdkDll {
 
     try {
         # Download the NuGet package
-        $packageDir = Get-NugetPackage -PackageName $packageName -PackageVersion $PackageVersion
+        $packageDir = Get-NugetPackage -PackageName $packageName -PackageVersion $PackageVersion -PreRelease
         
         # Find the SDK DLL in the package
         $dllPath = Get-ChildItem -Path $packageDir -Filter "EdFi.OdsApi.Sdk.dll" -Recurse | Select-Object -First 1
