@@ -78,7 +78,12 @@ param(
 
     # Only required with local builds and testing.
     [switch]
-    $IsLocalBuild
+    $IsLocalBuild,
+
+    # Identity provider type
+    [string]
+    [ValidateSet("keycloak", "self-contained")]
+    $IdentityProvider="keycloak"
 )
 
 $solutionRoot = "$PSScriptRoot/src/config"
@@ -146,7 +151,10 @@ function RunTests {
     param (
         # File search filter
         [string]
-        $Filter
+        $Filter,
+
+        [string]
+        $IdentityProvider
     )
 
     $testAssemblyPath = "$solutionRoot/*/$Filter/bin/$Configuration/"
@@ -209,10 +217,14 @@ function RunE2E {
 }
 
 function E2ETests {
+    param (
+        [string]
+        $IdentityProvider
+    )
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r
+            ./start-local-config.ps1 -EnvironmentFile "./.env.config.e2e" -r -IdentityProvider $IdentityProvider
         }
         finally {
             Pop-Location
@@ -283,10 +295,12 @@ function Invoke-TestExecution {
             IgnoreCase = $true)]
         # File search filter
         [string]
-        $Filter
+        $Filter,
+        [string]
+        $IdentityProvider
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests } }
+        E2ETests { Invoke-Step { E2ETests -IdentityProvider $IdentityProvider } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknow Test Type" }
@@ -372,7 +386,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests }
+        E2ETest { Invoke-TestExecution E2ETests -IdentityProvider $IdentityProvider }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }

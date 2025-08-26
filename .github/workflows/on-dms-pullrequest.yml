@@ -144,10 +144,11 @@ jobs:
           reporter: dotnet-trx
 
   run-e2e-tests:
-    name: Run ${{matrix.queryhandler}} E2E Tests
+    name: Run ${{matrix.queryhandler}} E2E Tests (IdentityProvider ${{matrix.identityprovider}})
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        identityprovider: [keycloak, self-contained]
         queryhandler: [opensearch, postgresql]
     permissions:
       checks: write
@@ -196,9 +197,8 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Build
-        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
-
-      - name: Run ${{matrix.queryhandler}} E2E Tests
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
+      - name: Run ${{matrix.queryhandler}} - IdentityProvider (${{matrix.identityprovider}}) E2E Tests
         if: success()
         run: |
           if ("${{ matrix.queryhandler }}" -eq "postgresql") {
@@ -207,7 +207,7 @@ jobs:
             # as similar as possible so that we can compare their performance.
           }
 
-          ./build-dms.ps1 E2ETest -EnableOpenSearch -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild
+          ./build-dms.ps1 E2ETest -EnableOpenSearch -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Export Docker Logs
         if: failure()

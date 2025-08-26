@@ -129,6 +129,22 @@ else {
 
     Import-Module ./env-utility.psm1
     $envValues = ReadValuesFromEnvFile $EnvironmentFile
+    # Identity provider configuration
+    Write-Output "Identity Provider $IdentityProvider"
+    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+    if($IdentityProvider -eq "keycloak")
+    {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+    }
+    elseif ($IdentityProvider -eq "self-contained") {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+    }
 
     Write-Output "Starting published DMS"
     $env:NEED_DATABASE_SETUP = if ($LoadSeedData) { "false" } else { $env:NEED_DATABASE_SETUP }
@@ -188,13 +204,4 @@ else {
         Write-Output "These credentials can be used for smoke testing the DMS API."
     }
     Start-Sleep 20
-    if($IdentityProvider -eq "self-contained")
-    {
-        Write-Output "Restart config and dms apis to refresh openIddict keys"
-        Write-Output "Restarting dms-config-service"
-        docker restart dms-config-service
-        Start-Sleep 10
-        Write-Output "Restarting dms-local"
-        docker restart dms-local-dms-1
-    }
 }
