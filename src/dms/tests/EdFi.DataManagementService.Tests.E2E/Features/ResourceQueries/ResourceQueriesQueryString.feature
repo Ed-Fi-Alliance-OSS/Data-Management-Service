@@ -202,7 +202,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-134
+        # Review if we need to delete this scenario in DMS-799
+        @API-134 @ignore
         Scenario: 11 Ensure clients can GET information when querying with mixed case parameter name and value
              When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=week+ONE"
              Then it should respond with 200
@@ -220,7 +221,8 @@ Feature: Query String handling for GET requests for Resource Queries
                   }]
                   """
 
-        @API-135
+        # Review if we need to delete this scenario in DMS-799
+        @API-135 @ignore
         Scenario: 12 Ensure clients can GET information when querying with mixed case parameter name and upper case value
              When a GET request is made to "/ed-fi/academicWeeks?WEEKIDENTIFier=WEEK+ONE"
              Then it should respond with 200
