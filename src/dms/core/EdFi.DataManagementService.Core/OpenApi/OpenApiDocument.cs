@@ -166,6 +166,18 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                 );
             }
 
+            // Validate that extObject is actually an object
+            if (extObject is not JsonObject extObjectAsObject)
+            {
+                _logger.LogError(
+                    "Extension object for '{ComponentSchemaName}' is not a JsonObject. Type: {ExtObjectType}, Value: {ExtObjectValue}",
+                    componentSchemaName,
+                    extObject.GetType().Name,
+                    extObject.ToString()
+                );
+                continue;
+            }
+
             // Get the component.schema location for _ext insert
             JsonObject locationForExt =
                 openApiCoreResources
@@ -175,61 +187,605 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
                     $"OpenAPI extension fragment expects Core to have '$.components.schemas.{componentSchemaName}.properties'. Extension fragment validation failed?"
                 );
 
-            string extensionSchemaName = $"{componentSchemaName}Extension";
-
-            // Add _ext if is not already there
-            if (locationForExt["_ext"] == null)
-            {
-                locationForExt.Add(
-                    "_ext",
-                    JsonNode.Parse($"{{ \"$ref\": \"#/components/schemas/{extensionSchemaName}\" }}")
-                );
-            }
-
             JsonObject componentsSchemas =
                 openApiCoreResources.SelectNodeFromPath("$.components.schemas", _logger)?.AsObject()
                 ?? throw new InvalidOperationException(
                     $"OpenAPI core resources missing 'components.schemas'."
                 );
 
-            if (!componentsSchemas.ContainsKey(extensionSchemaName))
+            // Get the extension properties to analyze for conflicts
+            JsonObject? extensionProperties = extObjectAsObject["properties"]?.AsObject();
+            if (extensionProperties == null)
             {
-                componentsSchemas.Add(
-                    extensionSchemaName,
-                    new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }
+                _logger.LogWarning(
+                    "Extension object for {ComponentSchemaName} has no properties",
+                    componentSchemaName
                 );
+                continue;
             }
 
-            JsonObject extensionSchema =
-                componentsSchemas[extensionSchemaName]?.AsObject()
-                ?? throw new InvalidOperationException(
-                    $"Extension schema '{extensionSchemaName}' is not an object."
-                );
+            // Track properties that should be redirected to referenced schemas
+            var propertiesToRedirect = new Dictionary<string, string>(); // propertyName -> referencedSchemaName
 
-            JsonObject extensionProperties =
-                extensionSchema["properties"]?.AsObject()
-                ?? throw new InvalidOperationException(
-                    $"Extension schema '{extensionSchemaName}' missing 'properties'."
-                );
+            // Check for property conflicts and identify referenced schemas
+            foreach ((string extensionPropertyName, JsonNode? extensionPropertyValue) in extensionProperties)
+            {
+                if (extensionPropertyValue == null)
+                {
+                    continue;
+                }
 
-            // Name of the specific project schema
+                // Check if this property already exists in the core schema
+                if (locationForExt.ContainsKey(extensionPropertyName))
+                {
+                    JsonNode? coreProperty = locationForExt[extensionPropertyName];
+
+                    // Try to extract the referenced schema name from the core property
+                    string? referencedSchemaName = ExtractReferencedSchemaName(coreProperty);
+
+                    if (!string.IsNullOrEmpty(referencedSchemaName))
+                    {
+                        propertiesToRedirect[extensionPropertyName] = referencedSchemaName;
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "Property '{PropertyName}' exists in both core and extension for '{ComponentSchemaName}' but no referenced schema found. Extension property will be ignored.",
+                            extensionPropertyName,
+                            componentSchemaName
+                        );
+                    }
+                }
+            }
+
+            // Create main extension schema for non-conflicting properties
+            string extensionSchemaName = $"{componentSchemaName}Extension";
             string projectExtensionSchemaName = $"{projectName}_{componentSchemaName}Extension";
 
-            // Add reference to the specific project schema
-            if (!extensionProperties.ContainsKey(projectName))
+            // Create filtered extension object without redirected properties
+            JsonObject filteredExtensionObject = new JsonObject
             {
-                extensionProperties.Add(
-                    projectName,
-                    JsonNode.Parse($"{{ \"$ref\": \"#/components/schemas/{projectExtensionSchemaName}\" }}")
-                );
+                ["type"] = extObjectAsObject["type"]?.DeepClone() ?? "object",
+                ["properties"] = new JsonObject(),
+            };
+
+            JsonObject filteredExtensionProperties = filteredExtensionObject["properties"]!.AsObject();
+
+            // Add non-conflicting properties to the main extension
+            foreach ((string extensionPropertyName, JsonNode? extensionPropertyValue) in extensionProperties)
+            {
+                if (
+                    extensionPropertyValue != null
+                    && !propertiesToRedirect.ContainsKey(extensionPropertyName)
+                )
+                {
+                    filteredExtensionProperties[extensionPropertyName] = extensionPropertyValue.DeepClone();
+                }
             }
 
-            // Add the specific project schema if it doesn't exist
-            if (!componentsSchemas.ContainsKey(projectExtensionSchemaName))
+            // Only create main extension schema if there are non-conflicting properties
+            if (filteredExtensionProperties.Count > 0)
             {
-                componentsSchemas.Add(projectExtensionSchemaName, extObject.DeepClone());
+                // Add _ext to main schema if not already there
+                if (locationForExt["_ext"] == null)
+                {
+                    locationForExt.Add(
+                        "_ext",
+                        JsonNode.Parse($"{{ \"$ref\": \"#/components/schemas/{extensionSchemaName}\" }}")
+                    );
+                }
+
+                // Create or get extension schema
+                if (!componentsSchemas.ContainsKey(extensionSchemaName))
+                {
+                    componentsSchemas.Add(
+                        extensionSchemaName,
+                        new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }
+                    );
+                }
+
+                JsonObject extensionSchema =
+                    componentsSchemas[extensionSchemaName]?.AsObject()
+                    ?? throw new InvalidOperationException(
+                        $"Extension schema '{extensionSchemaName}' is not an object."
+                    );
+
+                JsonObject mainExtensionProperties =
+                    extensionSchema["properties"]?.AsObject()
+                    ?? throw new InvalidOperationException(
+                        $"Extension schema '{extensionSchemaName}' missing 'properties'."
+                    );
+
+                // Add reference to the specific project schema
+                if (!mainExtensionProperties.ContainsKey(projectName))
+                {
+                    mainExtensionProperties.Add(
+                        projectName,
+                        JsonNode.Parse(
+                            $"{{ \"$ref\": \"#/components/schemas/{projectExtensionSchemaName}\" }}"
+                        )
+                    );
+                }
+
+                // Add the specific project schema if it doesn't exist
+                if (!componentsSchemas.ContainsKey(projectExtensionSchemaName))
+                {
+                    componentsSchemas.Add(projectExtensionSchemaName, filteredExtensionObject);
+                }
+            }
+
+            // Handle redirected properties - add them to referenced schemas
+            foreach ((string propertyName, string referencedSchemaName) in propertiesToRedirect)
+            {
+                JsonNode? extensionPropertyValue = extensionProperties[propertyName];
+                if (extensionPropertyValue == null)
+                {
+                    continue;
+                }
+
+                // Get the referenced schema
+                JsonObject? referencedSchema = componentsSchemas[referencedSchemaName]?.AsObject();
+                if (referencedSchema == null)
+                {
+                    _logger.LogWarning(
+                        "Referenced schema '{ReferencedSchemaName}' not found for redirected property '{PropertyName}'",
+                        referencedSchemaName,
+                        propertyName
+                    );
+                    continue;
+                }
+
+                // Ensure the referenced schema has properties
+                if (referencedSchema["properties"] == null)
+                {
+                    referencedSchema["properties"] = new JsonObject();
+                }
+
+                JsonObject referencedSchemaProperties = referencedSchema["properties"]!.AsObject();
+
+                // Create extension schema for the referenced schema
+                string referencedExtensionSchemaName = $"{referencedSchemaName}Extension";
+                string projectReferencedExtensionSchemaName =
+                    $"{projectName}_{referencedSchemaName}Extension";
+
+                // Add _ext to referenced schema if not already there
+                if (referencedSchemaProperties["_ext"] == null)
+                {
+                    referencedSchemaProperties.Add(
+                        "_ext",
+                        JsonNode.Parse(
+                            $"{{ \"$ref\": \"#/components/schemas/{referencedExtensionSchemaName}\" }}"
+                        )
+                    );
+                }
+
+                // Create or get referenced extension schema
+                if (!componentsSchemas.ContainsKey(referencedExtensionSchemaName))
+                {
+                    componentsSchemas.Add(
+                        referencedExtensionSchemaName,
+                        new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }
+                    );
+                }
+
+                JsonObject referencedExtensionSchema =
+                    componentsSchemas[referencedExtensionSchemaName]?.AsObject()
+                    ?? throw new InvalidOperationException(
+                        $"Referenced extension schema '{referencedExtensionSchemaName}' is not an object."
+                    );
+
+                JsonObject referencedExtensionProperties =
+                    referencedExtensionSchema["properties"]?.AsObject()
+                    ?? throw new InvalidOperationException(
+                        $"Referenced extension schema '{referencedExtensionSchemaName}' missing 'properties'."
+                    );
+
+                // Add reference to the specific project schema for the referenced extension
+                if (!referencedExtensionProperties.ContainsKey(projectName))
+                {
+                    referencedExtensionProperties.Add(
+                        projectName,
+                        JsonNode.Parse(
+                            $"{{ \"$ref\": \"#/components/schemas/{projectReferencedExtensionSchemaName}\" }}"
+                        )
+                    );
+                }
+
+                // Create the project-specific referenced extension schema
+                if (!componentsSchemas.ContainsKey(projectReferencedExtensionSchemaName))
+                {
+                    // The extension property should contain the properties for the referenced schema
+                    JsonObject redirectedExtensionObject = CreateExtensionSchemaForProperty(
+                        extensionPropertyValue,
+                        propertyName,
+                        _logger
+                    );
+
+                    // Check if we need to resolve a referenced schema
+                    if (
+                        redirectedExtensionObject["__referencedSchema"]?.GetValue<string>()
+                        is string resolvedSchemaName
+                    )
+                    {
+                        // Remove the internal marker
+                        redirectedExtensionObject.Remove("__referencedSchema");
+
+                        // Get the referenced schema and extract its properties
+                        if (
+                            componentsSchemas[resolvedSchemaName]?.AsObject() is JsonObject resolvedSchemaObj
+                            && resolvedSchemaObj["properties"] is JsonObject resolvedProperties
+                        )
+                        {
+                            // Check if the resolved schema has _ext.sample structure and extract only the extension properties
+                            if (
+                                resolvedProperties["_ext"] is JsonObject extObj
+                                && extObj["$ref"]?.GetValue<string>() is string extRef
+                            )
+                            {
+                                // Extract the extension schema name from the $ref
+                                string? extSchemaName = ExtractSchemaNameFromRef(extRef);
+                                if (
+                                    !string.IsNullOrEmpty(extSchemaName)
+                                    && componentsSchemas[extSchemaName]?.AsObject() is JsonObject extSchemaObj
+                                    && extSchemaObj["properties"] is JsonObject extSchemaProperties
+                                    && extSchemaProperties[projectName] is JsonObject projectExtObj
+                                    && projectExtObj["$ref"]?.GetValue<string>() is string projectExtRef
+                                )
+                                {
+                                    // Get the actual extension properties
+                                    string? projectExtSchemaName = ExtractSchemaNameFromRef(projectExtRef);
+                                    if (
+                                        !string.IsNullOrEmpty(projectExtSchemaName)
+                                        && componentsSchemas[projectExtSchemaName]?.AsObject()
+                                            is JsonObject projectExtSchemaObj
+                                        && projectExtSchemaObj["properties"] is JsonObject finalExtProperties
+                                    )
+                                    {
+                                        redirectedExtensionObject["properties"] =
+                                            finalExtProperties.DeepClone();
+                                    }
+                                    else
+                                    {
+                                        _logger.LogWarning(
+                                            "Could not resolve final extension schema '{ProjectExtSchemaName}' for referenced schema '{ResolvedSchemaName}'",
+                                            projectExtSchemaName,
+                                            resolvedSchemaName
+                                        );
+                                    }
+                                }
+                                else
+                                {
+                                    _logger.LogWarning(
+                                        "Could not resolve extension schema reference for '{ResolvedSchemaName}'",
+                                        resolvedSchemaName
+                                    );
+                                }
+                            }
+                            else
+                            {
+                                // Look for direct extension properties that don't belong to the core schema
+                                var potentialExtensionProperties = new JsonObject();
+
+                                // Get the core schema properties dynamically
+                                HashSet<string> coreSchemaProperties = [];
+                                // Use the referenced schema name (EdFi_Contact_Address) to get core properties
+                                string coreSchemaName = referencedSchemaName; // This is "EdFi_Contact_Address"
+
+                                if (
+                                    componentsSchemas[coreSchemaName]?.AsObject() is JsonObject coreSchemaObj
+                                    && coreSchemaObj["properties"] is JsonObject coreProperties
+                                )
+                                {
+                                    // Extract property names from the core schema (EdFi_Contact_Address)
+                                    foreach ((string corePropertyKey, JsonNode? _) in coreProperties)
+                                    {
+                                        if (corePropertyKey != "_ext") // Exclude _ext as it's added by our extension logic
+                                        {
+                                            coreSchemaProperties.Add(corePropertyKey);
+                                        }
+                                    }
+                                }
+                                else
+                                {
+                                    _logger.LogWarning(
+                                        "Could not find core schema '{CoreSchemaName}' to determine core properties",
+                                        coreSchemaName
+                                    );
+                                }
+
+                                // Now filter out core properties from the resolved schema (Sample_Contact_Address)
+                                foreach ((string propertyKey, JsonNode? propertyValue) in resolvedProperties)
+                                {
+                                    // Handle _ext property specially - extract extension properties from it
+                                    if (propertyKey == "_ext" && propertyValue is JsonObject extJsonObject)
+                                    {
+                                        // Look for the project-specific extension (e.g., "sample") inside properties
+                                        if (
+                                            extJsonObject["properties"] is JsonObject extProperties
+                                            && extProperties[projectName] is JsonObject projectExtObject
+                                        )
+                                        {
+                                            // Extract properties from the project extension
+                                            if (
+                                                projectExtObject["properties"]
+                                                is JsonObject projectExtProperties
+                                            )
+                                            {
+                                                // Add all properties from the project extension
+                                                foreach (
+                                                    (
+                                                        string extPropertyKey,
+                                                        JsonNode? extPropertyValue
+                                                    ) in projectExtProperties
+                                                )
+                                                {
+                                                    if (extPropertyValue != null)
+                                                    {
+                                                        potentialExtensionProperties[extPropertyKey] =
+                                                            extPropertyValue.DeepClone();
+                                                    }
+                                                }
+                                            }
+                                            else
+                                            {
+                                                _logger.LogWarning(
+                                                    "Project extension '{ProjectName}' found but missing 'properties' section",
+                                                    projectName
+                                                );
+                                            }
+                                        }
+                                        else
+                                        {
+                                            _logger.LogWarning(
+                                                "Project extension '{ProjectName}' not found in _ext.properties",
+                                                projectName
+                                            );
+                                        }
+                                    }
+                                    // Handle regular properties that are not core properties
+                                    else if (
+                                        !coreSchemaProperties.Contains(propertyKey)
+                                        && propertyKey != "_ext"
+                                        && propertyValue != null
+                                    )
+                                    {
+                                        potentialExtensionProperties[propertyKey] = propertyValue.DeepClone();
+                                    }
+                                }
+
+                                if (potentialExtensionProperties.Count > 0)
+                                {
+                                    redirectedExtensionObject["properties"] = potentialExtensionProperties;
+                                }
+                                else
+                                {
+                                    redirectedExtensionObject["properties"] = new JsonObject();
+                                }
+                            }
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "Referenced schema '{ResolvedSchemaName}' not found or has no properties",
+                                resolvedSchemaName
+                            );
+                        }
+                    }
+
+                    // Validate the created schema before adding it
+                    if (
+                        ValidateOpenApiSchema(
+                            redirectedExtensionObject,
+                            projectReferencedExtensionSchemaName,
+                            _logger
+                        )
+                    )
+                    {
+                        componentsSchemas.Add(
+                            projectReferencedExtensionSchemaName,
+                            redirectedExtensionObject
+                        );
+                    }
+                    else
+                    {
+                        _logger.LogError(
+                            "Failed to create valid redirected extension schema '{ProjectReferencedExtensionSchemaName}' for property '{PropertyName}'. Using minimal schema.",
+                            projectReferencedExtensionSchemaName,
+                            propertyName
+                        );
+
+                        // Create minimal valid schema as fallback
+                        componentsSchemas.Add(
+                            projectReferencedExtensionSchemaName,
+                            new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }
+                        );
+                    }
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Creates a valid extension schema for a redirected property
+    /// </summary>
+    private static JsonObject CreateExtensionSchemaForProperty(
+        JsonNode extensionPropertyValue,
+        string propertyName,
+        ILogger logger
+    )
+    {
+        // For properties like 'addresses', the extension value should be the schema definition
+        // for the properties that will be added to the EdFi_Contact_Address schema
+        if (extensionPropertyValue is JsonObject extPropertyObj)
+        {
+            // Check if it has the OpenAPI schema structure with 'properties'
+            if (extPropertyObj["properties"] is JsonObject nestedProperties)
+            {
+                return new JsonObject
+                {
+                    ["type"] = extPropertyObj["type"]?.DeepClone() ?? "object",
+                    ["properties"] = nestedProperties.DeepClone(),
+                };
+            }
+            // Check if it's an array definition with a $ref in items
+            else if (
+                extPropertyObj["type"]?.GetValue<string>() == "array"
+                && extPropertyObj["items"] is JsonObject refItemsObj
+                && refItemsObj["$ref"]?.GetValue<string>() is string refString
+            )
+            {
+                // Extract the schema name from the $ref
+                string? schemaName = ExtractSchemaNameFromRef(refString);
+                if (!string.IsNullOrEmpty(schemaName))
+                {
+                    // For this case, we need to indicate that the properties should be taken
+                    // from the referenced schema. We'll return a placeholder that indicates
+                    // the referenced schema name for further processing
+                    return new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject(),
+                        ["__referencedSchema"] = schemaName, // Internal marker for processing
+                    };
+                }
+                else
+                {
+                    logger.LogWarning(
+                        "Extension property '{PropertyName}' has array with $ref but couldn't extract schema name from: {RefString}",
+                        propertyName,
+                        refString
+                    );
+                }
+            }
+            // Check if it's an array definition (which we need to extract the item properties from)
+            else if (
+                extPropertyObj["type"]?.GetValue<string>() == "array"
+                && extPropertyObj["items"] is JsonObject itemsObj
+                && itemsObj["properties"] is JsonObject itemProperties
+            )
+            {
+                // For array extensions like 'addresses', we want the properties that will be added
+                // to each item in the array (i.e., to EdFi_Contact_Address)
+                return new JsonObject { ["type"] = "object", ["properties"] = itemProperties.DeepClone() };
+            }
+            // If it's directly the properties object (doesn't have type or properties keys but has content)
+            else if (!extPropertyObj.ContainsKey("type") && !extPropertyObj.ContainsKey("properties"))
+            {
+                return new JsonObject { ["type"] = "object", ["properties"] = extPropertyObj.DeepClone() };
+            }
+            else
+            {
+                logger.LogWarning(
+                    "Extension property '{PropertyName}' has unexpected object structure. Keys: {Keys}",
+                    propertyName,
+                    string.Join(", ", extPropertyObj.Select(kvp => kvp.Key))
+                );
+            }
+        }
+        else if (extensionPropertyValue is JsonArray)
+        {
+            logger.LogError(
+                "Extension property '{PropertyName}' is a JsonArray, which is not supported for schema extension",
+                propertyName
+            );
+        }
+        else
+        {
+            logger.LogError(
+                "Extension property '{PropertyName}' has unexpected type: {ValueType}",
+                propertyName,
+                extensionPropertyValue?.GetType().Name ?? "null"
+            );
+        }
+
+        // Fallback: create empty extension schema
+        logger.LogWarning(
+            "Creating empty extension schema for property '{PropertyName}' due to unexpected structure",
+            propertyName
+        );
+
+        return new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() };
+    }
+
+    /// <summary>
+    /// Validates that a JsonObject represents a valid OpenAPI schema
+    /// </summary>
+    private static bool ValidateOpenApiSchema(JsonObject schema, string schemaName, ILogger logger)
+    {
+        // Check required fields
+        if (schema["type"] == null)
+        {
+            logger.LogError("Schema '{SchemaName}' is missing required 'type' property", schemaName);
+            return false;
+        }
+
+        string? schemaType = schema["type"]?.GetValue<string>();
+        if (string.IsNullOrEmpty(schemaType))
+        {
+            logger.LogError("Schema '{SchemaName}' has invalid 'type' property", schemaName);
+            return false;
+        }
+
+        // For object types, validate properties
+        if (schemaType == "object")
+        {
+            if (schema["properties"] == null)
+            {
+                logger.LogError("Object schema '{SchemaName}' is missing 'properties'", schemaName);
+                return false;
+            }
+
+            if (schema["properties"] is not JsonObject)
+            {
+                logger.LogError(
+                    "Object schema '{SchemaName}' has invalid 'properties' - must be an object",
+                    schemaName
+                );
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Extracts the referenced schema name from a property definition
+    /// </summary>
+    private static string? ExtractReferencedSchemaName(JsonNode? propertyNode)
+    {
+        if (propertyNode == null)
+        {
+            return null;
+        }
+
+        // Handle direct $ref
+        string? directRef = propertyNode["$ref"]?.GetValue<string>();
+        if (!string.IsNullOrEmpty(directRef))
+        {
+            return ExtractSchemaNameFromRef(directRef);
+        }
+
+        // Handle array items with $ref
+        string? arrayItemRef = propertyNode["items"]?["$ref"]?.GetValue<string>();
+        if (!string.IsNullOrEmpty(arrayItemRef))
+        {
+            return ExtractSchemaNameFromRef(arrayItemRef);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts schema name from a $ref string like "#/components/schemas/EdFi_Contact_Address"
+    /// </summary>
+    private static string? ExtractSchemaNameFromRef(string refString)
+    {
+        const string SchemaPrefix = "#/components/schemas/";
+        if (refString.StartsWith(SchemaPrefix))
+        {
+            return refString.Substring(SchemaPrefix.Length);
+        }
+        return null;
     }
 
     /// <summary>
@@ -340,10 +896,7 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             // If tag has already been added by another extension, we don't support a second one
             if (existingTagNames.Contains(tagObjectName))
             {
-                _logger.LogDebug(
-                    "OpenAPI extension fragment tried to add a second tag named '{TagObjectName}', skipping.",
-                    tagObjectName
-                );
+                // Skip duplicate tags silently
             }
             else
             {
