@@ -90,6 +90,9 @@ jobs:
         run: |
           Import-Module ./Template-Management.psm1 -Force
 
+          # Generate unique application name for this run
+          $uniqueAppName = "Demo application ${{ github.run_id }}"
+
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
           Build-Template `
                   -TemplateType Minimal `
@@ -99,7 +102,8 @@ jobs:
                   -Extension 'ed-fi'`
                   -ConfigFilePath './MinimalTemplateSettings.psd1' `
                   -StandardVersion '${{ env.STANDARD_VERSION }}'`
-                  -PackageVersion $packageVersion
+                  -PackageVersion $packageVersion `
+                  -ApplicationName $uniqueAppName
         working-directory: eng/DatabaseTemplates/
 
       - name: Upload Bulk Load Logs

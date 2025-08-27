@@ -16,6 +16,8 @@
     </PackageReference>
     <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="Microsoft.IdentityModel.Protocols" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.Playwright.NUnit" />
     <PackageReference Include="Npgsql" />
@@ -24,6 +26,7 @@
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="Reqnroll" />
     <PackageReference Include="Reqnroll.NUnit" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,6 +44,15 @@
     <Compile Update="Features\AuthorizationMetadata.feature.cs">
       <DependentUpon>AuthorizationMetadata.feature</DependentUpon>
     </Compile>
+    <Compile Update="Features\ClaimsManagement.feature.cs">
+      <DependentUpon>ClaimsManagement.feature</DependentUpon>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="TestData\Claims\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

@@ -47,19 +47,42 @@ param (
 
     # Add smoke test credentials
     [Switch]
-    $AddSmokeTestCredentials
+    $AddSmokeTestCredentials,
+
+    # Identity provider type
+    [string]
+    [ValidateSet("keycloak", "self-contained")]
+    $IdentityProvider="keycloak"
 )
 
 
+# Configure environment variables for new claimset loading approach
 if($AddExtensionSecurityMetadata)
 {
-    Import-Module ./setup-extension-security-metadata.psm1 -Force
-    AddExtensionSecurityMetadata -EnvironmentFile $EnvironmentFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to set up extension security metadata, with exit code $LASTEXITCODE."
-    }
+    # Set environment variables for hybrid claimset loading
+    $env:DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING = "true"
+    $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
+    $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
+    Write-Output "Configured environment variables for file-based extension claimset loading"
 }
-
+    # Identity provider configuration
+    Import-Module ./env-utility.psm1 -Force
+    $envValues = ReadValuesFromEnvFile $EnvironmentFile
+    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+    Write-Output "Identity Provider $IdentityProvider"
+    if($IdentityProvider -eq "keycloak")
+    {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+    }
+    elseif ($IdentityProvider -eq "self-contained") {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+    }
 $files = @(
     "-f",
     "postgresql.yml",
@@ -109,23 +132,24 @@ else {
     )
     if ($r) { $upArgs += @("--build") }
 
+    if($IdentityProvider -eq "keycloak")
+    {
+        Write-Output "Starting Keycloak..."
+        docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
+        }
 
-    Write-Output "Starting Keycloak..."
-    docker compose -f keycloak.yml --env-file $EnvironmentFile -p dms-local up $upArgs
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
+        Write-Output "Running setup-keycloak.ps1 scripts..."
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-keycloak.ps1
+
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
-
-    Write-Output "Running setup-keycloak.ps1 scripts..."
-    # Create client with default edfi_admin_api/full_access scope
-    ./setup-keycloak.ps1
-
-    # Create client with edfi_admin_api/readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
-
-    # Create client with edfi_admin_api/authMetadata_readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
-
     Write-Output "Starting Postgresql..."
     docker compose -f postgresql.yml --env-file $EnvironmentFile -p dms-local up $upArgs
     if ($LASTEXITCODE -ne 0) {
@@ -142,7 +166,12 @@ else {
             throw "Failed to load initial data, with exit code $LASTEXITCODE."
         }
     }
-    Write-Output "Starting locally-built DMS"
+
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Init db public and private keys for OpenIddict..."
+        ./setup-openiddict.ps1 -InitDb -InsertData:$false -EnvironmentFile $EnvironmentFile
+    }
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
 
     if ($LASTEXITCODE -ne 0) {
@@ -150,7 +179,18 @@ else {
     }
 
     Start-Sleep 20
+    if($IdentityProvider -eq "self-contained")
+    {
+        Write-Output "Starting self-contained initialization script..."
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
 
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+    }
     Write-Output "Running connector setup..."
     ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
 
@@ -159,10 +199,13 @@ else {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
         Write-Output "Creating smoke test credentials..."
         $credentials = Get-SmokeTestCredentials -ConfigServiceUrl "http://localhost:8081"
-        
+
         Write-Output "Smoke test credentials created successfully!"
         Write-Output "Key: $($credentials.Key)"
         Write-Output "Secret: $($credentials.Secret)"
         Write-Output "These credentials can be used for smoke testing the DMS API."
     }
+    Start-Sleep 20
+
+
 }

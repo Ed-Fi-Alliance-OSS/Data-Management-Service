@@ -22,9 +22,10 @@ public class DatabaseDeploy : IDatabaseDeploy
             return new DatabaseDeployResult.DatabaseDeployFailure(e);
         }
 
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionString)
+        var upgrader = DeployChanges
+            .To.PostgresqlDatabase(connectionString)
             .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
+            .JournalToPostgresqlTable("public", "dmscs_SchemaVersions")
             .WithVariablesDisabled()
             .LogScriptOutput()
             .LogToAutodetectedLog()
@@ -41,4 +42,3 @@ public class DatabaseDeploy : IDatabaseDeploy
             : new DatabaseDeployResult.DatabaseDeployFailure(result.Error);
     }
 }
-

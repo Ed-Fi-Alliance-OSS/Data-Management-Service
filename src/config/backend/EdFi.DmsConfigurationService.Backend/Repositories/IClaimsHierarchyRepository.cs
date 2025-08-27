@@ -28,7 +28,7 @@ public abstract record ClaimsHierarchyGetResult
     /// Successfully loaded and deserialized the claim set hierarchy.
     /// </summary>
     /// <param name="Claims"></param>
-    public record Success(List<Claim> Claims, DateTime LastModifiedDate) : ClaimsHierarchyGetResult;
+    public record Success(List<Claim> Claims, DateTime LastModifiedDate, long Id) : ClaimsHierarchyGetResult;
 
     /// <summary>
     /// Unexpected exception thrown and caught.

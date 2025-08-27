@@ -98,7 +98,7 @@ public class ClaimsHierarchyModuleTests
         ];
 
         A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
-            .Returns(new ClaimsHierarchyGetResult.Success(claims, DateTime.Now));
+            .Returns(new ClaimsHierarchyGetResult.Success(claims, DateTime.Now, 1));
 
         var suppliedAuthorizationMetadataResponse = new AuthorizationMetadataResponse(
             [

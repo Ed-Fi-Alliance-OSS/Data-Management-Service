@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using Polly;
+using Polly.Retry;
 using Action = EdFi.DmsConfigurationService.DataModel.Model.Action.Action;
 using AuthorizationStrategy = EdFi.DmsConfigurationService.DataModel.Model.ClaimSets.AuthorizationStrategy;
 
@@ -277,7 +278,7 @@ public class ClaimSetRepository(
             await connection.ExecuteAsync(updateApplicationSql, updateApplicationParameters, transaction);
 
             // Polly retry policy for handling multi-user conflicts
-            var retryPolicy = Policy
+            AsyncRetryPolicy<ClaimsHierarchySaveResult> retryPolicy = Policy
                 .HandleResult<ClaimsHierarchySaveResult>(result =>
                     result is ClaimsHierarchySaveResult.FailureMultiUserConflict
                 )
@@ -294,8 +295,8 @@ public class ClaimSetRepository(
 
             ClaimsHierarchySaveResult nameChangeResult =
                 (
-                    await retryPolicy.ExecuteAsync(
-                        () => ApplyNameChangeToClaimsHierarchy(oldClaimSetName, newClaimSetName)
+                    await retryPolicy.ExecuteAsync(() =>
+                        ApplyNameChangeToClaimsHierarchy(oldClaimSetName, newClaimSetName)
                     )
                 )
                 ?? new ClaimsHierarchySaveResult.FailureUnknown(

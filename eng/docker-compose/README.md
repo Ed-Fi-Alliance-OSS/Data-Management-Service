@@ -87,6 +87,22 @@ also append `-v`. Examples:
 ./start-local-dms.ps1 -d -v
 ```
 
+If you want to use Self-Contained authentication using OpenIddict instead of Keycloak, you can pass the `-IdentityProvider self-contained` parameter to the startup script. This will configure the environment to use Self-Contained authentication as the identity provider, and Keycloak will not be required.
+
+```pwsh
+# Start everything (Self-Contained/OpenIddict mode)
+./start-local-dms.ps1 -IdentityProvider self-contained
+
+# Start everything for E2E testing (Self-Contained/OpenIddict mode)
+./start-local-dms.ps1 -IdentityProvider self-contained -EnvironmentFile ./.env.e2e
+
+# Stop the services, keeping volumes (Self-Contained/OpenIddict mode)
+./start-local-dms.ps1 -d
+
+# Stop the services and delete volumes (Self-Contained/OpenIddict mode)
+./start-local-dms.ps1 -d -v
+```
+
 You can set up the Kafka UI and OpenSearch or ElasticSearch Dashboard containers
 for testing by passing the -EnableSearchEngineUI option.
 
@@ -143,12 +159,12 @@ USE_API_SCHEMA_PATH and API_SCHEMA_PATH environment variables.
  API_SCHEMA_PATH=/app/ApiSchema
  SCHEMA_PACKAGES='[
   {
-    "version": "1.0.291",
+    "version": "1.0.294",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.DataStandard52.ApiSchema"
   },
   {
-    "version": "1.0.291",
+    "version": "1.0.294",
     "feedUrl": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
     "name": "EdFi.Sample.ApiSchema",
     "extensionName": "Sample"
@@ -160,12 +176,13 @@ You can also automatically include extension-specific metadata in the
 authorization hierarchy to enable authorization for your extension resources. To
 do this:
 
-1. Author your security claims hierarchy JSON file.
-2. Place it in the `.\eng\CmsHierarchy\ClaimSetFiles` folder  e.g.
-   :[SampleExtensionResourceClaims.json](../CmsHierarchy/ClaimSetFiles/SampleExtensionResourceClaims.json).
+1. Author your security claims hierarchy JSON file. See `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`
+for examples. Files must follow the pattern: `{number}-{description}-claimset.json` and will be processed in order.
 
-Then, use the `-AddExtensionSecurityMetadata` parameter to include the setup
-from your JSON file:
+2. Place it in a directory mounted as a Docker volume named `app/additional-claims` for CMS to see at runtime. The default behavior of the docker compose
+scripts is to mount `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets`.
+
+3. Use the `-AddExtensionSecurityMetadata` parameter to configure CMS to read claimsets from `app/additional-claims`:
 
 ```pwsh
 ./start-local-dms.ps1 -AddExtensionSecurityMetadata
@@ -268,3 +285,52 @@ $parameters = @{
 }
 ./setup-keycloak.ps1  @parameters -SetClientAsRealmAdmin
 ```
+
+### Setup OpenIddict
+
+`setup-openiddict.ps1` configures the required application, client credentials, roles, scopes, and custom claims for OpenIddict. It uses an environment file for configuration and supports database initialization.
+
+```pwsh
+$parameters = @{
+  OpenIddictServer = "http://localhost:8081"    # OpenIddict URL
+  NewClientRole = "dms-client"                  # Client role (default: dms-client); use "cms-client" for Configuration Service
+  NewClientId = "test-client"                   # Client id (default: test-client)
+  NewClientName = "test-client"                 # Client name (default: Test client)
+  NewClientSecret = "s3creT@09"                 # Client secret (default: s3creT@09)
+  ClientScopeName = "sis-vendor"                # Scope name (default: sis-vendor); can be customized (e.g., 'Ed-Fi-Sandbox')
+  EnvironmentFile = "./.env"                    # Path to environment file for DB and other settings
+}
+
+# To set up OpenIddict with client and roles
+./setup-openiddict.ps1 @parameters
+
+# Optionally, use the $InitDb switch to initialize the database schema and keys before inserting data.
+# Use $InsertData to control whether client, roles, scopes, and claims are inserted.
+# Both switches are enabled by default.
+
+# Example: Initialize DB and insert data
+./setup-openiddict.ps1 @parameters -InitDb -InsertData
+
+# Example: Only insert data (skip DB initialization)
+./setup-openiddict.ps1 @parameters -InsertData
+
+# Example: Only initialize DB (skip data insertion)
+./setup-openiddict.ps1 @parameters -InitDb
+
+# To set up a Configuration Service client, use these parameters:
+$parameters = @{
+  NewClientRole = "config-service-ap"           # Defined in Configuration Service appsettings
+  NewClientId = "DmsConfigurationService"       # Defined in Configuration Service appsettings
+  NewClientName = "DmsConfigurationService"
+  NewClientSecret = "s3creT@09"                 # Must match Configuration Service appsettings. Use appsettings.developer.json
+  EnvironmentFile = "./.env"
+}
+./setup-openiddict.ps1 @parameters -InsertData
+```
+
+**Notes:**
+
+* `EnvironmentFile` is required for DB connection and other settings.
+* `$InitDb` initializes the database schema and keys.
+* `$InsertData` inserts the OpenIddict client, roles, scopes, and claims.
+* Both switches can be used together or separately as needed.

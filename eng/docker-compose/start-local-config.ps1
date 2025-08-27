@@ -19,7 +19,12 @@ param (
 
     # Force a rebuild
     [Switch]
-    $r
+    $r,
+
+    # Identity provider type
+    [string]
+    [ValidateSet("keycloak", "self-contained")]
+    $IdentityProvider="keycloak"
 )
 
 $files = @(
@@ -52,6 +57,24 @@ else {
         "--detach"
     )
     if ($r) { $upArgs += @("--build") }
+    # Identity provider configuration
+    Import-Module ./env-utility.psm1 -Force
+    $envValues = ReadValuesFromEnvFile $EnvironmentFile
+    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+    Write-Output "Identity Provider $IdentityProvider"
+    if($IdentityProvider -eq "keycloak")
+    {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+    }
+    elseif ($IdentityProvider -eq "self-contained") {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+    }
 
     Write-Output "Starting locally-built DMS config service"
 
@@ -62,12 +85,30 @@ else {
     }
 
     Start-Sleep 25
-    # Create client with default edfi_admin_api/full_access scope
-    ./setup-keycloak.ps1
+    if($IdentityProvider -eq "keycloak")
+    {
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-keycloak.ps1
 
-    # Create client with edfi_admin_api/readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access"
 
-    # Create client with edfi_admin_api/authMetadata_readonly_access scope
-    ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+    }
+    elseif ($IdentityProvider -eq "self-contained")
+    {
+    	Write-Output "Starting self-contained initialization script..."
+        Write-Output "Init db public and private keys for OpenIddict..."
+        ./setup-openiddict.ps1 -InitDb -InsertData:$false -EnvironmentFile $EnvironmentFile
+        ./setup-openiddict.ps1 -InitDb -InsertData:$false -EnvironmentFile $EnvironmentFile
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
+
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
+    }
 }

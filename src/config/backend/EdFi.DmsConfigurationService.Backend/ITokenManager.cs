@@ -3,11 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Security.Cryptography;
+
 namespace EdFi.DmsConfigurationService.Backend;
 
 public interface ITokenManager
 {
     public Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials);
+    // For JWKS endpoint
+    Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysAsync();
+    Task<bool> ValidateTokenAsync(string rawToken);
 }
 
 public record TokenResult

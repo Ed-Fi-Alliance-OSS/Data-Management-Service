@@ -18,11 +18,14 @@
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
       <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" />
+      <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+      <PackageReference Include="Microsoft.IdentityModel.Protocols" />
       <PackageReference Include="Serilog" />
       <PackageReference Include="Serilog.Extensions.Logging" />
       <PackageReference Include="Serilog.Settings.Configuration" />
       <PackageReference Include="Serilog.Sinks.Console" />
       <PackageReference Include="Serilog.Sinks.File" />
+      <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
     </ItemGroup>
     <ItemGroup>
       <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />

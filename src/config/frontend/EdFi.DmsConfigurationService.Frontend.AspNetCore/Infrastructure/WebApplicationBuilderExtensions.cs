@@ -4,13 +4,19 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
+using EdFi.DmsConfigurationService.Backend.Claims;
+using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
+using EdFi.DmsConfigurationService.Backend.OpenIddict;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.Postgresql;
+using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -58,8 +64,9 @@ public static class WebApplicationBuilderExtensions
             .Services.Configure<AppSettings>(webApplicationBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
             .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("ConnectionStrings"))
-            .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>();
-        ;
+            .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>()
+            .Configure<ClaimsOptions>(webApplicationBuilder.Configuration.GetSection("ClaimsOptions"))
+            .AddSingleton<IValidateOptions<ClaimsOptions>, ClaimsOptionsValidator>();
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
@@ -89,6 +96,11 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddTransient<IVendorRepository, VendorRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
+        webApplicationBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
+        webApplicationBuilder.Services.AddSingleton<IClaimsValidator, ClaimsValidator>();
+        webApplicationBuilder.Services.AddSingleton<IClaimsFragmentComposer, ClaimsFragmentComposer>();
+        webApplicationBuilder.Services.AddSingleton<IClaimsDataLoader, ClaimsDataLoader>();
+        webApplicationBuilder.Services.AddSingleton<IClaimsUploadService, ClaimsUploadService>();
 
         Serilog.ILogger ConfigureLogging()
         {
@@ -105,6 +117,9 @@ public static class WebApplicationBuilderExtensions
 
     private static void ConfigureDatastore(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
     {
+        // Common service registration for all database backends
+        webAppBuilder.Services.AddSingleton<IClaimsProvider, ClaimsProvider>();
+
         if (
             string.Equals(
                 webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value,
@@ -119,6 +134,12 @@ public static class WebApplicationBuilderExtensions
                     ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
+            webAppBuilder.Services.AddTransient<ITokenManager, OpenIddictTokenManager>();
+            webAppBuilder.Services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+            webAppBuilder.Services.AddTransient<
+                IClaimsTableValidator,
+                Backend.Postgresql.ClaimsDataLoader.ClaimsTableValidator
+            >();
         }
         else
         {
@@ -139,14 +160,125 @@ public static class WebApplicationBuilderExtensions
             logger.Error("Error reading IdentitySettings");
             throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
         }
+        var identityProvider = config
+            .GetValue<string>("AppSettings:IdentityProvider")
+            ?.ToLowerInvariant() ?? "keycloak";
         webApplicationBuilder
             .Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
             .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
 
-        // Set up authentication using JWT bearer tokens
-        webApplicationBuilder
-            .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(
+        // Configure JWT Bearer based on identity provider
+        if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
+        {
+            // For OpenIddict, we use our own validation with proper DI
+            webApplicationBuilder
+                .Services.AddAuthentication(options =>
+                {
+                    // Only set default scheme if not already configured
+                    if (string.IsNullOrEmpty(options.DefaultAuthenticateScheme))
+                    {
+                        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                    }
+                })
+                .AddJwtBearer(
+                    JwtBearerDefaults.AuthenticationScheme,
+                    options =>
+                    {
+                        options.Authority = identitySettings.Authority;
+                        options.MetadataAddress =
+                            $"{identitySettings.Authority}/.well-known/openid-configuration";
+                        options.SaveToken = true;
+                        options.Audience = identitySettings.Audience;
+                        options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+                        options.TokenValidationParameters = new TokenValidationParameters
+                        {
+                            ValidateAudience = true,
+                            ValidateIssuer = true,
+                            ValidateIssuerSigningKey = true,
+                            ValidIssuer = identitySettings.Authority,
+                            RoleClaimType = identitySettings.RoleClaimType,
+                        };
+
+                        options.Events = new JwtBearerEvents
+                        {
+                            OnAuthenticationFailed = context =>
+                            {
+                                logger.Error("Authentication failed: {Message}", context.Exception.Message);
+                                return Task.CompletedTask;
+                            },
+                            OnTokenValidated = async context =>
+                            {
+                                var tokenManager = context.HttpContext.RequestServices.GetService<ITokenManager>();
+                                if (tokenManager != null)
+                                {
+                                    // Extract the raw token from the Authorization header
+                                    var authHeader = context.Request.Headers["Authorization"].ToString();
+                                    var rawToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                                        ? authHeader.Substring("Bearer ".Length).Trim()
+                                        : authHeader.Trim();
+                                    var isValid = await tokenManager.ValidateTokenAsync(rawToken);
+                                    if (!isValid)
+                                    {
+                                        context.Fail("Token has been revoked or is invalid.");
+                                    }
+                                }
+                            }
+                        };
+                    }
+                );
+
+            // Configure dynamic key resolution using IssuerSigningKeyResolver
+            webApplicationBuilder
+                .Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+                .Configure<ITokenManager>(
+                    (options, tokenManager) =>
+                    {
+                        options.TokenValidationParameters.IssuerSigningKeyResolver = (
+                            token,
+                            securityToken,
+                            kid,
+                            validationParameters
+                        ) =>
+                        {
+                            // This resolver will be called when a token needs to be validated
+                            // Using ConfigureAwait(false) to avoid deadlocks in the sync context
+                            var keysTask = tokenManager.GetPublicKeysAsync();
+                            var publicKeysList = keysTask.ConfigureAwait(false).GetAwaiter().GetResult();
+
+                            return publicKeysList.Select(rsaParams =>
+                            {
+                                var key = new RsaSecurityKey(rsaParams.RsaParameters)
+                                {
+                                    KeyId = rsaParams.KeyId,
+                                };
+                                return (SecurityKey)key;
+                            });
+                        };
+                    });
+
+            // Add authorization services for OpenIddict (same as Keycloak)
+            webApplicationBuilder.Services.AddAuthorization(options =>
+            {
+                options.AddPolicy(
+                    SecurityConstants.ServicePolicy,
+                    policy =>
+                        policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
+                );
+
+                AuthorizationScopePolicies.Add(options);
+            });
+
+            webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
+
+            logger.Information("Registering Self-Contained services");
+            webApplicationBuilder.Services.AddPostgresOpenIddictStores(config, identitySettings.Authority);
+        }
+        else // Default to Keycloak
+        {
+            webApplicationBuilder
+                .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddJwtBearer(
                 JwtBearerDefaults.AuthenticationScheme,
                 options =>
                 {
@@ -176,34 +308,42 @@ public static class WebApplicationBuilderExtensions
                 }
             );
 
-        // Add service policy for role validation
-        webApplicationBuilder.Services.AddAuthorization(options =>
-        {
-            options.AddPolicy(
-                SecurityConstants.ServicePolicy,
-                policy =>
-                    policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
-            );
+            // Add service policy for role validation
+            webApplicationBuilder.Services.AddAuthorization(options =>
+            {
+                options.AddPolicy(
+                    SecurityConstants.ServicePolicy,
+                    policy =>
+                        policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
+                );
 
-            AuthorizationScopePolicies.Add(options);
-        });
+                AuthorizationScopePolicies.Add(options);
+            });
 
-        webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
+            webApplicationBuilder.Services.AddSingleton<IAuthorizationHandler, ScopePolicyHandler>();
 
-        if (
-            string.Equals(
-                webApplicationBuilder.Configuration.GetSection("AppSettings:IdentityProvider").Value,
-                "keycloak",
-                StringComparison.OrdinalIgnoreCase
+            if (
+                string.Equals(
+                    webApplicationBuilder.Configuration.GetSection("AppSettings:IdentityProvider").Value,
+                    "keycloak",
+                    StringComparison.OrdinalIgnoreCase
+                )
             )
-        )
-        {
-            webApplicationBuilder.Services.AddKeycloakServices(
-                identitySettings.Authority,
-                identitySettings.ClientId,
-                identitySettings.ClientSecret,
-                Regex.Escape(identitySettings.RoleClaimType) // Escape the claim type for regex usage
-            );
+            {
+                logger.Information("Registering Keycloak services");
+                webApplicationBuilder.Services.AddKeycloakServices(
+                    identitySettings.Authority,
+                    identitySettings.ClientId,
+                    identitySettings.ClientSecret,
+                    Regex.Escape(identitySettings.RoleClaimType) // Escape the claim type for regex usage
+                );
+            }
+            else
+            {
+                logger.Warning("Unknown identity provider: {IdentityProvider}.", identityProvider);
+                throw new InvalidOperationException($"Unknown identity provider: {identityProvider}");
+            }
         }
     }
 }
+
