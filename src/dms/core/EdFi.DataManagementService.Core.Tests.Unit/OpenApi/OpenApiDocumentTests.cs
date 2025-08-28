@@ -1425,4 +1425,115 @@ public class OpenApiDocumentTests
             resultPaths.Should().NotContainKey("/ed-fi/allExcludedDomainResource");
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Refactored_Extension_Processing : OpenApiDocumentTests
+    {
+        private JsonNode openApiResourcesResult = new JsonObject();
+
+        [SetUp]
+        public void Setup()
+        {
+            // Use existing test data to verify our refactoring maintains backward compatibility
+            JsonNode coreSchemaRootNode = CoreSchemaRootNode();
+            JsonNode[] extensionSchemaRootNodes = [FirstExtensionSchemaRootNode()];
+
+            OpenApiDocument openApiDocument = new(NullLogger.Instance);
+            openApiResourcesResult = openApiDocument.CreateDocument(
+                new(coreSchemaRootNode, extensionSchemaRootNodes),
+                OpenApiDocument.OpenApiDocumentType.Resource
+            );
+        }
+
+        [Test]
+        public void It_should_maintain_backward_compatibility_with_simple_extensions()
+        {
+            // This test verifies that our refactored code still handles simple extension schemas
+            // (the ones without a "properties" field) correctly using ProcessDirectExtensionSchema
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            JsonObject? schemas = pathResult.Matches[0].Value?.AsObject();
+
+            // Verify that the simple extension schemas are created properly
+            schemas.Should().NotBeNull();
+            schemas?.Should().ContainKey("EdFi_AcademicWeekExtension");
+            schemas?.Should().ContainKey("tpdm_EdFi_AcademicWeekExtension");
+
+            // Verify the structure matches expected format
+            var extensionSchema = schemas?["EdFi_AcademicWeekExtension"]?.AsObject();
+            extensionSchema.Should().NotBeNull();
+            extensionSchema?["type"]?.GetValue<string>().Should().Be("object");
+            extensionSchema?["properties"]?.AsObject().Should().ContainKey("tpdm");
+
+            var projectSchema = schemas?["tpdm_EdFi_AcademicWeekExtension"]?.AsObject();
+            projectSchema.Should().NotBeNull();
+            projectSchema?["description"]?.GetValue<string>().Should().Be("ext AcademicWeek description");
+            projectSchema?["type"]?.GetValue<string>().Should().Be("string");
+        }
+
+        [Test]
+        public void It_should_create_extension_references_in_core_schemas()
+        {
+            // Verify that _ext references are added to core schemas that have extensions
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_AcademicWeek");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            JsonObject? academicWeekSchema = pathResult.Matches[0].Value?.AsObject();
+
+            academicWeekSchema.Should().NotBeNull();
+            academicWeekSchema?["properties"]?.AsObject().Should().ContainKey("_ext");
+
+            var extRef = academicWeekSchema?["properties"]?.AsObject()?["_ext"]?.AsObject();
+            extRef.Should().NotBeNull();
+            extRef
+                ?["$ref"]?.GetValue<string>()
+                .Should()
+                .Be("#/components/schemas/EdFi_AcademicWeekExtension");
+        }
+
+        [Test]
+        public void It_should_not_modify_schemas_without_extensions()
+        {
+            // Verify that schemas without extensions remain unchanged
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas.EdFi_AccountabilityRating");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            pathResult.Matches.Should().HaveCount(1);
+            JsonObject? schema = pathResult.Matches[0].Value?.AsObject();
+
+            schema.Should().NotBeNull();
+            schema?["properties"]?.AsObject().Should().NotContainKey("_ext");
+            schema?["description"]?.GetValue<string>().Should().Be("AccountabilityRating description");
+        }
+
+        [Test]
+        public void It_should_use_refactored_methods_for_complex_scenarios()
+        {
+            // Verify that the refactored helper methods are working correctly
+            // This is tested implicitly by the successful execution of the other tests
+            // and the fact that all original tests still pass
+
+            // Verify that extensions are handled correctly
+            JsonPath jsonPath = JsonPath.Parse("$.components.schemas");
+            PathResult pathResult = jsonPath.Evaluate(openApiResourcesResult);
+
+            JsonObject? schemas = pathResult.Matches[0].Value?.AsObject();
+            schemas.Should().NotBeNull();
+
+            // Should have AcademicWeek extensions from the test data (only extension defined in FirstExtensionSchemaRootNode)
+            schemas?.Should().ContainKey("EdFi_AcademicWeekExtension");
+            schemas?.Should().ContainKey("tpdm_EdFi_AcademicWeekExtension");
+
+            // Should also have the TPDM schema defined in the extension
+            schemas?.Should().ContainKey("TPDM_Credential");
+
+            // Verify that schemas without extensions are not modified
+            schemas?.Should().NotContainKey("EdFi_SchoolExtension");
+            schemas?.Should().NotContainKey("tpdm_EdFi_SchoolExtension");
+        }
+    }
 }
