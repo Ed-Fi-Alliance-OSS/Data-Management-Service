@@ -212,7 +212,7 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             }
 
             // Track properties that should be redirected to referenced schemas
-            var propertiesToRedirect = new Dictionary<string, string>(); // propertyName -> referencedSchemaName
+            var propertiesToRedirect = new List<PropertyRedirection>();
 
             // Check for property conflicts and identify referenced schemas
             foreach ((string extensionPropertyName, JsonNode? extensionPropertyValue) in extensionProperties)
@@ -232,7 +232,9 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
 
                     if (!string.IsNullOrEmpty(referencedSchemaName))
                     {
-                        propertiesToRedirect[extensionPropertyName] = referencedSchemaName;
+                        propertiesToRedirect.Add(
+                            new PropertyRedirection(extensionPropertyName, referencedSchemaName)
+                        );
                     }
                     else
                     {
@@ -263,7 +265,7 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             {
                 if (
                     extensionPropertyValue != null
-                    && !propertiesToRedirect.ContainsKey(extensionPropertyName)
+                    && !propertiesToRedirect.Exists(pr => pr.PropertyName == extensionPropertyName)
                 )
                 {
                     filteredExtensionProperties[extensionPropertyName] = extensionPropertyValue.DeepClone();
@@ -398,26 +400,31 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     private sealed record ExtensionSchemaResult(JsonObject Schema, string? ReferencedSchemaName = null);
 
     /// <summary>
+    /// Represents a property redirection mapping for extension processing
+    /// </summary>
+    private sealed record PropertyRedirection(string PropertyName, string ReferencedSchemaName);
+
+    /// <summary>
     /// Handles redirected properties by adding them to their referenced schemas
     /// </summary>
     private void HandleRedirectedProperties(
-        Dictionary<string, string> propertiesToRedirect,
+        List<PropertyRedirection> propertiesToRedirect,
         JsonObject extensionProperties,
         JsonObject componentsSchemas,
         string projectName
     )
     {
-        foreach ((string propertyName, string referencedSchemaName) in propertiesToRedirect)
+        foreach (PropertyRedirection redirection in propertiesToRedirect)
         {
-            JsonNode? extensionPropertyValue = extensionProperties[propertyName];
+            JsonNode? extensionPropertyValue = extensionProperties[redirection.PropertyName];
             if (extensionPropertyValue == null)
             {
                 continue;
             }
 
             ProcessRedirectedProperty(
-                propertyName,
-                referencedSchemaName,
+                redirection.PropertyName,
+                redirection.ReferencedSchemaName,
                 extensionPropertyValue,
                 componentsSchemas,
                 projectName
@@ -756,7 +763,7 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     /// </summary>
     private HashSet<string> GetCoreSchemaProperties(string coreSchemaName, JsonObject componentsSchemas)
     {
-        HashSet<string> coreSchemaProperties = [];
+        HashSet<string> coreSchemaProperties = new HashSet<string>();
 
         if (
             componentsSchemas[coreSchemaName]?.AsObject() is JsonObject coreSchemaObj
@@ -1147,7 +1154,10 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
             // If tag has already been added by another extension, we don't support a second one
             if (existingTagNames.Contains(tagObjectName))
             {
-                // Skip duplicate tags silently
+                _logger.LogDebug(
+                    "OpenAPI extension fragment tried to add a second tag named '{TagObjectName}', skipping.",
+                    tagObjectName
+                );
             }
             else
             {
