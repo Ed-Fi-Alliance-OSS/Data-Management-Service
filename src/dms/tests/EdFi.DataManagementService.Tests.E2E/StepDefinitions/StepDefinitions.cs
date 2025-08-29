@@ -50,7 +50,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
         private ScenarioVariables _scenarioVariables = new();
-        private string _dmsToken = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
         private Dictionary<string, string> _relationships = [];
 
@@ -59,60 +58,39 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the SIS Vendor is authorized with namespacePrefixes {string}")]
         public async Task GivenTheSisVendorIsAuthorized(string namespacePrefixes)
         {
-            await SetAuthorizationToken(namespacePrefixes, string.Empty);
-        }
+            await AuthorizationDataProvider.Create(
+                Guid.NewGuid().ToString(),
+                "sisVendorName",
+                "sisVendorName@example.com",
+                namespacePrefixes,
+                string.Empty,
+                SystemAdministrator.Token,
+                "SIS-Vendor"
+            );
 
-        [Given("the claimSet {string} is authorized with namespacePrefixes {string}")]
-        public async Task GivenTheClaimSetIsAuthorized(string claimSetName, string namespacePrefixes)
-        {
-            await SetAuthorizationToken(namespacePrefixes, string.Empty, claimSetName);
-        }
-
-        [Given("the claimSet {string} is authorized with educationOrganizationIds {string}")]
-        public async Task GivenTheClaimSetIsAuthorizedWithEdOrgIds(
-            string claimSetName,
-            string educationOrganizationIds
-        )
-        {
-            await SetAuthorizationToken("uri://ed-fi.org", educationOrganizationIds, claimSetName);
+            var bearerToken = await AuthorizationDataProvider.GetToken();
+            _scenarioContext["dmsToken"] = $"Bearer {bearerToken}";
         }
 
         [Given("the resulting token is stored in the {string} variable")]
         public void GivenTheResultingTokenIsStoredInTheVariable(string variableName)
         {
-            _scenarioVariables.Add(variableName, _dmsToken);
+            var dmsToken = _scenarioContext.ContainsKey("dmsToken")
+                ? _scenarioContext["dmsToken"].ToString() ?? string.Empty
+                : string.Empty;
+            _scenarioVariables.Add(variableName, dmsToken);
         }
 
         [Given("the token gets switched to the one in the {string} variable")]
         public void GivenTheTokenGetsSwitchedToTheOneInTheVariable(string variableName)
         {
-            _dmsToken = _scenarioVariables.GetValueByName(variableName);
-        }
-
-        private async Task SetAuthorizationToken(
-            string namespacePrefixes,
-            string educationOrganizationIds,
-            string claimSetName = "E2E-NoFurtherAuthRequiredClaimSet"
-        )
-        {
-            await AuthorizationDataProvider.Create(
-                Guid.NewGuid().ToString(),
-                "C. M. Burns",
-                "cmb@example.com",
-                namespacePrefixes,
-                educationOrganizationIds,
-                SystemAdministrator.Token,
-                claimSetName
-            );
-
-            var bearerToken = await AuthorizationDataProvider.GetToken();
-            _dmsToken = $"Bearer {bearerToken}";
+            _scenarioContext["dmsToken"] = _scenarioVariables.GetValueByName(variableName);
         }
 
         [Given("there is no Authorization header")]
         public void GivenThereIsNoAuthorizationHeader()
         {
-            _dmsToken = string.Empty;
+            _scenarioContext["dmsToken"] = string.Empty;
         }
 
         [Given("a POST request is made to {string} with")]
@@ -129,11 +107,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the token signature is manipulated")]
         public void TokenSignatureManipulated()
         {
-            var token = _dmsToken;
+            var token = _scenarioContext.ContainsKey("dmsToken")
+                ? _scenarioContext["dmsToken"].ToString() ?? string.Empty
+                : string.Empty;
             var segments = token.Split('.');
             var signature = segments[2].ToCharArray();
             new Random().Shuffle(signature);
-            _dmsToken = $"{segments[0]}.{segments[1]}.{signature}";
+            _scenarioContext["dmsToken"] = $"{segments[0]}.{segments[1]}.{signature}";
         }
 
         private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
@@ -1041,15 +1021,21 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private IEnumerable<KeyValuePair<string, string>> GetHeaders()
         {
-            var list = new List<KeyValuePair<string, string>> { new("Authorization", _dmsToken) };
+            var dmsToken = _scenarioContext.ContainsKey("dmsToken")
+                ? _scenarioContext["dmsToken"].ToString() ?? string.Empty
+                : string.Empty;
+            var list = new List<KeyValuePair<string, string>> { new("Authorization", dmsToken) };
             return list;
         }
 
         private IEnumerable<KeyValuePair<string, string>> GetHeadersWithIfMatch(string ifMatch)
         {
+            var dmsToken = _scenarioContext.ContainsKey("dmsToken")
+                ? _scenarioContext["dmsToken"].ToString() ?? string.Empty
+                : string.Empty;
             var list = new List<KeyValuePair<string, string>>
             {
-                new("Authorization", _dmsToken),
+                new("Authorization", dmsToken),
                 new("If-Match", ifMatch),
             };
             return list;

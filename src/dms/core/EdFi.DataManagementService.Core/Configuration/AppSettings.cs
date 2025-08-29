@@ -48,6 +48,11 @@ public class AppSettings
     public bool EnableManagementEndpoints { get; set; }
 
     /// <summary>
+    /// If true, enables management endpoints for claimset reload operations.
+    /// </summary>
+    public bool EnableClaimsetReload { get; set; }
+
+    /// <summary>
     /// Comma-separated list of domain names to exclude from OpenAPI documentation generation.
     /// Domains listed here will not appear in the generated OpenAPI specifications.
     /// </summary>

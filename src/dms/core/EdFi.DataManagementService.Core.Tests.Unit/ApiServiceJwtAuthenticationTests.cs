@@ -62,7 +62,8 @@ public class ApiServiceJwtAuthenticationTests
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             A.Fake<IUploadApiSchemaService>(),
-            serviceProvider
+            serviceProvider,
+            A.Fake<ClaimSetsCache>()
         );
 
         // Act - Use reflection to call the private GetCommonInitialSteps method
@@ -108,7 +109,8 @@ public class ApiServiceJwtAuthenticationTests
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
             A.Fake<IUploadApiSchemaService>(),
-            serviceProvider
+            serviceProvider,
+            A.Fake<ClaimSetsCache>()
         );
 
         // Act & Assert - Should throw InvalidOperationException

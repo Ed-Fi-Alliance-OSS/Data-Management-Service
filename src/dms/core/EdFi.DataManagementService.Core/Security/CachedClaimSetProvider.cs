@@ -15,9 +15,6 @@ namespace EdFi.DataManagementService.Core.Security;
 public class CachedClaimSetProvider(IClaimSetProvider claimSetProvider, ClaimSetsCache claimSetsCache)
     : IClaimSetProvider
 {
-    // Constant cache identifier used to store and retrieve claim sets from the cache
-    private const string CacheId = "ClaimSetsCache";
-
     /// <summary>
     /// Retrieves claim sets from cache if available, otherwise fetches from the provider
     /// and caches the result for future requests.
@@ -25,7 +22,7 @@ public class CachedClaimSetProvider(IClaimSetProvider claimSetProvider, ClaimSet
     public async Task<IList<ClaimSet>> GetAllClaimSets()
     {
         // Try to get claim sets from cache first
-        var cachedClaimSets = claimSetsCache.GetCachedClaimSets(CacheId);
+        var cachedClaimSets = claimSetsCache.GetCachedClaimSets();
         if (cachedClaimSets != null)
         {
             return cachedClaimSets;
@@ -35,7 +32,7 @@ public class CachedClaimSetProvider(IClaimSetProvider claimSetProvider, ClaimSet
         var claimSets = await claimSetProvider.GetAllClaimSets();
         if (claimSets.Count > 0)
         {
-            claimSetsCache.CacheClaimSets(CacheId, claimSets);
+            claimSetsCache.CacheClaimSets(claimSets);
         }
 
         return claimSets;

@@ -33,6 +33,18 @@ public class ManagementEndpointModule : IEndpointModule
             .Produces(400)
             .Produces(404)
             .Produces(500);
+
+        // Reload Claimsets endpoint
+        managementEndpoints
+            .MapPost("/reload-claimsets", ReloadClaimsets)
+            .WithName("ReloadClaimsets")
+            .WithSummary("Reloads the Claimsets from the configured source");
+
+        // View Claimsets endpoint
+        managementEndpoints
+            .MapGet("/view-claimsets", ViewClaimsets)
+            .WithName("ViewClaimsets")
+            .WithSummary("Views the current Claimsets configuration");
     }
 
     internal static async Task<IResult> ReloadApiSchema(
@@ -67,6 +79,42 @@ public class ManagementEndpointModule : IEndpointModule
         {
             200 => Results.Json(response.Body, statusCode: 200),
             400 => Results.Json(response.Body, statusCode: 400),
+            404 => Results.NotFound(),
+            500 => Results.Json(response.Body, statusCode: 500),
+            _ => Results.StatusCode(response.StatusCode),
+        };
+    }
+
+    internal static async Task<IResult> ReloadClaimsets(
+        IApiService apiService,
+        ILogger<ManagementEndpointModule> logger
+    )
+    {
+        logger.LogInformation("Claimsets reload requested via management endpoint");
+
+        var response = await apiService.ReloadClaimsetsAsync();
+
+        return response.StatusCode switch
+        {
+            200 => Results.Ok(response.Body),
+            404 => Results.NotFound(),
+            500 => Results.Json(response.Body, statusCode: 500),
+            _ => Results.StatusCode(response.StatusCode),
+        };
+    }
+
+    internal static async Task<IResult> ViewClaimsets(
+        IApiService apiService,
+        ILogger<ManagementEndpointModule> logger
+    )
+    {
+        logger.LogInformation("View claimsets requested via management endpoint");
+
+        var response = await apiService.ViewClaimsetsAsync();
+
+        return response.StatusCode switch
+        {
+            200 => Results.Ok(response.Body),
             404 => Results.NotFound(),
             500 => Results.Json(response.Body, statusCode: 500),
             _ => Results.StatusCode(response.StatusCode),
