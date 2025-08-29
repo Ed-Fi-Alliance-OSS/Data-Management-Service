@@ -1,0 +1,64 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  ReqnrollFeatureFiles: Features/Authorization/ClaimSetUploadAuthorization.feature;Features/Authorization/EducationOrganizationChanges.feature;Features/Authorization/NamespaceAuthorization.feature;Features/Authorization/RelationshipsWithEdOrgsAndContacts.feature;Features/Authorization/RelationshipsWithEdOrgsAndPeople.feature;Features/Authorization/RelationshipsWithEdOrgsAndStaffs.feature;Features/Authorization/RelationshipsWithEdOrgsOnly.feature;Features/Authorization/RelationshipsWithStudentsOnlyThroughResponsibility.feature;Features/Authorization/RoleNamedSecurity/DisciplineActionAuthorization.feature;Features/Authorization/RoleNamedSecurity/EvaluationRubricDimensionAuthorization.feature;Features/Authorization/RoleNamedSecurity/OrganizationDepartmentAuthorization.feature;Features/Authorization/RoleNamedSecurity/ProgramEvaluationAuthorization.feature;Features/Authorization/RoleNamedSecurity/ProgramEvaluationElementAuthorization.feature;Features/Authorization/RoleNamedSecurity/ProgramEvaluationObjectiveAuthorization.feature;Features/Authorization/RoleNamedSecurity/StudentAssessmentAuthorization.feature;Features/Constraints/EqualityConstraintValidation.feature;Features/Descriptors/CreateDescriptorsValidation.feature;Features/Descriptors/DeleteDescriptorsValidation.feature;Features/Descriptors/DescriptorCaseInsensitiveValidation.feature;Features/Descriptors/ReadDescriptorsValidation.feature;Features/Descriptors/UpdateDescriptorsValidation.feature;Features/Entities/AbstractEntityValidation.feature;Features/Entities/SchoolYearReferenceValidation.feature;Features/Extensions/HomographExtension.feature;Features/Extensions/ResourceWithMultipleExtension.feature;Features/Extensions/ResourceWithTpdmExtension.feature;Features/Extensions/SampleExtension.feature;Features/Extensions/TpdmExtension.feature;Features/General/CorrelationId.feature;Features/General/DataStrictnessValidation.feature;Features/General/DiscoveryAPI.feature;Features/General/Health.feature;Features/General/URLValidation.feature;Features/General/XSDMetadata.feature;Features/References/ArrayUniquenessValidation.feature;Features/References/CreateReferenceValidation.feature;Features/References/DeleteReferenceValidation.feature;Features/References/DescriptorReferenceValidation.feature;Features/References/KeyUnification.feature;Features/References/StudentAssessmentRegistrationBatteryPartAssociation.feature;Features/References/SuperclassReferenceValidation.feature;Features/References/UpdateReferenceValidation.feature;Features/ResourceQueries/DescriptorQueriesQueryString.feature;Features/ResourceQueries/PagingQueryString.feature;Features/ResourceQueries/ResourceQueriesQueryString.feature;Features/ResourceQueries/TotalCountQueryString.feature;Features/Resources/CreateResourcesValidation.feature;Features/Resources/DeleteResourcesValidation.feature;Features/Resources/etag.feature;Features/Resources/IdentityConflictValidation.feature;Features/Resources/ReadResourcesValidation.feature;Features/Resources/UpdateResourcesValidation.feature;Features/SchoolYearType/SchoolYearType.feature;Features/Security/TokenIntrospection.feature;Features/SyntheticTests/DocumentArrayValidation.feature
+  -> Using reqnroll.json
+  ReqnrollGeneratedFiles: Features/Authorization/ClaimSetUploadAuthorization.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/EducationOrganizationChanges.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/NamespaceAuthorization.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RelationshipsWithEdOrgsAndContacts.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RelationshipsWithEdOrgsAndPeople.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RelationshipsWithEdOrgsAndStaffs.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RelationshipsWithEdOrgsOnly.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RelationshipsWithStudentsOnlyThroughResponsibility.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RoleNamedSecurity/DisciplineActionAuthorization.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RoleNamedSecurity/EvaluationRubricDimensionAuthorization.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RoleNamedSecurity/OrganizationDepartmentAuthorization.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RoleNamedSecurity/ProgramEvaluationAuthorization.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RoleNamedSecurity/ProgramEvaluationElementAuthorization.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RoleNamedSecurity/ProgramEvaluationObjectiveAuthorization.feature.cs
+  ReqnrollGeneratedFiles: Features/Authorization/RoleNamedSecurity/StudentAssessmentAuthorization.feature.cs
+  ReqnrollGeneratedFiles: Features/Constraints/EqualityConstraintValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Descriptors/CreateDescriptorsValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Descriptors/DeleteDescriptorsValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Descriptors/DescriptorCaseInsensitiveValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Descriptors/ReadDescriptorsValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Descriptors/UpdateDescriptorsValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Entities/AbstractEntityValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Entities/SchoolYearReferenceValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Extensions/HomographExtension.feature.cs
+  ReqnrollGeneratedFiles: Features/Extensions/ResourceWithMultipleExtension.feature.cs
+  ReqnrollGeneratedFiles: Features/Extensions/ResourceWithTpdmExtension.feature.cs
+  ReqnrollGeneratedFiles: Features/Extensions/SampleExtension.feature.cs
+  ReqnrollGeneratedFiles: Features/Extensions/TpdmExtension.feature.cs
+  ReqnrollGeneratedFiles: Features/General/CorrelationId.feature.cs
+  ReqnrollGeneratedFiles: Features/General/DataStrictnessValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/General/DiscoveryAPI.feature.cs
+  ReqnrollGeneratedFiles: Features/General/Health.feature.cs
+  ReqnrollGeneratedFiles: Features/General/URLValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/General/XSDMetadata.feature.cs
+  ReqnrollGeneratedFiles: Features/References/ArrayUniquenessValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/References/CreateReferenceValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/References/DeleteReferenceValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/References/DescriptorReferenceValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/References/KeyUnification.feature.cs
+  ReqnrollGeneratedFiles: Features/References/StudentAssessmentRegistrationBatteryPartAssociation.feature.cs
+  ReqnrollGeneratedFiles: Features/References/SuperclassReferenceValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/References/UpdateReferenceValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/ResourceQueries/DescriptorQueriesQueryString.feature.cs
+  ReqnrollGeneratedFiles: Features/ResourceQueries/PagingQueryString.feature.cs
+  ReqnrollGeneratedFiles: Features/ResourceQueries/ResourceQueriesQueryString.feature.cs
+  ReqnrollGeneratedFiles: Features/ResourceQueries/TotalCountQueryString.feature.cs
+  ReqnrollGeneratedFiles: Features/Resources/CreateResourcesValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Resources/DeleteResourcesValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Resources/etag.feature.cs
+  ReqnrollGeneratedFiles: Features/Resources/IdentityConflictValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Resources/ReadResourcesValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/Resources/UpdateResourcesValidation.feature.cs
+  ReqnrollGeneratedFiles: Features/SchoolYearType/SchoolYearType.feature.cs
+  ReqnrollGeneratedFiles: Features/Security/TokenIntrospection.feature.cs
+  ReqnrollGeneratedFiles: Features/SyntheticTests/DocumentArrayValidation.feature.cs
+  EdFi.DataManagementService.Core.External -> /home/brad/work/dms-root/Data-Management-Service/src/dms/core/EdFi.DataManagementService.Core.External/bin/Debug/net8.0/EdFi.DataManagementService.Core.External.dll
+/home/brad/work/dms-root/Data-Management-Service/src/dms/tests/EdFi.DataManagementService.Tests.E2E/StepDefinitions/StepDefinitions.cs(1046,1): error IDE0055: Fix formatting (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0055) [/home/brad/work/dms-root/Data-Management-Service/src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj]
+/home/brad/work/dms-root/Data-Management-Service/src/dms/tests/EdFi.DataManagementService.Tests.E2E/StepDefinitions/StepDefinitions.cs(1222,1): error IDE0055: Fix formatting (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0055) [/home/brad/work/dms-root/Data-Management-Service/src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj]
+/home/brad/work/dms-root/Data-Management-Service/src/dms/tests/EdFi.DataManagementService.Tests.E2E/StepDefinitions/StepDefinitions.cs(1228,1): error IDE0055: Fix formatting (https://learn.microsoft.com/dotnet/fundamentals/code-analysis/style-rules/ide0055) [/home/brad/work/dms-root/Data-Management-Service/src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj]
+/home/brad/work/dms-root/Data-Management-Service/src/dms/tests/EdFi.DataManagementService.Tests.E2E/StepDefinitions/StepDefinitions.cs(1048,17): error S1481: Remove the unused local variable 'claimsJsonOriginal'. (https://rules.sonarsource.com/csharp/RSPEC-1481) [/home/brad/work/dms-root/Data-Management-Service/src/dms/tests/EdFi.DataManagementService.Tests.E2E/EdFi.DataManagementService.Tests.E2E.csproj]

@@ -1,0 +1,626 @@
+# Claim Set Upload and Authorization Demonstration
+# ================================================
+#
+# Prerequisites:
+# 1. Start up all services with CMS enabled:
+#    cd eng/docker-compose && ./start-local-dms.ps1 -EnableConfig -r
+# 2. Setup keycloak: .\setup-keycloak.ps1
+# 3. Run this file from top to bottom in VS Code with REST Client extension
+#
+# What This Demonstrates:
+# =======================
+# 1. Different claim sets have different permissions (restricted vs full access)
+# 2. Claim sets can be uploaded to CMS via the management API
+# 3. Claim upload replaces ALL claims (not just modifies one)
+# 4. Complete claim uploads require all authorization strategies and resources
+# 5. Existing claim sets like SIS-Vendor provide full access
+#
+# Key Learning:
+# - E2E-RelationshipsWithEdOrgsOnlyClaimSet: Can't access students (403)
+# - SIS-Vendor: Has full access including students (200/201)
+# - Claim uploads must be complete to work with DMS authorization
+
+@dmsPort=8080
+@configPort=8081
+
+# System Administrator credentials
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+# ==========================================
+# PART 1: Setup System Administrator
+# ==========================================
+
+### Create the system administrator credentials
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+
+### Create a system admin token for CMS operations
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+# ==========================================
+# PART 2: Create Restricted Client (E2E-RelationshipsWithEdOrgsOnlyClaimSet)
+# ==========================================
+
+### Create vendor for restricted client
+# @name createRestrictedVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Restricted Vendor",
+    "contactName": "Thomas Jefferson",
+    "contactEmailAddress": "thomas@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@restrictedVendorLocation={{createRestrictedVendor.response.headers.location}}
+
+### Get the restricted vendor ID
+# @name getRestrictedVendor
+GET {{restrictedVendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@restrictedVendorId={{getRestrictedVendor.response.body.id}}
+
+### Create restricted application with E2E-RelationshipsWithEdOrgsOnlyClaimSet
+# @name createRestrictedApp
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{restrictedVendorId}},
+    "applicationName": "Restricted App - EdOrgs Only",
+    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "educationOrganizationIds": [255901001]
+}
+
+###
+@restrictedClientKey={{createRestrictedApp.response.body.key}}
+@restrictedClientSecret={{createRestrictedApp.response.body.secret}}
+
+# ==========================================
+# PART 3: Create SIS Vendor Client (Full Access)
+# ==========================================
+
+### Create vendor for SIS client
+# @name createSISVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "SIS Vendor",
+    "contactName": "Benjamin Franklin",
+    "contactEmailAddress": "ben@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@sisVendorLocation={{createSISVendor.response.headers.location}}
+
+### Get the SIS vendor ID
+# @name getSISVendor
+GET {{sisVendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@sisVendorId={{getSISVendor.response.body.id}}
+
+### Create SIS application with SIS-Vendor claim set
+# @name createSISApp
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{sisVendorId}},
+    "applicationName": "SIS Application",
+    "claimSetName": "SIS-Vendor"
+}
+
+###
+@sisClientKey={{createSISApp.response.body.key}}
+@sisClientSecret={{createSISApp.response.body.secret}}
+
+# ==========================================
+# PART 4: Get DMS Tokens
+# ==========================================
+
+### Get Discovery API
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@tokenUrl=http://localhost:8045/realms/edfi/protocol/openid-connect/token
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+
+### Create DMS token for restricted client
+# @name restrictedTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{restrictedClientKey}}:{{restrictedClientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@restrictedToken={{restrictedTokenRequest.response.body.access_token}}
+
+### Create DMS token for SIS client
+# @name sisTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{sisClientKey}}:{{sisClientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@sisToken={{sisTokenRequest.response.body.access_token}}
+
+# ==========================================
+# SCENARIO 1: Demonstrate Initial Restriction
+# ==========================================
+# E2E-RelationshipsWithEdOrgsOnlyClaimSet cannot access student resources
+
+### Try to GET students with restricted claim set - SHOULD FAIL (403)
+GET {{dataApi}}/ed-fi/students
+Authorization: bearer {{restrictedToken}}
+
+### Try to POST a student with restricted claim set - SHOULD FAIL (403)
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{restrictedToken}}
+Content-Type: application/json
+
+{
+    "studentUniqueId": "S001",
+    "firstName": "John",
+    "lastSurname": "Doe",
+    "birthDate": "2010-01-01"
+}
+
+### Verify restricted client CAN access schools (should work)
+GET {{dataApi}}/ed-fi/schools
+Authorization: bearer {{restrictedToken}}
+
+# ==========================================
+# SCENARIO 2: Upload Enhanced Claim Set via CMS
+# ==========================================
+# This adds student access to the E2E-RelationshipsWithEdOrgsOnlyClaimSet
+
+### First, check ALL authorization metadata to understand the structure
+# This shows what DMS sees for all claim sets
+GET http://localhost:{{configPort}}/config/authorizationMetadata
+Authorization: bearer {{configToken}}
+
+### Check authorization metadata for SIS-Vendor to see the correct format
+# SIS-Vendor has student access, so we can see how it's structured
+GET http://localhost:{{configPort}}/config/authorizationMetadata?claimSetName=SIS-Vendor
+Authorization: bearer {{configToken}}
+
+### Check the ORIGINAL authorization metadata for E2E-RelationshipsWithEdOrgsOnlyClaimSet specifically
+# This shows what DMS sees for this specific claim set before we upload new claims
+GET http://localhost:{{configPort}}/config/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+Authorization: bearer {{configToken}}
+
+### Upload COMPLETE claim set that grants student access to E2E-RelationshipsWithEdOrgsOnlyClaimSet
+# @name uploadClaims
+POST http://localhost:{{configPort}}/config/management/upload-claims
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+    "claims": {
+        "claimSets": [
+            {
+                "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                "isSystemReserved": false
+            },
+            {
+                "claimSetName": "SIS-Vendor",
+                "isSystemReserved": false
+            }
+        ],
+        "claimsHierarchy": [
+            {
+                "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
+                "claims": [
+                    {
+                        "name": "http://ed-fi.org/identity/claims/ed-fi/School",
+                        "claimSets": [
+                            {
+                                "name": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Update",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Delete",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIS-Vendor",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Update",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Delete",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "http://ed-fi.org/identity/claims/ed-fi/Student",
+                        "claimSets": [
+                            {
+                                "name": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Update",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Delete",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIS-Vendor",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Update",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Delete",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "http://ed-fi.org/identity/claims/ed-fi/GradeLevelDescriptor",
+                        "claimSets": [
+                            {
+                                "name": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIS-Vendor",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "http://ed-fi.org/identity/claims/ed-fi/EducationOrganizationCategoryDescriptor",
+                        "claimSets": [
+                            {
+                                "name": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "SIS-Vendor",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}
+
+###
+@reloadId={{uploadClaims.response.body.reloadId}}
+
+### Verify claims were uploaded successfully
+GET http://localhost:{{configPort}}/config/management/current-claims
+Authorization: bearer {{configToken}}
+
+### Check what DMS sees - Get authorization metadata from CMS after upload
+# This is what DMS actually queries to get claim set information
+GET http://localhost:{{configPort}}/config/authorizationMetadata
+Authorization: bearer {{configToken}}
+
+### Check specific authorization metadata for E2E-RelationshipsWithEdOrgsOnlyClaimSet after upload
+# This shows what permissions this claim set has after our upload
+GET http://localhost:{{configPort}}/config/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+Authorization: bearer {{configToken}}
+
+# IMPORTANT: Understanding Claim Uploads
+# =======================================
+# The claim upload REPLACES ALL claims in CMS. Our upload includes:
+# - Authorization strategy definitions (NoFurtherAuthorizationRequired, etc.)
+# - Both claim sets (E2E-RelationshipsWithEdOrgsOnlyClaimSet and SIS-Vendor)
+# - All resources used in our test (schools, students, descriptors)
+# - The key change: E2E-RelationshipsWithEdOrgsOnlyClaimSet now has student access
+#
+# After upload and DMS restart, the restricted client should have student access
+
+# ==========================================
+# SCENARIO 3: Test Enhanced Permissions After Upload
+# ==========================================
+# After claim upload and DMS restart, the restricted client should now work
+
+### Generate a NEW token for restricted client after claim upload
+# @name restrictedTokenRequestNew
+POST {{tokenUrl}}
+Authorization: basic {{restrictedClientKey}}:{{restrictedClientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@restrictedTokenNew={{restrictedTokenRequestNew.response.body.access_token}}
+
+### Create a student with restricted client's NEW token - SHOULD NOW SUCCEED (201)
+# @name createStudent
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{restrictedTokenNew}}
+Content-Type: application/json
+
+{
+    "studentUniqueId": "S001",
+    "firstName": "John",
+    "lastSurname": "Doe",
+    "birthDate": "2010-01-01"
+}
+
+### GET students with restricted client's NEW token - SHOULD NOW SUCCEED (200)
+GET {{dataApi}}/ed-fi/students
+Authorization: bearer {{restrictedTokenNew}}
+
+# ==========================================
+# SCENARIO 4: Verify Restricted Client Can Still Access Schools
+# ==========================================
+# Confirm that the restricted client retains school access after claim upload
+
+### Create a school with restricted client's NEW token - SHOULD SUCCEED (201)
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{restrictedTokenNew}}
+Content-Type: application/json
+
+{
+    "schoolId": 255901002,
+    "nameOfInstitution": "Test School 2",
+    "educationOrganizationCategories": [
+        {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"}
+    ],
+    "gradeLevels": [
+        {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"}
+    ]
+}
+
+# ==========================================
+# SCENARIO 5: Demonstrate Working Authorization with SIS-Vendor
+# ==========================================
+# Show that SIS-Vendor claim set (which exists in the original claims) works
+
+### Create a student with SIS Vendor token - SHOULD SUCCEED (201)
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{sisToken}}
+Content-Type: application/json
+
+{
+    "studentUniqueId": "S003",
+    "firstName": "Alice",
+    "lastSurname": "Johnson",
+    "birthDate": "2010-03-01"
+}
+
+### GET students with SIS Vendor token - SHOULD SUCCEED (200)
+GET {{dataApi}}/ed-fi/students
+Authorization: bearer {{sisToken}}
+
+### Create a school with SIS Vendor token - SHOULD SUCCEED (201)
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{sisToken}}
+Content-Type: application/json
+
+{
+    "schoolId": 255901003,
+    "nameOfInstitution": "Test School 3",
+    "educationOrganizationCategories": [
+        {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"}
+    ],
+    "gradeLevels": [
+        {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"}
+    ]
+}
+
+# ==========================================
+# SCENARIO 6: Reload Claims from Configuration
+# ==========================================
+# This restores the original claim set configurations
+
+### Reload claims from original configuration
+# @name reloadClaims
+POST http://localhost:{{configPort}}/config/management/reload-claims
+Authorization: bearer {{configToken}}
+
+###
+@reloadId2={{reloadClaims.response.body.reloadId}}
+
+### Verify claims were reloaded
+GET http://localhost:{{configPort}}/config/management/current-claims
+Authorization: bearer {{configToken}}
+
+### After reload, restricted client still cannot access students - SHOULD FAIL (403)
+GET {{dataApi}}/ed-fi/students
+Authorization: bearer {{restrictedToken}}
+
+### Try to POST another student with restricted claim set - SHOULD FAIL (403)
+POST {{dataApi}}/ed-fi/students
+Authorization: bearer {{restrictedToken}}
+Content-Type: application/json
+
+{
+    "studentUniqueId": "S002",
+    "firstName": "Jane",
+    "lastSurname": "Smith",
+    "birthDate": "2010-02-01"
+}
+
+# ==========================================
+# CLEANUP (Optional)
+# ==========================================
+
+### Delete the restricted application
+DELETE {{createRestrictedApp.response.headers.location}}
+Authorization: bearer {{configToken}}
+
+### Delete the SIS application
+DELETE {{createSISApp.response.headers.location}}
+Authorization: bearer {{configToken}}
+
+### Delete the restricted vendor
+DELETE {{restrictedVendorLocation}}
+Authorization: bearer {{configToken}}
+
+### Delete the SIS vendor
+DELETE {{sisVendorLocation}}
+Authorization: bearer {{configToken}}

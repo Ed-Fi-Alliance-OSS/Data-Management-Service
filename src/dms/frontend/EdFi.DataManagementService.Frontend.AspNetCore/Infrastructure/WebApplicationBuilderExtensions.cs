@@ -137,21 +137,8 @@ public static class WebApplicationBuilderExtensions
             ConfigurationServiceTokenHandler
         >();
 
-        // Register the inner claim set provider by its concrete type
-        webAppBuilder.Services.AddSingleton<ConfigurationServiceClaimSetProvider>();
-
-        // Register the cache decorator using a factory
-        webAppBuilder.Services.AddSingleton<IClaimSetProvider>(provider =>
-        {
-            // Resolve the inner service
-            var innerProvider = provider.GetRequiredService<ConfigurationServiceClaimSetProvider>();
-
-            // Resolve the cache dependency
-            var claimSetsCache = provider.GetRequiredService<ClaimSetsCache>();
-
-            // Create and return the caching decorator
-            return new CachedClaimSetProvider(innerProvider, claimSetsCache);
-        });
+        // Register ConfigurationServiceClaimSetProvider directly as IClaimSetProvider
+        webAppBuilder.Services.AddSingleton<IClaimSetProvider, ConfigurationServiceClaimSetProvider>();
 
         // Add JWT authentication services from Core
         webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);

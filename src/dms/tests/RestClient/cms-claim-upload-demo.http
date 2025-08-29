@@ -1,0 +1,248 @@
+# CMS Claim Upload Demonstration
+# ================================
+# This file demonstrates the Configuration Management Service (CMS) claim upload functionality
+# without testing DMS authorization. It focuses on:
+# 1. Checking current claims and authorization metadata
+# 2. Uploading a minimal claim set
+# 3. Verifying the upload replaced the claims
+# 4. Reloading to restore original claims
+#
+# Prerequisites:
+# 1. Start services: cd eng/docker-compose && ./start-local-dms.ps1 -EnableConfig -r
+# 2. Run this file sequentially in VS Code with REST Client extension
+
+@configPort=8081
+@dmsPort=8080
+
+# System Administrator credentials
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+# ==========================================
+# PART 1: Setup System Administrator Token
+# ==========================================
+
+### Register system administrator (if not already registered)
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+
+### Get system admin token for CMS operations
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+# ==========================================
+# PART 2: Check Current State (BEFORE Upload)
+# ==========================================
+
+### 1. Get ALL current claims from management endpoint
+# This shows the full claim structure currently loaded
+# @name currentClaimsBefore
+GET http://localhost:{{configPort}}/config/management/current-claims
+
+
+### 2. Get ALL authorization metadata
+# This is what DMS queries to get permissions for all claim sets
+# @name allAuthMetadataBefore
+GET http://localhost:{{configPort}}/config/authorizationMetadata
+Authorization: bearer {{configToken}}
+
+
+### 3. Get E2E-RelationshipsWithEdOrgsOnlyClaimSet metadata
+# This claim set should NOT have Student access initially
+# @name restrictedMetadataBefore
+GET http://localhost:{{configPort}}/config/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+Authorization: bearer {{configToken}}
+
+
+# ==========================================
+# PART 3: Upload Minimal Test Claim Set
+# ==========================================
+
+### Upload a MINIMAL claim set that replaces everything
+# This upload contains:
+# - One claim set: "TestMinimalClaimSet"
+# - Two resources: School and Student with full CRUD permissions
+# - Uses NoFurtherAuthorizationRequired for simplicity
+# @name uploadMinimalClaims
+POST http://localhost:{{configPort}}/config/management/upload-claims
+Content-Type: application/json
+
+{
+    "claims": {
+        "claimSets": [
+            {
+                "claimSetName": "TestMinimalClaimSet",
+                "isSystemReserved": false
+            }
+        ],
+        "claimsHierarchy": [
+            {
+                "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
+                "claims": [
+                    {
+                        "name": "http://ed-fi.org/identity/claims/ed-fi/school",
+                        "claimSets": [
+                            {
+                                "name": "TestMinimalClaimSet",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Update",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Delete",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "http://ed-fi.org/identity/claims/ed-fi/student",
+                        "claimSets": [
+                            {
+                                "name": "TestMinimalClaimSet",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Update",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Delete",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}
+
+
+###
+@uploadReloadId={{uploadMinimalClaims.response.body.reloadId}}
+
+# ==========================================
+# PART 4: Check State AFTER Upload
+# ==========================================
+
+### 1. Get current claims AFTER upload
+# Should now show only TestMinimalClaimSet
+# @name currentClaimsAfter
+GET http://localhost:{{configPort}}/config/management/current-claims
+
+
+### 2. Get ALL authorization metadata AFTER upload
+# Should only contain TestMinimalClaimSet with School and Student
+# @name allAuthMetadataAfter
+GET http://localhost:{{configPort}}/config/authorizationMetadata
+Authorization: bearer {{configToken}}
+
+
+### 3. Try to get E2E-RelationshipsWithEdOrgsOnlyClaimSet (should be empty)
+# This should return empty or error since it was replaced
+# @name restrictedMetadataAfter
+GET http://localhost:{{configPort}}/config/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+Authorization: bearer {{configToken}}
+
+
+### 4. Get TestMinimalClaimSet metadata
+# This should show our uploaded claim set with School and Student access
+# @name testMinimalMetadata
+GET http://localhost:{{configPort}}/config/authorizationMetadata?claimSetName=TestMinimalClaimSet
+Authorization: bearer {{configToken}}
+
+
+# ==========================================
+# PART 5: Reload Original Claims
+# ==========================================
+
+### Reload claims from original configuration files
+# This restores all the original claim sets from the file system
+# @name reloadClaims
+POST http://localhost:{{configPort}}/config/management/reload-claims
+
+
+###
+@reloadId={{reloadClaims.response.body.reloadId}}
+
+# ==========================================
+# PART 6: Verify Original Claims Restored
+# ==========================================
+
+### 1. Get current claims AFTER reload
+# Should show all original claim sets again
+# @name currentClaimsRestored
+GET http://localhost:{{configPort}}/config/management/current-claims
+
+
+### 2. Get ALL authorization metadata AFTER reload
+# Should contain all original claim sets
+# @name allAuthMetadataRestored
+GET http://localhost:{{configPort}}/config/authorizationMetadata
+Authorization: bearer {{configToken}}
+
+
+### 3. Verify E2E-RelationshipsWithEdOrgsOnlyClaimSet is restored
+# Should be back without Student access
+# @name restrictedMetadataRestored
+GET http://localhost:{{configPort}}/config/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+Authorization: bearer {{configToken}}
+
+
+### 4. Verify TestMinimalClaimSet is gone
+# Should return empty since it was only in the upload
+# @name testMinimalMetadataGone
+GET http://localhost:{{configPort}}/config/authorizationMetadata?claimSetName=TestMinimalClaimSet
+Authorization: bearer {{configToken}}

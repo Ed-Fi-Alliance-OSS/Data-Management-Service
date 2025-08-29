@@ -49,6 +49,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
         private ScenarioVariables _scenarioVariables = new();
+        private int _lastUploadStatusCode = 0;
         private string _dmsToken = string.Empty;
         private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
         private Dictionary<string, string> _relationships = [];
@@ -74,6 +75,18 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         )
         {
             await SetAuthorizationToken("uri://ed-fi.org", educationOrganizationIds, claimSetName);
+        }
+
+        [Given(
+            "the claimSet {string} is authorized with namespace {string} and educationOrganizationIds {string}"
+        )]
+        public async Task GivenTheClaimSetIsAuthorizedWithNamespaceAndEdOrgIds(
+            string claimSetName,
+            string namespacePrefixes,
+            string educationOrganizationIds
+        )
+        {
+            await SetAuthorizationToken(namespacePrefixes, educationOrganizationIds, claimSetName);
         }
 
         [Given("the resulting token is stored in the {string} variable")]
@@ -1005,6 +1018,161 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 new("If-Match", ifMatch),
             };
             return list;
+        }
+
+        // CMS claim set upload step definitions
+        [When("a claim set is uploaded to CMS that grants student access to {string}")]
+        [Given("a claim set is uploaded to CMS that grants student access to {string}")]
+        public async Task WhenAClaimSetIsUploadedToCMSThatGrantsStudentAccess(string claimSetName)
+        {
+            // Create a claim set that modifies the existing E2E-RelationshipsWithEdOrgsOnlyClaimSet to include student access
+            // Use a flatter structure that matches what CMS expects
+            var claimsJson = $$"""
+                {
+                    "claims": {
+                        "claimSets": [
+                            {
+                                "claimSetName": "{{claimSetName}}",
+                                "isSystemReserved": false
+                            }
+                        ],
+                        "claimsHierarchy": [
+                            {
+                                "name": "http://ed-fi.org/identity/claims/domains/edFi/resources/schools",
+                                "claimSets": [
+                                    {
+                                        "name": "{{claimSetName}}",
+                                        "actions": [
+                                            { "name": "Create" },
+                                            { "name": "Read" },
+                                            { "name": "Update" },
+                                            { "name": "Delete" }
+                                        ]
+                                    }
+                                ]
+                            },
+                            {
+                                "name": "http://ed-fi.org/identity/claims/domains/edFi/resources/students",
+                                "claimSets": [
+                                    {
+                                        "name": "{{claimSetName}}",
+                                        "actions": [
+                                            { "name": "Create" },
+                                            { "name": "Read" },
+                                            { "name": "Update" },
+                                            { "name": "Delete" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+                """;
+
+            // Get system administrator token for CMS API access
+            if (string.IsNullOrEmpty(SystemAdministrator.Token))
+            {
+                await SystemAdministrator.Register("SystemAdministratorClient", "SystemAdministratorSecret");
+            }
+
+            // Use HttpClient to upload claims to CMS management API
+            using var httpClient = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{AppSettings.ConfigServicePort}/"),
+            };
+
+            httpClient.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", SystemAdministrator.Token);
+
+            using var content = new StringContent(claimsJson, System.Text.Encoding.UTF8, "application/json");
+            var response = await httpClient.PostAsync("config/management/upload-claims", content);
+
+            // Store response for verification in other steps
+            _lastUploadStatusCode = (int)response.StatusCode;
+
+            // Log the response for debugging
+            var responseBody = await response.Content.ReadAsStringAsync();
+            Console.WriteLine(
+                $"CMS Upload URL: http://localhost:{AppSettings.ConfigServicePort}/config/management/upload-claims"
+            );
+            Console.WriteLine($"CMS Upload Response - Status: {_lastUploadStatusCode}");
+            Console.WriteLine($"CMS Upload Response Body: {responseBody}");
+
+            if (_lastUploadStatusCode == 400)
+            {
+                Console.WriteLine($"Request JSON was: {claimsJson}");
+            }
+
+            // Give DMS a moment to process the claim set change
+            if (_lastUploadStatusCode == 200)
+            {
+                await Task.Delay(1000); // Wait 1 second for claim changes to propagate
+            }
+        }
+
+        [Then("the upload should be successful")]
+        [Given("the upload should be successful")]
+        public void ThenTheUploadShouldBeSuccessful()
+        {
+            _lastUploadStatusCode.Should().Be(200, "Claim set upload should succeed");
+        }
+
+        [Then("the response should contain the created student")]
+        public void ThenTheResponseShouldContainTheCreatedStudent()
+        {
+            // This step verifies the response from the latest DMS API call, not the upload response
+            // The _apiResponse.TextAsync() is used for DMS responses that contain student data
+            var responseText = _apiResponse.TextAsync().GetAwaiter().GetResult();
+            responseText.Should().Contain("S001", "Response should contain the created student ID");
+            responseText.Should().Contain("John", "Response should contain the student's first name");
+            responseText.Should().Contain("Doe", "Response should contain the student's last name");
+        }
+
+        [When("a POST request is made to CMS {string}")]
+        public async Task WhenAPOSTRequestIsMadeToCMS(string endpoint)
+        {
+            // Get system administrator token for CMS API access
+            if (string.IsNullOrEmpty(SystemAdministrator.Token))
+            {
+                await SystemAdministrator.Register("SystemAdministratorClient", "SystemAdministratorSecret");
+            }
+
+            // Use HttpClient to call CMS management API
+            using var httpClient = new HttpClient
+            {
+                BaseAddress = new Uri($"http://localhost:{AppSettings.ConfigServicePort}/"),
+            };
+
+            httpClient.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", SystemAdministrator.Token);
+
+            // POST with empty body for reload-claims endpoint
+            using var content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+            var response = await httpClient.PostAsync($"config{endpoint}", content);
+
+            // Store response for verification
+            _lastUploadStatusCode = (int)response.StatusCode;
+
+            // Also store the response body for reload ID verification if needed
+            if (response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                _scenarioContext["reloadResponse"] = responseBody;
+            }
+        }
+
+        [Then("the reload should be successful")]
+        public void ThenTheReloadShouldBeSuccessful()
+        {
+            _lastUploadStatusCode.Should().Be(200, "Claim set reload should succeed");
+
+            // Optionally verify the response contains success flag
+            if (_scenarioContext.ContainsKey("reloadResponse"))
+            {
+                var responseBody = _scenarioContext["reloadResponse"].ToString();
+                responseBody.Should().Contain("\"success\":true", "Reload response should indicate success");
+            }
         }
     }
 }
