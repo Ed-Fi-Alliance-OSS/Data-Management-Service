@@ -31,6 +31,45 @@ window.EdFiCustomFields = function () {
 
     const safeGet = window.EdfiCommonHelper.safeGet;
 
+    // Helper function to create a simplified note element for parameters
+    const createParameterNote = (text, system) => {
+        const React = system.React || window.React;
+        if (!React) {
+            return null;
+        }
+
+        return React.createElement(
+            "div",
+            {
+                style: {
+                    fontFamily: "monospace",
+                    fontSize: "90%",
+                    color: "rgb(102, 102, 102)",
+                },
+            },
+            text
+        );
+    };
+
+    // Helper function to create a table row for Ed-Fi fields
+    const createEdFiRow = (edFiFields, system) => {
+        const React = system.React || window.React;
+        if (!React || edFiFields.length === 0) {
+            return null;
+        }
+
+        return React.createElement(
+            "tr",
+            { style: { borderTop: "none", paddingTop: "0" } },
+            React.createElement("td", { className: "parameters-col_name" }, ""), // Empty first column
+            React.createElement(
+                "td", 
+                { className: "parameters-col_description", style: { paddingTop: "0" } },
+                ...edFiFields
+            )
+        );
+    };
+
     // Helper function to extract and display Ed-Fi custom fields from schema
     const extractEdFiFields = (schema, system) => {
         if (!schema) return [];
@@ -71,6 +110,46 @@ window.EdFiCustomFields = function () {
         return fields;
     };
 
+    // Helper function to extract Ed-Fi fields for parameters with simplified styling
+    const extractEdFiFieldsForParameters = (schema, system) => {
+        if (!schema) return [];
+
+        const fields = [];
+
+        // Check for x-Ed-Fi-isIdentity
+        const isIdentity = safeGet(schema, "x-Ed-Fi-isIdentity");
+        if (isIdentity !== undefined) {
+            const element = createParameterNote(`x-Ed-Fi-isIdentity: ${String(isIdentity)}`, system);
+            if (element) fields.push(element);
+        }
+
+        // Check for x-Ed-Fi-isDeprecated
+        const isDeprecated = safeGet(schema, "x-Ed-Fi-isDeprecated");
+        if (isDeprecated !== undefined) {
+            const element = createParameterNote(`x-Ed-Fi-isDeprecated: ${String(isDeprecated)}`, system);
+            if (element) fields.push(element);
+        }
+
+        // Check for x-Ed-Fi-deprecatedReasons
+        const deprecatedReasons = safeGet(schema, "x-Ed-Fi-deprecatedReasons");
+        if (deprecatedReasons !== undefined) {
+            const reasonsText = Array.isArray(deprecatedReasons)
+                ? `[${deprecatedReasons.map((r) => `"${r}"`).join(", ")}]`
+                : `"${deprecatedReasons}"`;
+            const element = createParameterNote(`x-Ed-Fi-deprecatedReasons: ${reasonsText}`, system);
+            if (element) fields.push(element);
+        }
+
+        // Check for x-nullable
+        const nullable = safeGet(schema, "x-nullable");
+        if (nullable !== undefined) {
+            const element = createParameterNote(`x-nullable: ${String(nullable)}`, system);
+            if (element) fields.push(element);
+        }
+
+        return fields;
+    };
+
     return {
         wrapComponents: {
             // Wrapper for Model - inject Ed-Fi custom fields into schema
@@ -94,7 +173,7 @@ window.EdFiCustomFields = function () {
                 return children;
             },
 
-            // Wrapper for ParameterRow - inject Ed-Fi custom fields into GET parameters
+            // Wrapper for ParameterRow - inject Ed-Fi custom fields as additional table row
             parameterRow: (Original, system) => (props) => {
                 const React = system.React || window.React;
 
@@ -104,12 +183,13 @@ window.EdFiCustomFields = function () {
 
                 const children = React.createElement(Original, props);
 
-                // Extract Ed-Fi fields directly from the parameter object (not schema)
+                // Extract Ed-Fi fields from parameter with simplified styling
                 const param = props.param;
-                const edFiFields = extractEdFiFields(param, system);
+                const edFiFields = extractEdFiFieldsForParameters(param, system);
 
                 if (edFiFields.length > 0) {
-                    return React.createElement(React.Fragment, null, children, ...edFiFields);
+                    const edFiRow = createEdFiRow(edFiFields, system);
+                    return React.createElement(React.Fragment, null, children, edFiRow);
                 }
 
                 return children;
