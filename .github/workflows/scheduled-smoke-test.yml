@@ -38,6 +38,8 @@ jobs:
             flag: EnableOpenSearch
           - name: ElasticSearch
             flag: EnableElasticSearch
+    env:
+      KEYCLOAK_OAUTH_TOKEN_ENDPOINT: http://localhost:8045/realms/edfi/protocol/openid-connect/token
 
     defaults:
       run:
@@ -89,7 +91,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
-        run: ./build-dms.ps1 StartEnvironment -SkipDockerBuild -${{ matrix.search-engine.flag }} -LoadSeedData -IdentityProvider self-contained
+        run: ./build-dms.ps1 StartEnvironment -SkipDockerBuild -${{ matrix.search-engine.flag }} -LoadSeedData
 
       - name: Wait for services to be ready
         run: |
