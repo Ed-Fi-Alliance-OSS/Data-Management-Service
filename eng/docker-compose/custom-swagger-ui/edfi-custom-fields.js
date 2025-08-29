@@ -31,123 +31,74 @@ window.EdFiCustomFields = function () {
 
     const safeGet = window.EdfiCommonHelper.safeGet;
 
+    // Helper function to extract and display Ed-Fi custom fields from schema
+    const extractEdFiFields = (schema, system, isParameter = false) => {
+        if (!schema) return [];
+
+        const fields = [];
+        const noteCreator = isParameter ? createParameterNote : createNote;
+
+        // Check for x-Ed-Fi-isIdentity
+        const isIdentity = safeGet(schema, "x-Ed-Fi-isIdentity");
+        if (isIdentity !== undefined) {
+            const element = noteCreator(`x-Ed-Fi-isIdentity: ${String(isIdentity)}`, system);
+            if (element) fields.push(element);
+        }
+
+        // Check for x-Ed-Fi-isDeprecated
+        const isDeprecated = safeGet(schema, "x-Ed-Fi-isDeprecated");
+        if (isDeprecated !== undefined) {
+            const element = noteCreator(`x-Ed-Fi-isDeprecated: ${String(isDeprecated)}`, system);
+            if (element) fields.push(element);
+        }
+
+        // Check for x-Ed-Fi-deprecatedReasons
+        const deprecatedReasons = safeGet(schema, "x-Ed-Fi-deprecatedReasons");
+        if (deprecatedReasons !== undefined) {
+            const reasonsText = Array.isArray(deprecatedReasons)
+                ? `[${deprecatedReasons.map((r) => `"${r}"`).join(", ")}]`
+                : `"${deprecatedReasons}"`;
+            const element = noteCreator(`x-Ed-Fi-deprecatedReasons: ${reasonsText}`, system);
+            if (element) fields.push(element);
+        }
+
+        // Check for x-nullable
+        const nullable = safeGet(schema, "x-nullable");
+        if (nullable !== undefined) {
+            const element = noteCreator(`x-nullable: ${String(nullable)}`, system);
+            if (element) fields.push(element);
+        }
+
+        return fields;
+    };
+
     // Helper function to create a simplified note element for parameters
     const createParameterNote = (text, system) => {
         const React = system.React || window.React;
-        if (!React) {
-            return null;
-        }
+        if (!React) return null;
 
-        return React.createElement(
-            "div",
-            {
-                style: {
-                    fontFamily: "monospace",
-                    fontSize: "90%",
-                    color: "rgb(102, 102, 102)",
-                },
+        return React.createElement("div", {
+            style: {
+                fontFamily: "monospace",
+                fontSize: "90%",
+                color: "rgb(102, 102, 102)",
             },
-            text
-        );
+        }, text);
     };
 
     // Helper function to create a table row for Ed-Fi fields
     const createEdFiRow = (edFiFields, system) => {
         const React = system.React || window.React;
-        if (!React || edFiFields.length === 0) {
-            return null;
-        }
+        if (!React || edFiFields.length === 0) return null;
 
-        return React.createElement(
-            "tr",
+        return React.createElement("tr", 
             { style: { borderTop: "none", paddingTop: "0" } },
-            React.createElement("td", { className: "parameters-col_name" }, ""), // Empty first column
-            React.createElement(
-                "td", 
-                { className: "parameters-col_description", style: { paddingTop: "0" } },
-                ...edFiFields
-            )
+            React.createElement("td", { className: "parameters-col_name" }, ""),
+            React.createElement("td", { 
+                className: "parameters-col_description", 
+                style: { paddingTop: "0" } 
+            }, ...edFiFields)
         );
-    };
-
-    // Helper function to extract and display Ed-Fi custom fields from schema
-    const extractEdFiFields = (schema, system) => {
-        if (!schema) return [];
-
-        const fields = [];
-
-        // Check for x-Ed-Fi-isIdentity
-        const isIdentity = safeGet(schema, "x-Ed-Fi-isIdentity");
-        if (isIdentity !== undefined) {
-            const element = createNote(`x-Ed-Fi-isIdentity: ${String(isIdentity)}`, system);
-            if (element) fields.push(element);
-        }
-
-        // Check for x-Ed-Fi-isDeprecated
-        const isDeprecated = safeGet(schema, "x-Ed-Fi-isDeprecated");
-        if (isDeprecated !== undefined) {
-            const element = createNote(`x-Ed-Fi-isDeprecated: ${String(isDeprecated)}`, system);
-            if (element) fields.push(element);
-        }
-
-        // Check for x-Ed-Fi-deprecatedReasons
-        const deprecatedReasons = safeGet(schema, "x-Ed-Fi-deprecatedReasons");
-        if (deprecatedReasons !== undefined) {
-            const reasonsText = Array.isArray(deprecatedReasons)
-                ? `[${deprecatedReasons.map((r) => `"${r}"`).join(", ")}]`
-                : `"${deprecatedReasons}"`;
-            const element = createNote(`x-Ed-Fi-deprecatedReasons: ${reasonsText}`, system);
-            if (element) fields.push(element);
-        }
-
-        // Check for x-nullable
-        const nullable = safeGet(schema, "x-nullable");
-        if (nullable !== undefined) {
-            const element = createNote(`x-nullable: ${String(nullable)}`, system);
-            if (element) fields.push(element);
-        }
-
-        return fields;
-    };
-
-    // Helper function to extract Ed-Fi fields for parameters with simplified styling
-    const extractEdFiFieldsForParameters = (schema, system) => {
-        if (!schema) return [];
-
-        const fields = [];
-
-        // Check for x-Ed-Fi-isIdentity
-        const isIdentity = safeGet(schema, "x-Ed-Fi-isIdentity");
-        if (isIdentity !== undefined) {
-            const element = createParameterNote(`x-Ed-Fi-isIdentity: ${String(isIdentity)}`, system);
-            if (element) fields.push(element);
-        }
-
-        // Check for x-Ed-Fi-isDeprecated
-        const isDeprecated = safeGet(schema, "x-Ed-Fi-isDeprecated");
-        if (isDeprecated !== undefined) {
-            const element = createParameterNote(`x-Ed-Fi-isDeprecated: ${String(isDeprecated)}`, system);
-            if (element) fields.push(element);
-        }
-
-        // Check for x-Ed-Fi-deprecatedReasons
-        const deprecatedReasons = safeGet(schema, "x-Ed-Fi-deprecatedReasons");
-        if (deprecatedReasons !== undefined) {
-            const reasonsText = Array.isArray(deprecatedReasons)
-                ? `[${deprecatedReasons.map((r) => `"${r}"`).join(", ")}]`
-                : `"${deprecatedReasons}"`;
-            const element = createParameterNote(`x-Ed-Fi-deprecatedReasons: ${reasonsText}`, system);
-            if (element) fields.push(element);
-        }
-
-        // Check for x-nullable
-        const nullable = safeGet(schema, "x-nullable");
-        if (nullable !== undefined) {
-            const element = createParameterNote(`x-nullable: ${String(nullable)}`, system);
-            if (element) fields.push(element);
-        }
-
-        return fields;
     };
 
     return {
@@ -185,7 +136,7 @@ window.EdFiCustomFields = function () {
 
                 // Extract Ed-Fi fields from parameter with simplified styling
                 const param = props.param;
-                const edFiFields = extractEdFiFieldsForParameters(param, system);
+                const edFiFields = extractEdFiFields(param, system, true);
 
                 if (edFiFields.length > 0) {
                     const edFiRow = createEdFiRow(edFiFields, system);
