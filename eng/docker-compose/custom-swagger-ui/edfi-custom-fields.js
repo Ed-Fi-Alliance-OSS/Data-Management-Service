@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 window.EdFiCustomFields = function () {
-
     // Helper function to create a styled note element using system React
     const createNote = (text, system) => {
         // Get React from the system parameter that Swagger UI provides
@@ -23,7 +22,7 @@ window.EdFiCustomFields = function () {
                     color: "#666",
                     borderLeft: "2px solid #ddd",
                     paddingLeft: "6px",
-                    marginTop: "4px"
+                    marginTop: "4px",
                 },
             },
             text
@@ -56,7 +55,7 @@ window.EdFiCustomFields = function () {
         const deprecatedReasons = safeGet(schema, "x-Ed-Fi-deprecatedReasons");
         if (deprecatedReasons !== undefined) {
             const reasonsText = Array.isArray(deprecatedReasons)
-                ? `[${deprecatedReasons.map(r => `"${r}"`).join(", ")}]`
+                ? `[${deprecatedReasons.map((r) => `"${r}"`).join(", ")}]`
                 : `"${deprecatedReasons}"`;
             const element = createNote(`x-Ed-Fi-deprecatedReasons: ${reasonsText}`, system);
             if (element) fields.push(element);
@@ -74,7 +73,6 @@ window.EdFiCustomFields = function () {
 
     return {
         wrapComponents: {
-
             // Wrapper for Model - inject Ed-Fi custom fields into schema
             Model: (Original, system) => (props) => {
                 const React = system.React || window.React;
@@ -96,7 +94,26 @@ window.EdFiCustomFields = function () {
                 return children;
             },
 
-        }
-    };
+            // Wrapper for ParameterRow - inject Ed-Fi custom fields into GET parameters
+            parameterRow: (Original, system) => (props) => {
+                const React = system.React || window.React;
 
+                if (!React) {
+                    return React.createElement(Original, props);
+                }
+
+                const children = React.createElement(Original, props);
+
+                // Extract Ed-Fi fields directly from the parameter object (not schema)
+                const param = props.param;
+                const edFiFields = extractEdFiFields(param, system);
+
+                if (edFiFields.length > 0) {
+                    return React.createElement(React.Fragment, null, children, ...edFiFields);
+                }
+
+                return children;
+            },
+        },
+    };
 };
