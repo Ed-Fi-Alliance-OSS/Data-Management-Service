@@ -13,14 +13,22 @@ namespace EdFi.DataManagementService.Core.Security;
 /// </summary>
 public record ClaimSetsCache(IMemoryCache memoryCache, TimeSpan expiration)
 {
-    public void CacheClaimSets(string cacheId, IList<ClaimSet> claimSets)
+    // Constant cache identifier used to store and retrieve claim sets from the cache
+    private const string CacheId = "ClaimSetsCache";
+
+    public void CacheClaimSets(IList<ClaimSet> claimSets)
     {
-        memoryCache.Set(cacheId, claimSets, expiration);
+        memoryCache.Set(CacheId, claimSets, expiration);
     }
 
-    public IList<ClaimSet>? GetCachedClaimSets(string cacheId)
+    public IList<ClaimSet>? GetCachedClaimSets()
     {
-        memoryCache.TryGetValue(cacheId, out IList<ClaimSet>? claimSets);
+        memoryCache.TryGetValue(CacheId, out IList<ClaimSet>? claimSets);
         return claimSets;
+    }
+
+    public void ClearCache()
+    {
+        memoryCache.Remove(CacheId);
     }
 }

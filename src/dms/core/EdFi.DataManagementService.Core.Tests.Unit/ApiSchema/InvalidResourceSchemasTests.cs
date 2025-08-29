@@ -93,7 +93,8 @@ public class InvalidResourceSchemasTests
                     NullLogger<ResourceLoadOrderCalculator>.Instance
                 ),
                 apiSchemaUploadService,
-                serviceProvider
+                serviceProvider,
+                A.Fake<ClaimSetsCache>()
             );
         }
 
