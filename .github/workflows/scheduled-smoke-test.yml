@@ -39,7 +39,7 @@ jobs:
           - name: ElasticSearch
             flag: EnableElasticSearch
     env:
-      KEYCLOAK_OAUTH_TOKEN_ENDPOINT: http://localhost:8045/realms/edfi/protocol/openid-connect/token
+      AppSettings__AuthenticationService: http://localhost:8045/realms/edfi/protocol/openid-connect/token
 
     defaults:
       run:
