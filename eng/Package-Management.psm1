@@ -291,18 +291,33 @@ function Get-SmokeTestTool {
 
 <#
 .SYNOPSIS
-    Download the Ed-Fi Api Sdk dll.
+    Download the Ed-Fi API SDK dll from NuGet feed.
+
+.DESCRIPTION
+    Downloads the EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0 package from the 
+    Ed-Fi NuGet feed and extracts the EdFi.OdsApi.Sdk.dll file to the sdk directory.
+
+.PARAMETER PackageVersion
+    The version of the package to download. Defaults to "7.3.10132".
 
 .OUTPUTS
     String containing the sdk dll path, e.g.
     `sdk/EdFi.OdsApi.Sdk.dll`.
+
+.EXAMPLE
+    Get-ApiSdkDll
+
+.EXAMPLE
+    Get-ApiSdkDll -PackageVersion "7.3.1200"
 #>
 function Get-ApiSdkDll {
+    param(
+        # Package version to download, defaults to latest available
+        [string]
+        $PackageVersion = "7.3.10132"
+    )
 
-    $zip = "EdFi.OdsApi.Sdk.zip"
-
-    $resourceUrl = "https://odsassets.blob.core.windows.net/public/project-tanager/sdk/5.1.0/$zip"
-
+    $packageName = "EdFi.Suite3.OdsApi.TestSdk.Standard.5.2.0"
     $directory = "sdk"
     $file = "EdFi.OdsApi.Sdk.dll"
 
@@ -310,25 +325,30 @@ function Get-ApiSdkDll {
         New-Item -ItemType Directory -Force -Path $directory | Out-Null
     }
 
-    Push-Location $directory
     $fullPath = Join-Path -Path $directory -ChildPath $file
 
-    if ($null -ne (Get-ChildItem $file -ErrorAction SilentlyContinue)) {
-        Pop-Location
+    if ($null -ne (Get-ChildItem $fullPath -ErrorAction SilentlyContinue)) {
         return $fullPath
     }
 
     try {
-        Invoke-WebRequest $resourceUrl -OutFile $zip
-        Expand-Archive $zip -DestinationPath $(Get-Location)
-        Remove-Item $zip
+        # Download the NuGet package
+        $packageDir = Get-NugetPackage -PackageName $packageName -PackageVersion $PackageVersion -PreRelease
+        
+        # Find the SDK DLL in the package
+        $dllPath = Get-ChildItem -Path $packageDir -Filter "EdFi.OdsApi.Sdk.dll" -Recurse | Select-Object -First 1
+
+        if ($null -eq $dllPath) {
+            throw "EdFi.OdsApi.Sdk.dll not found in package $packageName version $PackageVersion"
+        }
+
+        # Copy the DLL to the sdk directory
+        Copy-Item -Path $dllPath.FullName -Destination $fullPath
+
         return $fullPath
     }
     catch {
         throw $_
-    }
-    finally {
-        Pop-Location
     }
 }
 
