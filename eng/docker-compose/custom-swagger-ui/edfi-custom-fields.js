@@ -306,14 +306,6 @@ window.EdFiCustomFields = function () {
 
                 return children;
             },
-
-            operationSummaryMethod: (Original, system) => (props) => {
-                return system.React.createElement(Original, props);
-            },
-
-            OperationSummaryMethod: (Original, system) => (props) => {
-                return system.React.createElement(Original, props);
-            },
         },
     };
 };
