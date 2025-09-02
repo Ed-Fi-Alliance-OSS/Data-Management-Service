@@ -104,7 +104,11 @@ param(
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="keycloak"
+    $IdentityProvider="keycloak",
+
+    # Environment file for docker-compose operations
+    [string]
+    $EnvironmentFile="./.env.e2e"
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -339,10 +343,10 @@ function Start-DockerEnvironment {
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "ElasticSearch" -EnableConfig -d -v
+            ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine "OpenSearch" -EnableConfig -d -v
+            ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine "ElasticSearch" -EnableConfig -d -v
+            ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine "OpenSearch" -EnableConfig -d -v
+            ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine "ElasticSearch" -EnableConfig -d -v
         }
         finally {
             Pop-Location
@@ -361,18 +365,18 @@ function Start-DockerEnvironment {
                 Push-Location eng/docker-compose/
                 if ($UsePublishedImage) {
                     if ($LoadSeedData) {
-                        ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
+                        ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
                     }
                     else {
-                        ./start-published-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
+                        ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
                     }
                 }
                 else {
                     if ($LoadSeedData) {
-                        ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
+                        ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
                     }
                     else {
-                        ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
+                        ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
                     }
                 }
             }
