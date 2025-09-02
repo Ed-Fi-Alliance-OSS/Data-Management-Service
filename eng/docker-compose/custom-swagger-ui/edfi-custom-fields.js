@@ -185,6 +185,53 @@ window.EdFiCustomFields = function () {
         );
     };
 
+    // Shared helper function to extract and render extensions for PUT operations
+    const renderExtensionsForPutOperation = (props, system, children) => {
+        const React = system.React;
+        const method = props.method;
+        const path = props.path;
+        const specSelectors = props.specSelectors;
+
+        // Only process PUT operations
+        if (method !== 'put' || !specSelectors || !path) {
+            return children;
+        }
+
+        // Extract operation directly from spec for PUT operations
+        let operation = null;
+        try {
+            const spec = specSelectors.specJS();
+            if (spec?.paths?.[path]?.[method]) {
+                operation = spec.paths[path][method];
+            }
+        } catch (e) {
+            // Silently handle errors - extensions are optional
+            return children;
+        }
+
+        if (!operation) {
+            return children;
+        }
+
+        const extensions = extractOperationExtensions(operation);
+        
+        if (extensions.length === 0) {
+            return children;
+        }
+
+        const extensionsTable = createExtensionsTable(extensions, system);
+        
+        if (!extensionsTable) {
+            return children;
+        }
+
+        // Append Extensions section after the original content
+        return React.createElement(React.Fragment, null, 
+            children,
+            extensionsTable
+        );
+    };
+
     return {
         wrapComponents: {
             // Wrapper for Model - inject Ed-Fi custom fields into schema
@@ -230,81 +277,11 @@ window.EdFiCustomFields = function () {
                 return children;
             },
 
-            // Try different component names for individual operations
-            opblock: (Original, system) => {
-                return function OpBlockWrapper(props) {
-                    const React = system.React || window.React;
-
-                    if (!React) {
-                        return React.createElement(Original, props);
-                    }
-
-                    const children = React.createElement(Original, props);
-
-                    // Check if this is a PUT operation with x- extensions
-                    const operation = props.operation;
-                    const httpMethod = props.method;
-                    
-                    if (httpMethod === 'put' && operation) {
-                        const extensions = extractOperationExtensions(operation);
-                        
-                        if (extensions.length > 0) {
-                            const extensionsTable = createExtensionsTable(extensions, system);
-                            
-                            if (extensionsTable) {
-                                // Append Extensions section after the operation content
-                                return React.createElement(React.Fragment, null, 
-                                    children,
-                                    extensionsTable
-                                );
-                            }
-                        }
-                    }
-
-                    return children;
-                };
-            },
-
-            // Try components that might be called when operations expand
+            // Inject Extensions table for PUT operations in responses section
             responses: (Original, system) => (props) => {
                 const React = system.React;
                 const children = React.createElement(Original, props);
-
-                // Get operation from OpenAPI spec for x- extensions
-                const method = props.method;
-                const path = props.path;
-                const specSelectors = props.specSelectors;
-
-                // Extract operation directly from spec for PUT operations
-                let operation = null;
-                if (method === 'put' && specSelectors && path) {
-                    try {
-                        const spec = specSelectors.specJS();
-                        if (spec?.paths?.[path]?.[method]) {
-                            operation = spec.paths[path][method];
-                        }
-                    } catch (e) {
-                        // Silently handle errors - extensions are optional
-                    }
-                }
-                
-                if (method === 'put' && operation) {
-                    const extensions = extractOperationExtensions(operation);
-                    
-                    if (extensions.length > 0) {
-                        const extensionsTable = createExtensionsTable(extensions, system);
-                        
-                        if (extensionsTable) {
-                            // Append Extensions section after the responses
-                            return React.createElement(React.Fragment, null, 
-                                children,
-                                extensionsTable
-                            );
-                        }
-                    }
-                }
-
-                return children;
+                return renderExtensionsForPutOperation(props, system, children);
             },
         },
     };
