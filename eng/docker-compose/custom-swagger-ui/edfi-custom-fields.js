@@ -109,32 +109,14 @@ window.EdFiCustomFields = function () {
         return String(value);
     };
 
-    // Helper function to extract x- extensions from operation level
+    // Helper function to extract x-Ed-Fi-isUpdatable from operation level
     const extractOperationExtensions = (operation) => {
         const extensions = [];
-        if (operation) {
-            // Handle Immutable Map objects from Swagger UI
-            if (operation.entrySeq) {
-                // This is an Immutable Map - iterate through entries
-                operation.entrySeq().forEach(([key, value]) => {
-                    if (key.startsWith('x-')) {
-                        extensions.push({
-                            field: key,
-                            value: formatExtensionValue(value)
-                        });
-                    }
-                });
-            } else {
-                // Regular JavaScript object
-                Object.keys(operation).forEach(key => {
-                    if (key.startsWith('x-')) {
-                        extensions.push({
-                            field: key,
-                            value: formatExtensionValue(operation[key])
-                        });
-                    }
-                });
-            }
+        if (operation && operation['x-Ed-Fi-isUpdatable'] !== undefined) {
+            extensions.push({
+                field: 'x-Ed-Fi-isUpdatable',
+                value: formatExtensionValue(operation['x-Ed-Fi-isUpdatable'])
+            });
         }
         return extensions;
     };
@@ -144,57 +126,58 @@ window.EdFiCustomFields = function () {
         const React = system.React || window.React;
         if (!React || extensions.length === 0) return null;
 
-        const tableStyle = {
-            width: "100%",
-            borderCollapse: "collapse",
-            marginTop: "10px",
-            fontSize: "14px"
-        };
-
-        const headerStyle = {
-            backgroundColor: "#f7f7f7",
-            padding: "8px 12px",
-            border: "1px solid #d4d4d4",
-            fontWeight: "bold",
-            textAlign: "left"
-        };
-
-        const cellStyle = {
-            padding: "8px 12px",
-            border: "1px solid #d4d4d4",
-            verticalAlign: "top"
-        };
-
-        const fieldCellStyle = {
-            ...cellStyle,
-            fontFamily: "monospace",
-            backgroundColor: "#f9f9f9",
-            width: "30%"
-        };
-
-        const valueCellStyle = {
-            ...cellStyle,
-            fontFamily: "monospace"
-        };
-
         return React.createElement("div", 
-            { style: { marginTop: "20px" } },
-            React.createElement("h4", 
-                { style: { margin: "0 0 10px 0", fontSize: "14px", fontWeight: "bold" } },
-                "Extensions"
+            { 
+                className: "responses-wrapper",
+                style: { marginTop: "20px" }
+            },
+            React.createElement("div", 
+                { className: "opblock-section-header" },
+                React.createElement("h4", 
+                    { className: "opblock-section-header-title" },
+                    "Extensions"
+                )
             ),
-            React.createElement("table", { style: tableStyle },
-                React.createElement("thead", null,
-                    React.createElement("tr", null,
-                        React.createElement("th", { style: headerStyle }, "Field"),
-                        React.createElement("th", { style: headerStyle }, "Value")
-                    )
-                ),
-                React.createElement("tbody", null,
-                    ...extensions.map((ext, index) => 
-                        React.createElement("tr", { key: index },
-                            React.createElement("td", { style: fieldCellStyle }, ext.field),
-                            React.createElement("td", { style: valueCellStyle }, ext.value)
+            React.createElement("div", 
+                { className: "responses-inner" },
+                React.createElement("table", 
+                    { className: "responses-table" },
+                    React.createElement("thead", null,
+                        React.createElement("tr", 
+                            { className: "response" },
+                            React.createElement("td", 
+                                { className: "response-col_status" }, 
+                                "Field"
+                            ),
+                            React.createElement("td", 
+                                { className: "response-col_description" }, 
+                                "Value"
+                            )
+                        )
+                    ),
+                    React.createElement("tbody", null,
+                        ...extensions.map((ext, index) => 
+                            React.createElement("tr", 
+                                { key: index, className: "response" },
+                                React.createElement("td", 
+                                    { 
+                                        className: "response-col_status",
+                                        style: { 
+                                            fontFamily: "monospace",
+                                            minWidth: "200px",
+                                            whiteSpace: "nowrap"
+                                        }
+                                    }, 
+                                    ext.field
+                                ),
+                                React.createElement("td", 
+                                    { 
+                                        className: "response-col_description",
+                                        style: { fontFamily: "monospace" }
+                                    }, 
+                                    ext.value
+                                )
+                            )
                         )
                     )
                 )
