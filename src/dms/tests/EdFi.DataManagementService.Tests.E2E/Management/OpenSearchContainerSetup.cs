@@ -9,16 +9,6 @@ namespace EdFi.DataManagementService.Tests.E2E.Management;
 
 public class OpenSearchContainerSetup : ContainerSetupBase
 {
-    public override async Task StartContainers()
-    {
-        await Task.Delay(10);
-    }
-
-    public override async Task ApiLogs(TestLogger logger)
-    {
-        await Task.Delay(10);
-    }
-
     public override string ApiUrl()
     {
         return $"http://localhost:{AppSettings.DmsPort}/";

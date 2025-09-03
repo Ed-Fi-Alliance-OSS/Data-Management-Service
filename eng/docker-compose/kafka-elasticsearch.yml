@@ -37,7 +37,7 @@ services:
       - kafka-logs:/kafka/logs
     restart: unless-stopped
     healthcheck:
-      test: /opt/kafka/bin/kafka-cluster.sh cluster-id --bootstrap-server kafka:9092 || exit 1
+      test: /opt/kafka/bin/kafka-cluster.sh cluster-id --bootstrap-server dms-kafka1:9092 || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
