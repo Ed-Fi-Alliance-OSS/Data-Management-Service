@@ -56,7 +56,7 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
@@ -86,8 +86,8 @@ jobs:
         if: (success() || failure())
         with:
           name: Unit Tests
-          path: '**/*.trx'
-          path-replace-backslashes: 'true'
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
           reporter: dotnet-trx
 
   run-integration-tests:
@@ -125,7 +125,7 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
@@ -139,8 +139,8 @@ jobs:
         if: (success() || failure())
         with:
           name: Integration Tests
-          path: '**/*.trx'
-          path-replace-backslashes: 'true'
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
           reporter: dotnet-trx
 
   run-e2e-tests:
@@ -194,12 +194,18 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
+
+      - name: Add Kafka hostname to /etc/hosts
+        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
+
       - name: Run ${{matrix.queryhandler}} - IdentityProvider (${{matrix.identityprovider}}) E2E Tests
         if: success()
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
           if ("${{ matrix.queryhandler }}" -eq "postgresql") {
             $env:DMS_QUERYHANDLER="postgresql"
@@ -236,8 +242,8 @@ jobs:
         if: (success() || failure())
         with:
           name: E2E Test Results
-          path: '**/*.trx'
-          path-replace-backslashes: 'true'
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
           reporter: dotnet-trx
 
   build-and-start-dms:
@@ -285,7 +291,7 @@ jobs:
       - name: Setup dotnet
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: "8.0.x"
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
@@ -386,11 +392,19 @@ jobs:
   event_file:
     name: Upload Event File
     runs-on: ubuntu-latest
-    needs: [run-unit-tests, run-e2e-tests, run-integration-tests, validate-resources-spec, validate-descriptors-spec, validate-discovery-spec]
+    needs:
+      [
+        run-unit-tests,
+        run-e2e-tests,
+        run-integration-tests,
+        validate-resources-spec,
+        validate-descriptors-spec,
+        validate-discovery-spec,
+      ]
     if: always()
     steps:
-    - name: Upload
-      uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
-      with:
-        name: Event File
-        path: ${{ github.event_path }}
+      - name: Upload
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: Event File
+          path: ${{ github.event_path }}

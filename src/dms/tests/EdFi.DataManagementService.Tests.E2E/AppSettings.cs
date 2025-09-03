@@ -14,8 +14,6 @@ namespace EdFi.DataManagementService.Tests.E2E
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .Build() ?? throw new InvalidOperationException("Unable to read appsettings.json");
 
-        public static bool UseTestContainers => bool.TryParse(_configuration["useTestContainers"], out _);
-
         public static bool OpenSearchEnabled =>
             !string.IsNullOrEmpty(_configuration["QueryHandler"])
             && _configuration["QueryHandler"]!.Equals(
@@ -25,6 +23,8 @@ namespace EdFi.DataManagementService.Tests.E2E
 
         public static string DmsPort = "8080"; //5198 for local
         public static string ConfigServicePort = "8081"; //5126 for local
-        public static string AuthenticationService = _configuration["AuthenticationService"] ?? "http://localhost:8045/realms/edfi/protocol/openid-connect/token";
+        public static string AuthenticationService =
+            _configuration["AuthenticationService"]
+            ?? "http://localhost:8045/realms/edfi/protocol/openid-connect/token";
     }
 }
