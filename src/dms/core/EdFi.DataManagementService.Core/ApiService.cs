@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.ApiSchema;
@@ -46,6 +47,7 @@ internal class ApiService : IApiService
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
     private readonly IUploadApiSchemaService _apiSchemaUploadService;
     private readonly IServiceProvider _serviceProvider;
+    private readonly ClaimSetsCache _claimSetsCache;
 
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -97,7 +99,8 @@ internal class ApiService : IApiService
         [FromKeyedServices("backendResiliencePipeline")] ResiliencePipeline resiliencePipeline,
         ResourceLoadOrderCalculator resourceLoadCalculator,
         IUploadApiSchemaService apiSchemaUploadService,
-        IServiceProvider serviceProvider
+        IServiceProvider serviceProvider,
+        ClaimSetsCache claimSetsCache
     )
     {
         _apiSchemaProvider = apiSchemaProvider;
@@ -115,6 +118,7 @@ internal class ApiService : IApiService
         _resourceLoadCalculator = resourceLoadCalculator;
         _apiSchemaUploadService = apiSchemaUploadService;
         _serviceProvider = serviceProvider;
+        _claimSetsCache = claimSetsCache;
 
         // Initialize VersionedLazy instances with schema version provider
         _upsertSteps = new VersionedLazy<PipelineProvider>(
@@ -678,5 +682,91 @@ internal class ApiService : IApiService
         }
 
         return new FrontendResponse(StatusCode: 400, Body: errorBody, Headers: []);
+    }
+
+    /// <summary>
+    /// Reloads the claimsets cache by clearing it and forcing an immediate reload from CMS
+    /// </summary>
+    public async Task<IFrontendResponse> ReloadClaimsetsAsync()
+    {
+        // Check if claimset reload endpoints are enabled
+        if (!_appSettings.Value.EnableClaimsetReload)
+        {
+            _logger.LogWarning("Claimsets reload requested but claimset reload is disabled");
+            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
+        }
+
+        _logger.LogInformation("Claimsets reload requested");
+
+        try
+        {
+            // Clear the existing cache
+            _claimSetsCache.ClearCache();
+            _logger.LogInformation("Claimsets cache cleared successfully");
+
+            // Force immediate reload by calling GetAllClaimSets(), which will fetch from CMS and populate the cache
+            var claimSets = await _claimSetProvider.GetAllClaimSets();
+            _logger.LogInformation(
+                "Claimsets reloaded successfully. Retrieved {ClaimSetCount} claimsets from CMS",
+                claimSets.Count
+            );
+
+            return new FrontendResponse(
+                StatusCode: 200,
+                Body: JsonNode.Parse("""{"message": "Claimsets reloaded successfully"}"""),
+                Headers: []
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception occurred during claimsets reload");
+            return new FrontendResponse(
+                StatusCode: 500,
+                Body: JsonNode.Parse($"{{ \"error\": \"Error during claimsets reload: {ex.Message}\" }}"),
+                Headers: []
+            );
+        }
+    }
+
+    /// <summary>
+    /// Views current claimsets from the provider
+    /// </summary>
+    public async Task<IFrontendResponse> ViewClaimsetsAsync()
+    {
+        // Check if claimset reload endpoints are enabled
+        if (!_appSettings.Value.EnableClaimsetReload)
+        {
+            _logger.LogWarning("Claimsets view requested but claimset reload is disabled");
+            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
+        }
+
+        _logger.LogInformation("Claimsets view requested");
+
+        try
+        {
+            var claimSets = await _claimSetProvider.GetAllClaimSets();
+
+            _logger.LogInformation("Retrieved {ClaimSetCount} claimsets", claimSets.Count);
+
+            var claimSetsJson = JsonSerializer.Serialize(
+                claimSets,
+                new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                }
+            );
+
+            return new FrontendResponse(StatusCode: 200, Body: JsonNode.Parse(claimSetsJson), Headers: []);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Exception occurred during claimsets view");
+            return new FrontendResponse(
+                StatusCode: 500,
+                Body: JsonNode.Parse($"{{ \"error\": \"Error retrieving claimsets: {ex.Message}\" }}"),
+                Headers: []
+            );
+        }
     }
 }

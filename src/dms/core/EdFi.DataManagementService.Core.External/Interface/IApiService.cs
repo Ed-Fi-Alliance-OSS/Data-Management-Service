@@ -69,4 +69,14 @@ public interface IApiService
     /// DMS entry point to upload API schemas from the provided content
     /// </summary>
     public Task<IFrontendResponse> UploadApiSchemaAsync(UploadSchemaRequest request);
+
+    /// <summary>
+    /// DMS entry point to reload the claimsets cache
+    /// </summary>
+    public Task<IFrontendResponse> ReloadClaimsetsAsync();
+
+    /// <summary>
+    /// DMS entry point to view current claimsets from the provider
+    /// </summary>
+    public Task<IFrontendResponse> ViewClaimsetsAsync();
 }
