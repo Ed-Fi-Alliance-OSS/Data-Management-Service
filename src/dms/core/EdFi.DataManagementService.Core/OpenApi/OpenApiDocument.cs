@@ -402,11 +402,48 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         JsonObject filteredProperties
     )
     {
-        return new JsonObject
+        var filteredExtension = new JsonObject
         {
             ["type"] = originalExtension["type"]?.DeepClone() ?? "object",
             ["properties"] = filteredProperties.DeepClone(),
         };
+
+        // Copy additional schema properties that should be preserved
+        var propertiesToCopy = new[] { "description", "required" };
+
+        foreach (var propertyName in propertiesToCopy)
+        {
+            if (originalExtension[propertyName] != null)
+            {
+                // For "required" array, filter to only include properties that exist in filteredProperties
+                if (propertyName == "required" && originalExtension[propertyName] is JsonArray requiredArray)
+                {
+                    var filteredRequired = new JsonArray();
+                    foreach (JsonNode? item in requiredArray)
+                    {
+                        if (
+                            item?.GetValue<string>() is string requiredProp
+                            && filteredProperties.ContainsKey(requiredProp)
+                        )
+                        {
+                            filteredRequired.Add(requiredProp);
+                        }
+                    }
+
+                    // Only add required if it has items
+                    if (filteredRequired.Count > 0)
+                    {
+                        filteredExtension[propertyName] = filteredRequired;
+                    }
+                }
+                else
+                {
+                    filteredExtension[propertyName] = originalExtension[propertyName]!.DeepClone();
+                }
+            }
+        }
+
+        return filteredExtension;
     }
 
     /// <summary>
