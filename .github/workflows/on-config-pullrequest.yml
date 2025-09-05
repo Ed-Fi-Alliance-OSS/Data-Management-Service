@@ -172,13 +172,23 @@ jobs:
         if: success()
         run: ./build-config.ps1 E2ETest  -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
 
-      - name: Upload Logs
-        if: failure()
+      - name: Export Docker Logs
+        run: |
+          $logDir = "${{ github.workspace }}/logs"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          docker ps --format "{{.Names}}" | ForEach-Object {
+              $container = $_
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath
+          }
+        shell: pwsh
+
+      - name: Upload Docker Logs
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: test-logs
-          path: |
-            ./src/services/EdFi.DmsConfigurationService.Api.Tests.E2E/bin/Release/net8.0/logs
+          name: Docker-Logs
+          path: ${{ github.workspace }}/logs
           retention-days: 10
 
       - name: Upload Test Results
