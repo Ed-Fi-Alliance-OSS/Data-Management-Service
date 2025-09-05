@@ -2,15 +2,12 @@ Feature: Kafka Messaging
     This feature demonstrates a simple Kafka testing approach:
 
         @api @kafka
-        Scenario: Test Kafka connectivity
-            Given Kafka should be reachable on localhost:9092
-
-        @api @kafka
-        Scenario: Verify Kafka consumer can read messages from edfi.dms.document topic
+        Scenario: 01 Test Kafka connectivity
+            Given Kafka should be reachable
              Then Kafka consumer should be able to connect to topic "edfi.dms.document"
 
         @api @kafka
-        Scenario: Creating a student should generate Kafka message
+        Scenario: 02 Creating a student should generate Kafka message
             Given I start collecting Kafka messages
               And the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
              When a POST request is made to "ed-fi/students" with
