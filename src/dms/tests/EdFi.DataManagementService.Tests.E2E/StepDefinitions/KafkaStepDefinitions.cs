@@ -137,8 +137,8 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
         });
     }
 
-    [Given("Kafka should be reachable on localhost:9092")]
-    public void ThenKafkaShouldBeReachableOnLocalhost9092()
+    [Given("Kafka should be reachable")]
+    public void ThenKafkaShouldBeReachable()
     {
         try
         {
