@@ -101,6 +101,137 @@ window.EdFiCustomFields = function () {
         );
     };
 
+    // Helper function to format extension values based on type
+    const formatExtensionValue = (value) => {
+        if (typeof value === 'boolean') return String(value);
+        if (Array.isArray(value)) return JSON.stringify(value);
+        if (typeof value === 'object' && value !== null) return JSON.stringify(value, null, 2);
+        return String(value);
+    };
+
+    // Helper function to extract x-Ed-Fi-isUpdatable from operation level
+    const extractOperationExtensions = (operation) => {
+        const extensions = [];
+        if (operation && operation['x-Ed-Fi-isUpdatable'] !== undefined) {
+            extensions.push({
+                field: 'x-Ed-Fi-isUpdatable',
+                value: formatExtensionValue(operation['x-Ed-Fi-isUpdatable'])
+            });
+        }
+        return extensions;
+    };
+
+    // Helper function to create Extensions section table
+    const createExtensionsTable = (extensions, system) => {
+        const React = system.React || window.React;
+        if (!React || extensions.length === 0) return null;
+
+        return React.createElement("div", 
+            { 
+                className: "responses-wrapper",
+                style: { marginTop: "20px" }
+            },
+            React.createElement("div", 
+                { className: "opblock-section-header" },
+                React.createElement("h4", 
+                    { className: "opblock-section-header-title" },
+                    "Extensions"
+                )
+            ),
+            React.createElement("div", 
+                { className: "responses-inner" },
+                React.createElement("table", 
+                    { className: "responses-table" },
+                    React.createElement("thead", null,
+                        React.createElement("tr", 
+                            { className: "response" },
+                            React.createElement("td", 
+                                { className: "response-col_status" }, 
+                                "Field"
+                            ),
+                            React.createElement("td", 
+                                { className: "response-col_description" }, 
+                                "Value"
+                            )
+                        )
+                    ),
+                    React.createElement("tbody", null,
+                        ...extensions.map((ext, index) => 
+                            React.createElement("tr", 
+                                { key: index, className: "response" },
+                                React.createElement("td", 
+                                    { 
+                                        className: "response-col_status",
+                                        style: { 
+                                            fontFamily: "monospace",
+                                            minWidth: "200px",
+                                            whiteSpace: "nowrap"
+                                        }
+                                    }, 
+                                    ext.field
+                                ),
+                                React.createElement("td", 
+                                    { 
+                                        className: "response-col_description",
+                                        style: { fontFamily: "monospace" }
+                                    }, 
+                                    ext.value
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        );
+    };
+
+    // Shared helper function to extract and render extensions for PUT operations
+    const renderExtensionsForPutOperation = (props, system, children) => {
+        const React = system.React;
+        const method = props.method;
+        const path = props.path;
+        const specSelectors = props.specSelectors;
+
+        // Only process PUT operations
+        if (method !== 'put' || !specSelectors || !path) {
+            return children;
+        }
+
+        // Extract operation directly from spec for PUT operations
+        let operation = null;
+        try {
+            const spec = specSelectors.specJS();
+            if (spec?.paths?.[path]?.[method]) {
+                operation = spec.paths[path][method];
+            }
+        } catch (e) {
+            // Silently handle errors - extensions are optional
+            return children;
+        }
+
+        if (!operation) {
+            return children;
+        }
+
+        const extensions = extractOperationExtensions(operation);
+        
+        if (extensions.length === 0) {
+            return children;
+        }
+
+        const extensionsTable = createExtensionsTable(extensions, system);
+        
+        if (!extensionsTable) {
+            return children;
+        }
+
+        // Append Extensions section after the original content
+        return React.createElement(React.Fragment, null, 
+            children,
+            extensionsTable
+        );
+    };
+
     return {
         wrapComponents: {
             // Wrapper for Model - inject Ed-Fi custom fields into schema
@@ -144,6 +275,13 @@ window.EdFiCustomFields = function () {
                 }
 
                 return children;
+            },
+
+            // Inject Extensions table for PUT operations in responses section
+            responses: (Original, system) => (props) => {
+                const React = system.React;
+                const children = React.createElement(Original, props);
+                return renderExtensionsForPutOperation(props, system, children);
             },
         },
     };
