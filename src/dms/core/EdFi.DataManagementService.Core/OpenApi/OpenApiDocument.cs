@@ -526,26 +526,6 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         }
     }
 
-    // Supporting types and records
-    private sealed record ExtensionContext(
-        JsonNode OpenApiCoreResources,
-        JsonObject ComponentsSchemas,
-        ILogger Logger
-    );
-
-    private sealed record ValidatedExtension(JsonObject ExtensionObject, JsonObject? ExtensionProperties);
-
-    private sealed record PropertyConflictAnalysis(
-        List<PropertyRedirection> ConflictingProperties,
-        JsonObject NonConflictingProperties
-    );
-
-    private sealed record ExtensionSchemaNames(string ExtensionSchemaName, string ProjectExtensionSchemaName);
-
-    private sealed record PropertyRedirection(string PropertyName, string ReferencedSchemaName);
-
-    private sealed record ExtensionSchemaResult(JsonObject Schema, string? ReferencedSchemaName = null);
-
     /// <summary>
     /// Processes direct extension schemas (for backwards compatibility with simple extensions)
     /// </summary>
@@ -558,37 +538,36 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     )
     {
         // Create main extension schema for the direct extension
-        string extensionSchemaName = $"{componentSchemaName}Extension";
-        string projectExtensionSchemaName = $"{projectName}_{componentSchemaName}Extension";
+        var schemaNames = CreateSchemaNames(componentSchemaName, projectName);
 
         // Add _ext to main schema if not already there
         if (locationForExt["_ext"] == null)
         {
             locationForExt.Add(
                 "_ext",
-                JsonNode.Parse($"{{ \"$ref\": \"#/components/schemas/{extensionSchemaName}\" }}")
+                JsonNode.Parse($"{{ \"$ref\": \"#/components/schemas/{schemaNames.ExtensionSchemaName}\" }}")
             );
         }
 
         // Create or get extension schema
-        if (!componentsSchemas.ContainsKey(extensionSchemaName))
+        if (!componentsSchemas.ContainsKey(schemaNames.ExtensionSchemaName))
         {
             componentsSchemas.Add(
-                extensionSchemaName,
+                schemaNames.ExtensionSchemaName,
                 new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() }
             );
         }
 
         JsonObject extensionSchema =
-            componentsSchemas[extensionSchemaName]?.AsObject()
+            componentsSchemas[schemaNames.ExtensionSchemaName]?.AsObject()
             ?? throw new InvalidOperationException(
-                $"Extension schema '{extensionSchemaName}' is not an object."
+                $"Extension schema '{schemaNames.ExtensionSchemaName}' is not an object."
             );
 
         JsonObject mainExtensionProperties =
             extensionSchema["properties"]?.AsObject()
             ?? throw new InvalidOperationException(
-                $"Extension schema '{extensionSchemaName}' missing 'properties'."
+                $"Extension schema '{schemaNames.ExtensionSchemaName}' missing 'properties'."
             );
 
         // Add reference to the specific project schema
@@ -596,14 +575,16 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         {
             mainExtensionProperties.Add(
                 projectName,
-                JsonNode.Parse($"{{ \"$ref\": \"#/components/schemas/{projectExtensionSchemaName}\" }}")
+                JsonNode.Parse(
+                    $"{{ \"$ref\": \"#/components/schemas/{schemaNames.ProjectExtensionSchemaName}\" }}"
+                )
             );
         }
 
         // Add the specific project schema with the direct extension content
-        if (!componentsSchemas.ContainsKey(projectExtensionSchemaName))
+        if (!componentsSchemas.ContainsKey(schemaNames.ProjectExtensionSchemaName))
         {
-            componentsSchemas.Add(projectExtensionSchemaName, extObjectAsObject.DeepClone());
+            componentsSchemas.Add(schemaNames.ProjectExtensionSchemaName, extObjectAsObject.DeepClone());
         }
     }
 
@@ -619,8 +600,7 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
     )
     {
         // Get the referenced schema
-        JsonObject? referencedSchema = componentsSchemas[referencedSchemaName]?.AsObject();
-        if (referencedSchema == null)
+        if (componentsSchemas[referencedSchemaName] is not JsonObject referencedSchema)
         {
             _logger.LogWarning(
                 "Referenced schema '{ReferencedSchemaName}' not found for redirected property '{PropertyName}'",
@@ -639,21 +619,20 @@ public class OpenApiDocument(ILogger _logger, string[]? excludedDomains = null)
         JsonObject referencedSchemaProperties = referencedSchema["properties"]!.AsObject();
 
         // Create extension schema for the referenced schema
-        string referencedExtensionSchemaName = $"{referencedSchemaName}Extension";
-        string projectReferencedExtensionSchemaName = $"{projectName}_{referencedSchemaName}Extension";
+        var schemaNames = CreateSchemaNames(referencedSchemaName, projectName);
 
         SetupReferencedExtensionSchema(
             referencedSchemaProperties,
             componentsSchemas,
-            referencedExtensionSchemaName,
-            projectReferencedExtensionSchemaName,
+            schemaNames.ExtensionSchemaName,
+            schemaNames.ProjectExtensionSchemaName,
             projectName
         );
 
         // Create the project-specific referenced extension schema
         CreateProjectSpecificExtensionSchema(
             componentsSchemas,
-            projectReferencedExtensionSchemaName,
+            schemaNames.ProjectExtensionSchemaName,
             extensionPropertyValue,
             propertyName,
             referencedSchemaName,
