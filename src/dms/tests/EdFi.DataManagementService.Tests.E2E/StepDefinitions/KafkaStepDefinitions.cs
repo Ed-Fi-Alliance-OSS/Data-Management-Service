@@ -23,9 +23,6 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
             Environment.GetEnvironmentVariable("KAFKA_BOOTSTRAP_SERVERS") ?? "localhost:9092";
         logger.log.Information($"Starting Kafka message collection for this test using {bootstrapServers}");
         _kafkaMessageCollector = new KafkaMessageCollector(bootstrapServers, logger);
-
-        // Small delay to ensure consumer is fully ready and positioned at latest offset
-        Thread.Sleep(200);
     }
 
     [Then("a Kafka message received on topic {string} should contain in the edfidoc field")]
@@ -63,7 +60,7 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
             logger.log.Debug($"No recent messages yet, waiting...");
 
             // Wait before checking again
-            Thread.Sleep((int)checkInterval.TotalMilliseconds);
+            Task.Delay(checkInterval).Wait();
         }
 
         // Log final diagnostics

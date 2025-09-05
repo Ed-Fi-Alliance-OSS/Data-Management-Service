@@ -51,7 +51,7 @@ public sealed class KafkaMessageCollector : IDisposable
         _consumeTask = Task.Run(ConsumeMessages, _cancellationTokenSource.Token);
 
         // Wait briefly to ensure the consumer is ready and positioned at the latest offset
-        WaitForConsumerReady();
+        WaitForConsumerReadyAsync().Wait();
 
         _logger.log.Debug($"KafkaMessageCollector initialized for topic: {DOCUMENTS_TOPIC}");
     }
@@ -67,7 +67,7 @@ public sealed class KafkaMessageCollector : IDisposable
     public IEnumerable<KafkaTestMessage> GetRecentDocumentMessages() =>
         _messages.Where(m => m.Topic == DOCUMENTS_TOPIC && m.Timestamp >= _collectionStartTime);
 
-    private void WaitForConsumerReady()
+    private async Task WaitForConsumerReadyAsync()
     {
         // Wait briefly for the consumer to be assigned partitions and positioned at latest offset
         // This ensures we don't miss messages that are published immediately after collector creation
@@ -80,11 +80,9 @@ public sealed class KafkaMessageCollector : IDisposable
             if (assignment.Count > 0)
             {
                 _logger.log.Debug($"Consumer ready with {assignment.Count} assigned partition(s)");
-                // Small additional delay to ensure consumer is positioned at latest offset
-                Thread.Sleep(100);
                 return;
             }
-            Thread.Sleep(50);
+            await Task.Delay(50);
         }
 
         _logger.log.Warning("Consumer readiness timeout - proceeding anyway");
