@@ -33,13 +33,11 @@ function IsReady([string] $Url) {
 Import-Module ./env-utility.psm1
 $envFile = ReadValuesFromEnvFile $EnvironmentFile
 
-$sourcePort = $envFile["CONNECT_SOURCE_PORT"]
-$sinkPort = $envFile["CONNECT_SINK_PORT"]
+$connectPort = $envFile["CONNECT_PORT"]
+$connectBaseUrl = "http://localhost:$connectPort/connectors"
 
-$sourceBase = "http://localhost:$sourcePort/connectors"
-$sinkBase = "http://localhost:$sinkPort/connectors"
-$sourceUrl = "$sourceBase/postgresql-source"
-$sinkUrl = "$sinkBase/opensearch-sink"
+$sourceUrl = "$connectBaseUrl/postgresql-source"
+$sinkUrl = "$connectBaseUrl/opensearch-sink"
 
 $connectorConfig = "opensearch_connector.json"
 $AdminPassword = $envFile["OPENSEARCH_ADMIN_PASSWORD"]
@@ -47,7 +45,7 @@ $AdminPassword = $envFile["OPENSEARCH_ADMIN_PASSWORD"]
 # Search engine check
 if($SearchEngine -eq "ElasticSearch")
 {
-    $sinkUrl = "$sinkBase/elasticsearch-sink"
+    $sinkUrl = "$connectBaseUrl/elasticsearch-sink"
     $connectorConfig = "elasticsearch_connector.json"
     $AdminPassword = $envFile["ELASTICSEARCH_ADMIN_PASSWORD"]
 }
@@ -72,7 +70,7 @@ if (IsReady($sourceBase)) {
         $sourceBody = $sourceBody.Replace("abcdefgh1!", $envFile["POSTGRES_PASSWORD"])
 
         Write-Output "Installing source connector configuration"
-        Invoke-RestMethod -Method Post -uri $sourceBase -ContentType "application/json" -Body $sourceBody
+        Invoke-RestMethod -Method Post -uri $connectBaseUrl -ContentType "application/json" -Body $sourceBody
     }
     catch {
         Write-Output $_.Exception.Message
@@ -81,11 +79,11 @@ if (IsReady($sourceBase)) {
     Invoke-RestMethod -Method Get -uri $sourceUrl -SkipHttpErrorCheck
 }
 else {
-    Write-Output "Service at $sourceBase not available."
+    Write-Output "Service at $connectBaseUrl not available."
 }
 
 # Sink connector
-if (IsReady($sinkBase)) {
+if (IsReady($connectBaseUrl)) {
     try {
         $sinkResponse = Invoke-RestMethod -Uri $sinkUrl -Method Get -SkipHttpErrorCheck
 
@@ -103,7 +101,7 @@ if (IsReady($sinkBase)) {
         $sinkBody = $sinkBody.Replace("abcdefgh1!", $AdminPassword)
 
         Write-Output "Installing sink connector configuration"
-        Invoke-RestMethod -Method Post -uri $sinkBase -ContentType "application/json" -Body $sinkBody
+        Invoke-RestMethod -Method Post -uri $connectBaseUrl -ContentType "application/json" -Body $sinkBody
     }
     catch {
         Write-Output $_.Exception.Message
@@ -112,5 +110,5 @@ if (IsReady($sinkBase)) {
     Invoke-RestMethod -Method Get -uri $sinkUrl -SkipHttpErrorCheck
 }
 else {
-    Write-Output "Service at $sinkBase not available."
+    Write-Output "Service at $connectBaseUrl not available."
 }

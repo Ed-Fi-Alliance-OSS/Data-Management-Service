@@ -3,6 +3,27 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+# Shared environment variables for Kafka Connect workers in a single cluster
+x-connect-env: &connect-env
+  # --- Cluster wiring ---
+  BOOTSTRAP_SERVERS: "dms-kafka1:9092"
+  GROUP_ID: "connect-cluster"
+
+  # --- Internal topics (names) ---
+  CONFIG_STORAGE_TOPIC:  "connect-configs"
+  OFFSET_STORAGE_TOPIC:  "connect-offsets"
+  STATUS_STORAGE_TOPIC:  "connect-status"
+
+  # --- Replication factors (recommendation for three brokers: 3) ---
+  CONFIG_STORAGE_REPLICATION_FACTOR:  3
+  OFFSET_STORAGE_REPLICATION_FACTOR:  3
+  STATUS_STORAGE_REPLICATION_FACTOR:  3
+
+  # --- Partitions (typical defaults) ---
+  CONFIG_STORAGE_PARTITIONS: 1  # must be 1
+  OFFSET_STORAGE_PARTITIONS: 25
+  STATUS_STORAGE_PARTITIONS: 5
+
 services:
   kafka:
     image: apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f
@@ -36,49 +57,67 @@ services:
       - dms
     hostname: dms-kafka1
 
-  kafka-opensearch-sink:
+  kafka-connect-worker-1:
     image: edfialliance/ed-fi-kafka-connect:pre
-    container_name: kafka-opensearch-sink
+    container_name: dms-connect-1
     depends_on:
       opensearch:
         condition: service_healthy
       kafka:
         condition: service_healthy
     volumes:
-      - kafka-opensearch-sink-logs:/kafka/logs
-      - kafka-opensearch-sink-config:/kafka/config
+      - kafka-connect-worker-1-logs:/kafka/logs
+      - kafka-connect-worker-1-config:/kafka/config
     environment:
-      BOOTSTRAP_SERVERS: dms-kafka1:9092
-      GROUP_ID: 2
-      CONFIG_STORAGE_TOPIC: debezium_sink_config
-      OFFSET_STORAGE_TOPIC: debezium_sink_offset
-      STATUS_STORAGE_TOPIC: debezium_sink_status
+      <<: *connect-env
+      REST_ADVERTISED_HOST_NAME: dms-connect-1
     ports:
-      - '127.0.0.1:${CONNECT_SINK_PORT:-8084}:8083'
+      - '127.0.0.1:${CONNECT_PORT:-8083}:8083'
     networks:
       - dms
-    hostname: kafka-opensearch-sink
+    hostname: dms-connect-1
 
-  kafka-postgresql-source:
+  kafka-connect-worker-2:
     image: edfialliance/ed-fi-kafka-connect:pre
-    container_name: kafka-postgresql-source
-    volumes:
-      - kafka-postgresql-source-logs:/kafka/logs
-      - kafka-postgresql-source-config:/kafka/config
+    container_name: dms-connect-2
     depends_on:
+      opensearch:
+        condition: service_healthy
       kafka:
         condition: service_healthy
+    volumes:
+      - kafka-connect-worker-2-logs:/kafka/logs
+      - kafka-connect-worker-2-config:/kafka/config
     environment:
-      BOOTSTRAP_SERVERS: dms-kafka1:9092
-      GROUP_ID: 1
-      CONFIG_STORAGE_TOPIC: debezium_source_config
-      OFFSET_STORAGE_TOPIC: debezium_source_offset
-      STATUS_STORAGE_TOPIC: debezium_source_status
-    ports:
-      - '127.0.0.1:${CONNECT_SOURCE_PORT:-8083}:8083'
+      <<: *connect-env
+      REST_ADVERTISED_HOST_NAME: dms-connect-2
+    # Uncomment to expose REST configuration endpoint on this instance
+    # ports:
+    #   - '127.0.0.1:${CONNECT_PORT:-8083}:8083'
     networks:
       - dms
-    hostname: kafka-postgresql-source
+    hostname: dms-connect-2
+
+  kafka-connect-worker-3:
+    image: edfialliance/ed-fi-kafka-connect:pre
+    container_name: dms-connect-3
+    depends_on:
+      opensearch:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - kafka-connect-worker-3-logs:/kafka/logs
+      - kafka-connect-worker-3-config:/kafka/config
+    environment:
+      <<: *connect-env
+      REST_ADVERTISED_HOST_NAME: dms-connect-3
+    # Uncomment to expose REST configuration endpoint on this instance
+    # ports:
+    #   - '127.0.0.1:${CONNECT_PORT:-8083}:8083'
+    networks:
+      - dms
+    hostname: dms-connect-3
 
   opensearch:
     image: opensearchproject/opensearch:2.15.0@sha256:1963b3ece46dfe1a17cd633fb2e9cea22bd20753a295f39c2f513ce0070cad42
@@ -127,10 +166,10 @@ networks:
 volumes:
   kafka-data:
   kafka-logs:
-  kafka-postgresql-source-logs:
-  kafka-postgresql-source-config:
-  kafka-opensearch-sink-logs:
-  kafka-opensearch-sink-config:
+  kafka-connect-worker-1-logs:
+  kafka-connect-worker-1-config:
+  kafka-connect-worker-2-logs:
+  kafka-connect-worker-2-config:
+  kafka-connect-worker-3-logs:
+  kafka-connect-worker-3-config:
   opensearch-data1:
-
-
