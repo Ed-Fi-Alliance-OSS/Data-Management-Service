@@ -91,9 +91,9 @@ services:
     environment:
       <<: *connect-env
       REST_ADVERTISED_HOST_NAME: dms-connect-2
-    # Uncomment to expose REST configuration endpoint on this instance
+    # Uncomment to expose REST configuration endpoint for cluster on this instance
     # ports:
-    #   - '127.0.0.1:${CONNECT_PORT:-8083}:8083'
+    #   - '127.0.0.1:${CONNECT_PORT_2:-8084}:8083'
     networks:
       - dms
     hostname: dms-connect-2
@@ -112,9 +112,9 @@ services:
     environment:
       <<: *connect-env
       REST_ADVERTISED_HOST_NAME: dms-connect-3
-    # Uncomment to expose REST configuration endpoint on this instance
+    # Uncomment to expose REST configuration endpoint for cluster on this instance
     # ports:
-    #   - '127.0.0.1:${CONNECT_PORT:-8083}:8083'
+    #   - '127.0.0.1:${CONNECT_PORT_3:-8085}:8083'
     networks:
       - dms
     hostname: dms-connect-3
