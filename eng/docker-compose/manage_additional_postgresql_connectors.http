@@ -1,0 +1,138 @@
+# Kafka Connect REST calls for managing multiple Debezium PostgreSQL connectors
+# Requires the VS Code "REST Client" extension (humao.rest-client).
+# Adjust variables below as needed.
+
+@host = localhost
+@port = 8083
+
+# Value to tweak for additional Postgres Debezium connectors
+@connectorId = 2
+
+# Prefixes for configuring multiple connectors using different connectorIds
+@connectorNamePrefix      = postgresql-source-
+@dbNamePrefix             = edfi_datamanagementservice_
+@slotNamePrefix           = debezium_
+@schemaHistoryTopicPrefix = schema-changes.dms_
+@topicPrefixPrefix        = edfi.
+
+# Shared PostgreSQL connection settings
+@dbHost             = dms-postgresql
+@dbPort             = 5432
+@dbUser             = postgres
+@dbPassword         = abcdefgh1!
+@publicationName    = to_debezium
+
+###
+# Root of Kafka Connect
+GET http://{{host}}:{{port}}/
+Accept: */*
+
+###
+# List all connectors
+GET http://{{host}}:{{port}}/connectors/
+Accept: application/json
+
+###
+# Get connector: postgresql-source
+GET http://{{host}}:{{port}}/connectors/postgresql-source
+Accept: application/json
+
+### Create a new DMS instances in PostgreSQL first:
+### CREATE DATABASE edfi_datamanagementservice_2 WITH TEMPLATE dms_template OWNER postgres;
+### CREATE DATABASE edfi_datamanagementservice_3 WITH TEMPLATE dms_template OWNER postgres;
+### CREATE DATABASE edfi_datamanagementservice_4 WITH TEMPLATE dms_template OWNER postgres;
+
+###
+# Create the additional PostgreSQL Connector
+# NOTE: Adjust connectorId variable above before running.
+POST http://{{host}}:{{port}}/connectors/
+Content-Type: application/json
+
+{
+  "name": "{{connectorNamePrefix}}{{connectorId}}",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "plugin.name": "pgoutput",
+
+    "database.hostname": "{{dbHost}}",
+    "database.port": "{{dbPort}}",
+    "database.user": "{{dbUser}}",
+    "database.password": "{{dbPassword}}",
+    "database.dbname": "{{dbNamePrefix}}{{connectorId}}",
+
+    "publication.name": "{{publicationName}}",
+    "slot.name": "{{slotNamePrefix}}{{connectorId}}",
+    "publication.autocreate.mode": "disabled",
+
+    "snapshot.mode": "initial",
+    "snapshot.locking.mode": "none",
+    "snapshot.include.collection.list": "dms.document,dms.educationorganizationhierarchytermslookup",
+    "schema.include.list": "dms",
+
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:9092",
+    "schema.history.internal.kafka.topic": "{{schemaHistoryTopicPrefix}}{{connectorId}}",
+    "schema.history.internal.kafka.producer.key.serializer": "org.apache.kafka.common.serialization.StringSerializer",
+    "schema.history.internal.kafka.producer.value.serializer": "org.apache.kafka.common.serialization.StringSerializer",
+    "schema.history.internal.kafka.producer.acks": "all",
+    "schema.history.internal.kafka.producer.compression.type": "lz4",
+    "schema.history.internal.kafka.producer.enable.idempotence": "true",
+
+    "topic.prefix": "{{topicPrefixPrefix}}{{connectorId}}",
+    "table.include.list": "dms.document,dms.educationorganizationhierarchytermslookup",
+
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+
+    "transforms": "unwrap, extractId, extractPlainId, expandDocumentJson, expandHierarchyJson",
+    "predicates": "isDocumentTable, isHierarchyTable",
+
+    "predicates.isDocumentTable.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+    "predicates.isDocumentTable.pattern": "edfi\\.dms\\.document",
+
+    "predicates.isHierarchyTable.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
+    "predicates.isHierarchyTable.pattern": "edfi\\.dms\\.educationorganizationhierarchytermslookup",
+
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.delete.tombstone.handling.mode": "rewrite",
+    "transforms.unwrap.add.fields": "documentuuid",
+
+    "transforms.extractId.type": "org.apache.kafka.connect.transforms.ValueToKey",
+    "transforms.extractId.fields": "id",
+
+    "transforms.extractPlainId.type": "org.apache.kafka.connect.transforms.ExtractField$Key",
+    "transforms.extractPlainId.field": "id",
+
+    "transforms.expandDocumentJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
+    "transforms.expandDocumentJson.sourceFields": "edfidoc, securityelements, studentschoolauthorizationedorgids, contactstudentschoolauthorizationedorgids, staffeducationorganizationauthorizationedorgids",
+    "transforms.expandDocumentJson.predicate": "isDocumentTable",
+
+    "transforms.expandHierarchyJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
+    "transforms.expandHierarchyJson.sourceFields": "hierarchy",
+    "transforms.expandHierarchyJson.predicate": "isHierarchyTable"
+  }
+}
+
+###
+# Get the additional connector (e.g. postgresql-source-2)
+GET http://{{host}}:{{port}}/connectors/postgresql-source-{{connectorId}}
+Accept: application/json
+
+### Add records to the new DMS instance's Document:
+### -----------------------------------------------
+### INSERT INTO dms.document (documentpartitionkey, documentuuid, resourcename, resourceversion, isdescriptor, projectname, edfidoc, securityelements, lastmodifiedtraceid)
+### VALUES (1, gen_random_uuid(), 'ConnectTest', '1.0', false, 'Test', '{ "hello": "world" }'::jsonb, '[]'::jsonb, 'abcd');
+### -----------------------------------------------
+### View messages in the topics using the Kafka UI
+
+###
+# List all connectors
+GET http://{{host}}:{{port}}/connectors/
+Accept: application/json
+
+###
+# Delete the PostgreSQL Connector
+DELETE http://{{host}}:{{port}}/connectors/postgresql-source-{{connectorId}}
+Accept: application/json
