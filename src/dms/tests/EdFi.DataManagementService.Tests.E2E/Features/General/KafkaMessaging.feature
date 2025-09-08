@@ -1,5 +1,5 @@
 Feature: Kafka Messaging
-    This feature demonstrates a simple Kafka testing approach:
+    This feature demonstrates a simple Kafka testing approach. *Note* running these tests locally require a specific hosts entry: 127.0.0.1 dms-kafka1
 
         @api @kafka
         Scenario: 01 Test Kafka connectivity

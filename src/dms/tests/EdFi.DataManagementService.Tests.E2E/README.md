@@ -8,7 +8,7 @@ the codebase.
 
 You may either run the E2E tests locally from docker containers as is done in
 the github actions, or you may run them against your locally debugged API
-instance. See the steps below. 
+instance. See the steps below.
 
 ### Testing locally with docker compose
 
@@ -17,6 +17,7 @@ From the `eng` directory:
 - If you have stale volumes with old data run `./start-local-dms.ps1 -d -v` to
   stop services and delete volumes
 - Run `./start-local-dms.ps1 -EnvironmentFile ./.env.e2e`
+- You must have the following hosts entry to run kafka tests: `127.0.0.1 dms-kafka1`
 
 ### Testing locally with API in debug mode
 
