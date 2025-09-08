@@ -56,7 +56,13 @@ else {
     $upArgs = @(
         "--detach"
     )
-    if ($r) { $upArgs += @("--build") }
+    if ($r) { 
+        Write-Output "Building images with no cache (this may take a few minutes)..."
+        docker compose $files --env-file $EnvironmentFile -p cs-local build --no-cache
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to build images. Exit code $LASTEXITCODE"
+        }
+    }
     # Identity provider configuration
     Import-Module ./env-utility.psm1 -Force
     $envValues = ReadValuesFromEnvFile $EnvironmentFile

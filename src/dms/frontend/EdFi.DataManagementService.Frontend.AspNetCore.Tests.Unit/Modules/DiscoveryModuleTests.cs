@@ -4,12 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Text.Json;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
-using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
 using ImpromptuInterface;
@@ -64,17 +63,17 @@ public class DiscoveryModuleTests
         // Act
         var response = await client.GetAsync("/");
         var content = await response.Content.ReadAsStringAsync();
-        var apiDetails = JsonSerializer.Deserialize<DiscoveryApiDetails>(content);
+        var apiDetails = JsonNode.Parse(content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?.urls.Count.Should().Be(5);
-        apiDetails?.applicationName.Should().Be("DMS");
-        apiDetails?.informationalVersion.Should().Be("Release Candidate 1");
-        apiDetails?.dataModels.Should().NotBeNull();
-        apiDetails?.dataModels.Count().Should().Be(1);
-        apiDetails?.dataModels[0].name.Should().Be("Ed-Fi");
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(5);
+        apiDetails?["applicationName"]?.GetValue<string>().Should().Be("DMS");
+        apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("Release Candidate 1");
+        apiDetails?["dataModels"].Should().NotBeNull();
+        apiDetails?["dataModels"]?.AsArray().Count.Should().Be(1);
+        apiDetails?["dataModels"]?[0]?["name"]?.GetValue<string>().Should().Be("Ed-Fi");
     }
 
     [Test]
@@ -124,20 +123,19 @@ public class DiscoveryModuleTests
         // Act
         var response = await client.GetAsync($"/{pathBase}");
         var content = await response.Content.ReadAsStringAsync();
-        var apiDetails = JsonSerializer.Deserialize<DiscoveryApiDetails>(content);
+        var apiDetails = JsonNode.Parse(content);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?.urls.Count.Should().Be(5);
-        var dependenciesUrl = apiDetails?.urls.First(x => x.Key.Equals("dependencies"));
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(5);
+        var dependenciesUrl = apiDetails?["urls"]?["dependencies"];
         dependenciesUrl.Should().NotBeNull();
-        dependenciesUrl?.Value.Should().NotBeNull();
-        dependenciesUrl!.Value!.ToString().Should().Contain(pathBase);
-        apiDetails?.applicationName.Should().Be("DMS");
-        apiDetails?.informationalVersion.Should().Be("Release Candidate 1");
-        apiDetails?.dataModels.Should().NotBeNull();
-        apiDetails?.dataModels.Count().Should().Be(1);
-        apiDetails?.dataModels[0].name.Should().Be("Ed-Fi");
+        dependenciesUrl?.GetValue<string>().Should().Contain(pathBase);
+        apiDetails?["applicationName"]?.GetValue<string>().Should().Be("DMS");
+        apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("Release Candidate 1");
+        apiDetails?["dataModels"].Should().NotBeNull();
+        apiDetails?["dataModels"]?.AsArray().Count.Should().Be(1);
+        apiDetails?["dataModels"]?[0]?["name"]?.GetValue<string>().Should().Be("Ed-Fi");
     }
 }
