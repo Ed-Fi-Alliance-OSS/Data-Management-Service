@@ -10,6 +10,14 @@ using Confluent.Kafka;
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
+/// <summary>
+/// A test utility class that collects Kafka messages from the "edfi.dms.document" topic during E2E test execution.
+/// This class subscribes to Kafka as a consumer, continuously collects messages in the background, and provides
+/// methods to retrieve and filter messages for test assertions. It automatically starts message collection from
+/// the latest offset to avoid capturing pre-existing messages and includes diagnostic capabilities for
+/// troubleshooting test failures. Used exclusively in E2E tests to verify that DMS operations properly publish
+/// messages to Kafka.
+/// </summary>
 public sealed class KafkaMessageCollector : IDisposable
 {
     private const string DOCUMENTS_TOPIC = "edfi.dms.document";

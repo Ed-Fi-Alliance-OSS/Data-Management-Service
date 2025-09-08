@@ -12,10 +12,19 @@ using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
 
 namespace EdFi.DataManagementService.Tests.E2E.Management;
 
+/// <summary>
+/// Utilities for comparing JSON in E2E tests with dynamic value replacement and metadata handling.
+/// Enables robust API response testing by replacing placeholders (IDs, URLs) and managing
+/// Ed-Fi metadata fields like '_lastModifiedDate' and '_etag'.
+/// </summary>
 public static partial class JsonTestUtilities
 {
     private static readonly Regex _findIds = IdRegex();
 
+    /// <summary>
+    /// Compares expected JSON with actual API response, replacing placeholders and handling metadata.
+    /// Supports dynamic ID replacement, URL substitution, and optional metadata removal for robust testing.
+    /// </summary>
     public static bool CompareJsonWithPlaceholderReplacement(
         string expectedBody,
         JsonNode actualJson,
@@ -58,6 +67,10 @@ public static partial class JsonTestUtilities
         return AreEqual(expectedJson, processedActualJson);
     }
 
+    /// <summary>
+    /// Replaces placeholders in JSON content with values from API responses or provided parameters.
+    /// Handles {id}, {dependentId}, {etag}, {BASE_URL}, {OAUTH_URL} and custom variable replacements.
+    /// </summary>
     public static string ReplacePlaceholders(
         string body,
         JsonNode responseJson,
@@ -125,6 +138,9 @@ public static partial class JsonTestUtilities
         return replacedBody;
     }
 
+    /// <summary>
+    /// Performs deep JSON comparison with property ordering normalization.
+    /// </summary>
     private static bool AreEqual(JsonNode expectedBodyJson, JsonNode responseJson)
     {
         JsonNode orderedResponseJson = OrderJsonProperties(responseJson);
@@ -136,6 +152,10 @@ public static partial class JsonTestUtilities
         return JsonElementEqualityComparer.Instance.Equals(expectedElement, responseElement);
     }
 
+    /// <summary>
+    /// Validates and optionally removes Ed-Fi metadata fields ('_lastModifiedDate', '_etag')
+    /// from JSON responses to prevent test failures due to dynamic values.
+    /// </summary>
     private static void CheckAndRemoveMetadata(JsonNode responseJson, bool removeEtag)
     {
         if (responseJson is JsonArray jsonArray && jsonArray.Count > 0)
@@ -172,6 +192,9 @@ public static partial class JsonTestUtilities
         }
     }
 
+    /// <summary>
+    /// Extracts the '_lastModifiedDate' metadata field from a JSON response.
+    /// </summary>
     private static string? LastModifiedDate(JsonNode response)
     {
         if (
@@ -185,6 +208,9 @@ public static partial class JsonTestUtilities
         return null;
     }
 
+    /// <summary>
+    /// Extracts the '_etag' metadata field from a JSON response.
+    /// </summary>
     private static string? Etag(JsonNode response)
     {
         if (
@@ -198,6 +224,9 @@ public static partial class JsonTestUtilities
         return null;
     }
 
+    /// <summary>
+    /// Compiled regex pattern for finding and replacing {id} placeholders in JSON content.
+    /// </summary>
     [GeneratedRegex(@"\{id\}", RegexOptions.Compiled)]
     private static partial Regex IdRegex();
 }
