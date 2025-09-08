@@ -34,7 +34,7 @@ Feature: The Discovery API provides information about the application version, s
                     "urls": {
                       "dependencies": "{BASE_URL}/metadata/dependencies",
                       "openApiMetadata": "{BASE_URL}/metadata/specifications",
-                      "oauth": "{OAUTH_URL}",
+                      "oauth": "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token",
                       "dataManagementApi": "{BASE_URL}/data",
                       "xsdMetadata": "{BASE_URL}/metadata/xsd"
                     }
