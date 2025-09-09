@@ -17,21 +17,9 @@ public static class SetupHooks
     [BeforeTestRun]
     public static async Task BeforeTestRun(PlaywrightContext context, TestLogger logger)
     {
-        if (AppSettings.UseTestContainers)
-        {
-            if (AppSettings.OpenSearchEnabled)
-            {
-                _containerSetup = new OpenSearchContainerSetup();
-            }
-            else
-            {
-                _containerSetup = new ContainerSetup();
-            }
+        _containerSetup = new OpenSearchContainerSetup();
 
-            await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&Jk");
-
-            await _containerSetup.StartContainers();
-        }
+        await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&Jk");
     }
 
     [BeforeFeature]
@@ -39,16 +27,7 @@ public static class SetupHooks
     {
         try
         {
-            if (AppSettings.UseTestContainers)
-            {
-                logger.log.Debug("Using TestContainers to set environment");
-                context.ApiUrl = _containerSetup!.ApiUrl();
-            }
-            else
-            {
-                logger.log.Debug("Using local environment, verify that it's correctly set.");
-            }
-
+            context.ApiUrl = _containerSetup!.ApiUrl();
             await context.InitializeApiContext();
         }
         catch (Exception exception)
@@ -60,11 +39,7 @@ public static class SetupHooks
     [AfterFeature]
     public static async Task AfterFeature(TestLogger logger)
     {
-        if (AppSettings.UseTestContainers)
-        {
-            await _containerSetup!.ApiLogs(logger);
-            await _containerSetup.ResetData();
-        }
+        await _containerSetup!.ResetData();
     }
 
     [AfterTestRun]

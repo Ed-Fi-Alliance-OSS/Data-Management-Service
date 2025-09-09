@@ -15,6 +15,7 @@ using Json.Schema;
 using Microsoft.Playwright;
 using Reqnroll;
 using static EdFi.DataManagementService.Tests.E2E.Management.JsonComparer;
+using static EdFi.DataManagementService.Tests.E2E.Management.JsonTestUtilities;
 
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 {
@@ -314,6 +315,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 new() { Data = body, Headers = GetHeaders() }
             )!;
             _featureContext["_waitOnNextQuery"] = true;
+            _featureContext["_apiResponse"] = _apiResponse;
             _logger.log.Information(_apiResponse.TextAsync().Result);
 
             _id = extractDataFromResponseAndReturnIdIfAvailable(_apiResponse);
@@ -864,11 +866,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the record can be retrieved with a GET request")]
         public async Task ThenTheRecordCanBeRetrievedWithAGETRequest(string expectedBody)
         {
-            expectedBody = expectedBody
-                .Replace("{id}", _id)
-                .Replace("{dependentId}", _dependentId)
-                .Replace("{etag}", _etag);
-            JsonNode expectedJson = JsonNode.Parse(expectedBody)!;
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 _location,
                 new() { Headers = GetHeaders() }
@@ -878,20 +875,25 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonDocument responseJsonDoc = JsonDocument.Parse(responseJsonString);
             JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
-            // If we are explicitly looking for etag in our tests, do not remove it from the response
-            CheckAndRemoveMetadata(responseJson, expectedJson["_etag"] == null);
-
             _logger.log.Information(responseJson.ToString());
 
-            responseJson = OrderJsonProperties(responseJson);
-            expectedJson = OrderJsonProperties(expectedJson);
+            JsonNode expectedJson = JsonNode.Parse(expectedBody)!;
+            bool removeEtagFromActual = expectedJson["_etag"] == null;
 
-            JsonElement expectedElement = JsonDocument.Parse(expectedJson.ToJsonString()).RootElement;
-            JsonElement responseElement = JsonDocument.Parse(responseJson.ToJsonString()).RootElement;
+            bool areEqual = CompareJsonWithPlaceholderReplacement(
+                expectedBody,
+                responseJson,
+                _id,
+                _dependentId,
+                _etag,
+                _scenarioVariables.VariableByName,
+                _playwrightContext.ApiUrl,
+                AppSettings.AuthenticationService,
+                removeMetadataFromActual: true,
+                removeEtagFromActual: removeEtagFromActual
+            );
 
-            bool areEquals = JsonElementEqualityComparer.Instance.Equals(expectedElement, responseElement);
-
-            areEquals.Should().BeTrue();
+            areEqual.Should().BeTrue($"Expected:\n{expectedBody}\n\nActual:\n{responseJson}");
         }
 
         [Then("total of records should be {int}")]
