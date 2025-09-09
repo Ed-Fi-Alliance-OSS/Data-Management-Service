@@ -25,9 +25,17 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
         _kafkaMessageCollector = new KafkaMessageCollector(bootstrapServers, logger);
     }
 
-    [Then("a Kafka message received on topic {string} should contain in the edfidoc field")]
-    public void ThenAKafkaMessageReceivedOnTopicShouldContainInTheEdfidocField(
-        string expectedTopic,
+    [When("I wait {int} second")]
+    [When("I wait {int} seconds")]
+    public void WhenIWaitSeconds(int seconds)
+    {
+        logger.log.Debug($"Waiting {seconds} second(s) to ensure message timing");
+        Task.Delay(TimeSpan.FromSeconds(seconds)).Wait();
+    }
+
+    [Then("a Kafka message should have the deleted flag {string} and EdFiDoc")]
+    public void ThenAKafkaMessageShouldHaveDeletedFlagAndEdFiDoc(
+        string expectedDeletedFlag,
         string expectedContent
     )
     {
@@ -84,25 +92,33 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
         messages
             .Should()
             .NotBeEmpty(
-                $"Expected to receive at least one message on topic '{expectedTopic}' within {timeout.TotalSeconds} seconds"
+                $"Expected to receive at least one message on topic 'edfi.dms.document' within {timeout.TotalSeconds} seconds"
             );
 
+        // Convert string parameter to boolean
+        bool shouldBeDeleted = expectedDeletedFlag.Equals("true", StringComparison.OrdinalIgnoreCase);
+
         // Do full JSON comparison
-        bool foundMessage = CompareJsonMessages(messages, expectedContent);
+        bool foundMessage = CompareJsonMessages(messages, expectedContent, shouldBeDeleted);
 
         foundMessage
             .Should()
             .BeTrue(
-                $"Expected to find a Kafka message on topic '{expectedTopic}' matching '{expectedContent}' in the edfidoc field. "
+                $"Expected to find a Kafka message matching '{expectedContent}' in the edfidoc field"
+                    + $" with __deleted='{expectedDeletedFlag}'. "
                     + $"Messages received: {string.Join(", ", messages.Select(m => m.Value?.Length > 100 ? m.Value[..100] + "..." : m.Value ?? "null"))}"
             );
 
         logger.log.Debug(
-            $"Successfully found Kafka message on topic '{expectedTopic}' matching '{expectedContent}' in edfidoc field"
+            $"Successfully found Kafka message matching '{expectedContent}' in edfidoc field with __deleted='{expectedDeletedFlag}'"
         );
     }
 
-    private bool CompareJsonMessages(List<KafkaTestMessage> messages, string expectedContent)
+    private bool CompareJsonMessages(
+        List<KafkaTestMessage> messages,
+        string expectedContent,
+        bool shouldBeDeleted
+    )
     {
         return messages.Exists(message =>
         {
@@ -111,23 +127,36 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
                 return false;
             }
 
-            var edfidocField = message.ValueAsJson["edfidoc"];
-            if (edfidocField == null)
+            var edFiDocField = message.ValueAsJson["edfidoc"];
+            if (edFiDocField == null)
             {
                 return false;
             }
 
             try
             {
-                string edfidocId = edfidocField["id"]?.ToString() ?? "";
+                // Always check __deleted flag to ensure it matches expected value
+                var deletedField = message.ValueAsJson["__deleted"];
+                string expectedDeletedValue = shouldBeDeleted ? "true" : "false";
+                if (deletedField?.ToString() != expectedDeletedValue)
+                {
+                    logger.log.Debug(
+                        $"Message __deleted field mismatch. Expected: '{expectedDeletedValue}', Found: '{deletedField?.ToString() ?? "null"}'"
+                    );
+                    return false;
+                }
 
-                return CompareJsonWithPlaceholderReplacement(
+                string edFiDocId = edFiDocField["id"]?.ToString() ?? "";
+
+                bool edFiDocMatches = CompareJsonWithPlaceholderReplacement(
                     expectedContent,
-                    edfidocField,
-                    id: edfidocId,
+                    edFiDocField,
+                    id: edFiDocId,
                     removeMetadataFromActual: true, // Remove metadata like _etag and _lastModifiedDate
                     removeEtagFromActual: true
                 );
+
+                return edFiDocMatches;
             }
             catch (Exception ex)
             {
