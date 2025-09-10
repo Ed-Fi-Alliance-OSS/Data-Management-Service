@@ -676,6 +676,51 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await ResponseBodyIs(expectedBody, true);
         }
 
+        [Then("the discovery API root response body is")]
+        public async Task ThenTheDiscoveryApiRootResponseBodyIs(string expectedBody)
+        {
+            string responseContent = await _apiResponse.TextAsync();
+            _logger.log.Information(responseContent);
+
+            // Parse both expected and actual responses
+            JsonNode responseJson = JsonNode.Parse(responseContent)!;
+            expectedBody = ReplacePlaceholders(expectedBody, responseJson);
+            JsonNode expectedBodyJson = JsonNode.Parse(expectedBody)!;
+
+            // Remove version as it varies between environments
+            (responseJson as JsonObject)?.Remove("version");
+            (expectedBodyJson as JsonObject)?.Remove("version");
+
+            // Normalize OAuth URLs - accept both internal Docker and external localhost URLs
+            NormalizeOAuthUrl(responseJson);
+            NormalizeOAuthUrl(expectedBodyJson);
+
+            AreEqual(expectedBodyJson, responseJson)
+                .Should()
+                .BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
+        }
+
+        private static void NormalizeOAuthUrl(JsonNode? json)
+        {
+            if (
+                json is JsonObject obj
+                && obj.TryGetPropertyValue("urls", out var urls)
+                && urls is JsonObject urlsObj
+                && urlsObj.TryGetPropertyValue("oauth", out var oauth)
+            )
+            {
+                var oauthStr = oauth?.ToString();
+                if (
+                    !string.IsNullOrEmpty(oauthStr)
+                    && (oauthStr.Contains("dms-keycloak:8080") || oauthStr.Contains("localhost:8045"))
+                )
+                {
+                    // Normalize both OAuth URL patterns to a common format
+                    urlsObj["oauth"] = "OAUTH_URL_NORMALIZED";
+                }
+            }
+        }
+
         [Then("the xsd response body is")]
         public async Task ThenTheXsdResponseBodyIs(string expectedBody)
         {
