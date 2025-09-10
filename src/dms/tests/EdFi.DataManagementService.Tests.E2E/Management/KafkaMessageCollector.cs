@@ -59,12 +59,21 @@ public sealed class KafkaMessageCollector : IDisposable
         _consumeTask = Task.Run(ConsumeMessages, _cancellationTokenSource.Token);
 
         // Wait briefly to ensure the consumer is ready and positioned at the latest offset
-        WaitForConsumerReadyAsync().Wait();
+        var isReady = WaitForConsumerReadyAsync().Result;
+        if (!isReady)
+        {
+            _logger.log.Warning("Consumer not fully ready but proceeding with collection");
+        }
 
         _logger.log.Debug($"KafkaMessageCollector initialized for topic: {DOCUMENTS_TOPIC}");
     }
 
     public IEnumerable<KafkaTestMessage> Messages => _messages.ToArray();
+
+    /// <summary>
+    /// Gets the current count of collected messages for debugging purposes
+    /// </summary>
+    public int MessageCount => _messages.Count;
 
     public IEnumerable<KafkaTestMessage> GetDocumentMessages() =>
         _messages.Where(m => m.Topic == DOCUMENTS_TOPIC);
@@ -75,25 +84,74 @@ public sealed class KafkaMessageCollector : IDisposable
     public IEnumerable<KafkaTestMessage> GetRecentDocumentMessages() =>
         _messages.Where(m => m.Topic == DOCUMENTS_TOPIC && m.Timestamp >= _collectionStartTime);
 
-    private async Task WaitForConsumerReadyAsync()
+    /// <summary>
+    /// Waits for the consumer to be fully ready with a public synchronous interface
+    /// </summary>
+    public bool WaitForConsumerReady(TimeSpan timeout)
     {
-        // Wait briefly for the consumer to be assigned partitions and positioned at latest offset
-        // This ensures we don't miss messages that are published immediately after collector creation
-        var timeout = TimeSpan.FromSeconds(3);
-        var start = DateTime.UtcNow;
+        return WaitForConsumerReadyAsync(timeout).Result;
+    }
 
-        while (DateTime.UtcNow - start < timeout)
+    private async Task<bool> WaitForConsumerReadyAsync(TimeSpan? timeout = null)
+    {
+        // Wait for the consumer to be assigned partitions and positioned at latest offset
+        // This ensures we don't miss messages that are published immediately after collector creation
+        var timeoutValue = timeout ?? TimeSpan.FromSeconds(3);
+        var start = DateTime.UtcNow;
+        var lastLogTime = start;
+
+        _logger.log.Debug($"Waiting for consumer readiness (timeout: {timeoutValue.TotalSeconds}s)");
+
+        while (DateTime.UtcNow - start < timeoutValue)
         {
             var assignment = _consumer.Assignment;
+
+            // Log progress every second
+            if (DateTime.UtcNow - lastLogTime > TimeSpan.FromSeconds(1))
+            {
+                _logger.log.Debug(
+                    $"Consumer readiness check: {assignment.Count} assigned partition(s) after {(DateTime.UtcNow - start).TotalSeconds:F1}s"
+                );
+                lastLogTime = DateTime.UtcNow;
+            }
+
             if (assignment.Count > 0)
             {
-                _logger.log.Debug($"Consumer ready with {assignment.Count} assigned partition(s)");
-                return;
+                // Verify we have valid partition assignments and positions
+                bool allPartitionsReady = true;
+                foreach (var partition in assignment)
+                {
+                    try
+                    {
+                        var position = _consumer.Position(partition);
+                        _logger.log.Debug(
+                            $"Partition {partition.Topic}[{partition.Partition}] ready at position {position}"
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.log.Debug(
+                            $"Partition {partition.Topic}[{partition.Partition}] not ready: {ex.Message}"
+                        );
+                        allPartitionsReady = false;
+                        break;
+                    }
+                }
+
+                if (allPartitionsReady)
+                {
+                    _logger.log.Information(
+                        $"Consumer ready with {assignment.Count} assigned partition(s) after {(DateTime.UtcNow - start).TotalSeconds:F1}s"
+                    );
+                    return true;
+                }
             }
+
             await Task.Delay(50);
         }
 
-        _logger.log.Warning("Consumer readiness timeout - proceeding anyway");
+        _logger.log.Warning($"Consumer readiness timeout after {(DateTime.UtcNow - start).TotalSeconds:F1}s");
+        return false;
     }
 
     public void LogDiagnostics()
@@ -164,8 +222,19 @@ public sealed class KafkaMessageCollector : IDisposable
                             };
 
                             _messages.Add(message);
+
+                            var timeSinceCollectionStart = message.Timestamp - _collectionStartTime;
+                            var currentTime = DateTime.UtcNow;
+                            var processingDelay = currentTime - message.Timestamp;
+
                             _logger.log.Debug(
                                 $"Collected Kafka message from topic {message.Topic}, partition {message.Partition}, offset {message.Offset}"
+                            );
+                            _logger.log.Debug(
+                                $"Message timing - Arrived: {message.Timestamp:yyyy-MM-dd HH:mm:ss.fff} UTC, "
+                                    + $"Time since collection start: {timeSinceCollectionStart.TotalSeconds:F3}s, "
+                                    + $"Processing delay: {processingDelay.TotalMilliseconds:F1}ms, "
+                                    + $"Total messages collected: {_messages.Count}"
                             );
                         }
                     }
