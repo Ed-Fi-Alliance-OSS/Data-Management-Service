@@ -69,7 +69,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             string claimSetName = "E2E-NoFurtherAuthRequiredClaimSet"
         )
         {
-            await AuthorizationDataProvider.Create(
+            // Clear the DMS claimset cache before setting a new authorization context
+            // This ensures test isolation when scenarios have different auth contexts
+            await ClearDmsClaimsetCache();
+
+            await AuthorizationDataProvider.CreateClientCredentials(
                 Guid.NewGuid().ToString(),
                 "contactName",
                 "contactName@example.com",
@@ -82,6 +86,39 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             var bearerToken = await AuthorizationDataProvider.GetToken();
             var dmsToken = $"Bearer {bearerToken}";
             _scenarioContext["dmsToken"] = dmsToken;
+        }
+
+        // Helper method to clear the DMS claimset cache
+        private async Task ClearDmsClaimsetCache()
+        {
+            try
+            {
+                // Create authorization header - using Bearer token for DMS
+                var headers = new List<KeyValuePair<string, string>>
+                {
+                    new("Authorization", $"Bearer {SystemAdministrator.Token}"),
+                };
+
+                var dmsResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+                    "management/reload-claimsets",
+                    new() { Data = "{}", Headers = headers }
+                )!;
+
+                if (dmsResponse.Status != 200)
+                {
+                    _logger.log.Warning($"DMS cache clear returned status {dmsResponse.Status}");
+                }
+                else
+                {
+                    // Add a small delay to ensure cache is fully cleared and reloaded
+                    await Task.Delay(500);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.log.Warning($"Failed to clear DMS claimset cache: {ex.Message}");
+                // Don't fail the test if cache clear fails - continue
+            }
         }
 
         [When("a claim set is uploaded to CMS that grants {string} access to {string}")]

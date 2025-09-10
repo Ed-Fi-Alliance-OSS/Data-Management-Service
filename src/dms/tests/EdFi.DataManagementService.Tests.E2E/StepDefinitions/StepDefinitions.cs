@@ -58,7 +58,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the SIS Vendor is authorized with namespacePrefixes {string}")]
         public async Task GivenTheSisVendorIsAuthorized(string namespacePrefixes)
         {
-            await AuthorizationDataProvider.Create(
+            await AuthorizationDataProvider.CreateClientCredentials(
                 Guid.NewGuid().ToString(),
                 "sisVendorName",
                 "sisVendorName@example.com",

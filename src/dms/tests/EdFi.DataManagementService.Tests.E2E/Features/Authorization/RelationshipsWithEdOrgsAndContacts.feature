@@ -1,3 +1,4 @@
+@ResetClaimsetsAfterScenario
 Feature: RelationshipsWithEdOrgsAndContacts Authorization
 
         Background:
