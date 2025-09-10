@@ -507,9 +507,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             _logger.log.Information(url);
             await WaitForOpenSearch(url);
+
+            // Discovery API endpoints should not require authentication
+            var headers = IsDiscoveryEndpoint(url) ? new List<KeyValuePair<string, string>>() : GetHeaders();
+
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 url,
-                new() { Headers = GetHeaders() }
+                new() { Headers = headers }
             )!;
         }
 
@@ -965,6 +969,12 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             input = input.StartsWith("metadata") ? input : $"data/{input}";
 
             return input;
+        }
+
+        private static bool IsDiscoveryEndpoint(string url)
+        {
+            // Discovery API endpoints that don't require authentication
+            return url == "/" || url.StartsWith("metadata");
         }
 
         private async Task WaitForOpenSearch(string requestUrl)
