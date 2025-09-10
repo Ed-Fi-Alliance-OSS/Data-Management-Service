@@ -29,12 +29,17 @@ public sealed class KafkaMessageCollector : IDisposable
     private readonly TestLogger _logger;
     private readonly DateTime _collectionStartTime;
 
+    /// <summary>
+    /// Initialize and begin collecting messages from Kafka.
+    /// </summary>
+    /// <param name="bootstrapServers">The Kafka bootstrap servers connection string (e.g., "localhost:9092")</param>
+    /// <param name="logger">The test logger instance for diagnostic output</param>
     public KafkaMessageCollector(string bootstrapServers, TestLogger logger)
     {
         _logger = logger;
         _collectionStartTime = DateTime.UtcNow;
 
-        var config = new ConsumerConfig
+        ConsumerConfig config = new()
         {
             BootstrapServers = bootstrapServers,
             GroupId = $"dms-e2e-kafka-test-{Guid.NewGuid().ToString("N")[..8]}",
@@ -56,6 +61,7 @@ public sealed class KafkaMessageCollector : IDisposable
         _consumer = new ConsumerBuilder<string, string>(config).Build();
         _consumer.Subscribe([DOCUMENTS_TOPIC]);
 
+        // Start the message collection
         _consumeTask = Task.Run(ConsumeMessages, _cancellationTokenSource.Token);
 
         // Wait briefly to ensure the consumer is ready and positioned at the latest offset
@@ -68,6 +74,9 @@ public sealed class KafkaMessageCollector : IDisposable
         _logger.log.Debug($"KafkaMessageCollector initialized for topic: {DOCUMENTS_TOPIC}");
     }
 
+    /// <summary>
+    /// Gets all collected messages as a snapshot array to avoid concurrency issues
+    /// </summary>
     public IEnumerable<KafkaTestMessage> Messages => _messages.ToArray();
 
     /// <summary>
@@ -75,6 +84,9 @@ public sealed class KafkaMessageCollector : IDisposable
     /// </summary>
     public int MessageCount => _messages.Count;
 
+    /// <summary>
+    /// Gets all messages from the edfi.dms.document topic
+    /// </summary>
     public IEnumerable<KafkaTestMessage> GetDocumentMessages() =>
         _messages.Where(m => m.Topic == DOCUMENTS_TOPIC);
 
@@ -92,10 +104,14 @@ public sealed class KafkaMessageCollector : IDisposable
         return WaitForConsumerReadyAsync(timeout).Result;
     }
 
+    /// <summary>
+    /// Waits asynchronously for the consumer to be assigned partitions and positioned at the latest offset.
+    /// This ensures we don't miss messages that are published immediately after collector creation.
+    /// </summary>
+    /// <param name="timeout">Optional timeout for waiting (defaults to 3 seconds)</param>
+    /// <returns>True if consumer is ready, false if timeout occurred</returns>
     private async Task<bool> WaitForConsumerReadyAsync(TimeSpan? timeout = null)
     {
-        // Wait for the consumer to be assigned partitions and positioned at latest offset
-        // This ensures we don't miss messages that are published immediately after collector creation
         var timeoutValue = timeout ?? TimeSpan.FromSeconds(3);
         var start = DateTime.UtcNow;
         var lastLogTime = start;
@@ -104,7 +120,7 @@ public sealed class KafkaMessageCollector : IDisposable
 
         while (DateTime.UtcNow - start < timeoutValue)
         {
-            var assignment = _consumer.Assignment;
+            List<TopicPartition> assignment = _consumer.Assignment;
 
             // Log progress every second
             if (DateTime.UtcNow - lastLogTime > TimeSpan.FromSeconds(1))
@@ -123,7 +139,7 @@ public sealed class KafkaMessageCollector : IDisposable
                 {
                     try
                     {
-                        var position = _consumer.Position(partition);
+                        Offset position = _consumer.Position(partition);
                         _logger.log.Debug(
                             $"Partition {partition.Topic}[{partition.Partition}] ready at position {position}"
                         );
@@ -154,19 +170,23 @@ public sealed class KafkaMessageCollector : IDisposable
         return false;
     }
 
+    /// <summary>
+    /// Logs diagnostic information about the consumer state including assigned partitions and message counts.
+    /// Useful for debugging test failures related to Kafka message collection.
+    /// </summary>
     public void LogDiagnostics()
     {
         try
         {
-            var assignment = _consumer.Assignment;
+            List<TopicPartition> assignment = _consumer.Assignment;
             _logger.log.Information($"Consumer diagnostics:");
             _logger.log.Information($"  Messages collected: {_messages.Count}");
             _logger.log.Information($"  Assigned partitions: {assignment.Count}");
-            foreach (var partition in assignment)
+            foreach (TopicPartition partition in assignment)
             {
                 try
                 {
-                    var position = _consumer.Position(partition);
+                    Offset position = _consumer.Position(partition);
                     _logger.log.Information(
                         $"    {partition.Topic}[{partition.Partition}]: position={position}"
                     );
@@ -185,6 +205,10 @@ public sealed class KafkaMessageCollector : IDisposable
         }
     }
 
+    /// <summary>
+    /// Background task that continuously consumes messages from Kafka and adds them to the internal collection.
+    /// Runs until cancellation is requested via the disposal of this instance.
+    /// </summary>
     private Task ConsumeMessages()
     {
         return Task.Run(
@@ -194,7 +218,9 @@ public sealed class KafkaMessageCollector : IDisposable
                 {
                     while (!_cancellationTokenSource.Token.IsCancellationRequested)
                     {
-                        var consumeResult = _consumer.Consume(_cancellationTokenSource.Token);
+                        ConsumeResult<string, string> consumeResult = _consumer.Consume(
+                            _cancellationTokenSource.Token
+                        );
 
                         if (consumeResult?.Message != null)
                         {
@@ -210,7 +236,7 @@ public sealed class KafkaMessageCollector : IDisposable
                                 // Value is not JSON, keep as string
                             }
 
-                            var message = new KafkaTestMessage
+                            KafkaTestMessage message = new()
                             {
                                 Topic = consumeResult.Topic,
                                 Key = consumeResult.Message.Key,
