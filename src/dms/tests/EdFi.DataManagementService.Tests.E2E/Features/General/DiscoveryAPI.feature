@@ -4,7 +4,7 @@ Feature: The Discovery API provides information about the application version, s
         Scenario: 01 GET / returns the root Discovery API document
              When a GET request is made to "/"
              Then it should respond with 200
-              And the general response body is
+              And the discovery API root response body is
                   """
                   {
                     "applicationName": "Ed-Fi Alliance Data Management Service",

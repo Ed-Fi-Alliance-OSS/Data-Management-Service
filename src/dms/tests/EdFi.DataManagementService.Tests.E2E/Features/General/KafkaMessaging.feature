@@ -44,7 +44,6 @@ Feature: Kafka Messaging
                   }
                   """
              Then it should respond with 201
-             When I wait 1 second
             Given I start collecting Kafka messages
              When a PUT request is made to "ed-fi/students/{id}" with
                   """
@@ -81,7 +80,6 @@ Feature: Kafka Messaging
                   }
                   """
              Then it should respond with 201
-             When I wait 1 second
             Given I start collecting Kafka messages
              When a DELETE request is made to "ed-fi/students/{id}"
              Then it should respond with 204

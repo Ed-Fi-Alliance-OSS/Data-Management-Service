@@ -19,10 +19,31 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
     [Given("I start collecting Kafka messages")]
     public void GivenIStartCollectingKafkaMessages()
     {
+        // Check if collector is already running to support long-running collection
+        if (_kafkaMessageCollector != null)
+        {
+            logger.log.Information("Kafka message collector is already running - reusing existing collector");
+            logger.log.Debug($"Existing collector has {_kafkaMessageCollector.MessageCount} messages");
+            return;
+        }
+
         string bootstrapServers =
             Environment.GetEnvironmentVariable("KAFKA_BOOTSTRAP_SERVERS") ?? "localhost:9092";
         logger.log.Information($"Starting Kafka message collection for this test using {bootstrapServers}");
+        logger.log.Debug($"Consumer start time: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff} UTC");
+
         _kafkaMessageCollector = new KafkaMessageCollector(bootstrapServers, logger);
+
+        // Ensure consumer is fully subscribed before returning
+        logger.log.Debug("Waiting for Kafka consumer to be fully ready...");
+        if (!_kafkaMessageCollector.WaitForConsumerReady(TimeSpan.FromSeconds(5)))
+        {
+            logger.log.Warning("Kafka consumer readiness timeout - proceeding anyway");
+        }
+        else
+        {
+            logger.log.Debug("Kafka consumer is ready and subscribed");
+        }
     }
 
     [When("I wait {int} second")]
@@ -31,6 +52,36 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
     {
         logger.log.Debug($"Waiting {seconds} second(s) to ensure message timing");
         Task.Delay(TimeSpan.FromSeconds(seconds)).Wait();
+    }
+
+    /// <summary>
+    /// Helper method that retries a condition until it succeeds or times out
+    /// </summary>
+    /// <param name="condition">Function that returns true when the condition is met</param>
+    /// <param name="timeout">Maximum time to wait</param>
+    /// <param name="pollInterval">Time to wait between checks</param>
+    /// <returns>True if condition was met within timeout, false otherwise</returns>
+    private bool RetryUntilSuccess(Func<bool> condition, TimeSpan timeout, TimeSpan pollInterval)
+    {
+        var start = DateTime.UtcNow;
+        var elapsed = TimeSpan.Zero;
+
+        while (elapsed < timeout)
+        {
+            if (condition())
+            {
+                logger.log.Debug($"Condition succeeded after {elapsed.TotalMilliseconds:F0}ms");
+                return true;
+            }
+
+            Task.Delay(pollInterval).Wait();
+            elapsed = DateTime.UtcNow - start;
+
+            logger.log.Debug($"Condition not met, retrying... (elapsed: {elapsed.TotalMilliseconds:F0}ms)");
+        }
+
+        logger.log.Debug($"Condition failed after timeout of {timeout.TotalMilliseconds:F0}ms");
+        return false;
     }
 
     [Then("a Kafka message should have the deleted flag {string} and EdFiDoc")]
@@ -47,29 +98,38 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
             return;
         }
 
-        // Wait up to 10 seconds for messages to arrive, checking every 500ms
-        var timeout = TimeSpan.FromSeconds(10);
-        var start = DateTime.UtcNow;
-        var checkInterval = TimeSpan.FromMilliseconds(500);
+        // Convert string parameter to boolean
+        bool shouldBeDeleted = expectedDeletedFlag.Equals("true", StringComparison.OrdinalIgnoreCase);
 
         List<KafkaTestMessage> messages = [];
+        bool foundMatchingMessage = false;
 
-        while (DateTime.UtcNow - start < timeout && messages.Count == 0)
-        {
-            // Get recent messages (those received after collection started)
-            messages = _kafkaMessageCollector.GetRecentDocumentMessages().ToList();
+        // Use retry logic: 10-second timeout with 200ms poll intervals
+        var timeout = TimeSpan.FromSeconds(10);
+        var pollInterval = TimeSpan.FromMilliseconds(200);
+        var start = DateTime.UtcNow;
 
-            if (messages.Count > 0)
+        bool success = RetryUntilSuccess(
+            () =>
             {
-                logger.log.Information($"Found {messages.Count} recent messages");
-                break;
-            }
+                // Get recent messages (those received after collection started)
+                messages = _kafkaMessageCollector.GetRecentDocumentMessages().ToList();
 
-            logger.log.Debug($"No recent messages yet, waiting...");
+                if (messages.Count == 0)
+                {
+                    return false;
+                }
 
-            // Wait before checking again
-            Task.Delay(checkInterval).Wait();
-        }
+                // Check if any message matches our criteria
+                foundMatchingMessage = CompareJsonMessages(messages, expectedContent, shouldBeDeleted);
+                return foundMatchingMessage;
+            },
+            timeout,
+            pollInterval
+        );
+
+        var elapsed = DateTime.UtcNow - start;
+        logger.log.Information($"Message search completed after {elapsed.TotalMilliseconds:F0}ms");
 
         // Log final diagnostics
         var finalAllMessages = _kafkaMessageCollector.GetDocumentMessages().ToList();
@@ -80,13 +140,14 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
         );
         _kafkaMessageCollector.LogDiagnostics();
 
-        if (messages.Count == 0)
+        if (!success || messages.Count == 0)
         {
-            logger.log.Warning("No Kafka messages were found after waiting. This might indicate:");
+            logger.log.Warning("No matching Kafka messages were found after waiting. This might indicate:");
             logger.log.Warning("1. Kafka messaging is not enabled in the DMS configuration");
             logger.log.Warning("2. The test data creation did not trigger a message");
             logger.log.Warning("3. There's a connectivity issue between DMS and Kafka");
             logger.log.Warning("4. Messages are being published to a different topic");
+            logger.log.Warning("5. The message content or deleted flag doesn't match expectations");
         }
 
         messages
@@ -95,13 +156,7 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
                 $"Expected to receive at least one message on topic 'edfi.dms.document' within {timeout.TotalSeconds} seconds"
             );
 
-        // Convert string parameter to boolean
-        bool shouldBeDeleted = expectedDeletedFlag.Equals("true", StringComparison.OrdinalIgnoreCase);
-
-        // Do full JSON comparison
-        bool foundMessage = CompareJsonMessages(messages, expectedContent, shouldBeDeleted);
-
-        foundMessage
+        foundMatchingMessage
             .Should()
             .BeTrue(
                 $"Expected to find a Kafka message matching '{expectedContent}' in the edfidoc field"
@@ -110,7 +165,7 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
             );
 
         logger.log.Debug(
-            $"Successfully found Kafka message matching '{expectedContent}' in edfidoc field with __deleted='{expectedDeletedFlag}'"
+            $"Successfully found Kafka message matching '{expectedContent}' in edfidoc field with __deleted='{expectedDeletedFlag}' after {elapsed.TotalMilliseconds:F0}ms"
         );
     }
 
@@ -261,9 +316,12 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
             return;
         }
 
-        if (disposing)
+        if (disposing && _kafkaMessageCollector != null)
         {
-            _kafkaMessageCollector?.Dispose();
+            logger.log.Debug(
+                $"Disposing Kafka message collector with {_kafkaMessageCollector.MessageCount} collected messages at {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss.fff} UTC"
+            );
+            _kafkaMessageCollector.Dispose();
         }
         _disposed = true;
     }

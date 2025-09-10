@@ -29,12 +29,17 @@ public sealed class KafkaMessageCollector : IDisposable
     private readonly TestLogger _logger;
     private readonly DateTime _collectionStartTime;
 
+    /// <summary>
+    /// Initialize and begin collecting messages from Kafka.
+    /// </summary>
+    /// <param name="bootstrapServers">The Kafka bootstrap servers connection string (e.g., "localhost:9092")</param>
+    /// <param name="logger">The test logger instance for diagnostic output</param>
     public KafkaMessageCollector(string bootstrapServers, TestLogger logger)
     {
         _logger = logger;
         _collectionStartTime = DateTime.UtcNow;
 
-        var config = new ConsumerConfig
+        ConsumerConfig config = new()
         {
             BootstrapServers = bootstrapServers,
             GroupId = $"dms-e2e-kafka-test-{Guid.NewGuid().ToString("N")[..8]}",
@@ -56,16 +61,32 @@ public sealed class KafkaMessageCollector : IDisposable
         _consumer = new ConsumerBuilder<string, string>(config).Build();
         _consumer.Subscribe([DOCUMENTS_TOPIC]);
 
+        // Start the message collection
         _consumeTask = Task.Run(ConsumeMessages, _cancellationTokenSource.Token);
 
         // Wait briefly to ensure the consumer is ready and positioned at the latest offset
-        WaitForConsumerReadyAsync().Wait();
+        var isReady = WaitForConsumerReadyAsync().Result;
+        if (!isReady)
+        {
+            _logger.log.Warning("Consumer not fully ready but proceeding with collection");
+        }
 
         _logger.log.Debug($"KafkaMessageCollector initialized for topic: {DOCUMENTS_TOPIC}");
     }
 
+    /// <summary>
+    /// Gets all collected messages as a snapshot array to avoid concurrency issues
+    /// </summary>
     public IEnumerable<KafkaTestMessage> Messages => _messages.ToArray();
 
+    /// <summary>
+    /// Gets the current count of collected messages for debugging purposes
+    /// </summary>
+    public int MessageCount => _messages.Count;
+
+    /// <summary>
+    /// Gets all messages from the edfi.dms.document topic
+    /// </summary>
     public IEnumerable<KafkaTestMessage> GetDocumentMessages() =>
         _messages.Where(m => m.Topic == DOCUMENTS_TOPIC);
 
@@ -75,40 +96,97 @@ public sealed class KafkaMessageCollector : IDisposable
     public IEnumerable<KafkaTestMessage> GetRecentDocumentMessages() =>
         _messages.Where(m => m.Topic == DOCUMENTS_TOPIC && m.Timestamp >= _collectionStartTime);
 
-    private async Task WaitForConsumerReadyAsync()
+    /// <summary>
+    /// Waits for the consumer to be fully ready with a public synchronous interface
+    /// </summary>
+    public bool WaitForConsumerReady(TimeSpan timeout)
     {
-        // Wait briefly for the consumer to be assigned partitions and positioned at latest offset
-        // This ensures we don't miss messages that are published immediately after collector creation
-        var timeout = TimeSpan.FromSeconds(3);
-        var start = DateTime.UtcNow;
+        return WaitForConsumerReadyAsync(timeout).Result;
+    }
 
-        while (DateTime.UtcNow - start < timeout)
+    /// <summary>
+    /// Waits asynchronously for the consumer to be assigned partitions and positioned at the latest offset.
+    /// This ensures we don't miss messages that are published immediately after collector creation.
+    /// </summary>
+    /// <param name="timeout">Optional timeout for waiting (defaults to 3 seconds)</param>
+    /// <returns>True if consumer is ready, false if timeout occurred</returns>
+    private async Task<bool> WaitForConsumerReadyAsync(TimeSpan? timeout = null)
+    {
+        var timeoutValue = timeout ?? TimeSpan.FromSeconds(3);
+        var start = DateTime.UtcNow;
+        var lastLogTime = start;
+
+        _logger.log.Debug($"Waiting for consumer readiness (timeout: {timeoutValue.TotalSeconds}s)");
+
+        while (DateTime.UtcNow - start < timeoutValue)
         {
-            var assignment = _consumer.Assignment;
+            List<TopicPartition> assignment = _consumer.Assignment;
+
+            // Log progress every second
+            if (DateTime.UtcNow - lastLogTime > TimeSpan.FromSeconds(1))
+            {
+                _logger.log.Debug(
+                    $"Consumer readiness check: {assignment.Count} assigned partition(s) after {(DateTime.UtcNow - start).TotalSeconds:F1}s"
+                );
+                lastLogTime = DateTime.UtcNow;
+            }
+
             if (assignment.Count > 0)
             {
-                _logger.log.Debug($"Consumer ready with {assignment.Count} assigned partition(s)");
-                return;
+                // Verify we have valid partition assignments and positions
+                bool allPartitionsReady = true;
+                foreach (var partition in assignment)
+                {
+                    try
+                    {
+                        Offset position = _consumer.Position(partition);
+                        _logger.log.Debug(
+                            $"Partition {partition.Topic}[{partition.Partition}] ready at position {position}"
+                        );
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.log.Debug(
+                            $"Partition {partition.Topic}[{partition.Partition}] not ready: {ex.Message}"
+                        );
+                        allPartitionsReady = false;
+                        break;
+                    }
+                }
+
+                if (allPartitionsReady)
+                {
+                    _logger.log.Information(
+                        $"Consumer ready with {assignment.Count} assigned partition(s) after {(DateTime.UtcNow - start).TotalSeconds:F1}s"
+                    );
+                    return true;
+                }
             }
+
             await Task.Delay(50);
         }
 
-        _logger.log.Warning("Consumer readiness timeout - proceeding anyway");
+        _logger.log.Warning($"Consumer readiness timeout after {(DateTime.UtcNow - start).TotalSeconds:F1}s");
+        return false;
     }
 
+    /// <summary>
+    /// Logs diagnostic information about the consumer state including assigned partitions and message counts.
+    /// Useful for debugging test failures related to Kafka message collection.
+    /// </summary>
     public void LogDiagnostics()
     {
         try
         {
-            var assignment = _consumer.Assignment;
+            List<TopicPartition> assignment = _consumer.Assignment;
             _logger.log.Information($"Consumer diagnostics:");
             _logger.log.Information($"  Messages collected: {_messages.Count}");
             _logger.log.Information($"  Assigned partitions: {assignment.Count}");
-            foreach (var partition in assignment)
+            foreach (TopicPartition partition in assignment)
             {
                 try
                 {
-                    var position = _consumer.Position(partition);
+                    Offset position = _consumer.Position(partition);
                     _logger.log.Information(
                         $"    {partition.Topic}[{partition.Partition}]: position={position}"
                     );
@@ -127,6 +205,10 @@ public sealed class KafkaMessageCollector : IDisposable
         }
     }
 
+    /// <summary>
+    /// Background task that continuously consumes messages from Kafka and adds them to the internal collection.
+    /// Runs until cancellation is requested via the disposal of this instance.
+    /// </summary>
     private Task ConsumeMessages()
     {
         return Task.Run(
@@ -136,7 +218,9 @@ public sealed class KafkaMessageCollector : IDisposable
                 {
                     while (!_cancellationTokenSource.Token.IsCancellationRequested)
                     {
-                        var consumeResult = _consumer.Consume(_cancellationTokenSource.Token);
+                        ConsumeResult<string, string> consumeResult = _consumer.Consume(
+                            _cancellationTokenSource.Token
+                        );
 
                         if (consumeResult?.Message != null)
                         {
@@ -152,7 +236,7 @@ public sealed class KafkaMessageCollector : IDisposable
                                 // Value is not JSON, keep as string
                             }
 
-                            var message = new KafkaTestMessage
+                            KafkaTestMessage message = new()
                             {
                                 Topic = consumeResult.Topic,
                                 Key = consumeResult.Message.Key,
@@ -164,8 +248,19 @@ public sealed class KafkaMessageCollector : IDisposable
                             };
 
                             _messages.Add(message);
+
+                            var timeSinceCollectionStart = message.Timestamp - _collectionStartTime;
+                            var currentTime = DateTime.UtcNow;
+                            var processingDelay = currentTime - message.Timestamp;
+
                             _logger.log.Debug(
                                 $"Collected Kafka message from topic {message.Topic}, partition {message.Partition}, offset {message.Offset}"
+                            );
+                            _logger.log.Debug(
+                                $"Message timing - Arrived: {message.Timestamp:yyyy-MM-dd HH:mm:ss.fff} UTC, "
+                                    + $"Time since collection start: {timeSinceCollectionStart.TotalSeconds:F3}s, "
+                                    + $"Processing delay: {processingDelay.TotalMilliseconds:F1}ms, "
+                                    + $"Total messages collected: {_messages.Count}"
                             );
                         }
                     }
