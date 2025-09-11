@@ -104,7 +104,7 @@ param(
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="keycloak",
+    $IdentityProvider="self-contained",
 
     # Environment file for docker-compose operations
     [string]
@@ -332,7 +332,7 @@ function Start-DockerEnvironment {
         $LoadSeedData,
 
         [string]
-        $IdentityProvider="keycloak"
+        $IdentityProvider="self-contained"
     )
 
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {

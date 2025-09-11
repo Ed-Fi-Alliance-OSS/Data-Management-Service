@@ -83,7 +83,7 @@ param(
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="keycloak"
+    $IdentityProvider="self-contained"
 )
 
 $solutionRoot = "$PSScriptRoot/src/config"
