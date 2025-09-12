@@ -5,4 +5,9 @@
 
 namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 
+/// <summary>
+/// Represents OAuth client credentials used for authenticating with the Ed-Fi Data Management Service.
+/// </summary>
+/// <param name="key">The client key (client ID) used for OAuth authentication</param>
+/// <param name="secret">The client secret used for OAuth authentication</param>
 public record ClientCredentials(string key, string secret);

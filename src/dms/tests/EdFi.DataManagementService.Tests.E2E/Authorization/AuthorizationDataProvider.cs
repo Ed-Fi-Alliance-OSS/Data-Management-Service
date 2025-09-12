@@ -9,21 +9,50 @@ using System.Text.Json;
 
 namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 
+/// <summary>
+/// Provides authorization functionality for E2E tests by managing vendor registration,
+/// application creation, and OAuth token generation for the Ed-Fi Data Management Service.
+/// This class handles the complete authorization workflow needed for test scenarios.
+/// </summary>
 public static class AuthorizationDataProvider
 {
-    public static ClientCredentials? ClientCredentials { get; set; }
+    /// <summary>
+    /// The client credentials obtained from the most recent call to CreateClientCredentials().
+    /// These credentials are used for OAuth token generation.
+    /// </summary>
+    private static ClientCredentials _clientCredentials = null!;
 
+    /// <summary>
+    /// HTTP client configured to communicate with the Configuration Management Service (CMS).
+    /// Used for vendor and application registration operations.
+    /// </summary>
     private static readonly HttpClient _configurationServiceClient = new()
     {
         BaseAddress = new Uri($"http://localhost:{AppSettings.ConfigServicePort}/"),
     };
 
+    /// <summary>
+    /// HTTP client configured to communicate with the Data Management Service (DMS).
+    /// Used for OAuth token generation and authentication operations.
+    /// </summary>
     private static readonly HttpClient _dmsClient = new()
     {
         BaseAddress = new Uri($"http://localhost:{AppSettings.DmsPort}/"),
     };
 
-    public static async Task Create(
+    /// <summary>
+    /// Creates a new vendor and application in the Configuration Management Service with specified
+    /// authorization parameters. This establishes the foundation for OAuth authentication in tests.
+    /// </summary>
+    /// <param name="company">The name of the vendor company to register</param>
+    /// <param name="contactName">The name of the primary contact for the vendor</param>
+    /// <param name="contactEmailAddress">The email address of the primary contact</param>
+    /// <param name="namespacePrefixes">Comma-separated list of namespace prefixes the vendor is authorized to use</param>
+    /// <param name="edOrgIds">Comma-separated list of education organization IDs the vendor has access to</param>
+    /// <param name="systemAdministratorToken">Bearer token with system administrator privileges for CMS API access</param>
+    /// <param name="claimSetName">The name of the claim set to assign to the application (default: "SIS-Vendor")</param>
+    /// <returns>A task representing the asynchronous operation</returns>
+    public static async Task CreateClientCredentials(
         string company,
         string contactName,
         string contactEmailAddress,
@@ -94,21 +123,24 @@ public static class AuthorizationDataProvider
         string applicationBody = await applicationPostResponse.Content.ReadAsStringAsync();
         var applicationJson = JsonDocument.Parse(applicationBody);
 
-        var credentials = new ClientCredentials(
+        _clientCredentials = new ClientCredentials(
             applicationJson.RootElement.GetProperty("key").GetString() ?? "",
             applicationJson.RootElement.GetProperty("secret").GetString() ?? ""
         );
-
-        ClientCredentials = credentials;
     }
 
+    /// <summary>
+    /// Generates an OAuth access token using the stored client credentials.
+    /// This token is required for authenticating API requests to the Data Management Service.
+    /// </summary>
+    /// <returns>A valid OAuth access token as a string</returns>
     public static async Task<string> GetToken()
     {
         var formData = new FormUrlEncodedContent(
             new[] { new KeyValuePair<string, string>("grant_type", "client_credentials") }
         );
 
-        byte[] basicBytes = Encoding.ASCII.GetBytes($"{ClientCredentials!.key}:{ClientCredentials.secret}");
+        byte[] basicBytes = Encoding.ASCII.GetBytes($"{_clientCredentials.key}:{_clientCredentials.secret}");
         string basicB64 = Convert.ToBase64String(basicBytes);
 
         _dmsClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue($"Basic", basicB64);

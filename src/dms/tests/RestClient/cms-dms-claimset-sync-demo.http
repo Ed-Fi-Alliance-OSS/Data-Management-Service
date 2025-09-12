@@ -1,0 +1,246 @@
+# CMS-DMS Claimset Synchronization Demonstration
+# ================================================
+# This file demonstrates the full integration between Configuration Management Service (CMS)
+# and Data Management Service (DMS) for claimset updates and synchronization.
+#
+# It shows:
+# 1. Initial state verification in both CMS and DMS
+# 2. Uploading new claimsets via CMS
+# 3. Syncing DMS with CMS changes using reload-claimsets
+# 4. Verifying authorization changes in DMS
+# 5. Restoring original state
+
+
+@configPort=8081
+@dmsPort=8080
+
+# System Administrator credentials
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+# Test client credentials - using sys-admin for simplicity
+# In production, you would create a proper vendor and application
+@testClientId=sys-admin
+@testClientSecret=SdfH)98&Jk
+@encodedTestClientSecret=SdfH%2998%26Jk
+
+# ==========================================
+# PART 1: Setup System Administrator Token
+# ==========================================
+
+### Register system administrator (if not already registered)
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+
+### Get system admin token for CMS operations
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+# ==========================================
+# PART 2: Get DMS Token Using DMS OAuth Endpoint
+# ==========================================
+
+### Get token directly from DMS OAuth endpoint
+# Note: DMS has its own OAuth endpoint that works with Basic auth
+# @name dmsTokenRequest
+POST http://localhost:{{dmsPort}}/oauth/token
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic c3lzLWFkbWluOlNkZkgpOTgmSms=
+
+grant_type=client_credentials
+
+
+###
+@dmsToken={{dmsTokenRequest.response.body.access_token}}
+
+# ==========================================
+# PART 3: Check Initial State (CMS & DMS)
+# ==========================================
+
+### 1. Get current claims from CMS management endpoint
+# @name currentClaimsBefore
+GET http://localhost:{{configPort}}/config/management/current-claims
+
+
+### 2. View current claimsets in DMS
+# @name dmsClaimsetsBefore
+GET http://localhost:{{dmsPort}}/management/view-claimsets
+
+
+# ==========================================
+# PART 4: Upload Minimal Test Claim Set
+# ==========================================
+
+### Upload a MINIMAL claim set that replaces everything
+# This upload contains:
+# - One claim set: "TestMinimalClaimSet"
+# - Two resources: School and Student with full CRUD permissions
+# - Uses NoFurtherAuthorizationRequired for simplicity
+# @name uploadMinimalClaims
+POST http://localhost:{{configPort}}/config/management/upload-claims
+Content-Type: application/json
+
+{
+    "claims": {
+        "claimSets": [
+            {
+                "claimSetName": "TestMinimalClaimSet",
+                "isSystemReserved": false
+            }
+        ],
+        "claimsHierarchy": [
+            {
+                "name": "http://ed-fi.org/identity/claims/domains/edFiTypes",
+                "claims": [
+                    {
+                        "name": "http://ed-fi.org/identity/claims/ed-fi/school",
+                        "claimSets": [
+                            {
+                                "name": "TestMinimalClaimSet",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Update",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Delete",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "name": "http://ed-fi.org/identity/claims/ed-fi/student",
+                        "claimSets": [
+                            {
+                                "name": "TestMinimalClaimSet",
+                                "actions": [
+                                    {
+                                        "name": "Create",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Read",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Update",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    },
+                                    {
+                                        "name": "Delete",
+                                        "authorizationStrategyOverrides": [
+                                            { "name": "NoFurtherAuthorizationRequired" }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}
+
+###
+@uploadReloadId={{uploadMinimalClaims.response.body.reloadId}}
+
+# ==========================================
+# PART 5: Verify CMS Updated Successfully
+# ==========================================
+
+### 1. Get current claims from CMS after upload
+# @name currentClaimsAfterUpload
+GET http://localhost:{{configPort}}/config/management/current-claims
+
+
+### 2. Verify minimal claimset in CMS
+# @name cmsTestClaimsetAfterUpload
+GET http://localhost:{{configPort}}/config/authorizationMetadata?claimSetName=E2E-RelationshipsWithEdOrgsOnlyClaimSet
+Authorization: bearer {{configToken}}
+
+
+# ==========================================
+# PART 6: Sync DMS with CMS Changes
+# ==========================================
+
+### 1. View claimsets in DMS BEFORE reload (should show old state)
+# @name dmsClaimsetsBeforeReload
+GET http://localhost:{{dmsPort}}/management/view-claimsets
+
+
+### 2. Trigger DMS to reload claimsets from CMS
+# @name dmsReloadClaimsets
+POST http://localhost:{{dmsPort}}/management/reload-claimsets
+
+
+### 3. View claimsets in DMS AFTER reload (should show new state)
+# @name dmsClaimsetsAfterReload
+GET http://localhost:{{dmsPort}}/management/view-claimsets
+
+
+# ==========================================
+# PART 7: Restore Original State
+# ==========================================
+
+### 1. Reload original claims in CMS from file system
+# @name cmsReloadOriginal
+POST http://localhost:{{configPort}}/config/management/reload-claims
+
+
+###
+@reloadId={{cmsReloadOriginal.response.body.reloadId}}
+
+### 2. Verify CMS restored to original state
+# @name cmsTestClaimsetRestored
+GET http://localhost:{{configPort}}/config/management/current-claims
+
+
+### 3. Sync DMS with restored CMS state
+# @name dmsReloadOriginal
+POST http://localhost:{{dmsPort}}/management/reload-claimsets
+
+
+### 4. View final DMS state
+# @name dmsClaimsetsRestored
+GET http://localhost:{{dmsPort}}/management/view-claimsets

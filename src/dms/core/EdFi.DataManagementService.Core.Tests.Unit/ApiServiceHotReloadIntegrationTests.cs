@@ -107,7 +107,8 @@ public class ApiServiceHotReloadIntegrationTests
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
             apiSchemaUploadService,
-            serviceProvider
+            serviceProvider,
+            A.Fake<ClaimSetsCache>()
         );
     }
 
@@ -361,7 +362,8 @@ public class ApiServiceHotReloadIntegrationTests
                     NullLogger<ResourceLoadOrderCalculator>.Instance
                 ),
                 apiSchemaUploadService,
-                new ServiceCollection().BuildServiceProvider()
+                new ServiceCollection().BuildServiceProvider(),
+                A.Fake<ClaimSetsCache>()
             );
 
             await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Student", "5.0.0"));
