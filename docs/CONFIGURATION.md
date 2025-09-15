@@ -65,9 +65,9 @@ If you wish to use Keycloak as the identity provider, you must update the releva
 
 | Parameter        | Description                                                      | Example (Keycloak)                                   | Example (Self-contained)                      |
 |------------------|------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
-| `IdentityProvider` | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
-| `Authority`        | URL of the identity provider's authority (issuer)                | `http://dms-keycloak:8080/realms/edfi`              | `http://dms-config-service:8081`              |
-| `EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
+| `AppSettings.IdentityProvider` | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
+| `IdentitySettings.Authority`        | URL of the identity provider's authority (issuer)                | `http://dms-keycloak:8080/realms/edfi`              | `http://dms-config-service:8081`              |
+| `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 
 ### JwtAuthentication parameters in `appsettings.json` (DMS API Service)
 
