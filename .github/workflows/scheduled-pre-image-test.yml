@@ -39,20 +39,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      - name: Add Kafka hostname to /etc/hosts
-        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
-
       - name: DMS Build
         id: build_step
         run: ./build-dms.ps1 Build -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
 
-      - name: Run OpenSearch End to End Tests
+      - name: Run End to End Tests
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableOpenSearch -UsePublishedImage -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
-
-      - name: Run ElasticSearch End to End Tests
-        if: success()
-        run: ./build-dms.ps1 E2ETest -EnableElasticSearch -UsePublishedImage -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
+        run: ./build-dms.ps1 E2ETest -UsePublishedImage -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Notify Slack on success
         if: success() && github.event_name != 'workflow_dispatch'

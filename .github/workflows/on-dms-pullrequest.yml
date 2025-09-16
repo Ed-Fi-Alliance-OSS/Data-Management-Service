@@ -149,7 +149,7 @@ jobs:
     strategy:
       matrix:
         identityprovider: [keycloak, self-contained]
-        queryhandler: [opensearch, postgresql]
+        queryhandler: [postgresql]
     permissions:
       checks: write
     defaults:
@@ -209,11 +209,9 @@ jobs:
         run: |
           if ("${{ matrix.queryhandler }}" -eq "postgresql") {
             $env:DMS_QUERYHANDLER="postgresql"
-            # TODO: We're starting up OpenSearch's Docker container to keep both scenarios
-            # as similar as possible so that we can compare their performance.
           }
 
-          ./build-dms.ps1 E2ETest -EnableOpenSearch -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
+          ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Export Docker Logs
         if: failure()

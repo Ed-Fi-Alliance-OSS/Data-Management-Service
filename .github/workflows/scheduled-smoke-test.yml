@@ -34,10 +34,7 @@ jobs:
     strategy:
       matrix:
         search-engine:
-          - name: OpenSearch
-            flag: EnableOpenSearch
-          - name: ElasticSearch
-            flag: EnableElasticSearch
+          - name: postgresql
 
     defaults:
       run:
@@ -89,7 +86,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
-        run: ./build-dms.ps1 StartEnvironment -SkipDockerBuild -${{ matrix.search-engine.flag }} -LoadSeedData -EnvironmentFile "./.env.example"
+        run: ./build-dms.ps1 StartEnvironment -SkipDockerBuild -LoadSeedData -EnvironmentFile "./.env.example"
 
       - name: Wait for services to be ready
         run: |
@@ -218,7 +215,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Search Engines:* OpenSearch & ElasticSearch\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
@@ -238,7 +235,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Search Engines:* OpenSearch & ElasticSearch\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]

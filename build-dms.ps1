@@ -83,14 +83,6 @@ param(
 
     # Only required with E2E testing.
     [switch]
-    $EnableOpenSearch,
-
-    # Only required with E2E testing.
-    [switch]
-    $EnableElasticSearch,
-
-    # Only required with E2E testing.
-    [switch]
     $UsePublishedImage,
 
     # Only required with E2E testing.
@@ -191,24 +183,6 @@ function PublishCliApiDownloader {
     }
 }
 
-function SetQueryHandler {
-    param (
-        # E2E test directory
-        [string]
-        $E2EDirectory
-    )
-
-    $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
-    $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
-    if ($EnableOpenSearch -or $EnableElasticSearch) {
-        $json.QueryHandler = "opensearch"
-    }
-    else {
-        $json.QueryHandler = "postgresql"
-    }
-    $json | ConvertTo-Json -Depth 32 | Set-Content $appSettingsPath
-}
-
 function SetAuthenticationServiceURL {
     param (
         # E2E test directory
@@ -285,7 +259,6 @@ function RunTests {
             # Set Query Handler for E2E tests
             if ($Filter -like "*E2E*") {
                 $dirPath = Split-Path -parent $($_)
-                SetQueryHandler($dirPath)
                 SetAuthenticationServiceURL($dirPath)
             }
 
@@ -317,12 +290,6 @@ function RunE2E {
 function Start-DockerEnvironment {
     param (
         [switch]
-        $EnableOpenSearch,
-
-        [switch]
-        $EnableElasticSearch,
-
-        [switch]
         $UsePublishedImage,
 
         [switch]
@@ -343,55 +310,20 @@ function Start-DockerEnvironment {
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine "ElasticSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine "OpenSearch" -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine "ElasticSearch" -EnableConfig -d -v
+            ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
+            ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
+            ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
+            ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
         }
         finally {
             Pop-Location
         }
     }
-
-    if ($EnableOpenSearch -or $EnableElasticSearch) {
-
-        $searchEngine = "OpenSearch"
-        if ($EnableElasticSearch) {
-            $searchEngine = "ElasticSearch"
-        }
-
-        Invoke-Execute {
-            try {
-                Push-Location eng/docker-compose/
-                if ($UsePublishedImage) {
-                    if ($LoadSeedData) {
-                        ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
-                    }
-                    else {
-                        ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
-                    }
-                }
-                else {
-                    if ($LoadSeedData) {
-                        ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
-                    }
-                    else {
-                        ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -SearchEngine $searchEngine -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
-                    }
-                }
-            }
-            finally {
-                Pop-Location
-            }
-        }
-    }
-    else {
-        Invoke-Step { DockerRun }
-    }
+    Invoke-Step { DockerRun }
 }
 
 function E2ETests {
-    Invoke-Step { Start-DockerEnvironment -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider}
+    Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider}
     Invoke-Step { RunE2E }
 }
 
@@ -462,12 +394,6 @@ function Invoke-TestExecution {
         $Filter,
 
         [switch]
-        $EnableOpenSearch,
-
-        [switch]
-        $EnableElasticSearch,
-
-        [switch]
         $UsePublishedImage,
 
         [switch]
@@ -477,7 +403,7 @@ function Invoke-TestExecution {
         $LoadSeedData
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider} }
+        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider} }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -563,7 +489,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider}
+        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider}
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
@@ -571,7 +497,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-DockerEnvironment -EnableOpenSearch:$EnableOpenSearch -EnableElasticSearch:$EnableElasticSearch -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider} }
+        StartEnvironment { Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider} }
         default { throw "Command '$Command' is not recognized" }
     }
 }

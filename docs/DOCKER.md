@@ -41,7 +41,6 @@ BYPASS_STRING_COERCION=<Boolean whether to bypass coercion of boolean and numeri
 DATABASE_ISOLATION_LEVEL=<The System.Data.IsolationLevel to use for transaction locking. Eg. RepeatableRead>
 ALLOW_IDENTITY_UPDATE_OVERRIDES=<Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates. Eg "accountabilityRatings,bellSchedules">
 DATABASE_CONNECTION_STRING=<The non-admin database connection string>
-OPENSEARCH_ENDPOINT=<The URL endpoint to the OpenSearch server>
 FAILURE_RATIO=<decimal between 0 and 1 indicating the failure to success ratio at which the backend circuit breaker will break. Eg. 0.1 represents 10%>
 SAMPLING_DURATION_SECONDS=<This is the duration in seconds of the sampling over which failure ratios are assessed. Eg. 10>
 MINIMUM_THROUGHPUT=<Integer, this many actions or more must pass through the circuit in the time-slice, for statistics to be considered significant and the circuit-breaker to come into action. The minimum value is 2.>
@@ -63,7 +62,6 @@ BYPASS_STRING_COERCION=false
 DATABASE_ISOLATION_LEVEL=RepeatableRead
 ALLOW_IDENTITY_UPDATE_OVERRIDES=""
 DATABASE_CONNECTION_STRING=host=localhost;port=5432;username=dms;password=P@ssw0rd;database=edfi_datamanagementservice;
-OPENSEARCH_ENDPOINT=http://localhost:9200
 FAILURE_RATIO=0.1
 SAMPLING_DURATION_SECONDS=10
 MINIMUM_THROUGHPUT=2
