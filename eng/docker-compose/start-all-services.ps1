@@ -40,5 +40,4 @@ else {
     docker compose $files --env-file $EnvironmentFile up -d
 
     Start-Sleep 20
-    ./setup-connectors.ps1 $EnvironmentFile
 }

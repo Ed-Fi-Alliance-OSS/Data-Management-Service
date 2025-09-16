@@ -32,25 +32,6 @@ start up different configurations:
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
 
-After starting the environment, you’ll need to install Kafka connector
-configurations in both Kafka Connector images. The file `setup-connectors.ps1`
-will do this for you. Warning: you need to wait a few seconds after starting the
-services before you can install connector configurations.
-
-You can specify the search engine type to set the appropriate Kafka connector
-configurations. Valid values are `OpenSearch` and `ElasticSearch`. The default
-value is `OpenSearch`.
-
-```pwsh
-# To install OpenSearch Kafka connector configurations
-./setup-connectors.ps1 -SearchEngine "OpenSearch"
-```
-
-```pwsh
-# To install ElasticSearch Kafka connector configurations
-./setup-connectors.ps1 -SearchEngine "ElasticSearch"
-```
-
 > [!WARNING]
 > The script `setup-connectors.ps1` first attempts to delete
 > connectors that are already installed. On first execution, this results in a
@@ -101,27 +82,6 @@ If you want to use Self-Contained authentication using OpenIddict instead of Key
 
 # Stop the services and delete volumes (Self-Contained/OpenIddict mode)
 ./start-local-dms.ps1 -d -v
-```
-
-You can set up the Kafka UI and OpenSearch or ElasticSearch Dashboard containers
-for testing by passing the -EnableSearchEngineUI option.
-
-```pwsh
-# Start everything with Kafka UI and OpenSearch or ElasticSearch Dashboard
-./start-local-dms.ps1 -EnableSearchEngineUI
-```
-
-Search engine type. Valid values are `OpenSearch`, `ElasticSearch`. Default:
-`OpenSearch`
-
-```pwsh
-# To setup OpenSearch search engine
-./start-local-dms.ps1 -SearchEngine "OpenSearch"
-```
-
-```pwsh
-# To setup ElasticSearch search engine
-./start-local-dms.ps1 -SearchEngine "ElasticSearch"
 ```
 
 You can launch Swagger UI as part of your local environment to explore DMS

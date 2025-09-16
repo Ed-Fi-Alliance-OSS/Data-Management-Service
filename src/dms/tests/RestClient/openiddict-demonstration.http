@@ -5,7 +5,7 @@
 # 3. Before starting, rename `eng/docker-compose/.env.openiddict.example` to `.env` in the same directory so it will be used in execution.
 # 4. Run the following command to start the local DMS environment with the required options:
 #
-#     .\start-local-dms.ps1 -EnableSearchEngineUI -EnableConfig -r -IdentityProvider self-contained -EnvironmentFile .env -EnableSwaggerUI
+#     .\start-local-dms.ps1 -EnableConfig -r -IdentityProvider self-contained -EnvironmentFile .env -EnableSwaggerUI
 #
 # 5. Wait for all services to start. Ensure that both the DMS and Configuration Service are running and accessible at the ports specified in this file (8080 for DMS, 8081 for Config).
 # 6. Once the environment is ready, use the REST Client extension in VS Code to execute the requests in this file. You can run each request by clicking "Send Request" above each HTTP block.

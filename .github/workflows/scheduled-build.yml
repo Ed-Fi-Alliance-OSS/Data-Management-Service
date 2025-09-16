@@ -80,16 +80,9 @@ jobs:
         id: unit_test_step
         run: ./build-dms.ps1 UnitTest -Configuration ${{ env.CONFIGURATION }}
 
-      - name: Add Kafka hostname to /etc/hosts
-        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
-
-      - name: Run ElasticSearch End to End Tests - IdentityProvider (${{matrix.identityprovider}})
+      - name: Run End to End Tests - IdentityProvider (${{matrix.identityprovider}})
         if: success()
-        run: ./build-dms.ps1 E2ETest -EnableElasticSearch -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
-
-      - name: Run OpenSearch End to End Tests - IdentityProvider (${{matrix.identityprovider}})
-        if: success()
-        run: ./build-dms.ps1 E2ETest -EnableOpenSearch -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
+        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs
