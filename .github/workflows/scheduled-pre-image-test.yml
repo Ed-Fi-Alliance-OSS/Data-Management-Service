@@ -39,6 +39,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      - name: Add Kafka hostname to /etc/hosts
+        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
+
       - name: DMS Build
         id: build_step
         run: ./build-dms.ps1 Build -Configuration Release -IdentityProvider ${{matrix.identityprovider}}
