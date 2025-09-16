@@ -16,13 +16,13 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -42,12 +42,8 @@ public class ClaimSetModuleTests
             builder.ConfigureServices(
                 (ctx, collection) =>
                 {
-                    collection
-                        .AddAuthentication(AuthenticationConstants.AuthenticationSchema)
-                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
-                            AuthenticationConstants.AuthenticationSchema,
-                            _ => { }
-                        );
+                    // Use the new test authentication extension that mimics production setup
+                    collection.AddTestAuthentication();
 
                     var identitySettings = ctx
                         .Configuration.GetSection("IdentitySettings")
