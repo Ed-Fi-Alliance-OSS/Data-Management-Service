@@ -1,0 +1,42 @@
+# Lightweight compose file for restoring the Northridge PG13 backup
+# Usage:
+#   From repo root:
+#     docker compose -f src/temp/docker-compose.postgres-northridge.yml up -d
+#   Or:
+#     cd src/temp
+#     docker compose -f docker-compose.postgres-northridge.yml up -d
+#
+# On first startup (when the named volume is empty) the SQL dump will be executed automatically
+# by the official Postgres entrypoint. To re-run the restore, you must remove the named volume:
+#   docker compose -f src/temp/docker-compose.postgres-northridge.yml down -v
+#
+# The dump appears to have been produced against PostgreSQL 13, so we pin to a 13.x image for compatibility.
+# Adjust POSTGRES_USER/PASSWORD/DB as needed.
+
+version: "3.9"
+services:
+    postgres-northridge:
+        image: postgres:13-alpine
+        container_name: postgres-northridge
+        environment:
+            # Use the default superuser 'postgres' so ownership statements in the dump succeed.
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: TestPassw0rd!
+            # Initial database to create (if the dump creates others they will still load).
+            POSTGRES_DB: testdb
+        ports:
+            - "54330:5432" # HostPort:ContainerPort
+        volumes:
+            # Persistent data volume
+            - northridge-pgdata:/var/lib/postgresql/data
+            # SQL dump mounted as an initialization script (runs only if data dir is empty)
+            - ./EdFi_Ods_Northridge_v73_20250909_PG13/EdFi_Ods_Northridge_v73_20250909_PG13.sql:/docker-entrypoint-initdb.d/001-restore.sql:ro
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 6
+        restart: unless-stopped
+
+volumes:
+    northridge-pgdata:
