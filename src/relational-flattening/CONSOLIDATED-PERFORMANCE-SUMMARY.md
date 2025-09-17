@@ -1,0 +1,93 @@
+# Relational Flattening Performance Consolidated Summary
+
+> Approximate reading time: ~5 minutes
+
+## 1. Purpose
+This document consolidates findings from three related analyses comparing legacy (natural key) and proposed (surrogate key) PostgreSQL schema patterns for an ETL dimension-building workload. The central conclusion: **well‑optimized SQL dominates schema key strategy** (natural vs surrogate; direct tables vs compatibility views) for this workload. Surrogate keys and compatibility views are **migration conveniences**, not guaranteed performance levers.
+
+## 2. Test Scenarios & Datasets
+- Environment: PostgreSQL 13 (Docker), Northridge sample data (~21.6K students)
+- Three experiment groups:
+  1. Full ETL function (original vs surrogate variants, non‑optimized)
+  2. Full ETL function after targeted query tuning (three optimized variants)
+  3. Simplified 14‑column prototype functions (isolate structural vs logic effects)
+- Runs: 10 iterations per variant inside scripted harnesses (50 per group or more for optimized set). Warm cache conditions.
+
+## 3. Performance Results
+### 3.1 Non‑Optimized Full Function (Baseline Exploration)
+| Variant | Avg Time (ms) | Rows | Relative to Natural Key | Notes |
+|---------|---------------|------|-------------------------|-------|
+| Natural Keys (Original) | 3,067 | 21,642 | 1.00x (baseline) | Natural composite joins |
+| Views (Surrogate via Views) | 3,780 | 21,642 | 0.81x (23% slower) | View abstraction overhead |
+| Direct Joins (Surrogate) | 4,273 | 21,642 | 0.72x (39% slower) | Manual join order suboptimal |
+
+Initial observation: naïve surrogate adoption (views or direct) underperformed due to join order, planner selectivity issues, and duplicate inflation not yet addressed.
+
+### 3.2 Optimized Full Function Variants
+| Rank | Variant (Optimized) | Avg Time (ms) | Speedup vs Original Baseline | Rows | Dupes Removed | Comment |
+|------|---------------------|---------------|------------------------------|------|---------------|---------|
+| 1 | Views Optimized | 1,065 | 2.87x faster | 21,630 | Yes (−12) | Best plan after tuning & dedupe |
+| 2 | Surrogate Direct Joins Optimized | 1,213 | 2.52x faster | 21,628 | Yes (−14) | Stable, readable surrogate SQL |
+| 3 | Natural Keys Optimized | 1,627 | 1.88x faster | 21,628 | Yes (−14) | No schema changes required |
+| 4 | Natural Keys Original | 3,058 | 1.00x | 21,642 | No | Baseline reference |
+| 5 | Views Non‑Optimized | 3,460 | 0.88x | 21,642 | No | Untuned view penalty |
+| 6 | Surrogate Joins Non‑Optimized | 3,745 | 0.82x | 21,642 | No | Worst initial plan |
+
+Key reversal: After tuning, the previously slowest pattern (views) becomes fastest. The improvement derives from **query shape changes**, not the view mechanism itself.
+
+### 3.3 Simplified Prototype Functions (Reduced Complexity)
+| Variant | Avg Time (ms) | Min–Max (ms) | Std Dev | Rows | Relative | Observation |
+|---------|---------------|--------------|---------|------|----------|-------------|
+| Surrogate Key Joins | 587.4 | 547–692 | 41.3 | 21,634 | 1.05x faster | Lean schema + single-column joins |
+| Natural Keys | 616.5 | 574–708 | 40.8 | 21,634 | 1.00x baseline | Very close to surrogate performance |
+| Views (Compatibility) | 1,152.1 | 1,084–1,338 | 70.2 | 21,634 | 0.54x (87% slower) | Overhead visible when logic minimal |
+
+In the simplified case (minimal transformation logic), raw surrogate joins modestly outperform natural keys, while the view layer’s extra resolution cost becomes more visible.
+
+## 4. Comparative Analysis
+1. Initial (non-optimized) tests penalized surrogate implementations mainly due to unrefined join ordering and duplicate row amplification—not inherent key design costs.
+2. Tuning actions (deduplication, join reordering, early column pruning, selective temp staging) collapsed the performance gap; all mature variants executed within a narrow band determined by logical work, not key style.
+3. Optimized views succeeded because their rewritten internals yielded better predicate pushdown and cardinality estimates; the benefit is circumstantial, not guaranteed.
+4. Simplified prototypes demonstrate raw structural overhead: surrogate single-column joins shave modest time; views introduce measurable cost when transformational logic is minimal.
+5. Duplicate suppression reduced wasted join cycles and memory churn, unlocking a large fraction of the gains before deeper micro-optimizations mattered.
+6. Across scenarios, the decisive levers were plan shape + accurate statistics; key strategy merely adjusted the baseline by small margins once logic was sound.
+
+## 5. Key Takeaways
+- Most gains (>60%) came from deduplication, join ordering, and column pruning—not key type.
+- Surrogate and natural keys converge in performance at this scale when plans are healthy.
+- Views = convenience layer; measure before assuming acceptable cost in high-frequency paths.
+- Early row count validation prevents chasing false regressions caused by duplication.
+- Prototype (simplified) functions help separate structural from logic costs.
+- Repeatable benchmarking (multi-run averages + std dev) is required for trustworthy conclusions.
+
+## 6. Recommended Migration Strategy
+| Phase | Objective | Actions | Exit Criteria |
+|-------|-----------|---------|---------------|
+| 1 | Stabilize | Introduce views for rapid port of legacy ETL (search/replace) | All legacy functions run against new schema |
+| 2 | Measure & Clean | Add row-count assertions; identify duplicates; baseline timings | Stable row counts; kurtosis/variance acceptable |
+| 3 | Optimize Logic | Reorder joins, prune columns early, add selective temp tables/CTEs | ≥1.8x speedup vs original baseline |
+| 4 | Refactor Keys (Optional) | Gradually replace view usage in hottest queries with direct surrogate joins | Equal or better performance sans views |
+| 5 | Continuous Tuning | Auto-analyze thresholds, periodic VACUUM (if needed), regression dashboards | Sustained performance over 4+ releases |
+
+## 7. Optimization Playbook (Applied Techniques)
+| Category | Technique | Impact |
+|----------|----------|--------|
+| Join Shape | Place most selective joins earlier; avoid unnecessary left joins | Reduced intermediate row set size |
+| Deduplication | Explicit DISTINCT / window ROW_NUMBER filters where fan-out occurs | Eliminated duplicate inflation |
+| Index Use | Ensure covering indexes on high-frequency predicate + join columns | Improved lookup & join cost |
+| CTE / Temp Tables | Materialize heavy subgraphs once when reused | Avoid repeated scans |
+| Column Pruning | Select only required columns into temp staging | Less memory + faster sort/hash |
+| Statistics | Run ANALYZE after bulk loads; monitor pg_stats skew | Accurate cardinality estimates |
+| Predicate Pushdown | Structure views/CTEs to keep filters close to base tables | Lower I/O early |
+| Execution Validation | Repeat 10+ iterations; capture std dev & outliers | Confidence in reported averages |
+
+## 8. Practical Guidance
+- Treat views as a transitional shim. Profile: if a view-heavy query >20% slower after logic tuning, trial a direct surrogate rewrite.
+- Focus first on correctness (row counts) and plan shape (EXPLAIN (ANALYZE, BUFFERS)). Only then consider structural changes.
+- Maintain a small benchmark harness (already created) in CI to prevent regressions as schema evolves.
+
+## 9. Conclusion
+Performance outcomes in this spike were driven chiefly by **query plan quality, duplication control, and join strategy**, not by the mere presence of surrogate keys or view abstractions. A disciplined, measurement-first approach yields 1.9–2.9x improvements independent of key philosophy, enabling flexible migration paths without locking into premature schema-driven assumptions.
+
+---
+*Consolidated on 2025-09-17 from multiple experimental summaries.*
