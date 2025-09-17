@@ -5,11 +5,11 @@
 
 $container = "postgres-northridge-flattened"
 $database = "northridge-flattened"
-$functionName = "sp_imart_transform_dim_student_edfi_postgres_joins"
+$functionName = "sp_imart_transform_dim_student_edfi_postgres_joins_optimized"
 $functionCall = "SELECT COUNT(*) FROM $functionName();"
 
-Write-Host "Performance Test: Joins Function" -ForegroundColor Cyan
-Write-Host "================================" -ForegroundColor Cyan
+Write-Host "Performance Test: Optimized Function" -ForegroundColor Cyan
+Write-Host "====================================" -ForegroundColor Cyan
 Write-Host "Container: $container" -ForegroundColor Yellow
 Write-Host "Database: $database" -ForegroundColor Yellow
 Write-Host "Function: $functionName" -ForegroundColor Yellow
@@ -18,7 +18,7 @@ Write-Host ""
 # Pre-test validation
 if (-not (Test-DatabaseFunction -Container $container -Database $database -FunctionName $functionName)) {
     Write-Host "`n❌ CRITICAL ERROR: Function '$functionName' does not exist!" -ForegroundColor Red
-    Write-Host "   Please load the function from sp_iMart_Transform_DIM_STUDENT_edfi_Postgres_Joins.sql" -ForegroundColor Yellow
+    Write-Host "   Please load the function from sp_iMart_Transform_DIM_STUDENT_edfi_Postgres_Joins_OPTIMIZED.sql" -ForegroundColor Yellow
     exit 1
 }
 
@@ -104,7 +104,7 @@ if (-not $isValid) {
 
 # Export results to JSON for later use
 $exportData = @{
-    TestName = "Joins Function"
+    TestName = "Optimized Function"
     TestDate = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     Container = $container
     Database = $database
@@ -120,8 +120,8 @@ $exportData = @{
     }
 }
 
-$exportData | ConvertTo-Json -Depth 3 | Out-File -FilePath "performance-joins-results.json"
-Write-Host "`nResults saved to performance-joins-results.json" -ForegroundColor Green
+$exportData | ConvertTo-Json -Depth 3 | Out-File -FilePath "performance-optimized-results.json"
+Write-Host "`nResults saved to performance-optimized-results.json" -ForegroundColor Green
 
 # Exit with error if validation failed
 if (-not $isValid) {
