@@ -19,15 +19,11 @@
 This directory contains several Docker Compose files, which can be combined to
 start up different configurations:
 
-1. `kafka-opensearch.yml` covers Kafka, OpenSearch
-2. `kafka-opensearch-ui.yml` covers KafkaUI, OpenSearch Dashboard
-3. `postgresql.yml` starts only PostgreSQL
-4. `local-dms.yml` runs the DMS from local source code.
-5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
-6. `keycloak.yml` runs KeyCloak (identity provider).
-7. `kafka-elasticsearch.yml` covers Kafka, ElasticSearch
-8. `kafka-elasticsearch-ui.yml` covers KafkaUI, ElasticSearch(Kibana) Dashboard
-9. `swagger-ui.yml` covers SwaggerUI
+1. `postgresql.yml` starts only PostgreSQL
+2. `local-dms.yml` runs the DMS from local source code.
+3. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
+4. `keycloak.yml` runs KeyCloak (identity provider).
+5. `swagger-ui.yml` covers SwaggerUI
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -38,11 +34,9 @@ starting point.
 > 404 error. _This is normal_. Ignore that initial 404 error message.
 
 Convenience PowerShell scripts have been included in the directory, which
-startup the appropriate services and inject the Kafka connectors (where
-relevant).
+startup the appropriate services.
 
-* `start-all-services.ps1` launches both `postgresql.yml` and
-  `kafka-opensearch.yml`, without starting the DMS. Useful for running DMS in a
+* `start-all-services.ps1` launches `postgresql.yml` without starting the DMS. Useful for running DMS in a
   local debugger.
 * `start-local-dms.ps1` launches the DMS local build along with all necessary
   services.
@@ -151,8 +145,6 @@ scripts is to mount `src/config/backend/EdFi.DmsConfigurationService.Backend/Dep
 ## Default URLs
 
 * The DMS API: [http://localhost:8080](http://localhost:8080)
-* Kafka UI: [http://localhost:8088/](http://localhost:8088/)
-* OpenSearch Dashboard: [http://localhost:5601/](http://localhost:5601/)
 * Swagger UI: [http://localhost:8082](http://localhost:8082)
 
 ## Accessing Swagger UI
@@ -168,42 +160,6 @@ in DMS_HTTP_PORTS).
 > <http://localhost:8082>).
 
 ## Tips
-
-### Clearing Out All Data in OpenSearch
-
-Run the following commands from the Dev Tools console in OpenSearch Dashboard:
-
-Delete all documents:
-
-```none
-POST */_delete_by_query
-{
-  "query": {
-    "match_all": {}
-  }
-}
-```
-
-Delete all indices:
-
-```none
-DELETE *
-```
-
-### OpenSearch Integration Stops Working
-
-If the OpenSearch integration fails, you'll need to dig into log messages in the
-Docker containers. In PostgreSQL, if you see a message indicating that the
-replication setup failed, this may be a Docker problem where it has failed to
-load a startup script properly. Restarting Docker Desktop (and possibly applying
-the latest updates) may fix the issue.
-
-> [!TIP]
-> To diagnose the problem described above, open a terminal in the
-> PostgreSQL container and run `/docker-entrypoint-initdb.d/postgresql-init.sh`.
-> Does the result show you that this is a _file_ or a _directory_? Sometimes
-> Docker Desktop incorrectly loads this as a directory, which means that the
-> file will not execute on startup.
 
 ### Setup Keycloak
 
