@@ -38,10 +38,6 @@ try {
         "keycloak.yml",
         "local-dms.yml",
         "local-config.yml",
-        "kafka-opensearch.yml",
-        "kafka-elasticsearch.yml",
-        "kafka-opensearch-ui.yml",
-        "kafka-elasticsearch-ui.yml",
         "swagger-ui.yml",
         "published-dms.yml",
         "published-config.yml"
@@ -150,19 +146,19 @@ try {
         if (-not (Test-Path $envFile)) {
             $envFile = "./.env"
         }
-        
+
         # Run docker compose with environment file and filter out SCHEMA_PACKAGES warning
         $output = docker compose $existingComposeFiles --env-file $envFile -p dms-local down -v 2>&1
-        
+
         # Filter out the SCHEMA_PACKAGES warning from output
-        $filteredOutput = $output | Where-Object { 
-            $_ -notmatch 'SCHEMA_PACKAGES.*variable is not set' 
+        $filteredOutput = $output | Where-Object {
+            $_ -notmatch 'SCHEMA_PACKAGES.*variable is not set'
         }
-        
+
         if ($filteredOutput) {
             $filteredOutput | ForEach-Object { Write-Host $_ }
         }
-        
+
         if ($LASTEXITCODE -eq 0) {
             Write-Host "Containers stopped successfully." -ForegroundColor Green
         }
@@ -170,7 +166,7 @@ try {
     catch {
         Write-Warning "Error stopping containers: $_"
     }
-    
+
     # Force stop any remaining containers with dms or kafka in the name
     Write-Host "`nForce stopping any remaining containers..." -ForegroundColor Yellow
     $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka)" }
@@ -257,7 +253,7 @@ try {
         if ($orphanedVolumes) {
             $orphanedCount = ($orphanedVolumes | Measure-Object).Count
             Write-Host "Found $orphanedCount orphaned volume(s)" -ForegroundColor Gray
-            
+
             # Remove each orphaned volume
             foreach ($volume in $orphanedVolumes) {
                 Write-Host "- Removing orphaned volume $volume..." -NoNewline
@@ -335,7 +331,7 @@ try {
     # Verification step - check that everything was removed
     Write-Host "`nVerifying cleanup..." -ForegroundColor Yellow
     $verificationFailed = $false
-    
+
     # Check for any remaining containers
     $remainingContainers = docker ps -a --format "{{.Names}}" | Where-Object { $_ -match "(dms|kafka)" }
     if ($remainingContainers) {
@@ -348,7 +344,7 @@ try {
     else {
         Write-Host "✓ All containers removed" -ForegroundColor Green
     }
-    
+
     # Check for any remaining volumes
     $remainingVolumes = docker volume ls --format "{{.Name}}" | Where-Object { $_ -match "^dms-local_" }
     if ($remainingVolumes) {
@@ -361,7 +357,7 @@ try {
     else {
         Write-Host "✓ All volumes removed" -ForegroundColor Green
     }
-    
+
     # Check for any remaining images
     $remainingImages = @()
     foreach ($imageName in @("dms", "config")) {
@@ -375,7 +371,7 @@ try {
             }
         }
     }
-    
+
     if ($remainingImages) {
         Write-Warning "Found remaining images that were not removed:"
         foreach ($image in $remainingImages) {
@@ -386,7 +382,7 @@ try {
     else {
         Write-Host "✓ All locally-built images removed" -ForegroundColor Green
     }
-    
+
     # Check if network was removed
     $networkExists = docker network ls --format "{{.Name}}" | Where-Object { $_ -eq "dms" }
     if ($networkExists) {
@@ -396,7 +392,7 @@ try {
     else {
         Write-Host "✓ Network removed" -ForegroundColor Green
     }
-    
+
     if ($verificationFailed) {
         Write-Host "`nTeardown completed with warnings!" -ForegroundColor Yellow
         Write-Host "Some resources may need manual cleanup." -ForegroundColor Yellow
@@ -406,7 +402,7 @@ try {
         Write-Host "`nTeardown complete!" -ForegroundColor Green
         Write-Host "All resources have been successfully removed." -ForegroundColor Green
     }
-    
+
     Write-Host "To setup this environment again, run: ./setup-local-dms.ps1" -ForegroundColor Cyan
 }
 finally {
