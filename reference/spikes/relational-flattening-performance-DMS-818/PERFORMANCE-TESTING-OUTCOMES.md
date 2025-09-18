@@ -21,11 +21,11 @@ This document consolidates findings from three related analyses comparing legacy
 
 | Variant | Avg Time (ms) | Rows | Relative vs Natural | Notes |
 |---------|---------------|------|---------------------|-------|
-| Natural Keys ⚡ | 3,058 | 21,642 | 1.00x (baseline) | Natural composite joins |
+| Natural Keys (Original) ⚡ | 3,058 | 21,642 | 1.00x (baseline) | Natural composite joins |
 | Surrogate Key Joins | 3,745 | 21,642 | 0.82x (18% slower) | Suboptimal manual join order |
 | View-Based (Views Layer) | 3,460 | 21,642 | 0.88x (12% slower) | View abstraction overhead |
 
-These baseline figures correspond to the same machines and conditions used later for the optimized variants, ensuring consistency (prior higher numbers removed to avoid duplication/confusion).
+These baseline figures correspond to the same machines and conditions used later for the optimized variants, ensuring consistency.
 
 ### 3.2 Optimized Full Function Variants
 
@@ -45,9 +45,7 @@ Optimizations invert the initial baseline ordering: tuned logic enables the view
 | Surrogate Key Joins ⚡ | 587.4 | 21,634 | 1.05x (5% faster) | Lean schema + single-column joins |
 | View-Based (Views Layer) | 1,152.1 | 21,634 | 0.54x (46% slower) | Overhead visible when logic minimal |
 
-In the simplified case (minimal transformation logic), raw surrogate joins modestly outperform natural keys, while the view layer’s extra resolution cost becomes more visible.
-
-Legend: ⚡ Fastest variant in its table. Relative values use Natural Keys baseline for each table; factors show (Natural baseline time / variant time). Percent faster/slower derived from factor.
+In the simplified case (minimal transformation logic), raw surrogate joins modestly outperform natural keys, while the view layer’s extra resolution cost becomes more visible, confirming general intuition between approaches.
 
 ## 4. Comparative Analysis
 
@@ -55,7 +53,7 @@ Legend: ⚡ Fastest variant in its table. Relative values use Natural Keys basel
 2. Tuning actions (deduplication, join reordering, early column pruning, selective temp staging) collapsed the performance gap; all mature variants executed within a narrow band determined by logical work, not key style.
 3. Optimized views succeeded because their rewritten internals yielded better predicate pushdown and cardinality estimates; the benefit is circumstantial, not guaranteed.
 4. Simplified prototypes demonstrate raw structural overhead: surrogate single-column joins shave modest time; views introduce measurable cost when transformational logic is minimal.
-5. Duplicate suppression reduced wasted join cycles and memory churn, unlocking a large fraction of the gains before deeper micro-optimizations mattered.
+5. Duplicate suppression reduced wasted join cycles and memory churn, unlocking some gains before deeper micro-optimizations mattered.
 6. Across scenarios, the decisive levers were plan shape + accurate statistics; key strategy merely adjusted the baseline by small margins once logic was sound.
 
 ## 5. Key Takeaways

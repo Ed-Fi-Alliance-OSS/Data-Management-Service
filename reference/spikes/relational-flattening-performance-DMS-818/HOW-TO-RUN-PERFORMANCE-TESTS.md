@@ -58,7 +58,11 @@ docker exec -it postgres-northridge-flattened psql -U postgres -d northridge-fla
 
 ### Step 4: Run Performance Tests
 
-Execute the performance comparison scripts:
+Execute the performance comparison scripts. There are two sets of test runners available:
+
+#### Standard Performance Tests
+
+These run the original unoptimized queries:
 
 ```powershell
 # Test original natural key approach
@@ -70,6 +74,47 @@ pwsh ./performance-test-views.ps1
 # Test direct joins surrogate key approach
 pwsh ./performance-test-joins.ps1
 ```
+
+#### Optimized Performance Tests
+
+These run optimized versions that achieve **1.88x to 2.87x performance improvements**:
+
+```powershell
+# Test optimized natural key approach (1.88x faster)
+pwsh ./performance-test-original-optimized.ps1
+
+# Test optimized views-based approach (2.87x faster - recommended)
+pwsh ./performance-test-views-optimized.ps1
+
+# Test optimized direct joins approach (2.52x faster)
+pwsh ./performance-test-joins-optimized.ps1
+```
+
+#### Simplified Performance Tests
+
+The simplified tests are a small subset of the joins from the original query used to amplify variations between the three query approaches, and are not intended to be representative of the typical ETL query.
+
+```powershell
+# Simple test for original approach
+pwsh ./performance-test-simple-original.ps1
+
+# Simple test for views approach
+pwsh ./performance-test-simple-views.ps1
+
+# Simple test for joins approach
+pwsh ./performance-test-simple-joins.ps1
+```
+
+#### Analyze Performance Results
+
+After running tests, analyze the results using:
+
+```powershell
+# Generate comprehensive performance analysis
+pwsh ./analyze-performance-results.ps1
+```
+
+This will compare all test results and generate detailed performance reports.
 
 ### Results
 
