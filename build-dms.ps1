@@ -96,11 +96,11 @@ param(
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="keycloak",
+    $IdentityProvider = "keycloak",
 
     # Environment file for docker-compose operations
     [string]
-    $EnvironmentFile="./.env.e2e"
+    $EnvironmentFile = "./.env.e2e"
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms"
@@ -191,8 +191,8 @@ function SetAuthenticationServiceURL {
     )
     $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
     $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
-    if ($IdentityProvider -eq  "self-contained") {
-        $json.AuthenticationService ="http://dms-config-service:8081/connect/token"
+    if ($IdentityProvider -eq "self-contained") {
+        $json.AuthenticationService = "http://dms-config-service:8081/connect/token"
     }
     else {
         $json.AuthenticationService = "http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token"
@@ -266,7 +266,7 @@ function RunTests {
                 dotnet test $target `
                     --no-build `
                     --no-restore `
-                     -v normal `
+                    -v normal `
                     --logger "trx;LogFileName=$trx.trx" `
                     --logger "console" `
                     --nologo
@@ -299,7 +299,7 @@ function Start-DockerEnvironment {
         $LoadSeedData,
 
         [string]
-        $IdentityProvider="keycloak"
+        $IdentityProvider = "keycloak"
     )
 
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
@@ -311,19 +311,40 @@ function Start-DockerEnvironment {
         try {
             Push-Location eng/docker-compose/
             ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
-            ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
-            ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
             ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -d -v
         }
         finally {
             Pop-Location
         }
     }
-    Invoke-Step { DockerRun }
+    Invoke-Execute {
+        try {
+            Push-Location eng/docker-compose/
+            if ($UsePublishedImage) {
+                if ($LoadSeedData) {
+                    ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
+                }
+                else {
+                    ./start-published-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
+                }
+            }
+            else {
+                if ($LoadSeedData) {
+                    ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -AddExtensionSecurityMetadata -LoadSeedData -IdentityProvider $IdentityProvider
+                }
+                else {
+                    ./start-local-dms.ps1 -EnvironmentFile $EnvironmentFile -EnableConfig -AddExtensionSecurityMetadata -IdentityProvider $IdentityProvider
+                }
+            }
+        }
+        finally {
+            Pop-Location
+        }
+    }
 }
 
 function E2ETests {
-    Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider}
+    Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider }
     Invoke-Step { RunE2E }
 }
 
@@ -403,7 +424,7 @@ function Invoke-TestExecution {
         $LoadSeedData
     )
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider} }
+        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -489,7 +510,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider}
+        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
@@ -497,7 +518,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider} }
+        StartEnvironment { Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider } }
         default { throw "Command '$Command' is not recognized" }
     }
 }
