@@ -166,6 +166,9 @@ else {
         ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
 
+    Write-Output "Running connector setup..."
+    ./setup-connectors.ps1 $EnvironmentFile
+
     if($AddSmokeTestCredentials)
     {
         Import-Module ../smoke_test/modules/SmokeTest.psm1 -Force
