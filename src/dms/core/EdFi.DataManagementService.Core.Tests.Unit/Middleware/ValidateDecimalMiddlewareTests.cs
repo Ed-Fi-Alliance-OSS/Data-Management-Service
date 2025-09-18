@@ -49,7 +49,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
             {
                 ApiSchemaDocuments = SchemaDocuments(),
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("staffs"),
                     DocumentUuid: No.DocumentUuid
                 ),

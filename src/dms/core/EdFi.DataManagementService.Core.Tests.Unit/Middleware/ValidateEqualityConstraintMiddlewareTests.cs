@@ -57,7 +57,7 @@ public class ValidateEqualityConstraintMiddlewareTests
         {
             ApiSchemaDocuments = SchemaDocuments(),
             PathComponents = new(
-                ProjectNamespace: new("ed-fi"),
+                ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("bellSchedules"),
                 DocumentUuid: No.DocumentUuid
             ),

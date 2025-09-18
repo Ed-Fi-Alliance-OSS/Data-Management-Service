@@ -57,7 +57,7 @@ internal static class No
     /// The null object for PathComponents
     /// </summary>
     public static readonly PathComponents PathComponents = new(
-        ProjectNamespace: new(""),
+        ProjectEndpointName: new(""),
         EndpointName: new(""),
         DocumentUuid: DocumentUuid
     );

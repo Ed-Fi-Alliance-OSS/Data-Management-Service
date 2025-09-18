@@ -174,7 +174,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     {
         string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
         string resourceClaimUri =
-            $"{Conventions.EdFiOdsResourceClaimBaseUri}/{requestInfo.PathComponents.ProjectNamespace.Value}/{resourceClaimName}";
+            $"{Conventions.EdFiOdsResourceClaimBaseUri}/{requestInfo.PathComponents.ProjectEndpointName.Value}/{resourceClaimName}";
 
         _logger.LogDebug("resourceClaimUri: {ResourceClaimUri}", resourceClaimUri);
         return resourceClaimUri;

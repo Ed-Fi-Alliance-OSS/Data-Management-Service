@@ -182,7 +182,7 @@ public class ValidateQueryMiddlewareTests
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
@@ -331,7 +331,7 @@ public class ValidateQueryMiddlewareTests
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
@@ -415,7 +415,7 @@ public class ValidateQueryMiddlewareTests
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
@@ -492,7 +492,7 @@ public class ValidateQueryMiddlewareTests
             {
                 ApiSchemaDocuments = NewApiSchemaDocuments(),
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),

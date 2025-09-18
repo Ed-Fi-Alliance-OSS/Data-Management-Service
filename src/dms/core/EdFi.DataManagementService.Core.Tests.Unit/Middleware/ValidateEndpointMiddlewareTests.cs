@@ -46,7 +46,7 @@ public class ValidateEndpointMiddlewareTests
         {
             _requestInfo.ApiSchemaDocuments = SchemaDocuments();
             _requestInfo.PathComponents = new(
-                ProjectNamespace: new("not-ed-fi"),
+                ProjectEndpointName: new("not-ed-fi"),
                 EndpointName: new("schools"),
                 DocumentUuid: No.DocumentUuid
             );
@@ -95,7 +95,7 @@ public class ValidateEndpointMiddlewareTests
         {
             _requestInfo.ApiSchemaDocuments = SchemaDocuments();
             _requestInfo.PathComponents = new(
-                ProjectNamespace: new("ed-fi"),
+                ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("notschools"),
                 DocumentUuid: No.DocumentUuid
             );
@@ -153,7 +153,7 @@ public class ValidateEndpointMiddlewareTests
         {
             _requestInfo.ApiSchemaDocuments = SchemaDocuments();
             _requestInfo.PathComponents = new(
-                ProjectNamespace: new("ed-fi"),
+                ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("schools"),
                 DocumentUuid: No.DocumentUuid
             );

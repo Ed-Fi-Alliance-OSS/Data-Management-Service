@@ -25,7 +25,7 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
         );
 
         ProjectSchema? projectSchema = requestInfo.ApiSchemaDocuments.FindProjectSchemaForProjectNamespace(
-            requestInfo.PathComponents.ProjectNamespace
+            requestInfo.PathComponents.ProjectEndpointName
         );
 
         if (projectSchema == null)

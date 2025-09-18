@@ -123,7 +123,7 @@ public class ParsePathMiddlewareTests
         {
             _requestInfo?.PathComponents.Should().NotBe(No.PathComponents);
 
-            _requestInfo?.PathComponents.ProjectNamespace.Value.Should().Be("ed-fi");
+            _requestInfo?.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
             _requestInfo?.PathComponents.EndpointName.Value.Should().Be("endpointName");
         }
     }
@@ -160,7 +160,7 @@ public class ParsePathMiddlewareTests
         {
             _requestInfo?.PathComponents.Should().NotBe(No.PathComponents);
 
-            _requestInfo?.PathComponents.ProjectNamespace.Value.Should().Be("ed-fi");
+            _requestInfo?.PathComponents.ProjectEndpointName.Value.Should().Be("ed-fi");
             _requestInfo?.PathComponents.EndpointName.Value.Should().Be("endpointName");
             _requestInfo?.PathComponents.DocumentUuid.Value.Should().Be(documentUuid);
         }

@@ -13,9 +13,9 @@ namespace EdFi.DataManagementService.Core.Model;
 /// </summary>
 internal record PathComponents(
     /// <summary>
-    /// Project namespace, all lowercased
+    /// Project endpoint name, lower kebab-case, ex: "ed-fi"
     /// </summary>
-    ProjectNamespace ProjectNamespace,
+    ApiSchema.Model.ProjectEndpointName ProjectEndpointName,
     /// <summary>
     /// Endpoint name, which is always decapitalized and plural
     /// </summary>
@@ -34,6 +34,6 @@ internal record PathComponents(
     /// <returns>The path of the resource</returns>
     public static string ToResourcePath(PathComponents pathComponents, DocumentUuid documentUuid)
     {
-        return $"/{pathComponents.ProjectNamespace.Value}/{pathComponents.EndpointName.Value}/{documentUuid.Value}";
+        return $"/{pathComponents.ProjectEndpointName.Value}/{pathComponents.EndpointName.Value}/{documentUuid.Value}";
     }
 };
