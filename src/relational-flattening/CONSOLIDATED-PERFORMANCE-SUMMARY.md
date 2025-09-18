@@ -77,7 +77,17 @@ Legend: ⚡ Fastest variant in its table. Relative values use Natural Keys basel
 | 4 | Refactor Keys (Optional) | Gradually replace view usage in hottest queries with direct surrogate joins | Equal or better performance sans views |
 | 5 | Continuous Tuning | Auto-analyze thresholds, periodic VACUUM (if needed), regression dashboards | Sustained performance over 4+ releases |
 
-## 7. Optimization Playbook (Applied Techniques)
+## 7. Optimization Methodology
+
+### Query Optimization with Generative AI
+
+Query optimization was performed using [Claude Code](https://claude.com/product/claude-code) with the [Postgres MCP Pro](https://github.com/crystaldba/postgres-mcp) open-source database tool. The following prompt is representative of the ones used with the Claude Opus 4.1 model to optimize each query variant:
+
+> "As a database performance expert, use the postgres tool to analyze and improve the performance of the views-based query. You must only use the views and never the underlying tables. You may not add any indexes outside of temporary tables. Name this the views-optimized query. Ensure that the result set is the same between the original views query and the optimized views query."
+
+This constraint-based approach ensured that optimizations focused on query structure and logic rather than schema changes, demonstrating that performance gains are achievable through SQL refinement alone.
+
+## 8. Optimization Playbook (Applied Techniques)
 
 | Category | Technique | Impact |
 |----------|----------|--------|
@@ -90,13 +100,13 @@ Legend: ⚡ Fastest variant in its table. Relative values use Natural Keys basel
 | Predicate Pushdown | Structure views/CTEs to keep filters close to base tables | Lower I/O early |
 | Execution Validation | Repeat 10+ iterations; capture std dev & outliers | Confidence in reported averages |
 
-## 8. Practical Guidance
+## 9. Practical Guidance
 
 - Treat views as a transitional shim. Profile: if a view-heavy query >20% slower after logic tuning, trial a direct surrogate rewrite.
 - Focus first on correctness (row counts) and plan shape (EXPLAIN (ANALYZE, BUFFERS)). Only then consider structural changes.
 - Maintain a small benchmark harness (already created) in CI to prevent regressions as schema evolves.
 
-## 9. Conclusion
+## 10. Conclusion
 
 Performance outcomes in this spike were driven chiefly by **query plan quality, duplication control, and join strategy**, not by the mere presence of surrogate keys or view abstractions. A disciplined, measurement-first approach yields 1.9–2.9x improvements independent of key philosophy, enabling flexible migration paths without locking into premature schema-driven assumptions.
 
