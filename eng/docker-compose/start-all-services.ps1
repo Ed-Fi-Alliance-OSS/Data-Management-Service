@@ -20,9 +20,7 @@ param (
 
 $files = @(
     "-f",
-    "postgresql.yml",
-    "-f",
-    "kafka-opensearch.yml"
+    "postgresql.yml"
 )
 
 if ($d) {

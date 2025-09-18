@@ -199,18 +199,9 @@ jobs:
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
 
-      - name: Add Kafka hostname to /etc/hosts
-        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
-
       - name: Run ${{matrix.queryhandler}} - IdentityProvider (${{matrix.identityprovider}}) E2E Tests
         if: success()
-        env:
-          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          if ("${{ matrix.queryhandler }}" -eq "postgresql") {
-            $env:DMS_QUERYHANDLER="postgresql"
-          }
-
           ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Export Docker Logs
