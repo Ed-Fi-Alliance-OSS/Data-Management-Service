@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+services:
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2@sha256:8f2ff02d64b0a7a2b71b6b3b3148b85f66d00ec20ad40c30bdcd415d46d31818
+    container_name: kafka-ui
+    environment:
+      DYNAMIC_CONFIG_ENABLED: 'true'
+      KAFKA_CLUSTERS_0_NAME: kafka1
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - '127.0.0.1:${KAFKA_UI_PORT:-8088}:8080'
+    networks:
+      - dms
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.15.0@sha256:b7c26c60bfafcbb90c538316570b84bab85f5dc82339aa7feefc3014274c689e
+    container_name: dms-opensearch-dashboards
+    environment:
+      OPENSEARCH_HOSTS: '["http://dms-search:9200"]' # disables security dashboards plugin in OpenSearch Dashboards, otherwise will have TLS errors
+      DISABLE_SECURITY_DASHBOARDS_PLUGIN: true
+    ports:
+      - '127.0.0.1:${OPENSEARCH_DASHBOARD_PORT:-5601}:5601'
+    networks:
+      - dms
+    restart: unless-stopped
+
+networks:
+  dms:
+    external: true

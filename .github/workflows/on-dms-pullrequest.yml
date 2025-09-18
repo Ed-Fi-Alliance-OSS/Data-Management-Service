@@ -195,12 +195,17 @@ jobs:
         uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
         with:
           dotnet-version: "8.0.x"
+      
+      - name: Add Kafka hostname to /etc/hosts
+        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
 
       - name: Build
         run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }} -IdentityProvider ${{matrix.identityprovider}}
 
       - name: Run ${{matrix.queryhandler}} - IdentityProvider (${{matrix.identityprovider}}) E2E Tests
         if: success()
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
           ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
 

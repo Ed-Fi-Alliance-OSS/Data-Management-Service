@@ -19,11 +19,15 @@
 This directory contains several Docker Compose files, which can be combined to
 start up different configurations:
 
-1. `postgresql.yml` starts only PostgreSQL
-2. `local-dms.yml` runs the DMS from local source code.
-3. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
-4. `keycloak.yml` runs KeyCloak (identity provider).
-5. `swagger-ui.yml` covers SwaggerUI
+1. `kafka-opensearch.yml` covers Kafka, OpenSearch
+2. `kafka-opensearch-ui.yml` covers KafkaUI, OpenSearch Dashboard
+3. `postgresql.yml` starts only PostgreSQL
+4. `local-dms.yml` runs the DMS from local source code.
+5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
+6. `keycloak.yml` runs KeyCloak (identity provider).
+7. `kafka-elasticsearch.yml` covers Kafka, ElasticSearch
+8. `kafka-elasticsearch-ui.yml` covers KafkaUI, ElasticSearch(Kibana) Dashboard
+9. `swagger-ui.yml` covers SwaggerUI
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -34,7 +38,8 @@ starting point.
 > 404 error. _This is normal_. Ignore that initial 404 error message.
 
 Convenience PowerShell scripts have been included in the directory, which
-startup the appropriate services.
+startup the appropriate services and inject the Kafka connectors (where
+relevant).
 
 * `start-all-services.ps1` launches `postgresql.yml` without starting the DMS. Useful for running DMS in a
   local debugger.
@@ -145,6 +150,7 @@ scripts is to mount `src/config/backend/EdFi.DmsConfigurationService.Backend/Dep
 ## Default URLs
 
 * The DMS API: [http://localhost:8080](http://localhost:8080)
+* Kafka UI: [http://localhost:8088/](http://localhost:8088/)
 * Swagger UI: [http://localhost:8082](http://localhost:8082)
 
 ## Accessing Swagger UI
