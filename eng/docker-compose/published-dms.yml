@@ -22,7 +22,7 @@ services:
       # The default correlation id header is deliberately blank on the following line
       AppSettings__CorrelationIdHeader: ${CORRELATION_ID_HEADER:-}
       AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}
-      AppSettings__QueryHandler: ${DMS_QUERYHANDLER:-opensearch}
+      AppSettings__QueryHandler: ${DMS_QUERYHANDLER:-postgresql}
       ConnectionStrings__DatabaseConnection: ${DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
       DatabaseOptions__IsolationLevel: ${DATABASE_ISOLATION_LEVEL:-RepeatableRead}
       # "DATABASE_CONNECTION_STRING_ADMIN" can have alternate credentials with elevated permissions for creating database objects

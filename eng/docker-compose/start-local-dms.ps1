@@ -21,14 +21,9 @@ param (
     [Switch]
     $r,
 
-    # Enable KafkaUI and OpenSearch or ElasticSearch Dashboard
+    # Enable KafkaUI
     [Switch]
     $EnableSearchEngineUI,
-
-    # Search engine type ("OpenSearch" or "ElasticSearch")
-    [string]
-    [ValidateSet("OpenSearch", "ElasticSearch")]
-    $SearchEngine = "OpenSearch",
 
     # Enable the DMS Configuration Service
     [Switch]
@@ -90,18 +85,18 @@ $files = @(
     "local-dms.yml"
 )
 
-if ($SearchEngine -eq "ElasticSearch") {
-    $files += @("-f", "kafka-elasticsearch.yml")
-    if ($EnableSearchEngineUI) {
-        $files += @("-f", "kafka-elasticsearch-ui.yml")
-    }
-}
-else {
-    $files += @("-f", "kafka-opensearch.yml")
-    if ($EnableSearchEngineUI) {
-        $files += @("-f", "kafka-opensearch-ui.yml")
-    }
-}
+#if ($SearchEngine -eq "ElasticSearch") {
+#    $files += @("-f", "kafka-elasticsearch.yml")
+#    if ($EnableSearchEngineUI) {
+#        $files += @("-f", "kafka-elasticsearch-ui.yml")
+#    }
+#}
+#else {
+#    $files += @("-f", "kafka-opensearch.yml")
+#    if ($EnableSearchEngineUI) {
+#        $files += @("-f", "kafka-opensearch-ui.yml")
+#    }
+#}
 
 if ($EnableConfig) {
     $files += @("-f", "local-config.yml")
@@ -197,8 +192,8 @@ else {
         # Create client with edfi_admin_api/authMetadata_readonly_access scope
         ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
-    Write-Output "Running connector setup..."
-    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
+#    Write-Output "Running connector setup..."
+#    ./setup-connectors.ps1 $EnvironmentFile
 
     if($AddSmokeTestCredentials)
     {
