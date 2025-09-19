@@ -60,21 +60,14 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "published-dms.yml"
+    "published-dms.yml",
+    "-f",
+    "kafka.yml"
 )
 
-# if ($SearchEngine -eq "ElasticSearch") {
-#    $files += @("-f", "kafka-elasticsearch.yml")
-#    if ($EnableSearchEngineUI) {
-#        $files += @("-f", "kafka-elasticsearch-ui.yml")
-#    }
-#}
-#else {
-#    $files += @("-f", "kafka-opensearch.yml")
-#    if ($EnableSearchEngineUI) {
-#        $files += @("-f", "kafka-opensearch-ui.yml")
-#    }
-#}
+if ($EnableSearchEngineUI) {
+    $files += @("-f", "kafka-ui.yml")
+}
 
 if ($EnableConfig) {
     $files += @("-f", "published-config.yml")
