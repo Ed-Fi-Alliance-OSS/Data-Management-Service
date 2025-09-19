@@ -333,7 +333,9 @@ public class ClaimsManagementStepDefinitions(ScenarioContext scenarioContext)
             {
                 var found = FindClaimByNamePattern(children, pattern);
                 if (found != null)
+                {
                     return found;
+                }
             }
         }
         return null;

@@ -7,6 +7,7 @@ using System.Security.Claims;
 using System.Text.Encodings.Web;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit;
@@ -34,9 +35,9 @@ public class TestAuthHandler(
             new Claim("scope", scopeHeader),
         };
 
-        var identity = new ClaimsIdentity(claims, AuthenticationConstants.AuthenticationSchema);
+        var identity = new ClaimsIdentity(claims, JwtBearerDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
-        var ticket = new AuthenticationTicket(principal, AuthenticationConstants.AuthenticationSchema);
+        var ticket = new AuthenticationTicket(principal, JwtBearerDefaults.AuthenticationScheme);
 
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
