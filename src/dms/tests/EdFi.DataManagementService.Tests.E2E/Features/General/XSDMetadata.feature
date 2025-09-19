@@ -108,7 +108,8 @@ Feature: XSD Metadata Endpoint
                       "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-Student-Extension.xsd",
                       "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentEnrollment-Extension.xsd",
                       "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentHealth-Extension.xsd",
-                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentProgram-Extension.xsd"
+                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentProgram-Extension.xsd",
+                      "http://localhost:8080/metadata/xsd/sample/Sample-EXTENSION-Interchange-StudentTranscript-Extension.xsd"
                     ]
                   """
         Scenario: 04 Ensure clients can retrieve Extension (Homograph) blended with Core schema files for the data model

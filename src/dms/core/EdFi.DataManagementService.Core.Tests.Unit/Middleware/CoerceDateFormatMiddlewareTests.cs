@@ -110,7 +110,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
                     PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
+                        ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
                         DocumentUuid: No.DocumentUuid
                     ),
@@ -208,7 +208,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
                     PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
+                        ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
                         DocumentUuid: No.DocumentUuid
                     ),
@@ -285,7 +285,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
                     PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
+                        ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
                         DocumentUuid: No.DocumentUuid
                     ),
@@ -362,7 +362,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
                     PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
+                        ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
                         DocumentUuid: No.DocumentUuid
                     ),
@@ -440,7 +440,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
                     PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
+                        ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
                         DocumentUuid: No.DocumentUuid
                     ),
@@ -526,7 +526,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     ApiSchemaDocuments = SchemaDocuments(),
                     ParsedBody = JsonNode.Parse(requestBody)!,
                     PathComponents = new(
-                        ProjectNamespace: new("ed-fi"),
+                        ProjectEndpointName: new("ed-fi"),
                         EndpointName: new("academicWeeks"),
                         DocumentUuid: No.DocumentUuid
                     ),

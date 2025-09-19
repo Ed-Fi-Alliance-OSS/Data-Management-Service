@@ -44,10 +44,10 @@ internal class ApiSchemaDocuments(ApiSchemaDocumentNodes _apiSchemaNodes, ILogge
     /// Finds the ProjectSchema that represents the given ProjectNamespace e.g. "ed-fi" for the Data Standard.
     /// Returns null if not found.
     /// </summary>
-    public ProjectSchema? FindProjectSchemaForProjectNamespace(ProjectNamespace projectNamespace)
+    public ProjectSchema? FindProjectSchemaForProjectNamespace(ProjectEndpointName projectEndpointName)
     {
         ProjectSchema coreProjectSchema = GetCoreProjectSchema();
-        if (projectNamespace.Value == coreProjectSchema.ProjectEndpointName.Value)
+        if (projectEndpointName.Value == coreProjectSchema.ProjectEndpointName.Value)
         {
             return coreProjectSchema;
         }
@@ -55,7 +55,7 @@ internal class ApiSchemaDocuments(ApiSchemaDocumentNodes _apiSchemaNodes, ILogge
         ProjectSchema[] extensionProjectSchemas = GetExtensionProjectSchemas();
         return Array.Find(
             extensionProjectSchemas,
-            projectSchema => projectSchema.ProjectEndpointName.Value == projectNamespace.Value
+            projectSchema => projectSchema.ProjectEndpointName.Value == projectEndpointName.Value
         );
     }
 

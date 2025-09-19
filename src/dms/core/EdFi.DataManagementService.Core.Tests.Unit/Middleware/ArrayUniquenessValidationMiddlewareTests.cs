@@ -44,7 +44,7 @@ public class ArrayUniquenessValidationMiddlewareTests
         {
             ApiSchemaDocuments = apiSchema,
             PathComponents = new(
-                ProjectNamespace: new("ed-fi"),
+                ProjectEndpointName: new("ed-fi"),
                 EndpointName: new(endpointName),
                 DocumentUuid: No.DocumentUuid
             ),

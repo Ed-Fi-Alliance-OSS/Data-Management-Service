@@ -110,7 +110,7 @@ public class CoerceDateTimesMiddlewareTests
                 ApiSchemaDocuments = SchemaDocuments(),
                 ParsedBody = JsonNode.Parse(requestBody)!,
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
@@ -218,7 +218,7 @@ public class CoerceDateTimesMiddlewareTests
                 ApiSchemaDocuments = SchemaDocuments(),
                 ParsedBody = JsonNode.Parse(requestBody)!,
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
@@ -298,7 +298,7 @@ public class CoerceDateTimesMiddlewareTests
                 ApiSchemaDocuments = SchemaDocuments(),
                 ParsedBody = JsonNode.Parse(requestBody)!,
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
@@ -374,7 +374,7 @@ public class CoerceDateTimesMiddlewareTests
                 ApiSchemaDocuments = SchemaDocuments(),
                 ParsedBody = JsonNode.Parse(requestBody)!,
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("academicWeeks"),
                     DocumentUuid: No.DocumentUuid
                 ),
@@ -469,7 +469,7 @@ public class CoerceDateTimesMiddlewareTests
                 ApiSchemaDocuments = SchemaDocumentsWithoutDateTimePaths(),
                 ParsedBody = JsonNode.Parse(requestBody)!,
                 PathComponents = new(
-                    ProjectNamespace: new("ed-fi"),
+                    ProjectEndpointName: new("ed-fi"),
                     EndpointName: new("simpleResources"),
                     DocumentUuid: No.DocumentUuid
                 ),

@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-internal record PathInfo(string ProjectNamespace, string EndpointName, string? DocumentUuid);
+internal record PathInfo(string ProjectEndpointName, string EndpointName, string? DocumentUuid);
 
 /// <summary>
 /// Parses and validates the path from the frontend is well-formed. Adds PathComponents
@@ -36,7 +36,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
         string? documentUuid = documentUuidValue == "" ? null : documentUuidValue;
 
         return new(
-            ProjectNamespace: new(match.Groups["projectNamespace"].Value.ToLower()),
+            ProjectEndpointName: new(match.Groups["projectNamespace"].Value.ToLower()),
             EndpointName: new(match.Groups["endpointName"].Value),
             DocumentUuid: documentUuid
         );
@@ -127,7 +127,7 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
             pathInfo.DocumentUuid == null ? No.DocumentUuid : new(new(pathInfo.DocumentUuid));
 
         requestInfo.PathComponents = new(
-            ProjectNamespace: new(pathInfo.ProjectNamespace),
+            ProjectEndpointName: new(pathInfo.ProjectEndpointName),
             EndpointName: new(pathInfo.EndpointName),
             DocumentUuid: documentUuid
         );

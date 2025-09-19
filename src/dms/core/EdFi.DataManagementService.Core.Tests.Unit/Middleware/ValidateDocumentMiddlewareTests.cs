@@ -100,7 +100,7 @@ public class ValidateDocumentMiddlewareTests
         {
             ApiSchemaDocuments = SchemaDocuments(),
             PathComponents = new(
-                ProjectNamespace: new("ed-fi"),
+                ProjectEndpointName: new("ed-fi"),
                 EndpointName: new("schools"),
                 DocumentUuid: No.DocumentUuid
             ),

@@ -104,7 +104,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             {
                 ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
+                    new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
@@ -145,7 +145,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             {
                 ClientAuthorizations = new ClientAuthorizations("", "NO-MATCH", [], []),
                 PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
+                    new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
@@ -191,7 +191,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             {
                 ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
+                    new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("stateDescriptor"),
                     new DocumentUuid()
                 ),
@@ -237,7 +237,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             {
                 ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
+                    new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
@@ -277,7 +277,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             {
                 ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
+                    new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
@@ -347,7 +347,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             {
                 ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
+                    new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("stateDescriptor"),
                     new DocumentUuid()
                 ),
@@ -394,7 +394,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             {
                 ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
+                    new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
@@ -435,7 +435,7 @@ public class ResourceActionAuthorizationMiddlewareTests
             {
                 ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
-                    new ProjectNamespace("ed-fi"),
+                    new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
                     new DocumentUuid()
                 ),
