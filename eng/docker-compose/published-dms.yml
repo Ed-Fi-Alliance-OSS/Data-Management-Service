@@ -31,7 +31,6 @@ services:
       CircuitBreaker__SamplingDurationSeconds: ${SAMPLING_DURATION_SECONDS:-10}
       CircuitBreaker__MinimumThroughput: ${MINIMUM_THROUGHPUT:-2}
       CircuitBreaker__BreakDurationSeconds: ${BREAK_DURATION_SECONDS:-30}
-      ConnectionStrings__OpenSearchUrl: ${OPENSEARCH_URL:-http://dms-search:9200}
       ConfigurationServiceSettings__BaseUrl: ${CONFIG_SERVICE_URL:-http://dms-config-service:8081}
       ConfigurationServiceSettings__ClientId: ${CONFIG_SERVICE_CLIENT_ID:-CMSAuthMetadataReadOnlyAccess}
       ConfigurationServiceSettings__Scope: ${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/authMetadata_readonly_access}

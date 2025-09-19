@@ -28,14 +28,10 @@ jobs:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
 
   smoke-test:
-    name: Smoke Tests - ${{ matrix.search-engine.name }}
+    name: Smoke Tests
     needs: build-populated-template
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        search-engine:
-          - name: postgresql
-
+    
     defaults:
       run:
         shell: pwsh
@@ -193,7 +189,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
-          name: ${{ matrix.search-engine.name }}-Docker-Logs
+          name: Smoke-Tests-Docker-Logs
           path: ${{ github.workspace }}/logs
           retention-days: 10
 
@@ -215,7 +211,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Search Engines:* OpenSearch & ElasticSearch\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "✅ *Scheduled Smoke Tests - SUCCESS*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests Run:* DMS NonDestructiveAPI, DMS NonDestructiveSDK, DMS DestructiveSDK, ODS NonDestructiveSDK, ODS DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
@@ -235,7 +231,7 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Search Engines:* OpenSearch & ElasticSearch\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    "text": "❌ *Scheduled Smoke Tests - FAILURE*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref }}\n*Tests:* NonDestructiveAPI, NonDestructiveSDK, DestructiveSDK\n*Extensions:* Core, TPDM, Sample, Homograph\n*Log URL:* ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
                   }
                 }
               ]
