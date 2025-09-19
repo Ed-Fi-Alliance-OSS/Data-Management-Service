@@ -22,7 +22,7 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "kafka-opensearch.yml"
+    "kafka.yml"
 )
 
 if ($d) {

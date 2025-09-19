@@ -22,7 +22,7 @@ services:
       # The default correlation id header is deliberately blank on the following line
       AppSettings__CorrelationIdHeader: ${CORRELATION_ID_HEADER:-}
       AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}
-      AppSettings__QueryHandler: ${DMS_QUERYHANDLER:-opensearch}
+      AppSettings__QueryHandler: ${DMS_QUERYHANDLER:-postgresql}
       ConnectionStrings__DatabaseConnection: ${DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${POSTGRES_DB_NAME};}
       DatabaseOptions__IsolationLevel: ${DATABASE_ISOLATION_LEVEL:-RepeatableRead}
       # "DATABASE_CONNECTION_STRING_ADMIN" can have alternate credentials with elevated permissions for creating database objects
@@ -31,7 +31,6 @@ services:
       CircuitBreaker__SamplingDurationSeconds: ${SAMPLING_DURATION_SECONDS:-10}
       CircuitBreaker__MinimumThroughput: ${MINIMUM_THROUGHPUT:-2}
       CircuitBreaker__BreakDurationSeconds: ${BREAK_DURATION_SECONDS:-30}
-      ConnectionStrings__OpenSearchUrl: ${OPENSEARCH_URL:-http://dms-search:9200}
       ConfigurationServiceSettings__BaseUrl: ${CONFIG_SERVICE_URL:-http://dms-config-service:8081}
       ConfigurationServiceSettings__ClientId: ${CONFIG_SERVICE_CLIENT_ID:-CMSAuthMetadataReadOnlyAccess}
       ConfigurationServiceSettings__Scope: ${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/authMetadata_readonly_access}
