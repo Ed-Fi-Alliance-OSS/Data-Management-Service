@@ -17,7 +17,7 @@ param (
     [string]
     $EnvironmentFile = "./.env",
 
-    # Enable KafkaUI and OpenSearch Dashboard
+    # Enable KafkaUI
     [Switch]
     $EnableSearchEngineUI,
 
@@ -177,7 +177,7 @@ else {
     }
 
     Write-Output "Running connector setup..."
-    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
+    ./setup-connectors.ps1 $EnvironmentFile
 
     if($AddSmokeTestCredentials)
     {

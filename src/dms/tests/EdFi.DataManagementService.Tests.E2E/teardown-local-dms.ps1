@@ -38,10 +38,8 @@ try {
         "keycloak.yml",
         "local-dms.yml",
         "local-config.yml",
-        "kafka-opensearch.yml",
-        "kafka-elasticsearch.yml",
-        "kafka-opensearch-ui.yml",
-        "kafka-elasticsearch-ui.yml",
+        "kafka.yml",
+        "kafka-ui.yml",
         "swagger-ui.yml",
         "published-dms.yml",
         "published-config.yml"

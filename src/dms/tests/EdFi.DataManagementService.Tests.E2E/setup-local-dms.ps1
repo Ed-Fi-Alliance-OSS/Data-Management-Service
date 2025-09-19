@@ -55,7 +55,6 @@ try {
 
     Write-Host "Starting DMS environment with E2E configuration..." -ForegroundColor Green
     Write-Host "Configuration:" -ForegroundColor Yellow
-    Write-Host "  - Search Engine: ElasticSearch" -ForegroundColor Gray
     Write-Host "  - Search Engine UI: Enabled" -ForegroundColor Gray
     Write-Host "  - Configuration Service: Enabled" -ForegroundColor Gray
     Write-Host "  - Environment File: ./.env.e2e" -ForegroundColor Gray
