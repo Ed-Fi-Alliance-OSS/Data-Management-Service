@@ -34,10 +34,7 @@ jobs:
     strategy:
       matrix:
         search-engine:
-          - name: OpenSearch
-            flag: EnableOpenSearch
-          - name: ElasticSearch
-            flag: EnableElasticSearch
+          - name: postgresql
 
     defaults:
       run:
@@ -89,7 +86,7 @@ jobs:
           cache-to: type=local,dest=/tmp/.buildx-cache
 
       - name: Start DMS with Core, TPDM, Sample, and Homograph Extensions (SmokeTest)
-        run: ./build-dms.ps1 StartEnvironment -SkipDockerBuild -${{ matrix.search-engine.flag }} -LoadSeedData -EnvironmentFile "./.env.example"
+        run: ./build-dms.ps1 StartEnvironment -SkipDockerBuild -LoadSeedData -EnvironmentFile "./.env.example"
 
       - name: Wait for services to be ready
         run: |

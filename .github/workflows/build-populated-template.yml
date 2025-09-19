@@ -107,7 +107,7 @@ jobs:
       - name: Start DMS Docker
         run: |
           $env:USE_API_SCHEMA_PATH="false"
-          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -SearchEngine "OpenSearch" -enableConfig
+          ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -enableConfig
         working-directory: eng/docker-compose/
 
       - name: Generate Populated Template package

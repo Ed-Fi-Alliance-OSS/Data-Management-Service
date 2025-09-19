@@ -21,11 +21,6 @@ param (
     [Switch]
     $EnableSearchEngineUI,
 
-    # Search engine type ("OpenSearch" or "ElasticSearch")
-    [string]
-    [ValidateSet("OpenSearch", "ElasticSearch")]
-    $SearchEngine = "OpenSearch",
-
     # Enable the DMS Configuration Service
     [Switch]
     $EnableConfig,
@@ -68,18 +63,18 @@ $files = @(
     "published-dms.yml"
 )
 
-if ($SearchEngine -eq "ElasticSearch") {
-    $files += @("-f", "kafka-elasticsearch.yml")
-    if ($EnableSearchEngineUI) {
-        $files += @("-f", "kafka-elasticsearch-ui.yml")
-    }
-}
-else {
-    $files += @("-f", "kafka-opensearch.yml")
-    if ($EnableSearchEngineUI) {
-        $files += @("-f", "kafka-opensearch-ui.yml")
-    }
-}
+# if ($SearchEngine -eq "ElasticSearch") {
+#    $files += @("-f", "kafka-elasticsearch.yml")
+#    if ($EnableSearchEngineUI) {
+#        $files += @("-f", "kafka-elasticsearch-ui.yml")
+#    }
+#}
+#else {
+#    $files += @("-f", "kafka-opensearch.yml")
+#    if ($EnableSearchEngineUI) {
+#        $files += @("-f", "kafka-opensearch-ui.yml")
+#    }
+#}
 
 if ($EnableConfig) {
     $files += @("-f", "published-config.yml")
