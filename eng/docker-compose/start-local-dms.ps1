@@ -21,14 +21,9 @@ param (
     [Switch]
     $r,
 
-    # Enable KafkaUI and OpenSearch or ElasticSearch Dashboard
+    # Enable KafkaUI
     [Switch]
-    $EnableSearchEngineUI,
-
-    # Search engine type ("OpenSearch" or "ElasticSearch")
-    [string]
-    [ValidateSet("OpenSearch", "ElasticSearch")]
-    $SearchEngine = "OpenSearch",
+    $EnableKafkaUI,
 
     # Enable the DMS Configuration Service
     [Switch]
@@ -87,20 +82,13 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "local-dms.yml"
+    "local-dms.yml",
+    "-f",
+    "kafka.yml"
 )
 
-if ($SearchEngine -eq "ElasticSearch") {
-    $files += @("-f", "kafka-elasticsearch.yml")
-    if ($EnableSearchEngineUI) {
-        $files += @("-f", "kafka-elasticsearch-ui.yml")
-    }
-}
-else {
-    $files += @("-f", "kafka-opensearch.yml")
-    if ($EnableSearchEngineUI) {
-        $files += @("-f", "kafka-opensearch-ui.yml")
-    }
+if ($EnableKafkaUI) {
+    $files += @("-f", "kafka-ui.yml")
 }
 
 if ($EnableConfig) {
@@ -198,7 +186,7 @@ else {
         ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
     Write-Output "Running connector setup..."
-    ./setup-connectors.ps1 $EnvironmentFile $SearchEngine
+    ./setup-connectors.ps1 $EnvironmentFile
 
     if($AddSmokeTestCredentials)
     {

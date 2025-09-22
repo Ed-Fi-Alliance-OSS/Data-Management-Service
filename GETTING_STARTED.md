@@ -116,16 +116,11 @@ following command. The .NET SDK is not required, as the build will occur inside
 a container.
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnableSearchEngineUI
+./start-local-dms.ps1 -EnableConfig -EnableKafkaUI
 ```
 
 This may take around a minute to startup. This script not only starts the
 containers, it also calls an additional script for configuring Keycloak.
-
-> [!TIP]
-> Add `-SearchEngine ElasticSearch` to run Elasticsearch instead of
-> OpenSearch. Review the Docker Compose [README](./eng/docker-compose/README.md)
-> for available deployment options.
 
 Once started, try the following HTTP request, which will load the Ed-Fi
 Discovery API endpoint from the DMS.
@@ -187,7 +182,7 @@ Then, run the following command in PowerShell to start the local DMS instance
 and load the seed data:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnableSearchEngineUI -LoadSeedData
+./start-local-dms.ps1 -EnableConfig -EnableKafkaUI -LoadSeedData
 ```
 
 This will ensure your environment is initialized with the required schema and
@@ -199,12 +194,12 @@ When you are ready to stop the containers, append the `-d` ("down") flag to the
 command:
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnableSearchEngineUI -d
+./start-local-dms.ps1 -EnableConfig -EnableKafkaUI -d
 ```
 
 And to shut down and delete all data, add the `-v` ("volumes") flag. This is
 useful when you need to start over with a clean slate.
 
 ```powershell
-./start-local-dms.ps1 -EnableConfig -EnableSearchEngineUI -d -v
+./start-local-dms.ps1 -EnableConfig -EnableKafkaUI -d -v
 ```

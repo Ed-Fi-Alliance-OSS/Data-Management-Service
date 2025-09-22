@@ -12,5 +12,3 @@ GET http://localhost:8081/health
 ### Keycloak realm
 GET http://localhost:8045/realms/edfi
 
-### OpenSearch
-GET http://localhost:9200/

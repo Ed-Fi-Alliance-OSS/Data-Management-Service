@@ -19,15 +19,13 @@
 This directory contains several Docker Compose files, which can be combined to
 start up different configurations:
 
-1. `kafka-opensearch.yml` covers Kafka, OpenSearch
-2. `kafka-opensearch-ui.yml` covers KafkaUI, OpenSearch Dashboard
+1. `kafka.yml` covers Kafka
+2. `kafka-ui.yml` covers KafkaUI
 3. `postgresql.yml` starts only PostgreSQL
 4. `local-dms.yml` runs the DMS from local source code.
 5. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
 6. `keycloak.yml` runs KeyCloak (identity provider).
-7. `kafka-elasticsearch.yml` covers Kafka, ElasticSearch
-8. `kafka-elasticsearch-ui.yml` covers KafkaUI, ElasticSearch(Kibana) Dashboard
-9. `swagger-ui.yml` covers SwaggerUI
+7. `swagger-ui.yml` covers SwaggerUI
 
 Before running these, create a `.env` file. The `.env.example` is a good
 starting point.
@@ -37,18 +35,8 @@ configurations in both Kafka Connector images. The file `setup-connectors.ps1`
 will do this for you. Warning: you need to wait a few seconds after starting the
 services before you can install connector configurations.
 
-You can specify the search engine type to set the appropriate Kafka connector
-configurations. Valid values are `OpenSearch` and `ElasticSearch`. The default
-value is `OpenSearch`.
-
 ```pwsh
-# To install OpenSearch Kafka connector configurations
-./setup-connectors.ps1 -SearchEngine "OpenSearch"
-```
-
-```pwsh
-# To install ElasticSearch Kafka connector configurations
-./setup-connectors.ps1 -SearchEngine "ElasticSearch"
+./setup-connectors.ps1
 ```
 
 > [!WARNING]
@@ -61,7 +49,7 @@ startup the appropriate services and inject the Kafka connectors (where
 relevant).
 
 * `start-all-services.ps1` launches both `postgresql.yml` and
-  `kafka-opensearch.yml`, without starting the DMS. Useful for running DMS in a
+  `kafka.yml`, without starting the DMS. Useful for running DMS in a
   local debugger.
 * `start-local-dms.ps1` launches the DMS local build along with all necessary
   services.
@@ -105,25 +93,11 @@ If you want to use Keycloak as the identity provider, pass the `-IdentityProvide
 ./start-local-dms.ps1 -d -v
 ```
 
-You can set up the Kafka UI and OpenSearch or ElasticSearch Dashboard containers
-for testing by passing the -EnableSearchEngineUI option.
+You can set up the Kafka UI containers for testing by passing the -EnableKafkaUI option.
 
 ```pwsh
-# Start everything with Kafka UI and OpenSearch or ElasticSearch Dashboard
-./start-local-dms.ps1 -EnableSearchEngineUI
-```
-
-Search engine type. Valid values are `OpenSearch`, `ElasticSearch`. Default:
-`OpenSearch`
-
-```pwsh
-# To setup OpenSearch search engine
-./start-local-dms.ps1 -SearchEngine "OpenSearch"
-```
-
-```pwsh
-# To setup ElasticSearch search engine
-./start-local-dms.ps1 -SearchEngine "ElasticSearch"
+# Start everything with Kafka UI
+./start-local-dms.ps1 -EnableKafkaUI
 ```
 
 You can launch Swagger UI as part of your local environment to explore DMS
@@ -194,7 +168,6 @@ scripts is to mount `src/config/backend/EdFi.DmsConfigurationService.Backend/Dep
 
 * The DMS API: [http://localhost:8080](http://localhost:8080)
 * Kafka UI: [http://localhost:8088/](http://localhost:8088/)
-* OpenSearch Dashboard: [http://localhost:5601/](http://localhost:5601/)
 * Swagger UI: [http://localhost:8082](http://localhost:8082)
 
 ## Accessing Swagger UI
@@ -210,42 +183,6 @@ in DMS_HTTP_PORTS).
 > <http://localhost:8082>).
 
 ## Tips
-
-### Clearing Out All Data in OpenSearch
-
-Run the following commands from the Dev Tools console in OpenSearch Dashboard:
-
-Delete all documents:
-
-```none
-POST */_delete_by_query
-{
-  "query": {
-    "match_all": {}
-  }
-}
-```
-
-Delete all indices:
-
-```none
-DELETE *
-```
-
-### OpenSearch Integration Stops Working
-
-If the OpenSearch integration fails, you'll need to dig into log messages in the
-Docker containers. In PostgreSQL, if you see a message indicating that the
-replication setup failed, this may be a Docker problem where it has failed to
-load a startup script properly. Restarting Docker Desktop (and possibly applying
-the latest updates) may fix the issue.
-
-> [!TIP]
-> To diagnose the problem described above, open a terminal in the
-> PostgreSQL container and run `/docker-entrypoint-initdb.d/postgresql-init.sh`.
-> Does the result show you that this is a _file_ or a _directory_? Sometimes
-> Docker Desktop incorrectly loads this as a directory, which means that the
-> file will not execute on startup.
 
 ### Setup Keycloak
 
