@@ -93,11 +93,11 @@ If you want to use Keycloak as the identity provider, pass the `-IdentityProvide
 ./start-local-dms.ps1 -d -v
 ```
 
-You can set up the Kafka UI containers for testing by passing the -EnableSearchEngineUI option.
+You can set up the Kafka UI containers for testing by passing the -EnableKafkaUI option.
 
 ```pwsh
 # Start everything with Kafka UI
-./start-local-dms.ps1 -EnableSearchEngineUI
+./start-local-dms.ps1 -EnableKafkaUI
 ```
 
 You can launch Swagger UI as part of your local environment to explore DMS

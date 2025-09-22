@@ -19,7 +19,7 @@ param (
 
     # Enable KafkaUI
     [Switch]
-    $EnableSearchEngineUI,
+    $EnableKafkaUI,
 
     # Enable the DMS Configuration Service
     [Switch]
@@ -65,7 +65,7 @@ $files = @(
     "kafka.yml"
 )
 
-if ($EnableSearchEngineUI) {
+if ($EnableKafkaUI) {
     $files += @("-f", "kafka-ui.yml")
 }
 

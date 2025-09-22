@@ -11,7 +11,7 @@
     E2E testing configuration. It is the companion to teardown-local-dms.ps1.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableSearchEngineUI -EnableConfig -EnvironmentFile ./.env.e2e -r -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.e2e -r -AddExtensionSecurityMetadata
 #>
 
 [CmdletBinding()]
@@ -63,7 +63,7 @@ try {
     Write-Host ""
 
     # Run the start script with E2E configuration
-    ./start-local-dms.ps1 -EnableSearchEngineUI -EnableConfig -EnvironmentFile ./.env.e2e -r -AddExtensionSecurityMetadata
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.e2e -r -AddExtensionSecurityMetadata
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"
