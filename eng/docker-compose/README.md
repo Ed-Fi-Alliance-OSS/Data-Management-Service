@@ -87,7 +87,9 @@ also append `-v`. Examples:
 ./start-local-dms.ps1 -d -v
 ```
 
-If you want to use Self-Contained authentication using OpenIddict instead of Keycloak, you can pass the `-IdentityProvider self-contained` parameter to the startup script. This will configure the environment to use Self-Contained authentication as the identity provider, and Keycloak will not be required.
+By default, authentication uses the Self-Contained (OpenIddict) identity provider. The environment and startup scripts are pre-configured for Self-Contained mode, and Keycloak is not required unless explicitly selected.
+
+If you want to use Keycloak as the identity provider, pass the `-IdentityProvider keycloak` parameter to the startup script. This will configure the environment to use Keycloak authentication, and you must ensure Keycloak is running and properly configured.
 
 ```pwsh
 # Start everything (Self-Contained/OpenIddict mode)
