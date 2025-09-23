@@ -192,9 +192,8 @@ public static class WebApplicationBuilderExtensions
         }
         else
         {
-            logger.Warning(
-                "Invalid QueryHandler value '{QueryHandler}'. Only 'postgresql' is supported. No query handler will be injected.",
-                queryHandler ?? "<null>"
+            throw new InvalidOperationException(
+                $"Invalid QueryHandler value '{queryHandler ?? "<null>"}'. Only 'postgresql' is supported. Application startup aborted."
             );
         }
     }
