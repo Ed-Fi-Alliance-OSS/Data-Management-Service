@@ -112,22 +112,39 @@ public static class DmsCoreServiceExtensions
                 BreakDuration = TimeSpan.FromSeconds(breakerSettings.BreakDurationSeconds),
                 ShouldHandle = new PredicateBuilder().HandleResult(result =>
                 {
-                    return result switch
+                    var shouldHandle = result switch
                     {
-                        DeleteResult.UnknownFailure => true,
-                        GetResult.UnknownFailure => true,
-                        QueryResult.UnknownFailure => true,
-                        UpdateResult.UnknownFailure => true,
-                        UpsertResult.UnknownFailure => true,
+                        DeleteResult.UnknownFailure deleteFailure => true,
+                        GetResult.UnknownFailure getFailure => true,
+                        QueryResult.UnknownFailure queryFailure => true,
+                        UpdateResult.UnknownFailure updateFailure => true,
+                        UpsertResult.UnknownFailure upsertFailure => true,
                         _ => false,
                     };
+
+                    if (shouldHandle)
+                    {
+                        var cbLogger = LoggerFactory
+                            .Create(b => b.AddSerilog(logger))
+                            .CreateLogger("CircuitBreakerFailureDetection");
+                        cbLogger.LogWarning(
+                            "Circuit breaker detected failure: {FailureType} - {FailureDetails}",
+                            result.GetType().Name,
+                            result.ToString()
+                        );
+                    }
+
+                    return shouldHandle;
                 }),
                 OnOpened = args =>
                 {
                     var cbLogger = LoggerFactory
                         .Create(b => b.AddSerilog(logger))
                         .CreateLogger("CircuitBreaker");
-                    cbLogger.LogWarning("Circuit breaker opened due to failure threshold being reached");
+                    cbLogger.LogWarning(
+                        "Circuit breaker opened due to failure threshold being reached. "
+                            + "Check the CircuitBreakerFailureDetection logs above for specific failure details."
+                    );
                     return ValueTask.CompletedTask;
                 },
                 OnClosed = args =>
