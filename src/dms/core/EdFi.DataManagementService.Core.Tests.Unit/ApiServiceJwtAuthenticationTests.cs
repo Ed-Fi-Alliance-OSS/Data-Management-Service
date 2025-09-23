@@ -74,8 +74,8 @@ public class ApiServiceJwtAuthenticationTests
         var steps = (List<IPipelineStep>)getCommonInitialStepsMethod!.Invoke(apiService, null)!;
 
         // Assert
-        steps.Should().HaveCount(2); // CoreExceptionLoggingMiddleware + JwtAuthenticationMiddleware
-        steps[1].Should().BeOfType<JwtAuthenticationMiddleware>();
+        steps.Should().HaveCount(3); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + JwtAuthenticationMiddleware
+        steps[2].Should().BeOfType<JwtAuthenticationMiddleware>();
     }
 
     [Test]
