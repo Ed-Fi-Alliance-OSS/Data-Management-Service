@@ -105,6 +105,8 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
                 },
                 Headers: []
             );
+
+            return;
         }
 
         await next();

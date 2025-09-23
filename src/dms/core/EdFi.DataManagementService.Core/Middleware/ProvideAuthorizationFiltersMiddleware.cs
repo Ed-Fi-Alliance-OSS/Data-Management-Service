@@ -94,6 +94,8 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 Headers: [],
                 ContentType: "application/problem+json"
             );
+
+            return;
         }
         catch (Exception ex)
         {
@@ -111,6 +113,8 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 },
                 Headers: []
             );
+
+            return;
         }
 
         await next();
