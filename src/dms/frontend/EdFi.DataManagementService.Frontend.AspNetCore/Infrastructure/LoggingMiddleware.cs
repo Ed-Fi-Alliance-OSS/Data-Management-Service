@@ -5,21 +5,57 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 
 public class LoggingMiddleware(RequestDelegate next)
 {
+    /// <summary>
+    /// Sanitizes input strings to prevent log injection attacks by removing or encoding potentially dangerous characters
+    /// </summary>
+    private static string SanitizeForLogging(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return string.Empty;
+
+        var sanitized = new StringBuilder();
+        foreach (char c in input)
+        {
+            switch (c)
+            {
+                case '\r':
+                case '\n':
+                case '\t':
+                    // Replace line breaks and tabs with spaces to prevent log injection
+                    sanitized.Append(' ');
+                    break;
+                default:
+                    // Only include printable ASCII characters and common safe Unicode characters
+                    if (char.IsControl(c) && c != ' ')
+                    {
+                        sanitized.Append('?'); // Replace control characters
+                    }
+                    else
+                    {
+                        sanitized.Append(c);
+                    }
+                    break;
+            }
+        }
+        return sanitized.ToString();
+    }
+
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
         var stopwatch = Stopwatch.StartNew();
 
         logger.LogInformation(
             "Request started: {Method} {Path} - TraceId: {TraceId}",
-            context.Request.Method,
-            context.Request.Path.Value,
-            context.TraceIdentifier
+            SanitizeForLogging(context.Request.Method),
+            SanitizeForLogging(context.Request.Path.Value),
+            SanitizeForLogging(context.TraceIdentifier)
         );
 
         try
@@ -29,11 +65,11 @@ public class LoggingMiddleware(RequestDelegate next)
             stopwatch.Stop();
             logger.LogInformation(
                 "Request completed: {Method} {Path} - Status: {StatusCode} - Duration: {Duration}ms - TraceId: {TraceId}",
-                context.Request.Method,
-                context.Request.Path.Value,
+                SanitizeForLogging(context.Request.Method),
+                SanitizeForLogging(context.Request.Path.Value),
                 context.Response.StatusCode,
                 stopwatch.ElapsedMilliseconds,
-                context.TraceIdentifier
+                SanitizeForLogging(context.TraceIdentifier)
             );
         }
         catch (Exception ex)
@@ -42,10 +78,10 @@ public class LoggingMiddleware(RequestDelegate next)
             logger.LogError(
                 ex,
                 "Request failed: {Method} {Path} - Duration: {Duration}ms - TraceId: {TraceId}",
-                context.Request.Method,
-                context.Request.Path.Value,
+                SanitizeForLogging(context.Request.Method),
+                SanitizeForLogging(context.Request.Path.Value),
                 stopwatch.ElapsedMilliseconds,
-                context.TraceIdentifier
+                SanitizeForLogging(context.TraceIdentifier)
             );
 
             var response = context.Response;
@@ -58,7 +94,7 @@ public class LoggingMiddleware(RequestDelegate next)
                         new
                         {
                             message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                            traceId = context.TraceIdentifier,
+                            traceId = SanitizeForLogging(context.TraceIdentifier),
                         }
                     )
                 );
