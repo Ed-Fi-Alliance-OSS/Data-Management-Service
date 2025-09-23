@@ -178,9 +178,10 @@ public static class WebApplicationBuilderExtensions
 
     private static void ConfigureQueryHandler(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
     {
+        var queryHandler = webAppBuilder.Configuration.GetSection("AppSettings:QueryHandler").Value;
         if (
             string.Equals(
-                webAppBuilder.Configuration.GetSection("AppSettings:QueryHandler").Value,
+                queryHandler,
                 "postgresql",
                 StringComparison.OrdinalIgnoreCase
             )
@@ -188,6 +189,13 @@ public static class WebApplicationBuilderExtensions
         {
             logger.Information("Injecting PostgreSQL as the backend query handler");
             webAppBuilder.Services.AddPostgresqlQueryHandler();
+        }
+        else
+        {
+            logger.Warning(
+                "Invalid QueryHandler value '{QueryHandler}'. Only 'postgresql' is supported. No query handler will be injected.",
+                queryHandler ?? "<null>"
+            );
         }
     }
 

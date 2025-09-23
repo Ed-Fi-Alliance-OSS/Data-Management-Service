@@ -51,7 +51,7 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
         )
         {
             return ValidateOptionsResult.Fail(
-                "AppSettings value QueryHandler must be one of: postgresql"
+                "AppSettings value QueryHandler must be 'postgresql'. Only 'postgresql' is currently supported for QueryHandler. This validation exists to prevent misconfiguration and may allow more options in the future."
             );
         }
 
