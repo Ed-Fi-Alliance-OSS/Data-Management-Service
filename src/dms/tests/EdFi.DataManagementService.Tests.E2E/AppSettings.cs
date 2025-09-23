@@ -14,13 +14,6 @@ namespace EdFi.DataManagementService.Tests.E2E
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .Build() ?? throw new InvalidOperationException("Unable to read appsettings.json");
 
-        public static bool OpenSearchEnabled =>
-            !string.IsNullOrEmpty(_configuration["QueryHandler"])
-            && _configuration["QueryHandler"]!.Equals(
-                "opensearch",
-                StringComparison.InvariantCultureIgnoreCase
-            );
-
         public static string DmsPort = "8080"; //5198 for local
         public static string ConfigServicePort = "8081"; //5126 for local
         public static string AuthenticationService =

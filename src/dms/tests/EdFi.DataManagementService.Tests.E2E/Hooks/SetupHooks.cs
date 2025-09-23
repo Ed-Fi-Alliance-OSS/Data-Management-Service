@@ -21,13 +21,13 @@ public static class SetupHooks
 
     /// <summary>
     /// Executes once before the entire test run begins.
-    /// Initializes the container setup strategy (OpenSearch) and registers a system administrator
+    /// Initializes the container setup strategy and registers a system administrator
     /// with dynamically generated credentials for test isolation.
     /// </summary>
     [BeforeTestRun]
     public static async Task BeforeTestRun(PlaywrightContext context, TestLogger logger)
     {
-        _containerSetup = new OpenSearchContainerSetup();
+        _containerSetup = new SearchContainerSetup();
 
         await SystemAdministrator.Register("sys-admin " + Guid.NewGuid().ToString(), "SdfH)98&Jk");
     }

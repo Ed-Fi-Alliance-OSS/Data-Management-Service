@@ -22,7 +22,7 @@ From the `eng` directory:
 ### Testing locally with API in debug mode
 
 To debug the API while running the tests, change `ApiUrl` in
-`OpenSearchContainerSetup.cs` to `http://localhost:5198/` and run
+`SearchContainerSetup.cs` to `http://localhost:5198/` and run
 `EdFi.DataManagementService.Frontend.AspNetCore` in debug mode as usual.
 
 > [!WARNING] Database Warning

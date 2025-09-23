@@ -51,7 +51,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _referencedResourceId = string.Empty;
         private ScenarioVariables _scenarioVariables = new();
         private string _dmsToken = string.Empty;
-        private readonly bool _openSearchEnabled = AppSettings.OpenSearchEnabled;
         private Dictionary<string, string> _relationships = [];
         private int _lastUploadStatusCode = 0;
 
@@ -572,7 +571,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
                 .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
 
             _logger.log.Information(url);
-            await WaitForOpenSearch(url);
 
             _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
                 url,
@@ -1382,20 +1380,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             input = input.StartsWith("metadata") ? input : $"data/{input}";
 
             return input;
-        }
-
-        private async Task WaitForOpenSearch(string requestUrl)
-        {
-            if (_openSearchEnabled && _featureContext.Get<bool>("_waitOnNextQuery"))
-            {
-                var isGetById = Guid.TryParse(requestUrl.Split('/')[^1], out Guid _);
-                if (!isGetById)
-                {
-                    // Sleep before executing GetAll requests so that OpenSearch gets up to date
-                    await Task.Delay(5000);
-                    _featureContext["_waitOnNextQuery"] = false;
-                }
-            }
         }
 
         private void AddRelationships(string[]? relationTags, IAPIResponse apiResponse, string entityType)

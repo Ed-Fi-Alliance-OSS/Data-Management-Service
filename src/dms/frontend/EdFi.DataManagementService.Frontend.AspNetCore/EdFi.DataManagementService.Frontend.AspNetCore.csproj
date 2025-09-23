@@ -8,11 +8,7 @@
         <AssemblyVersion>0.6.0</AssemblyVersion>
     </PropertyGroup>
     <ItemGroup>
-        <Content
-            Include="EdFi.DataManagementService.Frontend.AspNetCore.nuspec"
-            CopyToPublishDirectory="Always"
-            CopyToOutputDirectory="Never"
-        />
+        <Content Include="EdFi.DataManagementService.Frontend.AspNetCore.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
         <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
         <PackageReference Include="EdFi.DataStandard52.ApiSchema" />
         <PackageReference Include="EdFi.TPDM.ApiSchema" />
@@ -38,7 +34,6 @@
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj" />
-        <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.OpenSearch\EdFi.DataManagementService.Backend.OpenSearch.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
     </ItemGroup>
 </Project>

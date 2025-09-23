@@ -18,7 +18,6 @@ COPY backend/EdFi.DataManagementService.Backend.Installer/*.csproj ./backend/EdF
 COPY backend/EdFi.DataManagementService.Backend/*.csproj ./backend/EdFi.DataManagementService.Backend/
 COPY backend/EdFi.DataManagementService.Backend.Mssql/*.csproj ./backend/EdFi.DataManagementService.Backend.Mssql/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/*.csproj ./backend/EdFi.DataManagementService.Backend.Postgresql/
-COPY backend/EdFi.DataManagementService.Backend.OpenSearch/*.csproj ./backend/EdFi.DataManagementService.Backend.OpenSearch/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/*.csproj ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
 RUN dotnet restore frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj && \
@@ -32,7 +31,6 @@ COPY backend/EdFi.DataManagementService.Backend.Installer/ ./backend/EdFi.DataMa
 COPY backend/EdFi.DataManagementService.Backend/ ./backend/EdFi.DataManagementService.Backend/
 COPY backend/EdFi.DataManagementService.Backend.Mssql/ ./backend/EdFi.DataManagementService.Backend.Mssql/
 COPY backend/EdFi.DataManagementService.Backend.Postgresql/ ./backend/EdFi.DataManagementService.Backend.Postgresql/
-COPY backend/EdFi.DataManagementService.Backend.OpenSearch/ ./backend/EdFi.DataManagementService.Backend.OpenSearch/
 COPY clis/EdFi.DataManagementService.ApiSchemaDownloader/ ./clis/EdFi.DataManagementService.ApiSchemaDownloader/
 
 RUN dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.DataManagementService.Frontend.AspNetCore.csproj \

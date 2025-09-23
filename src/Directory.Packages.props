@@ -47,7 +47,6 @@
         <PackageVersion Include="NuGet.Configuration" Version="6.13.1" />
         <PackageVersion Include="NuGet.Packaging" Version="6.13.1" />
         <PackageVersion Include="NuGet.Protocol" Version="6.13.1" />
-        <PackageVersion Include="OpenSearch.Client" Version="1.8.0" />
         <PackageVersion Include="Polly" Version="8.5.2" />
         <PackageVersion Include="Polly.Core" Version="8.4.2" />
     <PackageVersion Include="Polly.Extensions" Version="8.4.2" />
