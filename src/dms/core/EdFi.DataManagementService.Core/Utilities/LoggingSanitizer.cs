@@ -38,7 +38,7 @@ public static class LoggingSanitizer
         if (!needsSanitization)
         {
             // Even when no sanitization is required, return a new string instance to avoid returning user input by reference
-            return string.Copy(input);
+            return new string(input);
         }
 
         // Only allocate StringBuilder if sanitization is actually needed
