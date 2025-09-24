@@ -41,6 +41,7 @@ BEGIN
         ALTER TABLE dms.Alias
         ADD CONSTRAINT FK_Alias_Document FOREIGN KEY (DocumentPartitionKey, DocumentId)
         REFERENCES dms.Document (DocumentPartitionKey, Id) ON DELETE CASCADE;
+
+        CREATE INDEX IF NOT EXISTS IX_Alias_DocumentPartitionKey_DocumentId ON dms.Alias (DocumentPartitionKey, DocumentId);
     END IF;
 END$$;
-
