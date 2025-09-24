@@ -88,13 +88,12 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             }
 
             requestInfo.ResourceActionAuthStrategies = strategies;
-            await next();
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
-                "Error while authorizing the request - {TraceId}",
+                "ResourceActionAuthorizationMiddleware: Error while authorizing the request - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -106,7 +105,11 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
                 },
                 Headers: []
             );
+
+            return;
         }
+
+        await next();
     }
 
     /// <summary>

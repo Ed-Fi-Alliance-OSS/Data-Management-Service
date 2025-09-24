@@ -82,8 +82,6 @@ internal class ProvideAuthorizationFiltersMiddleware(
             }
 
             requestInfo.AuthorizationStrategyEvaluators = [.. authorizationStrategyEvaluators];
-
-            await next();
         }
         catch (AuthorizationException ex)
         {
@@ -96,12 +94,14 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 Headers: [],
                 ContentType: "application/problem+json"
             );
+
+            return;
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
-                "Error while authorizing the request - {TraceId}",
+                "ProvideAuthorizationFiltersMiddleware: Error while authorizing the request - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
             requestInfo.FrontendResponse = new FrontendResponse(
@@ -113,6 +113,10 @@ internal class ProvideAuthorizationFiltersMiddleware(
                 },
                 Headers: []
             );
+
+            return;
         }
+
+        await next();
     }
 }
