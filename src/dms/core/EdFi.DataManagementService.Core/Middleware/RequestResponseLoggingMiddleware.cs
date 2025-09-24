@@ -56,10 +56,7 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
             );
 
             // Re-throw with contextual information preserved in log
-            throw new InvalidOperationException(
-                $"Core pipeline execution failed for {LoggingSanitizer.SanitizeForLogging(requestInfo.Method.ToString())} {LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path)} - TraceId: {LoggingSanitizer.SanitizeForLogging(traceId)}",
-                ex
-            );
+            throw new InvalidOperationException("Core pipeline execution failed.", ex);
         }
     }
 }

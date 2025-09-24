@@ -78,7 +78,7 @@ public class LoggingMiddleware(RequestDelegate next)
 
             // Re-throw with contextual information for the middleware pipeline
             throw new InvalidOperationException(
-                $"Request processing failed for {context.Request.Method} {context.Request.Path} - TraceId: {context.TraceIdentifier}",
+                $"Request processing failed for {LoggingSanitizer.SanitizeForLogging(context.Request.Method)} {LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)} - TraceId: {LoggingSanitizer.SanitizeForLogging(context.TraceIdentifier)}",
                 ex
             );
         }
