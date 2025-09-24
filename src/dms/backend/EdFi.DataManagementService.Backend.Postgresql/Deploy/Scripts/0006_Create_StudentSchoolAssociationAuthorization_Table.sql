@@ -15,5 +15,11 @@ CREATE TABLE IF NOT EXISTS dms.StudentSchoolAssociationAuthorization(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS IX_StudentSchoolAssociationAuthorization_HierarchySchoolId
+ON dms.StudentSchoolAssociationAuthorization(HierarchySchoolId);
+
+CREATE INDEX IF NOT EXISTS IX_StudentSchoolAssociationAuthorization_StudentSchoolAssociationId_StudentSchoolAssociationPartitionKey
+ON dms.StudentSchoolAssociationAuthorization(StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey);
+
 CREATE INDEX IF NOT EXISTS IX_StudentSchoolAssociationAuthorization_StudentUniqueId
 ON dms.StudentSchoolAssociationAuthorization(StudentUniqueId);

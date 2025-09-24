@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS dms.StaffEducationOrganizationAuthorization(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS IX_StaffEducationOrganizationAuthorization_HierarchyEdOrgId
+ON dms.StaffEducationOrganizationAuthorization(HierarchyEdOrgId);
+
+CREATE INDEX IF NOT EXISTS IX_StaffEducationOrganizationAuthorization_StaffEducationOrganizationId_StaffEducationOrganizationPartitionKey
+ON dms.StaffEducationOrganizationAuthorization(StaffEducationOrganizationId, StaffEducationOrganizationPartitionKey);
+
 CREATE INDEX IF NOT EXISTS IX_StaffEducationOrganizationAuthorization_StaffUniqueId
 ON dms.StaffEducationOrganizationAuthorization(StaffUniqueId);
 

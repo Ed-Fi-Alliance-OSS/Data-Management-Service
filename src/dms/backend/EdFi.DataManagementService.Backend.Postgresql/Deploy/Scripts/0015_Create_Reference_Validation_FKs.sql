@@ -14,5 +14,7 @@ BEGIN
         ALTER TABLE dms.Reference
         ADD CONSTRAINT FK_Reference_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, ReferentialId)
         REFERENCES dms.Alias (ReferentialPartitionKey, ReferentialId) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+        CREATE INDEX IF NOT EXISTS IX_Reference_ReferentialPartitionKey_ReferentialId ON dms.Reference (ReferentialPartitionKey, ReferentialId);
     END IF;
 END$$;
