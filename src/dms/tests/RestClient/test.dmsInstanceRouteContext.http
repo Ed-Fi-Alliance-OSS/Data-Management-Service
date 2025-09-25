@@ -1,0 +1,75 @@
+# This will allow you to test dms Instance Route Context endpoints.
+@dmsPort=8080
+@configPort=8081
+
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=s3creT@09
+
+### Create a Configuration Service token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+### Read the token from the response body
+@configToken={{configTokenRequest.response.body.access_token}}
+
+### Create a new vendor
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Production",
+    "instanceName": "Test Instance",
+    "connectionString": "Server=localhost;Database=TestDb;"
+}
+
+### Read the newly-created Instance ID from the response body
+@instanceId={{createDmsInstance.response.body.id}}
+
+### Create a new instance route context
+# @name createInstanceRouteContext
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "instanceId": {{instanceId}},
+  "contextKey": "schoolYear",
+  "contextValue": "2022"
+}
+
+### Read the newly-created Instance Route Context ID from the response body
+@instanceRouteContextId=1
+#{{createInstanceRouteContext.response.body.id}}
+
+### List all instance route contexts
+GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Authorization: bearer {{configToken}}
+
+### Get instance route context by ID
+GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts/{{instanceRouteContextId}}
+Authorization: bearer {{configToken}}
+
+### Update instance route context by ID
+PUT http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts/{{instanceRouteContextId}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "id": {{instanceRouteContextId}},
+  "instanceId": {{instanceId}},
+  "contextKey": "schoolYear",
+  "contextValue": "2023"
+}
+
+### Delete instance route context by ID
+DELETE http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts/{{instanceRouteContextId}}
+Authorization: bearer {{configToken}}
+
