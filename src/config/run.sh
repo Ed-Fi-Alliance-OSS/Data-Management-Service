@@ -8,9 +8,9 @@ set -e
 set +x
 
 # Safely extract a few environment variables from the admin connection string
-host=$(echo ${ConnectionStrings__DatabaseConnection} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
-port=$(echo ${ConnectionStrings__DatabaseConnection} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
-username=$(echo ${ConnectionStrings__DatabaseConnection} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
+host=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
+port=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
+username=$(echo ${DatabaseSettings__DatabaseConnection} | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
 
 until pg_isready -h ${host} -p ${port} -U ${username}; do
   echo "Waiting for PostgreSQL to start..."

@@ -13,7 +13,7 @@ services:
     environment:
       ASPNETCORE_HTTP_PORTS: ${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}
       AppSettings__Datastore: ${DMS_CONFIG_DATASTORE:-postgresql}
-      ConnectionStrings__DatabaseConnection: ${DMS_CONFIG_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;}
+      DatabaseSettings__DatabaseConnection: ${DMS_CONFIG_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=edfi_configurationservice;}
       IdentitySettings__AllowRegistration: ${DMS_CONFIG_IDENTITY_ALLOW_REGISTRATION:-false}
       IdentitySettings__ConfigServiceRole: ${DMS_CONFIG_IDENTITY_SERVICE_ROLE:-cms-client}
       IdentitySettings__ClientRole: ${DMS_CONFIG_IDENTITY_CLIENT_ROLE:-dms-client}
@@ -37,7 +37,7 @@ services:
       IdentitySettings__HashingIterations: ${DMS_CONFIG_IDENTITY_HASHING_ITERATIONS:-210000}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
     ports:
-      - '127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}'
+      - "127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}"
     volumes:
       - ../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets:/app/additional-claims
     networks:

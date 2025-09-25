@@ -20,13 +20,13 @@ namespace EdFi.DmsConfigurationService.Backend
             if (string.IsNullOrWhiteSpace(options.DatabaseConnection))
             {
                 return ValidateOptionsResult.Fail(
-                    "Missing required ConnectionStrings value: DatabaseConnection"
+                    "Missing required DatabaseSettings value: DatabaseConnection"
                 );
             }
 
             if (string.IsNullOrWhiteSpace(options.EncryptionKey))
             {
-                return ValidateOptionsResult.Fail("Missing required ConnectionStrings value: EncryptionKey");
+                return ValidateOptionsResult.Fail("Missing required DatabaseSettings value: EncryptionKey");
             }
 
             return ValidateOptionsResult.Success;

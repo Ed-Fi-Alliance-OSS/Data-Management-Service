@@ -64,7 +64,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder
             .Services.Configure<AppSettings>(webApplicationBuilder.Configuration.GetSection("AppSettings"))
             .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
-            .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("ConnectionStrings"))
+            .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("DatabaseSettings"))
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>()
             .Configure<ClaimsOptions>(webApplicationBuilder.Configuration.GetSection("ClaimsOptions"))
             .AddSingleton<IValidateOptions<ClaimsOptions>, ClaimsOptionsValidator>();
@@ -136,7 +136,7 @@ public static class WebApplicationBuilderExtensions
         {
             logger.Information("Injecting PostgreSQL as the primary backend datastore");
             webAppBuilder.Services.AddPostgresqlDatastore(
-                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
+                webAppBuilder.Configuration.GetSection("DatabaseSettings:DatabaseConnection").Value
                     ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
