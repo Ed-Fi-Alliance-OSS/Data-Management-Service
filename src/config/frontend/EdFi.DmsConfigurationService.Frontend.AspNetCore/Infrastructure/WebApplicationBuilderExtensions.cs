@@ -19,6 +19,7 @@ using EdFi.DmsConfigurationService.Backend.Postgresql;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -101,6 +102,11 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddSingleton<IClaimsFragmentComposer, ClaimsFragmentComposer>();
         webApplicationBuilder.Services.AddSingleton<IClaimsDataLoader, ClaimsDataLoader>();
         webApplicationBuilder.Services.AddSingleton<IClaimsUploadService, ClaimsUploadService>();
+        webApplicationBuilder.Services.AddTransient<IDmsInstanceRepository, DmsInstanceRepository>();
+        webApplicationBuilder.Services.AddSingleton<
+            IConnectionStringEncryptionService,
+            ConnectionStringEncryptionService
+        >();
 
         Serilog.ILogger ConfigureLogging()
         {
@@ -160,9 +166,8 @@ public static class WebApplicationBuilderExtensions
             logger.Error("Error reading IdentitySettings");
             throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
         }
-        var identityProvider = config
-            .GetValue<string>("AppSettings:IdentityProvider")
-            ?.ToLowerInvariant() ?? "keycloak";
+        var identityProvider =
+            config.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant() ?? "keycloak";
         webApplicationBuilder
             .Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
             .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
@@ -209,12 +214,16 @@ public static class WebApplicationBuilderExtensions
                             },
                             OnTokenValidated = async context =>
                             {
-                                var tokenManager = context.HttpContext.RequestServices.GetService<ITokenManager>();
+                                var tokenManager =
+                                    context.HttpContext.RequestServices.GetService<ITokenManager>();
                                 if (tokenManager != null)
                                 {
                                     // Extract the raw token from the Authorization header
                                     var authHeader = context.Request.Headers["Authorization"].ToString();
-                                    var rawToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                                    var rawToken = authHeader.StartsWith(
+                                        "Bearer ",
+                                        StringComparison.OrdinalIgnoreCase
+                                    )
                                         ? authHeader.Substring("Bearer ".Length).Trim()
                                         : authHeader.Trim();
                                     var isValid = await tokenManager.ValidateTokenAsync(rawToken);
@@ -223,7 +232,7 @@ public static class WebApplicationBuilderExtensions
                                         context.Fail("Token has been revoked or is invalid.");
                                     }
                                 }
-                            }
+                            },
                         };
                     }
                 );
@@ -255,7 +264,8 @@ public static class WebApplicationBuilderExtensions
                                 return (SecurityKey)key;
                             });
                         };
-                    });
+                    }
+                );
 
             // Add authorization services for OpenIddict (same as Keycloak)
             webApplicationBuilder.Services.AddAuthorization(options =>
@@ -263,7 +273,10 @@ public static class WebApplicationBuilderExtensions
                 options.AddPolicy(
                     SecurityConstants.ServicePolicy,
                     policy =>
-                        policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
+                        policy.RequireClaim(
+                            identitySettings.RoleClaimType,
+                            identitySettings.ConfigServiceRole
+                        )
                 );
 
                 AuthorizationScopePolicies.Add(options);
@@ -279,34 +292,34 @@ public static class WebApplicationBuilderExtensions
             webApplicationBuilder
                 .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(
-                JwtBearerDefaults.AuthenticationScheme,
-                options =>
-                {
-                    options.MetadataAddress =
-                        $"{identitySettings.Authority}/.well-known/openid-configuration";
-                    options.Authority = identitySettings.Authority;
-                    options.Audience = identitySettings.Audience;
-                    options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
-                    options.TokenValidationParameters = new TokenValidationParameters
+                    JwtBearerDefaults.AuthenticationScheme,
+                    options =>
                     {
-                        ValidateAudience = true,
-                        ValidAudience = identitySettings.Audience,
-                        ValidateIssuer = true,
-                        ValidIssuer = identitySettings.Authority,
-                        ValidateLifetime = true,
-                        RoleClaimType = identitySettings.RoleClaimType,
-                    };
-
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnAuthenticationFailed = context =>
+                        options.MetadataAddress =
+                            $"{identitySettings.Authority}/.well-known/openid-configuration";
+                        options.Authority = identitySettings.Authority;
+                        options.Audience = identitySettings.Audience;
+                        options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+                        options.TokenValidationParameters = new TokenValidationParameters
                         {
-                            Console.WriteLine($"Authentication failed: {context.Exception.Message}");
-                            return Task.CompletedTask;
-                        },
-                    };
-                }
-            );
+                            ValidateAudience = true,
+                            ValidAudience = identitySettings.Audience,
+                            ValidateIssuer = true,
+                            ValidIssuer = identitySettings.Authority,
+                            ValidateLifetime = true,
+                            RoleClaimType = identitySettings.RoleClaimType,
+                        };
+
+                        options.Events = new JwtBearerEvents
+                        {
+                            OnAuthenticationFailed = context =>
+                            {
+                                Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+                                return Task.CompletedTask;
+                            },
+                        };
+                    }
+                );
 
             // Add service policy for role validation
             webApplicationBuilder.Services.AddAuthorization(options =>
@@ -314,7 +327,10 @@ public static class WebApplicationBuilderExtensions
                 options.AddPolicy(
                     SecurityConstants.ServicePolicy,
                     policy =>
-                        policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
+                        policy.RequireClaim(
+                            identitySettings.RoleClaimType,
+                            identitySettings.ConfigServiceRole
+                        )
                 );
 
                 AuthorizationScopePolicies.Add(options);
@@ -346,4 +362,3 @@ public static class WebApplicationBuilderExtensions
         }
     }
 }
-
