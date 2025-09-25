@@ -38,9 +38,6 @@ diagrams in Code's built-in Markdown preview tool.
 
 ## Context
 
-Elasticsearch is also available, as an alternative to OpenSearch shown in the C4
-deployment diagram below. In summary:
-
 1. There are two custom .NET applications in this repository:
    1. The Data Management Service (DMS), which is an "Ed-Fi API" application. It
       supports the following API definitions: Ed-Fi Resources API, Ed-Fi
@@ -55,16 +52,9 @@ deployment diagram below. In summary:
 3. Both systems use PostgreSQL for online transaction processing (OLTP) data
    storage. All Ed-Fi Resources and Descriptors are stored together in a single
    table, called `dms.document`.
-4. The DMS's database is replicated to OpenSearch via:
-   1. Change data capture (CDC) using Debezium, which reads the transaction log
-      to copy data from `dms.document`...
-   2. and pushes these records into a Kafka topic called `edfi.dms.document`.
-   3. A connector reads from the Kafka topic and writes the data into either
-      OpenSearch or Elasticsearch (OpenSearch is the default).
-5. The DMS uses the search database to support the "GET all" and "GET by query"
+4. The DMS uses the search database to support the "GET all" and "GET by query"
    HTTP requests.
-6. There are also optional user interfaces for viewing data in Kafka or
-   OpenSearch (not shown below).
+5. There are also optional user interfaces for viewing data in Kafka.
 
 ```mermaid
 C4Deployment
@@ -77,14 +67,10 @@ C4Deployment
         Deployment_Node(odsapi_c, "Kafka Services") {
             ContainerDb(kafka, "Kafka Server")
             Container(source, "Kafka Source Connector")
-            Container(sink, "Kafka Sink Connector")
         }
         Deployment_Node(db, "PostgreSQL Databases") {
             ContainerDb(dmsdb, "DMS")
             ContainerDb(configdb, "DMS Config")
-        }
-        Deployment_Node(os, "OpenSearch") {
-            ContainerDb(open, "OpenSearch")
         }
     }
     Rel(dms, dmsdb, "read/write")
@@ -93,9 +79,6 @@ C4Deployment
     Rel(config, keycloak, "discover")
     Rel(source, dmsdb, "read")
     Rel(source, kafka, "replicate")
-    Rel(sink, kafka, "read")
-    Rel(sink, open, "write")
-    Rel(dms, open, "query")
     UpdateLayoutConfig($c4ShapeInRow="2", $c4BoundaryInRow="4")
 ```
 

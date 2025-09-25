@@ -48,11 +48,10 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
 
         if (
             !options.QueryHandler.Equals("postgresql", StringComparison.CurrentCultureIgnoreCase)
-            && !options.QueryHandler.Equals("opensearch", StringComparison.CurrentCultureIgnoreCase)
         )
         {
             return ValidateOptionsResult.Fail(
-                "AppSettings value QueryHandler must be one of: postgresql, opensearch"
+                "AppSettings value QueryHandler must be 'postgresql'. Only 'postgresql' is currently supported for QueryHandler. This validation exists to prevent misconfiguration and may allow more options in the future."
             );
         }
 

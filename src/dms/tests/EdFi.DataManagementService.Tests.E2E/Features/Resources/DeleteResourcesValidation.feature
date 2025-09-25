@@ -142,9 +142,9 @@ Feature: Resources "Delete" Operation validations
                         "errors": []
                     }
                   """
-        
+
         @API-180
-        Scenario: 05 Verify response when deleting from opensearch
+        Scenario: 05 Verify response when deleting
             Given a POST request is made to "/ed-fi/absenceEventCategoryDescriptors" with
                   """
                     {

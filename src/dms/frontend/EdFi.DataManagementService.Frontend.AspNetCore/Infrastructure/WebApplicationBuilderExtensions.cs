@@ -7,7 +7,6 @@ using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
-using EdFi.DataManagementService.Backend.OpenSearch;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
@@ -179,9 +178,10 @@ public static class WebApplicationBuilderExtensions
 
     private static void ConfigureQueryHandler(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
     {
+        var queryHandler = webAppBuilder.Configuration.GetSection("AppSettings:QueryHandler").Value;
         if (
             string.Equals(
-                webAppBuilder.Configuration.GetSection("AppSettings:QueryHandler").Value,
+                queryHandler,
                 "postgresql",
                 StringComparison.OrdinalIgnoreCase
             )
@@ -192,10 +192,8 @@ public static class WebApplicationBuilderExtensions
         }
         else
         {
-            logger.Information("Injecting OpenSearch as the backend query handler");
-            webAppBuilder.Services.AddOpenSearchQueryHandler(
-                webAppBuilder.Configuration.GetSection("ConnectionStrings:OpenSearchUrl").Value
-                    ?? string.Empty
+            throw new InvalidOperationException(
+                $"Invalid QueryHandler value '{queryHandler ?? "<null>"}'. Only 'postgresql' is supported. Application startup aborted."
             );
         }
     }

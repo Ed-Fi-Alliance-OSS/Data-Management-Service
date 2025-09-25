@@ -91,8 +91,9 @@ if ($EnableKafkaUI) {
     $files += @("-f", "kafka-ui.yml")
 }
 
-if ($EnableConfig) {
-    $files += @("-f", "local-config.yml")
+# Include configuration service if enabled or if using self-contained identity provider
+if ($EnableConfig -or $IdentityProvider -eq "self-contained") {
+  $files += @("-f", "local-config.yml")
 }
 
 if ($EnableSwaggerUI) {

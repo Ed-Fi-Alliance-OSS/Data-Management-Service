@@ -55,8 +55,7 @@
 #        "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
 #    },
 #    "ConnectionStrings": {
-#        "DatabaseConnection": "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
-#        "OpenSearchUrl": "http://localhost:9200"
+#        "DatabaseConnection": "host=localhost;port=5435;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 #    },
 # 7. Run these steps from top to bottom.
 
