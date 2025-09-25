@@ -38,6 +38,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
             new DatabaseOptions()
             {
                 DatabaseConnection = Config().GetConnectionString("DatabaseConnection") ?? string.Empty,
+                EncryptionKey =
+                    Config().GetConnectionString("EncryptionKey")
+                    ?? "TestEncryptionKey123456789012345678901234567890",
             }
         );
     }

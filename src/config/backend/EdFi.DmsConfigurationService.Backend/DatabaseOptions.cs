@@ -10,15 +10,26 @@ namespace EdFi.DmsConfigurationService.Backend
     public class DatabaseOptions
     {
         public required string DatabaseConnection { get; set; }
+        public required string EncryptionKey { get; set; }
     }
 
     public class DatabaseOptionsValidator : IValidateOptions<DatabaseOptions>
     {
         public ValidateOptionsResult Validate(string? name, DatabaseOptions options)
         {
-            return string.IsNullOrWhiteSpace(options.DatabaseConnection)
-                ? ValidateOptionsResult.Fail("Missing required ConnectionStrings value: DatabaseConnection")
-                : ValidateOptionsResult.Success;
+            if (string.IsNullOrWhiteSpace(options.DatabaseConnection))
+            {
+                return ValidateOptionsResult.Fail(
+                    "Missing required ConnectionStrings value: DatabaseConnection"
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(options.EncryptionKey))
+            {
+                return ValidateOptionsResult.Fail("Missing required ConnectionStrings value: EncryptionKey");
+            }
+
+            return ValidateOptionsResult.Success;
         }
     }
 }

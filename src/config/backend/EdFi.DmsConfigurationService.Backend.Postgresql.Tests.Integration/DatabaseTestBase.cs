@@ -41,6 +41,7 @@ public abstract class DatabaseTestBase
                     new("dmscs", "applicationeducationorganization"),
                     new("dmscs", "claimset"),
                     new("dmscs", "claimshierarchy"),
+                    new("dmscs", "dmsinstance"),
                 ],
                 DbAdapter = DbAdapter.Postgres,
             }
