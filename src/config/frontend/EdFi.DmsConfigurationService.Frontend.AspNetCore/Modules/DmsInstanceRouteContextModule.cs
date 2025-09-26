@@ -158,21 +158,4 @@ public class DmsInstanceRouteContextModule : IEndpointModule
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
-
-    private static async Task<IResult> GetByInstanceId(
-        long instanceId,
-        HttpContext httpContext,
-        IDmsInstanceRouteContextRepository instanceRouteContextRepository,
-        ILogger<DmsInstanceRouteContextModule> logger
-    )
-    {
-        logger.LogDebug("Getting route contexts for instance {instanceId}", instanceId);
-
-        var getResult = await instanceRouteContextRepository.GetInstanceRouteContextsByInstance(instanceId);
-        return getResult switch
-        {
-            InstanceRouteContextQueryByInstanceResult.Success success => Results.Ok(success.DmsInstanceRouteContextResponses),
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-        };
-    }
 }
