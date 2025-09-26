@@ -46,8 +46,7 @@ Authorization: bearer {{configToken}}
 }
 
 ### Read the newly-created Instance Route Context ID from the response body
-@instanceRouteContextId=1
-#{{createInstanceRouteContext.response.body.id}}
+@instanceRouteContextId={{createInstanceRouteContext.response.body.id}}
 
 ### List all instance route contexts
 GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
@@ -73,3 +72,6 @@ Authorization: bearer {{configToken}}
 DELETE http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts/{{instanceRouteContextId}}
 Authorization: bearer {{configToken}}
 
+### Get instance route context by ID should return 404.
+GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts/{{instanceRouteContextId}}
+Authorization: bearer {{configToken}}
