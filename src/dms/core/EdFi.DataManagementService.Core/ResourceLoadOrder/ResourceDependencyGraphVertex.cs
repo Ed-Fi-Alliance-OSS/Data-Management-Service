@@ -11,9 +11,36 @@ namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
 /// A vertex representing a resource in the resource dependency graph.
 /// </summary>
 internal record ResourceDependencyGraphVertex(ResourceSchema ResourceSchema, ProjectSchema ProjectSchema)
+    : IComparable<ResourceDependencyGraphVertex>
 {
-    public FullResourceName FullResourceName { get; } =
-        new(ProjectSchema.ProjectName, ResourceSchema.ResourceName);
+    public FullResourceName FullResourceName { get; } = new(
+        ProjectSchema.ProjectName,
+        ResourceSchema.ResourceName);
+
+    public int CompareTo(ResourceDependencyGraphVertex? other)
+    {
+        return FullResourceName.CompareTo(other?.FullResourceName);
+    }
+
+    public virtual bool Equals(ResourceDependencyGraphVertex? other)
+    {
+        if (other is null)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(this, other))
+        {
+            return true;
+        }
+
+        return FullResourceName.Equals(other.FullResourceName);
+    }
+
+    public override int GetHashCode()
+    {
+        return FullResourceName.GetHashCode();
+    }
 
     public override string ToString() => FullResourceName.ToString();
 }
