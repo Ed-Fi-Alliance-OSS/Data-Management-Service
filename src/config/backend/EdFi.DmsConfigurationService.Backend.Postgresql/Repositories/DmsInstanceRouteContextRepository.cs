@@ -159,6 +159,7 @@ public class DmsInstanceRouteContextRepository(
     public async Task<InstanceRouteContextDeleteResult> DeleteInstanceRouteContext(long id)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
         try
         {
             string sql = """
