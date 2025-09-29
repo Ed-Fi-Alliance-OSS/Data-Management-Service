@@ -3,19 +3,29 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
+using EdFi.DataManagementService.Core.External.Model;
+using ProjectEndpointName = EdFi.DataManagementService.Core.Model.ProjectEndpointName;
 
 namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
 
 /// <summary>
 /// A vertex representing a resource in the resource dependency graph.
 /// </summary>
-internal record ResourceDependencyGraphVertex(ResourceSchema ResourceSchema, ProjectSchema ProjectSchema)
+internal record ResourceDependencyGraphVertex(
+    ProjectName ProjectName,
+    ProjectEndpointName ProjectEndpointName,
+    ResourceName ResourceName,
+    EndpointName ResourceEndpointName,
+    bool IsResourceExtension,
+    bool IsSubclass,
+    ResourceName SuperclassResourceName,
+    bool IsSchoolYearEnumeration)
     : IComparable<ResourceDependencyGraphVertex>
 {
     public FullResourceName FullResourceName { get; } = new(
-        ProjectSchema.ProjectName,
-        ResourceSchema.ResourceName);
+        ProjectName,
+        ResourceName);
 
     public int CompareTo(ResourceDependencyGraphVertex? other)
     {

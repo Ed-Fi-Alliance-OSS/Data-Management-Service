@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
@@ -33,19 +34,29 @@ internal class ResourceDependencyGraphFactory(
         ProjectSchema[] projectSchemas = apiSchemaDocuments.GetAllProjectSchemas();
         ProjectName coreProjectName = apiSchemaDocuments.GetCoreProjectSchema().ProjectName;
 
-        List<ResourceDependencyGraphVertex> allResourceVertices = projectSchemas
-            .SelectMany(projectSchema =>
-                projectSchema
-                    .GetAllResourceSchemaNodes()
-                    .Select(resourceSchemaNode => new ResourceDependencyGraphVertex(
-                        new ResourceSchema(resourceSchemaNode),
-                        projectSchema
-                    ))
-            )
+        List<(ProjectSchema projectSchema, JsonNode jsonNode)> allResourceSchemaNodeInfos = projectSchemas
+            .SelectMany(projectSchema => projectSchema.GetAllResourceSchemaNodes().Select(jn => (projectSchema, n: jn)))
+            .ToList();
+
+        List<ResourceDependencyGraphVertex> allResourceVertices = allResourceSchemaNodeInfos
+                    .Select(resourceSchemaNode =>
+                    {
+                        var resourceSchema = new ResourceSchema(resourceSchemaNode.jsonNode);
+
+                        return new ResourceDependencyGraphVertex(
+                            resourceSchemaNode.projectSchema.ProjectName,
+                            resourceSchemaNode.projectSchema.ProjectEndpointName,
+                            resourceSchema.ResourceName,
+                            resourceSchemaNode.projectSchema.GetEndpointNameFromResourceName(resourceSchema.ResourceName),
+                            resourceSchema.IsResourceExtension,
+                            resourceSchema.IsSubclass,
+                            resourceSchema.IsSubclass ? resourceSchema.SuperclassResourceName : default,
+                            resourceSchema.IsSchoolYearEnumeration);
+                    })
             .ToList();
 
         List<ResourceDependencyGraphVertex> nonExtensionResourceVertices = allResourceVertices
-            .Where(vertex => !vertex.ResourceSchema.IsResourceExtension)
+            .Where(vertex => !vertex.IsResourceExtension)
             .ToList();
 
         Dictionary<ProjectName, ProjectSchema> projectByName = projectSchemas.ToDictionary(projectSchema =>
@@ -54,31 +65,35 @@ internal class ResourceDependencyGraphFactory(
 
         Dictionary<FullResourceName, ResourceDependencyGraphVertex> vertexByFullResourceName =
             allResourceVertices.ToDictionary(vertex => new FullResourceName(
-                vertex.ProjectSchema.ProjectName,
-                vertex.ResourceSchema.ResourceName
+                vertex.ProjectName,
+                vertex.ResourceName
             ));
 
         ILookup<ResourceName, ResourceDependencyGraphVertex> extensionVertexBySuperclassName =
             nonExtensionResourceVertices
-                .Where(vertex => vertex.ResourceSchema.IsSubclass)
-                .ToLookup(vertex => vertex.ResourceSchema.SuperclassResourceName);
+                .Where(vertex => vertex.IsSubclass)
+                .ToLookup(vertex => vertex.SuperclassResourceName);
 
-        IEnumerable<ResourceDependencyGraphEdge> edges = allResourceVertices
-            .SelectMany(vertex =>
-                vertex
-                    .ResourceSchema.DocumentPaths.Where(documentPath => documentPath.IsReference)
-                    .SelectMany(reference =>
-                        BuildVertexEdges(
-                            vertex,
-                            reference,
-                            coreProjectName,
-                            projectByName,
-                            vertexByFullResourceName,
-                            extensionVertexBySuperclassName
-                        )
-                    )
-            )
-            .Distinct();
+        IEnumerable<ResourceDependencyGraphEdge> edges =
+            allResourceSchemaNodeInfos.SelectMany(resourceSchemaNodeInfo =>
+            {
+                var resourceSchema = new ResourceSchema(resourceSchemaNodeInfo.jsonNode);
+
+                var vertex = vertexByFullResourceName[new FullResourceName(
+                    resourceSchemaNodeInfo.projectSchema.ProjectName,
+                    resourceSchema.ResourceName)];
+
+                return resourceSchema.DocumentPaths.Where(documentPath => documentPath.IsReference)
+                    .SelectMany(reference => BuildVertexEdges(
+                        vertex,
+                        reference.ProjectName,
+                        reference.ResourceName,
+                        reference.IsRequired,
+                        coreProjectName,
+                        projectByName,
+                        vertexByFullResourceName,
+                        extensionVertexBySuperclassName));
+            }).Distinct();
 
         var graph = new BidirectionalGraph<ResourceDependencyGraphVertex, ResourceDependencyGraphEdge>();
         graph.AddVertexRange(nonExtensionResourceVertices);
@@ -86,7 +101,7 @@ internal class ResourceDependencyGraphFactory(
 
         foreach (
             var schoolYearVertex in graph.Vertices.Where(vertex =>
-                vertex.ResourceSchema.IsSchoolYearEnumeration
+                vertex.IsSchoolYearEnumeration
             )
         )
         {
@@ -99,7 +114,7 @@ internal class ResourceDependencyGraphFactory(
             graphTransformer.Transform(graph);
         }
 
-        graph.BreakCycles(edge => !edge.Reference.IsRequired, _logger);
+        graph.BreakCycles(edge => !edge.IsRequired, _logger);
         return graph;
     }
 
@@ -109,17 +124,19 @@ internal class ResourceDependencyGraphFactory(
     /// </summary>
     private static IEnumerable<ResourceDependencyGraphEdge> BuildVertexEdges(
         ResourceDependencyGraphVertex source,
-        DocumentPath reference,
+        ProjectName referenceProjectName,
+        ResourceName referenceResourceName,
+        bool referenceIsRequired,
         ProjectName coreProjectName,
         Dictionary<ProjectName, ProjectSchema> projectByName,
         Dictionary<FullResourceName, ResourceDependencyGraphVertex> vertexByFullResourceName,
         ILookup<ResourceName, ResourceDependencyGraphVertex> verticesBySuperclassName
     )
     {
-        if (source.ResourceSchema.IsResourceExtension)
+        if (source.IsResourceExtension)
         {
             // Change the source vertex to be the Core resource
-            var coreResource = new FullResourceName(coreProjectName, source.ResourceSchema.ResourceName);
+            var coreResource = new FullResourceName(coreProjectName, source.ResourceName);
             source =
                 vertexByFullResourceName.GetValueOrDefault(coreResource)
                 ?? throw new InvalidOperationException(
@@ -127,25 +144,25 @@ internal class ResourceDependencyGraphFactory(
                 );
         }
 
-        bool referencesAbstractResource = projectByName[reference.ProjectName]
+        bool referencesAbstractResource = projectByName[referenceProjectName]
             .AbstractResources.Any(abstractResource =>
-                abstractResource.ResourceName == reference.ResourceName
+                abstractResource.ResourceName == referenceResourceName
             );
 
         if (referencesAbstractResource)
         {
             // Include all subclass types of the referenced abstract resource
-            foreach (var subclassVertex in verticesBySuperclassName[reference.ResourceName])
+            foreach (var subclassVertex in verticesBySuperclassName[referenceResourceName])
             {
-                yield return new ResourceDependencyGraphEdge(subclassVertex, source, reference);
+                yield return new ResourceDependencyGraphEdge(subclassVertex, source, referenceIsRequired);
             }
         }
         else
         {
             var referencedVertex = vertexByFullResourceName[
-                new FullResourceName(reference.ProjectName, reference.ResourceName)
+                new FullResourceName(referenceProjectName, referenceResourceName)
             ];
-            yield return new ResourceDependencyGraphEdge(referencedVertex, source, reference);
+            yield return new ResourceDependencyGraphEdge(referencedVertex, source, referenceIsRequired);
         }
     }
 }

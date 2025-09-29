@@ -115,7 +115,7 @@ public class ResourceDependencyGraphFactoryTests
         }
     }
 
-    static ResourceDependencyGraphFactory CreateGraphFactory(IApiSchemaProvider apiSchemaProvider,
+    private static ResourceDependencyGraphFactory CreateGraphFactory(IApiSchemaProvider apiSchemaProvider,
         IEnumerable<IResourceDependencyGraphTransformer>? graphTransformers = null)
     {
         var graphFactory = new ResourceDependencyGraphFactory(

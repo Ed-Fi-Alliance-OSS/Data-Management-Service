@@ -7,40 +7,55 @@ using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
 using QuickGraph;
 
-// ReSharper disable InconsistentNaming
 namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
 
-internal interface IResourceDependencyGraphMLFactory
+internal interface IResourceDependencyGraphMLVertexFactory
 {
-    GraphML CreateGraphML();
+    IEnumerable<GraphMLNode> Create(IEnumerable<ResourceDependencyGraphVertex> vertices);
 }
 
-internal class ResourceDependencyGraphMLFactory(
-    IResourceDependencyGraphFactory _resourceDependencyGraphFactory,
-    ILogger<ResourceDependencyGraphMLFactory> _logger
-) : IResourceDependencyGraphMLFactory
+internal interface IResourceDependencyGraphMLEdgeFactory
 {
+    IEnumerable<GraphMLEdge> Create(IEnumerable<ResourceDependencyGraphEdge> edges);
+}
+
+internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFactory
+{
+    private readonly IResourceDependencyGraphFactory _resourceDependencyGraphFactory;
+    private readonly ILogger<ResourceDependencyGraphMLFactory> _logger;
+
     private const string RetrySuffix = "#Retry";
-    private static readonly ProjectName _edFiProjectName = new("Ed-Fi");
-    private static readonly FullResourceName _studentFullName = new(_edFiProjectName, new ResourceName("Student"));
-    private static readonly FullResourceName _staffFullName = new(_edFiProjectName, new ResourceName("Staff"));
-    private static readonly FullResourceName _parentFullName = new(_edFiProjectName, new ResourceName("Parent"));
-    private static readonly FullResourceName _contactFullName = new(_edFiProjectName, new ResourceName("Contact"));
+    private readonly FullResourceName _studentFullName;
+    private readonly FullResourceName _staffFullName;
+    private readonly FullResourceName _parentFullName;
+    private readonly FullResourceName _contactFullName;
 
-    private static readonly FullResourceName _studentSchoolAssociationFullName =
-        new(_edFiProjectName, new ResourceName("StudentSchoolAssociation"));
+    private readonly FullResourceName _studentSchoolAssociationFullName;
+    private readonly FullResourceName _staffEdOrgAssignmentAssociationFullName;
+    private readonly FullResourceName _staffEdOrgEmploymentAssociationFullName;
+    private readonly FullResourceName _studentParentAssociationFullName;
+    private readonly FullResourceName _studentContactAssociationFullName;
 
-    private static readonly FullResourceName _staffEdOrgAssignmentAssociationFullName =
-        new(_edFiProjectName, new ResourceName("StaffEducationOrganizationAssignmentAssociation"));
+    public ResourceDependencyGraphMLFactory(
+        IResourceDependencyGraphFactory resourceDependencyGraphFactory,
+        ICoreProjectNameProvider coreProjectNameProvider,
+        ILogger<ResourceDependencyGraphMLFactory> logger
+    )
+    {
+        _resourceDependencyGraphFactory = resourceDependencyGraphFactory;
+        _logger = logger;
 
-    private static readonly FullResourceName _staffEdOrgEmploymentAssociationFullName =
-        new(_edFiProjectName, new ResourceName("StaffEducationOrganizationEmploymentAssociation"));
-
-    private static readonly FullResourceName _studentParentAssociationFullName =
-        new(_edFiProjectName, new ResourceName("StudentParentAssociation"));
-
-    private static readonly FullResourceName _studentContactAssociationFullName =
-        new(_edFiProjectName, new ResourceName("StudentContactAssociation"));
+        ProjectName edFiProjectName = coreProjectNameProvider.GetCoreProjectName();
+        _studentFullName = new(edFiProjectName, new ResourceName("Student"));
+        _staffFullName = new(edFiProjectName, new ResourceName("Staff"));
+        _parentFullName = new(edFiProjectName, new ResourceName("Parent"));
+        _contactFullName = new(edFiProjectName, new ResourceName("Contact"));
+        _studentSchoolAssociationFullName = new(edFiProjectName, new ResourceName("StudentSchoolAssociation"));
+        _staffEdOrgAssignmentAssociationFullName = new(edFiProjectName, new ResourceName("StaffEducationOrganizationAssignmentAssociation"));
+        _staffEdOrgEmploymentAssociationFullName = new(edFiProjectName, new ResourceName("StaffEducationOrganizationEmploymentAssociation"));
+        _studentParentAssociationFullName = new(edFiProjectName, new ResourceName("StudentParentAssociation"));
+        _studentContactAssociationFullName = new(edFiProjectName, new ResourceName("StudentContactAssociation"));
+    }
 
     public GraphML CreateGraphML()
     {
@@ -48,6 +63,7 @@ internal class ResourceDependencyGraphMLFactory(
 
         var resourceGraph = _resourceDependencyGraphFactory.Create();
 
+        // Begin authorization transformations for GraphML output
         var vertices = resourceGraph.Vertices
             .SelectMany(ApplyStandardSecurityVertexExpansions)
             .OrderBy(n => n.Id)
@@ -126,7 +142,7 @@ internal class ResourceDependencyGraphMLFactory(
                 {
                     Source = new GraphMLNode { Id = GetNodeId(edge.Source) },
                     Target = new GraphMLNode { Id = GetNodeId(edge.Target) },
-                    IsReferenceRequired = edge.Reference.IsRequired
+                    IsReferenceRequired = edge.IsRequired
                 };
             }
         }
@@ -141,7 +157,7 @@ internal class ResourceDependencyGraphMLFactory(
                 {
                     Source = new GraphMLNode { Id = retryNodeIdByPrimaryAssociationNodeId[GetNodeId(edge.Source)] },
                     Target = new GraphMLNode { Id = GetNodeId(edge.Target) },
-                    IsReferenceRequired = edge.Reference.IsRequired
+                    IsReferenceRequired = edge.IsRequired
                 };
             }
         }
@@ -153,12 +169,12 @@ internal class ResourceDependencyGraphMLFactory(
             {
                 Source = new GraphMLNode { Id = GetNodeId(edge.Source) },
                 Target = new GraphMLNode { Id = GetNodeId(edge.Target) },
-                IsReferenceRequired = edge.Reference.IsRequired
+                IsReferenceRequired = edge.IsRequired
             };
         }
     }
 
-    private static bool IsUpstreamPrimaryAssociationEdge(ResourceDependencyGraphEdge edge)
+    private bool IsUpstreamPrimaryAssociationEdge(ResourceDependencyGraphEdge edge)
     {
         return (edge.Source.FullResourceName == _studentFullName && edge.Target.FullResourceName == _studentSchoolAssociationFullName)
             || (edge.Source.FullResourceName == _staffFullName && (edge.Target.FullResourceName == _staffEdOrgAssignmentAssociationFullName || edge.Target.FullResourceName == _staffEdOrgEmploymentAssociationFullName))
@@ -166,7 +182,7 @@ internal class ResourceDependencyGraphMLFactory(
             || (edge.Source.FullResourceName == _contactFullName && edge.Target.FullResourceName == _studentContactAssociationFullName);
     }
 
-    private static bool IsDownstreamPrimaryAssociationEdge(ResourceDependencyGraphEdge edge)
+    private bool IsDownstreamPrimaryAssociationEdge(ResourceDependencyGraphEdge edge)
     {
         return edge.Source.FullResourceName == _studentSchoolAssociationFullName
             || edge.Source.FullResourceName == _staffEdOrgAssignmentAssociationFullName
