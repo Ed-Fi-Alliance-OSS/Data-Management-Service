@@ -182,7 +182,7 @@ The design extends each resource schema with a new `flatteningMetadata` property
         ],
         "childTables": [
           {
-            "baseName": "StudentObjectiveAssessment",
+            "baseName": "StudentAssessmentStudentObjectiveAssessment",
             "jsonPath": "$.studentObjectiveAssessments[*]",
             "columns": [
               {
@@ -201,7 +201,7 @@ The design extends each resource schema with a new `flatteningMetadata` property
             ],
             "childTables": [
               {
-                "baseName": "StudentObjectiveAssessmentScoreResult",
+                "baseName": "StudentAssessmentStudentObjectiveAssessmentScoreResult",
                 "jsonPath": "$.scoreResults[*]",
                 "columns": [
                   {
@@ -844,6 +844,7 @@ CREATE TABLE edfi.School (
     -- Metadata
     Document_Id BIGINT NOT NULL,
     Document_PartitionKey SMALLINT NOT NULL,
+    -- Non-model colums like create date added by C# generation
     UNIQUE (SchoolId)
 );
 
@@ -860,11 +861,12 @@ CREATE TABLE edfi.StateEducationAgency (
     -- Metadata
     Document_Id BIGINT NOT NULL,
     Document_PartitionKey SMALLINT NOT NULL,
+    -- Non-model colums like create date added by C# generation
     UNIQUE (StateEducationAgencyId)
 );
 
 -- Union view for polymorphic EducationOrganization references
-CREATE VIEW edfi.EducationOrganization AS
+CREATE VIEW edfi.EducationOrganization_View AS
 SELECT
     Id,
     SchoolId as EducationOrganizationId,
@@ -1116,7 +1118,7 @@ CHECK (EducationOrganization_Discriminator IN (
 #### Query View with Virtual FK Join
 ```sql
 -- This view reconstructs the FK relationship through the union view
-CREATE VIEW edfi.StaffEducationOrganizationAssignmentAssociationView AS
+CREATE VIEW edfi.StaffEducationOrganizationAssignmentAssociation_View AS
 SELECT
     seoaa.*,
     eo.EducationOrganizationId,
@@ -1311,5 +1313,5 @@ New enhancers needed in the API Schema plugin:
 
 ## Open Design Questions
 
-1. **Name Length Handling**: Handle here or downstream?
-2. **Table DB Schemas**: Should flattened tables be in the schema of their project like ODS/API (e.g. edfi.Student) or table name prefixed (e.g. dms.edfi_Student)?
+1. **Name Length Handling**: Handle hash-truncation here or downstream?
+2. **Table DB Schemas**: Should flattened tables be in the schema of their project like ODS/API (e.g. edfi.Student) or table name prefixed (e.g. dms.edfi_Student)? I am wondering if in DMS world we should avoid using up schemas by prefixing. It would close off any future opportunity to have multiple DMS instances in the same database. It also just seems awkward to put them in different namespaces when DMS only has a few tables and every flattened table will be referencing them. If we were starting from scratch and didn't have the ODS/API as an example, I don't think a separate schema design would have occurred to me.
