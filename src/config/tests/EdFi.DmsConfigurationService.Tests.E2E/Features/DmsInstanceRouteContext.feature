@@ -38,7 +38,7 @@ Feature: DMS Instance Route Context
                     "contextValue": "2023"
                   }
                   """
-             Then it should respond with 200
+             Then it should respond with 204
               And the response should contain "contextValue" as "2023"
 
         Scenario: Delete instance route context by ID
