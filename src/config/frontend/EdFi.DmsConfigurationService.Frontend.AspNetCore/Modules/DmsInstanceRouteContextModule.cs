@@ -29,7 +29,7 @@ public class DmsInstanceRouteContextModule : IEndpointModule
         DmsInstanceRouteContextInsertCommand command,
         DmsInstanceRouteContextInsertCommand.Validator validator,
         HttpContext httpContext,
-    IDmsInstanceRouteContextRepository dmsInstanceRouteContextRepository,
+        IDmsInstanceRouteContextRepository dmsInstanceRouteContextRepository,
         ILogger<DmsInstanceRouteContextModule> logger
     )
     {
@@ -40,31 +40,32 @@ public class DmsInstanceRouteContextModule : IEndpointModule
 
         return repositoryResult switch
         {
-            DmsInstanceRouteContextInsertResult.Success success =>
-                Results.Created(
-                    $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}{httpContext.Request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                    new { Id = success.Id }
-                ),
+            DmsInstanceRouteContextInsertResult.Success success => Results.Created(
+                $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}{httpContext.Request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                new { Id = success.Id }
+            ),
             DmsInstanceRouteContextInsertResult.FailureInstanceNotFound => throw new ValidationException(
                 new[] { new ValidationFailure("InstanceId", "Reference 'InstanceId' does not exist.") }
             ),
-            DmsInstanceRouteContextInsertResult.FailureDuplicateDmsInstanceRouteContext duplicate => throw new ValidationException(
-                new[]
-                {
-                    new ValidationFailure(
-                        "ContextKey",
-                        $"Dms instance route context with InstanceId '{duplicate.InstanceId}' and ContextKey '{duplicate.ContextKey}' already exists."
-                    )
-                }
+            DmsInstanceRouteContextInsertResult.FailureDuplicateDmsInstanceRouteContext duplicate =>
+                throw new ValidationException(
+                    new[]
+                    {
+                        new ValidationFailure(
+                            "ContextKey",
+                            $"Dms instance route context with InstanceId '{duplicate.InstanceId}' and ContextKey '{duplicate.ContextKey}' already exists."
+                        ),
+                    }
+                ),
+            DmsInstanceRouteContextInsertResult.FailureUnknown failure => FailureResults.Unknown(
+                httpContext.TraceIdentifier
             ),
-            DmsInstanceRouteContextInsertResult.FailureUnknown failure =>
-                FailureResults.Unknown(httpContext.TraceIdentifier),
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier)
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
 
     private static async Task<IResult> GetAll(
-    IDmsInstanceRouteContextRepository instanceRouteContextRepository,
+        IDmsInstanceRouteContextRepository instanceRouteContextRepository,
         [AsParameters] PagingQuery query,
         HttpContext httpContext
     )
@@ -72,7 +73,9 @@ public class DmsInstanceRouteContextModule : IEndpointModule
         var getResult = await instanceRouteContextRepository.QueryInstanceRouteContext(query);
         return getResult switch
         {
-            DmsInstanceRouteContextQueryResult.Success success => Results.Ok(success.DmsInstanceRouteContextResponses),
+            DmsInstanceRouteContextQueryResult.Success success => Results.Ok(
+                success.DmsInstanceRouteContextResponses
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -87,7 +90,9 @@ public class DmsInstanceRouteContextModule : IEndpointModule
         var getResult = await instanceRouteContextRepository.GetInstanceRouteContext(id);
         return getResult switch
         {
-            DmsInstanceRouteContextGetResult.Success success => Results.Ok(success.DmsInstanceRouteContextResponse),
+            DmsInstanceRouteContextGetResult.Success success => Results.Ok(
+                success.DmsInstanceRouteContextResponse
+            ),
             DmsInstanceRouteContextGetResult.FailureNotFound => FailureResults.NotFound(
                 "Instance route context not found",
                 httpContext.TraceIdentifier
@@ -97,18 +102,22 @@ public class DmsInstanceRouteContextModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-    long id,
-    DmsInstanceRouteContextUpdateCommand.Validator validator,
-    DmsInstanceRouteContextUpdateCommand command,
-    HttpContext httpContext,
-    IDmsInstanceRouteContextRepository dmsInstanceRouteContextRepository,
-    ILogger<DmsInstanceRouteContextModule> logger
+        long id,
+        DmsInstanceRouteContextUpdateCommand.Validator validator,
+        DmsInstanceRouteContextUpdateCommand command,
+        HttpContext httpContext,
+        IDmsInstanceRouteContextRepository dmsInstanceRouteContextRepository,
+        ILogger<DmsInstanceRouteContextModule> logger
     )
     {
         await validator.GuardAsync(command);
 
-        // Ensure the ID in the command matches the route parameter
-        command.Id = id;
+        if (command.Id != id)
+        {
+            throw new ValidationException(
+                new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
+            );
+        }
 
         var updateResult = await dmsInstanceRouteContextRepository.UpdateDmsInstanceRouteContext(command);
 
@@ -122,15 +131,16 @@ public class DmsInstanceRouteContextModule : IEndpointModule
             DmsInstanceRouteContextUpdateResult.FailureInstanceNotFound => throw new ValidationException(
                 new[] { new ValidationFailure("InstanceId", "Reference 'InstanceId' does not exist.") }
             ),
-            DmsInstanceRouteContextUpdateResult.FailureDuplicateDmsInstanceRouteContext duplicate => throw new ValidationException(
-                new[]
-                {
-                    new ValidationFailure(
-                        "ContextKey",
-                        $"Dms instance route context with InstanceId '{duplicate.InstanceId}' and ContextKey '{duplicate.ContextKey}' already exists."
-                    )
-                }
-            ),
+            DmsInstanceRouteContextUpdateResult.FailureDuplicateDmsInstanceRouteContext duplicate =>
+                throw new ValidationException(
+                    new[]
+                    {
+                        new ValidationFailure(
+                            "ContextKey",
+                            $"Dms instance route context with InstanceId '{duplicate.InstanceId}' and ContextKey '{duplicate.ContextKey}' already exists."
+                        ),
+                    }
+                ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -153,8 +163,9 @@ public class DmsInstanceRouteContextModule : IEndpointModule
                 "Instance route context not found",
                 httpContext.TraceIdentifier
             ),
-            InstanceRouteContextDeleteResult.FailureUnknown unknown =>
-                FailureResults.Unknown(httpContext.TraceIdentifier),
+            InstanceRouteContextDeleteResult.FailureUnknown unknown => FailureResults.Unknown(
+                httpContext.TraceIdentifier
+            ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
