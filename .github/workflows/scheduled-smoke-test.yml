@@ -36,7 +36,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     outputs:
-      should-run-tests: ${{ steps.changes.outputs.openapi == 'true' || steps.apicheck.outputs.should-run-tests == 'true' }}
+      should-run-tests: ${{ steps.filecheck.outputs.openapi == 'true' || steps.apicheck.outputs.should-run-tests == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -54,7 +54,7 @@ jobs:
 
       - name: Check for ApiSchema version changes
         id: apicheck
-        if: steps.changes.outputs.packages == 'true'
+        if: steps.filecheck.outputs.packages == 'true'
         shell: pwsh
         run: |
           git fetch origin main
