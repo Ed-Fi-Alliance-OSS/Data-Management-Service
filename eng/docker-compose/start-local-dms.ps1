@@ -82,9 +82,9 @@ $files = @(
     "-f",
     "postgresql.yml",
     "-f",
-    "local-dms.yml",
-    "-f",
-    "kafka.yml"
+    "local-dms.yml"
+    #"-f",
+    #"kafka.yml"
 )
 
 if ($EnableKafkaUI) {
