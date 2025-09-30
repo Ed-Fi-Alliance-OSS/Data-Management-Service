@@ -717,7 +717,20 @@ public partial class SqlAction() : ISqlAction
         Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
 
         await using var command = new NpgsqlCommand(
-            @"SELECT dms.InsertReferences($1, $2, $3, $4)",
+            @"
+    INSERT INTO dms.Reference (
+        ParentDocumentId,
+        ParentDocumentPartitionKey,
+        ReferentialId,
+        ReferentialPartitionKey
+    )
+    SELECT
+        ids.documentId,
+        ids.documentPartitionKey,
+        ids.referentialId,
+        ids.referentialPartitionKey
+    FROM unnest($1, $2, $3, $4) AS
+        ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey)",
             connection,
             transaction
         )
@@ -779,6 +792,7 @@ public partial class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
+        // TODO axel fix this
         await using NpgsqlCommand command = new(
             $@"SELECT d.ResourceName FROM dms.Document d
                    INNER JOIN (
