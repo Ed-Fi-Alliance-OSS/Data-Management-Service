@@ -72,7 +72,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             {
                 { "Content-Type", "application/x-www-form-urlencoded" },
             },
-            Data = content.ReadAsStringAsync().Result,
+            Data = await content.ReadAsStringAsync(),
         };
         if (playwrightContext.ApiRequestContext != null)
         {
@@ -123,7 +123,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 
             response
                 .Status.Should()
-                .BeOneOf(OkCreated, $"POST request for {entityType} failed:\n{response.TextAsync().Result}");
+                .BeOneOf(OkCreated, $"POST request for {entityType} failed:\n{await response.TextAsync()}");
         }
 
         return _apiResponses;
@@ -144,7 +144,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             new() { Data = body, Headers = _authHeaders }
         )!;
 
-        ExtractIdFromHeader(_apiResponse);
+        await ExtractIdFromHeader(_apiResponse);
     }
 
     [When("a GET request is made to {string}")]
@@ -187,7 +187,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             Data = await ReplaceIdsAsync(body),
         };
         _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(url, options)!;
-        ExtractIdFromHeader(_apiResponse);
+        await ExtractIdFromHeader(_apiResponse);
     }
 
     [When("a Form URL Encoded POST request is made to {string} with")]
@@ -204,7 +204,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             {
                 { "Content-Type", "application/x-www-form-urlencoded" },
             },
-            Data = content.ReadAsStringAsync().Result,
+            Data = await content.ReadAsStringAsync(),
         };
         if (playwrightContext.ApiRequestContext != null)
         {
@@ -222,7 +222,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         )!;
     }
 
-    private void ExtractIdFromHeader(IAPIResponse apiResponse)
+    private async Task ExtractIdFromHeader(IAPIResponse apiResponse)
     {
         if (apiResponse.Headers.TryGetValue("location", out string? value))
         {
@@ -238,30 +238,23 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         // Also extract clientId from response body if present (for application creation)
         if (apiResponse.Status == 200 || apiResponse.Status == 201)
         {
-            try
+            var responseText = await apiResponse.TextAsync();
+            if (!string.IsNullOrEmpty(responseText))
             {
-                var responseText = apiResponse.TextAsync().Result;
-                if (!string.IsNullOrEmpty(responseText))
+                var jsonResponse = JsonDocument.Parse(responseText);
+                if (jsonResponse.RootElement.TryGetProperty("id", out var idProperty))
                 {
-                    var jsonResponse = JsonDocument.Parse(responseText);
-                    if (jsonResponse.RootElement.TryGetProperty("id", out var idProperty))
+                    // Only set vendorId if no location header was found
+                    if (!apiResponse.Headers.ContainsKey("location"))
                     {
-                        // Only set vendorId if no location header was found
-                        if (!apiResponse.Headers.ContainsKey("location"))
-                        {
-                            _ids["vendorId"] = idProperty.GetInt32().ToString();
-                        }
-                    }
-                    if (jsonResponse.RootElement.TryGetProperty("key", out var keyProperty))
-                    {
-                        // The 'key' from application creation is the clientId
-                        _ids["clientId"] = keyProperty.GetString() ?? "";
+                        _ids["vendorId"] = idProperty.GetInt32().ToString();
                     }
                 }
-            }
-            catch
-            {
-                // If we can't read the response body, that's okay
+                if (jsonResponse.RootElement.TryGetProperty("key", out var keyProperty))
+                {
+                    // The 'key' from application creation is the clientId
+                    _ids["clientId"] = keyProperty.GetString() ?? "";
+                }
             }
         }
     }
