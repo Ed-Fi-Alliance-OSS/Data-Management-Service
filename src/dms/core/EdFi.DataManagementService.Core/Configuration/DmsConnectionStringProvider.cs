@@ -55,9 +55,9 @@ public class DmsConnectionStringProvider(
     }
 
     /// <inheritdoc />
-    public string? GetDefaultConnectionString()
+    public string? GetHealthCheckConnectionString()
     {
-        logger.LogDebug("Retrieving connection string for default DMS instance");
+        logger.LogDebug("Retrieving connection string for health check purposes");
 
         // Use the first available DMS instance (ordered by ID for deterministic selection)
         var allInstances = dmsInstanceProvider.GetAll();
@@ -75,7 +75,7 @@ public class DmsConnectionStringProvider(
         var firstInstance = allInstances.OrderBy(x => x.Id).First();
 
         logger.LogInformation(
-            "Selected default DMS instance: '{InstanceName}' (ID: {InstanceId}) from {TotalCount} available instances",
+            "Selected DMS instance for health check: '{InstanceName}' (ID: {InstanceId}) from {TotalCount} available instances",
             firstInstance.InstanceName,
             firstInstance.Id,
             allInstances.Count
@@ -84,7 +84,7 @@ public class DmsConnectionStringProvider(
         if (string.IsNullOrWhiteSpace(firstInstance.ConnectionString))
         {
             logger.LogWarning(
-                "Default DMS instance '{InstanceName}' (ID: {InstanceId}) has no connection string configured",
+                "Health check DMS instance '{InstanceName}' (ID: {InstanceId}) has no connection string configured",
                 firstInstance.InstanceName,
                 firstInstance.Id
             );
@@ -92,7 +92,7 @@ public class DmsConnectionStringProvider(
             return null;
         }
 
-        logger.LogDebug("Successfully retrieved connection string for default DMS instance");
+        logger.LogDebug("Successfully retrieved connection string for health check");
 
         return firstInstance.ConnectionString;
     }

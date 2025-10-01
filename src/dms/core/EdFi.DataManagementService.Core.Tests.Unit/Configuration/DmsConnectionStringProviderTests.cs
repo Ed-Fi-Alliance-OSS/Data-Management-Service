@@ -159,7 +159,7 @@ public class DmsConnectionStringProviderTests
                 _dmsInstanceProvider,
                 NullLogger<DmsConnectionStringProvider>.Instance
             );
-            _defaultConnectionString = _connectionStringProvider.GetDefaultConnectionString();
+            _defaultConnectionString = _connectionStringProvider.GetHealthCheckConnectionString();
         }
 
         [Test]
@@ -193,7 +193,7 @@ public class DmsConnectionStringProviderTests
                 _dmsInstanceProvider,
                 NullLogger<DmsConnectionStringProvider>.Instance
             );
-            _defaultConnectionString = _connectionStringProvider.GetDefaultConnectionString();
+            _defaultConnectionString = _connectionStringProvider.GetHealthCheckConnectionString();
         }
 
         [Test]
@@ -225,7 +225,7 @@ public class DmsConnectionStringProviderTests
         [Test]
         public void It_should_return_null()
         {
-            var result = _connectionStringProvider!.GetDefaultConnectionString();
+            var result = _connectionStringProvider!.GetHealthCheckConnectionString();
 
             result.Should().BeNull();
         }
@@ -255,7 +255,7 @@ public class DmsConnectionStringProviderTests
         [Test]
         public void It_should_return_null()
         {
-            var result = _connectionStringProvider!.GetDefaultConnectionString();
+            var result = _connectionStringProvider!.GetHealthCheckConnectionString();
 
             result.Should().BeNull();
         }

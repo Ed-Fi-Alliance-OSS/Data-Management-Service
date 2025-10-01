@@ -38,7 +38,7 @@ public static class TestMockHelper
         var connectionStringProvider = A.Fake<IConnectionStringProvider>();
         A.CallTo(() => connectionStringProvider.GetConnectionString(A<long>._))
             .Returns("test-connection-string");
-        A.CallTo(() => connectionStringProvider.GetDefaultConnectionString())
+        A.CallTo(() => connectionStringProvider.GetHealthCheckConnectionString())
             .Returns("test-connection-string");
         services.AddTransient(x => connectionStringProvider);
     }

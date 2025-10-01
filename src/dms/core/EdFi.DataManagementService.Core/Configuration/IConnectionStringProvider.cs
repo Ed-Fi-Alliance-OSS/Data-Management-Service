@@ -18,8 +18,10 @@ public interface IConnectionStringProvider
     string? GetConnectionString(long dmsInstanceId);
 
     /// <summary>
-    /// Gets the database connection string for the default DMS instance (ID = 1)
+    /// Gets a database connection string for health check purposes.
+    /// This is a compromise - we just use the first available instance since health checks
+    /// need some connection string to test database connectivity.
     /// </summary>
-    /// <returns>The connection string for the default instance, or null if not found</returns>
-    string? GetDefaultConnectionString();
+    /// <returns>The connection string for health check, or null if no instances available</returns>
+    string? GetHealthCheckConnectionString();
 }

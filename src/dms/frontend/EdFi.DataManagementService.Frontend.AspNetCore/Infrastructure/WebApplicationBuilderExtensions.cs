@@ -71,7 +71,8 @@ public static class WebApplicationBuilderExtensions
                 webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty;
             var logger = serviceProvider.GetRequiredService<ILogger<DbHealthCheck>>();
 
-            string connectionString = connectionStringProvider.GetDefaultConnectionString() ?? string.Empty;
+            string connectionString =
+                connectionStringProvider.GetHealthCheckConnectionString() ?? string.Empty;
             return new DbHealthCheck(connectionString, datastore, logger);
         });
 
