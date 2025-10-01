@@ -47,7 +47,11 @@ param (
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="self-contained"
+    $IdentityProvider="self-contained",
+
+    # Add initial DMS Instance to Configuration Service
+    [Switch]
+    $AddDmsInstance = $true
 )
 
 
@@ -199,6 +203,28 @@ else {
         Write-Output "Key: $($credentials.Key)"
         Write-Output "Secret: $($credentials.Secret)"
         Write-Output "These credentials can be used for smoke testing the DMS API."
+    }
+
+    if($AddDmsInstance)
+    {
+        Import-Module ../Dms-Management.psm1 -Force
+        Write-Output "Creating initial DMS Instance..."
+
+        try {
+            # Create system administrator credentials
+            Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!" -DisplayName "DMS Instance Setup Administrator"
+
+            # Get configuration service token
+            $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!"
+
+            # Create DMS Instance using environment variables
+            $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development"
+
+            Write-Output "DMS Instance created successfully with ID: $instanceId"
+        }
+        catch {
+            Write-Warning "Failed to create DMS Instance: $($_.Exception.Message)"
+        }
     }
 
     Start-Sleep 20
