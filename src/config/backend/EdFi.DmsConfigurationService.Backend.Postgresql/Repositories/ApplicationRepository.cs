@@ -51,10 +51,11 @@ public class ApplicationRepository(
 
             sql = """
                 INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid)
-                VALUES (@ApplicationId, @ClientId, @ClientUuid);
+                VALUES (@ApplicationId, @ClientId, @ClientUuid)
+                RETURNING Id;
                 """;
 
-            await connection.ExecuteAsync(
+            long apiClientId = await connection.ExecuteScalarAsync<long>(
                 sql,
                 new
                 {
@@ -64,6 +65,22 @@ public class ApplicationRepository(
                 }
             );
 
+            if (command.DmsInstanceIds.Length > 0)
+            {
+                sql = """
+                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId)
+                    VALUES (@ApiClientId, @DmsInstanceId);
+                    """;
+
+                var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
+                {
+                    ApiClientId = apiClientId,
+                    DmsInstanceId = dmsInstanceId,
+                });
+
+                await connection.ExecuteAsync(sql, dmsInstanceMappings);
+            }
+
             await transaction.CommitAsync();
             return new ApplicationInsertResult.Success(id);
         }
@@ -72,6 +89,12 @@ public class ApplicationRepository(
             logger.LogWarning(ex, "Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureVendorNotFound();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_dmsinstance"))
+        {
+            logger.LogWarning(ex, "DMS instance not found");
+            await transaction.RollbackAsync();
+            return new ApplicationInsertResult.FailureDmsInstanceNotFound();
         }
         catch (PostgresException ex)
             when (ex.SqlState == "23505" && ex.Message.Contains("idx_vendor_applicationname"))
@@ -99,23 +122,35 @@ public class ApplicationRepository(
         try
         {
             string sql = """
-                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId
+                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
+                       e.EducationOrganizationId, acd.DmsInstanceId
                 FROM (SELECT * FROM dmscs.Application ORDER BY Id LIMIT @Limit OFFSET @Offset) AS a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
+                LEFT OUTER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
+                LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
                 ORDER BY a.ApplicationName;
                 """;
-            var applications = await connection.QueryAsync<ApplicationResponse, long?, ApplicationResponse>(
+            var applications = await connection.QueryAsync<
+                ApplicationResponse,
+                long?,
+                long?,
+                ApplicationResponse
+            >(
                 sql,
-                (application, educationOrganizationId) =>
+                (application, educationOrganizationId, dmsInstanceId) =>
                 {
                     if (educationOrganizationId != null)
                     {
                         application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                     }
+                    if (dmsInstanceId != null)
+                    {
+                        application.DmsInstanceIds.Add(dmsInstanceId.Value);
+                    }
                     return application;
                 },
                 param: query,
-                splitOn: "EducationOrganizationId"
+                splitOn: "EducationOrganizationId,DmsInstanceId"
             );
 
             var returnApplications = applications
@@ -123,7 +158,10 @@ public class ApplicationRepository(
                 .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.EducationOrganizationIds = g.SelectMany(a => a.EducationOrganizationIds).ToList();
+                    grouped.EducationOrganizationIds = g.SelectMany(a => a.EducationOrganizationIds)
+                        .Distinct()
+                        .ToList();
+                    grouped.DmsInstanceIds = g.SelectMany(a => a.DmsInstanceIds).Distinct().ToList();
                     return grouped;
                 })
                 .ToList();
@@ -144,23 +182,35 @@ public class ApplicationRepository(
         try
         {
             string sql = """
-                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName, e.EducationOrganizationId
+                SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
+                       e.EducationOrganizationId, acd.DmsInstanceId
                 FROM dmscs.Application a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
+                LEFT OUTER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
+                LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
                 WHERE a.Id = @Id;
                 """;
-            var applications = await connection.QueryAsync<ApplicationResponse, long?, ApplicationResponse>(
+            var applications = await connection.QueryAsync<
+                ApplicationResponse,
+                long?,
+                long?,
+                ApplicationResponse
+            >(
                 sql,
-                (application, educationOrganizationId) =>
+                (application, educationOrganizationId, dmsInstanceId) =>
                 {
                     if (educationOrganizationId != null)
                     {
                         application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                     }
+                    if (dmsInstanceId != null)
+                    {
+                        application.DmsInstanceIds.Add(dmsInstanceId.Value);
+                    }
                     return application;
                 },
                 param: new { Id = id },
-                splitOn: "EducationOrganizationId"
+                splitOn: "EducationOrganizationId,DmsInstanceId"
             );
 
             ApplicationResponse? returnApplication = applications
@@ -168,7 +218,10 @@ public class ApplicationRepository(
                 .Select(g =>
                 {
                     var grouped = g.First();
-                    grouped.EducationOrganizationIds = g.SelectMany(a => a.EducationOrganizationIds).ToList();
+                    grouped.EducationOrganizationIds = g.SelectMany(a => a.EducationOrganizationIds)
+                        .Distinct()
+                        .ToList();
+                    grouped.DmsInstanceIds = g.SelectMany(a => a.DmsInstanceIds).Distinct().ToList();
                     return grouped;
                 })
                 .SingleOrDefault();
@@ -229,6 +282,31 @@ public class ApplicationRepository(
 
             await connection.ExecuteAsync(updateApiClientsql, clientCommand);
 
+            // Get ApiClient Id for DmsInstance relationship update
+            sql = "SELECT Id FROM dmscs.ApiClient WHERE ClientId = @ClientId;";
+            long apiClientId = await connection.ExecuteScalarAsync<long>(sql, new { clientCommand.ClientId });
+
+            // Delete existing DmsInstance relationship
+            sql = "DELETE FROM dmscs.ApiClientDmsInstance WHERE ApiClientId = @ApiClientId";
+            await connection.ExecuteAsync(sql, new { ApiClientId = apiClientId });
+
+            // Insert new DmsInstance relationships if provided
+            if (command.DmsInstanceIds.Length > 0)
+            {
+                sql = """
+                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId)
+                    VALUES (@ApiClientId, @DmsInstanceId);
+                    """;
+
+                var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
+                {
+                    ApiClientId = apiClientId,
+                    DmsInstanceId = dmsInstanceId,
+                });
+
+                await connection.ExecuteAsync(sql, dmsInstanceMappings);
+            }
+
             await transaction.CommitAsync();
 
             return new ApplicationUpdateResult.Success();
@@ -238,6 +316,12 @@ public class ApplicationRepository(
             logger.LogWarning(ex, "Update application failure: Vendor not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureVendorNotFound();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_dmsinstance"))
+        {
+            logger.LogWarning(ex, "Update application failure: DMS instance not found");
+            await transaction.RollbackAsync();
+            return new ApplicationUpdateResult.FailureDmsInstanceNotFound();
         }
         catch (PostgresException ex)
             when (ex.SqlState == "23505" && ex.Message.Contains("idx_vendor_applicationname"))

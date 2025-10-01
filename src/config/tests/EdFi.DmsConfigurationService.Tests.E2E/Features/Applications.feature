@@ -12,15 +12,66 @@ Feature: Applications endpoints
                         "namespacePrefixes": "uri://ed-fi-e2e.org,uri://ed-fi-e2e2.org"
                     }
                   """
+              And a POST request is made to "/v2/dmsInstances" with
+                  """
+                    {
+                        "instanceType": "Test",
+                        "instanceName": "Test DMS Instance",
+                        "connectionString": "Server=test;Database=TestDb;"
+                    }
+                  """
 
         Scenario: 01 Ensure clients can GET applications
-            Given the system has these "applications"
-                  | vendorId  | applicationName | claimSetName |
-                  | _vendorId | application01   | claim01      |
-                  | _vendorId | application02   | claim01      |
-                  | _vendorId | application03   | claim01      |
-                  | _vendorId | application04   | claim01      |
-                  | _vendorId | application05   | claim01      |
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "application01",
+                   "claimSetName": "claim01",
+                   "educationOrganizationIds": [],
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "application02",
+                   "claimSetName": "claim01",
+                   "educationOrganizationIds": [],
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "application03",
+                   "claimSetName": "claim01",
+                   "educationOrganizationIds": [],
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "application04",
+                   "claimSetName": "claim01",
+                   "educationOrganizationIds": [],
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "application05",
+                   "claimSetName": "claim01",
+                   "educationOrganizationIds": [],
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
              When a GET request is made to "/v2/applications?offset=0&limit=2"
              Then it should respond with 200
               And the response body is
@@ -30,14 +81,16 @@ Feature: Applications endpoints
                           "applicationName": "application01",
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
-                          "educationOrganizationIds": []
+                          "educationOrganizationIds": [],
+                          "dmsInstanceIds": [{dmsInstanceId}]
                       },
                       {
                           "id": {id},
                           "applicationName": "application02",
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
-                          "educationOrganizationIds": []
+                          "educationOrganizationIds": [],
+                          "dmsInstanceIds": [{dmsInstanceId}]
                       }]
                   """
              When a GET request is made to "/v2/applications"
@@ -49,35 +102,40 @@ Feature: Applications endpoints
                           "applicationName": "application01",
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
-                          "educationOrganizationIds": []
+                          "educationOrganizationIds": [],
+                          "dmsInstanceIds": [{dmsInstanceId}]
                       },
                       {
                           "id": {id},
                           "applicationName": "application02",
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
-                          "educationOrganizationIds": []
+                          "educationOrganizationIds": [],
+                          "dmsInstanceIds": [{dmsInstanceId}]
                       },
                       {
                           "id": {id},
                           "applicationName": "application03",
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
-                          "educationOrganizationIds": []
+                          "educationOrganizationIds": [],
+                          "dmsInstanceIds": [{dmsInstanceId}]
                       },
                       {
                           "id": {id},
                           "applicationName": "application04",
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
-                          "educationOrganizationIds": []
+                          "educationOrganizationIds": [],
+                          "dmsInstanceIds": [{dmsInstanceId}]
                       },
                       {
                           "id": {id},
                           "applicationName": "application05",
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
-                          "educationOrganizationIds": []
+                          "educationOrganizationIds": [],
+                          "dmsInstanceIds": [{dmsInstanceId}]
                       }]
                   """
 
@@ -88,7 +146,8 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Demo application 02",
                    "claimSetName": "Claim06",
-                   "educationOrganizationIds": [1, 2, 3]
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -106,7 +165,8 @@ Feature: Applications endpoints
                     "applicationName": "Demo application 02",
                     "vendorId": {vendorId},
                     "claimSetName": "Claim06",
-                    "educationOrganizationIds": [1, 2, 3]
+                    "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
 
@@ -116,7 +176,8 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Test Scenario 02",
-                   "claimSetName": "TestScenario02"
+                   "claimSetName": "TestScenario02",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -140,7 +201,8 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Scenario 04 Demo application",
-                   "claimSetName": "ClaimScenario03"
+                   "claimSetName": "ClaimScenario03",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -150,7 +212,8 @@ Feature: Applications endpoints
                       "id": {applicationId},
                       "vendorId": {vendorId},
                       "applicationName": "Demo application Update",
-                      "claimSetName": "ClaimScenario03Update"
+                      "claimSetName": "ClaimScenario03Update",
+                      "dmsInstanceIds": [{dmsInstanceId}]
                       }
                   """
              Then it should respond with 204
@@ -161,7 +224,8 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "ClaimScenario05"
+                   "claimSetName": "ClaimScenario05",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -174,7 +238,8 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "ClaimScenario06"
+                   "claimSetName": "ClaimScenario06",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -189,7 +254,8 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "ClaimScenario07"
+                   "claimSetName": "ClaimScenario07",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -201,7 +267,8 @@ Feature: Applications endpoints
                       "id": {applicationId},
                       "vendorId": {vendorId},
                       "applicationName": "Delete application update",
-                      "claimSetName": "ClaimScenario07"
+                      "claimSetName": "ClaimScenario07",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 404
@@ -212,7 +279,8 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "ClaimScenario08"
+                   "claimSetName": "ClaimScenario08",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -235,7 +303,8 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Delete application",
-                   "claimSetName": "ClaimScenario04"
+                   "claimSetName": "ClaimScenario04",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 400
@@ -247,7 +316,8 @@ Feature: Applications endpoints
                    "vendorId": 9999,
                    "applicationName": "Demo application",
                    "claimSetName": "Claim999",
-                   "educationOrganizationIds": [1, 2, 3]
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 400
@@ -275,7 +345,8 @@ Feature: Applications endpoints
                    "vendorId": 9999,
                    "applicationName": "",
                    "claimSetName": "Claim999",
-                   "educationOrganizationIds": [1, 2, 3]
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 400
@@ -303,7 +374,8 @@ Feature: Applications endpoints
                    "vendorId": 9999,
                    "applicationName": "Test 1234",
                    "claimSetName": "",
-                   "educationOrganizationIds": [1, 2, 3]
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 400
@@ -331,7 +403,8 @@ Feature: Applications endpoints
                    "vendorId": 9999,
                    "applicationName": "Test 1234",
                    "claimSetName": "Claim set name with white space",
-                   "educationOrganizationIds": [1, 2, 3]
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 400
@@ -359,7 +432,8 @@ Feature: Applications endpoints
                    "vendorId": 9999,
                    "applicationName": "Demo application",
                    "claimSetName": "Claim999",
-                   "educationOrganizationIds": [0]
+                   "educationOrganizationIds": [0],
+                   "dmsInstanceIds": []
                   }
                   """
              Then it should respond with 400
@@ -386,7 +460,8 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Demo-application",
                    "claimSetName": "Claim06",
-                   "educationOrganizationIds": [1, 2, 3]
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -404,7 +479,8 @@ Feature: Applications endpoints
                     "applicationName": "Demo-application",
                     "vendorId": {vendorId},
                     "claimSetName": "Claim06",
-                    "educationOrganizationIds": [1, 2, 3]
+                    "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
 
@@ -414,7 +490,8 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Demo application 17",
-                   "claimSetName": "ClaimScenario03"
+                   "claimSetName": "ClaimScenario03",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -425,7 +502,8 @@ Feature: Applications endpoints
                       "id": {applicationId},
                       "vendorId": {vendorId},
                       "applicationName": "Demo application 17 Update",
-                      "claimSetName": "ClaimScenario03Update"
+                      "claimSetName": "ClaimScenario03Update",
+                      "dmsInstanceIds": [{dmsInstanceId}]
                       }
                   """
              Then it should respond with 204
@@ -437,7 +515,8 @@ Feature: Applications endpoints
                   {
                    "vendorId": {vendorId},
                    "applicationName": "Demo application 18",
-                   "claimSetName": "ClaimScenario03"
+                   "claimSetName": "ClaimScenario03",
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -462,7 +541,8 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Demo application 19",
                    "claimSetName": "ClaimScenario2559",
-                   "educationOrganizationIds": [2559, 255901]
+                   "educationOrganizationIds": [2559, 255901],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -474,7 +554,8 @@ Feature: Applications endpoints
                       "vendorId": {vendorId},
                       "applicationName": "Demo application 19 Update",
                       "claimSetName": "ClaimScenario2559Update",
-                      "educationOrganizationIds": [2559, 255902]
+                      "educationOrganizationIds": [2559, 255902],
+                      "dmsInstanceIds": [{dmsInstanceId}]
                       }
                   """
              Then it should respond with 204
@@ -487,7 +568,8 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Demo application 20",
                    "claimSetName": "Claim06",
-                   "educationOrganizationIds": [1, 2, 3]
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              When a POST request is made to "/v2/applications" with
@@ -496,7 +578,8 @@ Feature: Applications endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Demo application 20",
                    "claimSetName": "Claim06",
-                   "educationOrganizationIds": [1, 2, 3, 4]
+                   "educationOrganizationIds": [1, 2, 3, 4],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 400

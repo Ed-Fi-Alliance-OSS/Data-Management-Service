@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -26,7 +27,10 @@ public class QueryRequestHandlerTests
 {
     internal static IPipelineStep Handler(IQueryHandler queryHandler)
     {
-        return new QueryRequestHandler(queryHandler, NullLogger.Instance, ResiliencePipeline.Empty);
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IQueryHandler))).Returns(queryHandler);
+
+        return new QueryRequestHandler(serviceProvider, NullLogger.Instance, ResiliencePipeline.Empty);
     }
 
     [TestFixture]

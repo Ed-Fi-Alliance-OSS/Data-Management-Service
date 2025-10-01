@@ -24,13 +24,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
         public static IServiceCollection AddJwtAuthentication(
             this IServiceCollection services,
             JwtSettings jwtSettings,
-            Microsoft.Extensions.Configuration.IConfiguration configuration)
+            Microsoft.Extensions.Configuration.IConfiguration configuration
+        )
         {
             // Add enhanced token validator
             services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
 
             // Add OpenIddict validation support
-            services.AddOpenIddict()
+            services
+                .AddOpenIddict()
                 .AddValidation(options =>
                 {
                     // Configure the OpenIddict validation component to use the local
@@ -45,79 +47,102 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 });
 
             // Add authentication with both schemes
-            services.AddAuthentication()
-                .AddJwtBearer(JwtSchemeName, options =>
-                {
-                    options.TokenValidationParameters = new TokenValidationParameters
+            services
+                .AddAuthentication()
+                .AddJwtBearer(
+                    JwtSchemeName,
+                    options =>
                     {
-                        ValidateIssuerSigningKey = true,
-                        // IssuerSigningKeys will be set via options pattern below
-                        ValidateIssuer = true,
-                        ValidIssuer = jwtSettings.Issuer,
-                        ValidateAudience = true,
-                        ValidAudience = jwtSettings.Audience,
-                        ValidateLifetime = true,
-                        ClockSkew = TimeSpan.FromMinutes(5),
-                        RequireExpirationTime = true,
-                        RequireSignedTokens = true,
-                    };
-
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnTokenValidated = async context =>
+                        options.TokenValidationParameters = new TokenValidationParameters
                         {
-                            // Use enhanced token validator for additional validation
-                            var enhancedValidator = context.HttpContext.RequestServices.GetService<IEnhancedTokenValidator>();
+                            ValidateIssuerSigningKey = true,
+                            // IssuerSigningKeys will be set via options pattern below
+                            ValidateIssuer = true,
+                            ValidIssuer = jwtSettings.Issuer,
+                            ValidateAudience = true,
+                            ValidAudience = jwtSettings.Audience,
+                            ValidateLifetime = true,
+                            ClockSkew = TimeSpan.FromMinutes(5),
+                            RequireExpirationTime = true,
+                            RequireSignedTokens = true,
+                        };
 
-                            if (enhancedValidator != null)
+                        options.Events = new JwtBearerEvents
+                        {
+                            OnTokenValidated = async context =>
                             {
-                                var token = context.Request.Headers["Authorization"]
-                                    .ToString().Replace("Bearer ", "");
+                                // Use enhanced token validator for additional validation
+                                var enhancedValidator =
+                                    context.HttpContext.RequestServices.GetService<IEnhancedTokenValidator>();
 
-                                var validationResult = await enhancedValidator.ValidateTokenAsync(token);
-                                if (!validationResult.IsValid)
+                                if (enhancedValidator != null)
                                 {
-                                    context.Fail($"Enhanced validation failed: {validationResult.ErrorDescription}");
-                                }
-                            }
+                                    var token = context
+                                        .Request.Headers["Authorization"]
+                                        .ToString()
+                                        .Replace("Bearer ", "");
 
-                            // Additional validation using existing token manager (backward compatibility)
-                            var tokenManager = context.HttpContext.RequestServices.GetService<ITokenManager>();
-                            if (tokenManager != null)
-                            {
-                                var token = context.Request.Headers["Authorization"]
-                                    .ToString().Replace("Bearer ", "");
-
-                                // Check if the token manager supports validation
-                                var validationMethod = tokenManager.GetType().GetMethod("ValidateTokenAsync");
-                                if (validationMethod != null)
-                                {
-                                    var result = await (Task<bool>)validationMethod.Invoke(tokenManager, new object[] { token })!;
-                                    if (!result)
+                                    var validationResult = await enhancedValidator.ValidateTokenAsync(token);
+                                    if (!validationResult.IsValid)
                                     {
-                                        context.Fail("Token has been revoked or is invalid");
+                                        context.Fail(
+                                            $"Enhanced validation failed: {validationResult.ErrorDescription}"
+                                        );
                                     }
                                 }
-                            }
-                        },
-                        OnChallenge = context =>
-                        {
-                            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerHandler>>();
-                            logger.LogWarning("JWT authentication challenge: {Error} - {Description}",
-                                context.Error, context.ErrorDescription);
-                            return Task.CompletedTask;
-                        },
-                        OnAuthenticationFailed = context =>
-                        {
-                            var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerHandler>>();
-                            logger.LogError(context.Exception, "JWT authentication failed");
-                            return Task.CompletedTask;
-                        }
-                    };
-                });
+
+                                // Additional validation using existing token manager (backward compatibility)
+                                var tokenManager =
+                                    context.HttpContext.RequestServices.GetService<ITokenManager>();
+                                if (tokenManager != null)
+                                {
+                                    var token = context
+                                        .Request.Headers["Authorization"]
+                                        .ToString()
+                                        .Replace("Bearer ", "");
+
+                                    // Check if the token manager supports validation
+                                    var validationMethod = tokenManager
+                                        .GetType()
+                                        .GetMethod("ValidateTokenAsync");
+                                    if (validationMethod != null)
+                                    {
+                                        var result = await (Task<bool>)
+                                            validationMethod.Invoke(tokenManager, new object[] { token })!;
+                                        if (!result)
+                                        {
+                                            context.Fail("Token has been revoked or is invalid");
+                                        }
+                                    }
+                                }
+                            },
+                            OnChallenge = context =>
+                            {
+                                var logger = context.HttpContext.RequestServices.GetRequiredService<
+                                    ILogger<JwtBearerHandler>
+                                >();
+                                logger.LogWarning(
+                                    "JWT authentication challenge: {Error} - {Description}",
+                                    context.Error,
+                                    context.ErrorDescription
+                                );
+                                return Task.CompletedTask;
+                            },
+                            OnAuthenticationFailed = context =>
+                            {
+                                var logger = context.HttpContext.RequestServices.GetRequiredService<
+                                    ILogger<JwtBearerHandler>
+                                >();
+                                logger.LogError(context.Exception, "JWT authentication failed");
+                                return Task.CompletedTask;
+                            },
+                        };
+                    }
+                );
 
             // Configure JWT options post-configuration to resolve signing keys at runtime
-            services.AddOptions<JwtBearerOptions>(JwtSchemeName)
+            services
+                .AddOptions<JwtBearerOptions>(JwtSchemeName)
                 .Configure<ITokenManager>(
                     (options, tokenManager) =>
                     {
@@ -162,7 +187,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
 
             try
             {
-                return System.Text.Json.JsonSerializer.Deserialize<string[]>(scopesClaim) ?? Array.Empty<string>();
+                return System.Text.Json.JsonSerializer.Deserialize<string[]>(scopesClaim)
+                    ?? Array.Empty<string>();
             }
             catch
             {
@@ -176,7 +202,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
         public static bool HasScope(this ClaimsPrincipal principal, string requiredScope)
         {
             var scopes = principal.GetScopes();
-            return Array.Exists(scopes, scope => scope.Equals(requiredScope, StringComparison.OrdinalIgnoreCase));
+            return Array.Exists(
+                scopes,
+                scope => scope.Equals(requiredScope, StringComparison.OrdinalIgnoreCase)
+            );
         }
 
         /// <summary>
@@ -202,7 +231,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
         {
             return new Microsoft.AspNetCore.Authorization.AuthorizeAttribute
             {
-                AuthenticationSchemes = JwtSchemeName
+                AuthenticationSchemes = JwtSchemeName,
             };
         }
     }

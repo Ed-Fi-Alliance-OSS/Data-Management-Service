@@ -38,6 +38,11 @@ public record ApplicationInsertResult
     public record FailureVendorNotFound() : ApplicationInsertResult();
 
     /// <summary>
+    /// Referenced DMS instance not found exception thrown and caught
+    /// </summary>
+    public record FailureDmsInstanceNotFound() : ApplicationInsertResult();
+
+    /// <summary>
     /// Application name already exists for the vendor
     /// </summary>
     public record FailureDuplicateApplication(string ApplicationName) : ApplicationInsertResult();
@@ -96,6 +101,11 @@ public record ApplicationUpdateResult
     /// Referenced vendor not found exception thrown and caught
     /// </summary>
     public record FailureVendorNotFound() : ApplicationUpdateResult();
+
+    /// <summary>
+    /// Referenced DMS instance not found exception thrown and caught
+    /// </summary>
+    public record FailureDmsInstanceNotFound() : ApplicationUpdateResult();
 
     /// <summary>
     /// Application name already exists for the vendor

@@ -13,7 +13,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
     /// </summary>
     public interface IOpenIdConnectConfigurationProvider
     {
-        Task<OpenIdConnectConfiguration> GetConfigurationAsync(string baseUrl, CancellationToken cancellationToken = default);
+        Task<OpenIdConnectConfiguration> GetConfigurationAsync(
+            string baseUrl,
+            CancellationToken cancellationToken = default
+        );
         Task<JwksDocument> GetJwksDocumentAsync(CancellationToken cancellationToken = default);
     }
 
@@ -79,15 +82,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
         private readonly ITokenManager _tokenManager;
         private readonly IConfiguration _configuration;
 
-        public OpenIdConnectConfigurationProvider(
-            ITokenManager tokenManager,
-            IConfiguration configuration)
+        public OpenIdConnectConfigurationProvider(ITokenManager tokenManager, IConfiguration configuration)
         {
             _tokenManager = tokenManager;
             _configuration = configuration;
         }
 
-        public Task<OpenIdConnectConfiguration> GetConfigurationAsync(string baseUrl, CancellationToken cancellationToken = default)
+        public Task<OpenIdConnectConfiguration> GetConfigurationAsync(
+            string baseUrl,
+            CancellationToken cancellationToken = default
+        )
         {
             var authority = _configuration["IdentitySettings:Authority"] ?? baseUrl;
             var config = new OpenIdConnectConfiguration
@@ -104,14 +108,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
                 {
                     OpenIddictConstants.GrantTypes.ClientCredentials,
                     OpenIddictConstants.GrantTypes.AuthorizationCode,
-                    OpenIddictConstants.GrantTypes.RefreshToken
+                    OpenIddictConstants.GrantTypes.RefreshToken,
                 },
 
                 // Supported response types
                 ResponseTypesSupported = new[]
                 {
                     OpenIddictConstants.ResponseTypes.Code,
-                    OpenIddictConstants.ResponseTypes.Token
+                    OpenIddictConstants.ResponseTypes.Token,
                 },
 
                 // Supported response modes
@@ -119,7 +123,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
                 {
                     OpenIddictConstants.ResponseModes.Query,
                     OpenIddictConstants.ResponseModes.Fragment,
-                    OpenIddictConstants.ResponseModes.FormPost
+                    OpenIddictConstants.ResponseModes.FormPost,
                 },
 
                 // Supported scopes
@@ -129,25 +133,22 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
                     OpenIddictConstants.Scopes.Profile,
                     OpenIddictConstants.Scopes.Email,
                     "api",
-                    "edfi_admin_api/full_access"
+                    "edfi_admin_api/full_access",
                 },
 
                 // Token endpoint authentication methods
                 TokenEndpointAuthMethodsSupported = new[]
                 {
                     OpenIddictConstants.ClientAuthenticationMethods.ClientSecretPost,
-                    OpenIddictConstants.ClientAuthenticationMethods.ClientSecretBasic
+                    OpenIddictConstants.ClientAuthenticationMethods.ClientSecretBasic,
                 },
 
                 // Signing algorithms
-                IdTokenSigningAlgValuesSupported = new[]
-                {
-                    OpenIddictConstants.Algorithms.RsaSha256
-                },
+                IdTokenSigningAlgValuesSupported = new[] { OpenIddictConstants.Algorithms.RsaSha256 },
 
                 TokenEndpointAuthSigningAlgValuesSupported = new[]
                 {
-                    OpenIddictConstants.Algorithms.RsaSha256
+                    OpenIddictConstants.Algorithms.RsaSha256,
                 },
 
                 // Supported claims
@@ -158,20 +159,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
                     OpenIddictConstants.Claims.Role,
                     "http://schemas.microsoft.com/ws/2008/06/identity/claims/role",
                     "namespacePrefixes",
-                    "educationOrganizationIds"
+                    "educationOrganizationIds",
                 },
 
                 // Subject types
-                SubjectTypesSupported = new[]
-                {
-                    OpenIddictConstants.SubjectTypes.Public
-                },
+                SubjectTypesSupported = new[] { OpenIddictConstants.SubjectTypes.Public },
 
                 // PKCE support
-                CodeChallengeMethodsSupported = new[]
-                {
-                    OpenIddictConstants.CodeChallengeMethods.Sha256
-                },
+                CodeChallengeMethodsSupported = new[] { OpenIddictConstants.CodeChallengeMethods.Sha256 },
 
                 // Logout support (disabled for now as this is primarily an API)
                 FrontchannelLogoutSupported = false,
@@ -185,7 +180,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
                 RequireRequestUriRegistration = false,
                 ClaimsParameterSupported = false,
                 IntrospectionEndpointAuthMethodsSupported = true,
-                RevocationEndpointAuthMethodsSupported = true
+                RevocationEndpointAuthMethodsSupported = true,
             };
 
             return Task.FromResult(config);
@@ -195,21 +190,23 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
         {
             var publicKeys = await _tokenManager.GetPublicKeysAsync();
 
-            var keys = publicKeys.Select(keyInfo =>
-            {
-                var rsa = System.Security.Cryptography.RSA.Create();
-                rsa.ImportParameters(keyInfo.RsaParameters);
-
-                return new JsonWebKey
+            var keys = publicKeys
+                .Select(keyInfo =>
                 {
-                    Kty = "RSA",
-                    Use = "sig",
-                    Kid = keyInfo.KeyId,
-                    Alg = "RS256",
-                    N = Convert.ToBase64String(keyInfo.RsaParameters.Modulus!),
-                    E = Convert.ToBase64String(keyInfo.RsaParameters.Exponent!)
-                };
-            }).ToArray();
+                    var rsa = System.Security.Cryptography.RSA.Create();
+                    rsa.ImportParameters(keyInfo.RsaParameters);
+
+                    return new JsonWebKey
+                    {
+                        Kty = "RSA",
+                        Use = "sig",
+                        Kid = keyInfo.KeyId,
+                        Alg = "RS256",
+                        N = Convert.ToBase64String(keyInfo.RsaParameters.Modulus!),
+                        E = Convert.ToBase64String(keyInfo.RsaParameters.Exponent!),
+                    };
+                })
+                .ToArray();
 
             return new JwksDocument { Keys = keys };
         }

@@ -16,6 +16,7 @@ public class ApplicationUpdateCommand
     public long VendorId { get; set; }
     public required string ClaimSetName { get; set; }
     public long[] EducationOrganizationIds { get; set; } = [];
+    public long[] DmsInstanceIds { get; set; } = [];
 
     public class Validator : AbstractValidator<ApplicationUpdateCommand>
     {
@@ -29,6 +30,7 @@ public class ApplicationUpdateCommand
                 .When(m => !string.IsNullOrEmpty(m.ClaimSetName))
                 .WithMessage(ValidationConstants.ClaimSetNameNoWhiteSpaceMessage);
             RuleForEach(a => a.EducationOrganizationIds).NotNull().GreaterThan(0);
+            RuleForEach(a => a.DmsInstanceIds).NotNull().GreaterThan(0);
         }
     }
 }

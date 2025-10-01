@@ -5,7 +5,6 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
-using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -51,6 +50,7 @@ public class InvalidResourceSchemasTests
                         (
                             new System.Security.Claims.ClaimsPrincipal(),
                             new ClientAuthorizations(
+                                ClientId: "test-client",
                                 TokenId: "test-token",
                                 ClaimSetName: "test-claimset",
                                 EducationOrganizationIds: new List<EducationOrganizationId>(),
@@ -70,15 +70,52 @@ public class InvalidResourceSchemasTests
                 NullLogger<JwtAuthenticationMiddleware>.Instance
             );
 
+            // Register DMS Instance Selection services
+            services.AddTransient<DmsInstanceSelectionMiddleware>();
+
+            var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
+            A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
+                .Returns(
+                    Task.FromResult<ApplicationContext?>(
+                        new ApplicationContext(
+                            Id: 1,
+                            ApplicationId: 1,
+                            ClientId: "test-client",
+                            ClientUuid: Guid.NewGuid(),
+                            DmsInstanceIds: [1]
+                        )
+                    )
+                );
+            services.AddSingleton<IApplicationContextProvider>(fakeApplicationContextProvider);
+
+            var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            A.CallTo(() => fakeDmsInstanceProvider.GetById(A<long>._))
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "Test Instance",
+                        ConnectionString: "test-connection-string"
+                    )
+                );
+            services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
+
+            var fakeRequestConnectionStringProvider = A.Fake<IRequestConnectionStringProvider>();
+            A.CallTo(() => fakeRequestConnectionStringProvider.GetConnectionString())
+                .Returns("test-connection-string");
+            services.AddSingleton<IRequestConnectionStringProvider>(fakeRequestConnectionStringProvider);
+
+            services.AddTransient<ILogger<DmsInstanceSelectionMiddleware>>(_ =>
+                NullLogger<DmsInstanceSelectionMiddleware>.Instance
+            );
+
             var serviceProvider = services.BuildServiceProvider();
             var apiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
 
             return new ApiService(
                 apiSchemaProvider,
-                new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new NoClaimsClaimSetProvider(NullLogger.Instance),
                 new DocumentValidator(),
-                new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 new DecimalValidator(),

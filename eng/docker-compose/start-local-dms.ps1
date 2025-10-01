@@ -200,7 +200,7 @@ else {
         Write-Output "Secret: $($credentials.Secret)"
         Write-Output "These credentials can be used for smoke testing the DMS API."
     }
-    Start-Sleep 20
 
+    Start-Sleep 20
 
 }

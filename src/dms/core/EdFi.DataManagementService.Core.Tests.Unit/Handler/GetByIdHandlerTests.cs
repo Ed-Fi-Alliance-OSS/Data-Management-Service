@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
@@ -26,8 +27,12 @@ public class GetByIdHandlerTests
 {
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
+            .Returns(documentStoreRepository);
+
         return new GetByIdHandler(
-            documentStoreRepository,
+            serviceProvider,
             NullLogger.Instance,
             ResiliencePipeline.Empty,
             new NoAuthorizationServiceFactory()

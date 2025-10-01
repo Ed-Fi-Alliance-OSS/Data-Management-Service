@@ -16,11 +16,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
     /// PostgreSQL implementation of IOpenIddictDataRepository.
     /// Handles all database operations for OpenIddict using PostgreSQL-specific connections and SQL.
     /// </summary>
-    public class OpenIddictDataRepository(IOptions<DatabaseOptions> databaseOptions) : IOpenIddictDataRepository
+    public class OpenIddictDataRepository(IOptions<DatabaseOptions> databaseOptions)
+        : IOpenIddictDataRepository
     {
         private readonly string _connectionString = databaseOptions.Value.DatabaseConnection;
 
-        public async Task<T> ExecuteInTransactionAsync<T>(Func<IDbConnection, IDbTransaction, Task<T>> operation)
+        public async Task<T> ExecuteInTransactionAsync<T>(
+            Func<IDbConnection, IDbTransaction, Task<T>> operation
+        )
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
@@ -273,7 +276,6 @@ UPDATE dmscs.OpenIddictApplication
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
-
             const string applicationSql =
                 @"SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
                          a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers::jsonb::text as ProtocolMappers,
@@ -294,7 +296,8 @@ UPDATE dmscs.OpenIddictApplication
         public async Task<ApplicationInfo?> GetApplicationByIdAsync(
             Guid id,
             IDbConnection connection,
-            IDbTransaction? transaction = null)
+            IDbTransaction? transaction = null
+        )
         {
             const string applicationSql =
                 @"SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
@@ -341,7 +344,8 @@ UPDATE dmscs.OpenIddictApplication
             Guid applicationId,
             string subject,
             string payload,
-            DateTimeOffset expiration)
+            DateTimeOffset expiration
+        )
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
@@ -390,7 +394,9 @@ UPDATE dmscs.OpenIddictApplication
             return result > 0;
         }
 
-        public async Task<(string PrivateKey, string KeyId)?> GetActivePrivateKeyInternalAsync(string encryptionKey)
+        public async Task<(string PrivateKey, string KeyId)?> GetActivePrivateKeyInternalAsync(
+            string encryptionKey
+        )
         {
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();

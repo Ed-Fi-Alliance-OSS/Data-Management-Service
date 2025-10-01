@@ -12,9 +12,10 @@ public class ClaimSetExportResponse
 {
     public long Id { get; set; }
     public required string Name { get; set; }
+
     [JsonPropertyName("_isSystemReserved")]
     public required bool IsSystemReserved { get; set; }
+
     [JsonPropertyName("_applications")]
     public JsonElement? Applications { get; set; }
 }
-

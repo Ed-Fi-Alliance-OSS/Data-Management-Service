@@ -20,8 +20,8 @@ public class DmsInstanceModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v2/dmsInstances/", InsertDmsInstance);
-        endpoints.MapSecuredGet("/v2/dmsInstances/", GetAll);
-        endpoints.MapSecuredGet($"/v2/dmsInstances/{{id}}", GetById);
+        endpoints.MapLimitedAccess("/v2/dmsInstances/", GetAll);
+        endpoints.MapLimitedAccess($"/v2/dmsInstances/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v2/dmsInstances/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v2/dmsInstances/{{id}}", Delete);
     }

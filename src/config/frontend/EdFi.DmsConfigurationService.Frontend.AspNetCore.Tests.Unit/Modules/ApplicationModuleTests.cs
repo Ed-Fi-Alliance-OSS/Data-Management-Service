@@ -87,6 +87,7 @@ public class ApplicationModuleTests
                                 ClaimSetName = "ClaimSet",
                                 VendorId = 1,
                                 EducationOrganizationIds = [1],
+                                DmsInstanceIds = [1],
                             },
                         ]
                     )
@@ -102,6 +103,7 @@ public class ApplicationModuleTests
                             ClaimSetName = "ClaimSet",
                             VendorId = 1,
                             EducationOrganizationIds = [1],
+                            DmsInstanceIds = [1],
                         }
                     )
                 );
@@ -161,7 +163,8 @@ public class ApplicationModuleTests
                       "ApplicationName": "Application 11",
                       "ClaimSetName": "Test",
                       "VendorId": 1,
-                      "EducationOrganizationIds": [1]
+                      "EducationOrganizationIds": [1],
+                      "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -180,7 +183,8 @@ public class ApplicationModuleTests
                        "ApplicationName": "Application 11",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
-                        "EducationOrganizationIds": [1]
+                        "EducationOrganizationIds": [1],
+                        "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -214,7 +218,8 @@ public class ApplicationModuleTests
                    "ApplicationName": "Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101Application101",
                     "ClaimSetName": "",
                     "VendorId":1,
-                    "EducationOrganizationIds": [0]
+                    "EducationOrganizationIds": [0],
+                    "DmsInstanceIds": []
                 }
                 """;
 
@@ -223,7 +228,8 @@ public class ApplicationModuleTests
                    "ApplicationName": "Application101",
                     "ClaimSetName": "ClaimSet name with white space",
                     "VendorId":1,
-                    "EducationOrganizationIds": [255901]
+                    "EducationOrganizationIds": [255901],
+                    "DmsInstanceIds": [1]
                 }
                 """;
 
@@ -350,7 +356,8 @@ public class ApplicationModuleTests
                        "applicationName": "Application 101",
                         "claimSetName": "Test",
                         "vendorId":1,
-                        "educationOrganizationIds": [1]
+                        "educationOrganizationIds": [1],
+                        "dmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -447,7 +454,8 @@ public class ApplicationModuleTests
                         "ApplicationName": "Application 102",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
-                        "EducationOrganizationIds": [1]
+                        "EducationOrganizationIds": [1],
+                        "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -465,7 +473,8 @@ public class ApplicationModuleTests
                         "ApplicationName": "Application 102",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
-                        "EducationOrganizationIds": [1]
+                        "EducationOrganizationIds": [1],
+                        "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -548,7 +557,8 @@ public class ApplicationModuleTests
                       "ApplicationName": "Application 11",
                       "ClaimSetName": "Test",
                       "VendorId": 1,
-                      "EducationOrganizationIds": [1]
+                      "EducationOrganizationIds": [1],
+                      "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -566,7 +576,8 @@ public class ApplicationModuleTests
                       "ApplicationName": "Application 11",
                       "ClaimSetName": "Test",
                       "VendorId": 1,
-                      "EducationOrganizationIds": [1]
+                      "EducationOrganizationIds": [1],
+                      "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -648,7 +659,8 @@ public class ApplicationModuleTests
                         "ApplicationName": "Application 102",
                         "ClaimSetName": "Test",
                         "VendorId": 1,
-                        "EducationOrganizationIds": [1]
+                        "EducationOrganizationIds": [1],
+                        "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -695,7 +707,8 @@ public class ApplicationModuleTests
                        "ApplicationName": "Application 101",
                         "ClaimSetName": "Test",
                         "VendorId":1,
-                        "EducationOrganizationIds": [1]
+                        "EducationOrganizationIds": [1],
+                        "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -807,7 +820,8 @@ public class ApplicationModuleTests
                         "ApplicationName": "Test Application",
                         "ClaimSetName": "TestClaimSet",
                         "VendorId": 1,
-                        "EducationOrganizationIds": [1]
+                        "EducationOrganizationIds": [1],
+                        "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,
@@ -855,7 +869,8 @@ public class ApplicationModuleTests
                         "ApplicationName": "Test Application",
                         "ClaimSetName": "TestClaimSet",
                         "VendorId": 1,
-                        "EducationOrganizationIds": [1]
+                        "EducationOrganizationIds": [1],
+                        "DmsInstanceIds": [1]
                     }
                     """,
                     Encoding.UTF8,

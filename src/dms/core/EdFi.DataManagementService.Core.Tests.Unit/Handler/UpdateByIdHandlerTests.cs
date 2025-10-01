@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
+using FakeItEasy;
 using FluentAssertions;
 using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -56,8 +57,12 @@ public class UpdateByIdHandlerTests
 
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
+            .Returns(documentStoreRepository);
+
         return new UpdateByIdHandler(
-            documentStoreRepository,
+            serviceProvider,
             NullLogger.Instance,
             ResiliencePipeline.Empty,
             new Provider(),

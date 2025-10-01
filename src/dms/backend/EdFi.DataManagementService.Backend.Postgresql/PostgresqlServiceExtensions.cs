@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -16,23 +17,34 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 public static class PostgresqlServiceExtensions
 {
     /// <summary>
-    /// The Postgresql backend datastore configuration
+    /// The Postgresql backend datastore configuration with per-request connection string support
     /// </summary>
-    /// <param name="connectionString">The PostgreSQL database connection string</param>
-    public static IServiceCollection AddPostgresqlDatastore(
-        this IServiceCollection services,
-        string connectionString
-    )
+    public static IServiceCollection AddPostgresqlDatastore(this IServiceCollection services)
     {
-        services.AddSingleton((sp) => NpgsqlDataSource.Create(connectionString));
-        services.AddSingleton<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
-        services.AddSingleton<IAuthorizationRepository, PostgresqlAuthorizationRepository>();
-        services.AddSingleton<IGetDocumentById, GetDocumentById>();
-        services.AddSingleton<IQueryDocument, QueryDocument>();
-        services.AddSingleton<IUpdateDocumentById, UpdateDocumentById>();
-        services.AddSingleton<IUpsertDocument, UpsertDocument>();
-        services.AddSingleton<IDeleteDocumentById, DeleteDocumentById>();
-        services.AddSingleton<ISqlAction, SqlAction>();
+        // Register NpgsqlDataSource as scoped with lazy factory that uses per-request connection string
+        // Lazy evaluation ensures connection string is only retrieved when NpgsqlDataSource is actually used
+        services.AddScoped<NpgsqlDataSource>(sp =>
+        {
+            var lazyDataSource = sp.GetRequiredService<Lazy<NpgsqlDataSource>>();
+            return lazyDataSource.Value;
+        });
+
+        services.AddScoped<Lazy<NpgsqlDataSource>>(sp => new Lazy<NpgsqlDataSource>(() =>
+        {
+            var requestConnectionStringProvider = sp.GetRequiredService<IRequestConnectionStringProvider>();
+            string connectionString = requestConnectionStringProvider.GetConnectionString();
+            return NpgsqlDataSource.Create(connectionString);
+        }));
+
+        // Register all repositories as scoped (they depend on scoped NpgsqlDataSource)
+        services.AddScoped<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
+        services.AddScoped<IAuthorizationRepository, PostgresqlAuthorizationRepository>();
+        services.AddScoped<IGetDocumentById, GetDocumentById>();
+        services.AddScoped<IQueryDocument, QueryDocument>();
+        services.AddScoped<IUpdateDocumentById, UpdateDocumentById>();
+        services.AddScoped<IUpsertDocument, UpsertDocument>();
+        services.AddScoped<IDeleteDocumentById, DeleteDocumentById>();
+        services.AddScoped<ISqlAction, SqlAction>();
         return services;
     }
 
@@ -42,7 +54,7 @@ public static class PostgresqlServiceExtensions
     /// </summary>
     public static IServiceCollection AddPostgresqlQueryHandler(this IServiceCollection services)
     {
-        services.AddSingleton<IQueryHandler, PostgresqlDocumentStoreRepository>();
+        services.AddScoped<IQueryHandler, PostgresqlDocumentStoreRepository>();
         return services;
     }
 }

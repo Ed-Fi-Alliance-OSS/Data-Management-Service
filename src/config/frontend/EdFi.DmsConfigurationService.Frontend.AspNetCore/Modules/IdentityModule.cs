@@ -123,7 +123,8 @@ public class IdentityModule : IEndpointModule
     )
     {
         var identityProvider =
-            configuration.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant() ?? "self-contained";
+            configuration.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant()
+            ?? "self-contained";
 
         // For self-contained mode, support both form and HTTP Basic authentication
         if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))

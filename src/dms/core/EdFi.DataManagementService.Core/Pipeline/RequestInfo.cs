@@ -123,4 +123,16 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
     /// by the JWT authentication middleware in Core.
     /// </summary>
     public ClientAuthorizations ClientAuthorizations { get; set; } = No.ClientAuthorizations;
+
+    /// <summary>
+    /// The DMS instance ID to use for this request, selected based on the client's application configuration.
+    /// Populated by DmsInstanceSelectionMiddleware.
+    /// </summary>
+    public long DmsInstanceId { get; set; }
+
+    /// <summary>
+    /// The database connection string for the selected DMS instance.
+    /// Populated by DmsInstanceSelectionMiddleware.
+    /// </summary>
+    public string? ConnectionString { get; set; }
 }

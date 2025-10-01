@@ -234,12 +234,34 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 
             _ids[identifier] = id;
         }
-        else if (apiResponse.Status == 200)
+
+        // Also extract clientId from response body if present (for application creation)
+        if (apiResponse.Status == 200 || apiResponse.Status == 201)
         {
-            var jsonResponse = apiResponse.JsonAsync().Result;
-            if (jsonResponse.HasValue && jsonResponse.Value.TryGetProperty("id", out var idProperty))
+            try
             {
-                _ids["vendorId"] = idProperty.GetInt32().ToString();
+                var responseText = apiResponse.TextAsync().Result;
+                if (!string.IsNullOrEmpty(responseText))
+                {
+                    var jsonResponse = JsonDocument.Parse(responseText);
+                    if (jsonResponse.RootElement.TryGetProperty("id", out var idProperty))
+                    {
+                        // Only set vendorId if no location header was found
+                        if (!apiResponse.Headers.ContainsKey("location"))
+                        {
+                            _ids["vendorId"] = idProperty.GetInt32().ToString();
+                        }
+                    }
+                    if (jsonResponse.RootElement.TryGetProperty("key", out var keyProperty))
+                    {
+                        // The 'key' from application creation is the clientId
+                        _ids["clientId"] = keyProperty.GetString() ?? "";
+                    }
+                }
+            }
+            catch
+            {
+                // If we can't read the response body, that's okay
             }
         }
     }
@@ -438,71 +460,19 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             .BeTrue($"Expected:\n{expectedBodyJson}\n\nActual:\n{responseJson}");
     }
 
-    private string ReplacePlaceholdersInResponse(string body, JsonNode responseJson)
-    {
-        var replacements = new Dictionary<string, Regex>()
-        {
-            { "id", new(@"\{id\}") },
-            { "vendorId", new(@"\{vendorId\}") },
-            { "key", new(@"\{key\}") },
-            { "secret", new(@"\{secret\}") },
-            { "access_token", new(@"\{access_token\}") },
-        };
-
-        string replacedBody = ReplaceIds(body)
-            .Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString());
-        foreach (var replacement in replacements)
-        {
-            if (replacedBody.TrimStart().StartsWith('['))
-            {
-                var responseAsArray =
-                    responseJson.AsArray()
-                    ?? throw new AssertionException(
-                        "Expected a JSON array response, but it was not an array."
-                    );
-                if (responseAsArray.Count == 0)
-                {
-                    return replacedBody;
-                }
-
-                int index = 0;
-
-                replacedBody = replacement.Value.Replace(
-                    replacedBody,
-                    match =>
-                    {
-                        var idValue = responseJson[index]?[replacement.Key]?.ToString();
-                        index++;
-                        return idValue ?? match.ToString();
-                    }
-                );
-            }
-            else
-            {
-                replacedBody = replacement.Value.Replace(
-                    replacedBody,
-                    match =>
-                    {
-                        var idValue = responseJson[replacement.Key]?.ToString();
-                        return idValue ?? match.ToString();
-                    }
-                );
-            }
-            replacedBody = replacedBody.Replace("{BASE_URL}/", playwrightContext.ApiUrl);
-        }
-
-        return replacedBody;
-    }
-
     private async Task<string> ReplacePlaceholdersInResponseAsync(string body, JsonNode responseJson)
     {
         var replacements = new Dictionary<string, Regex>()
         {
             { "id", new(@"\{id\}") },
             { "vendorId", new(@"\{vendorId\}") },
+            { "applicationId", new(@"\{applicationId\}") },
+            { "dmsInstanceId", new(@"\{dmsInstanceId\}") },
             { "key", new(@"\{key\}") },
             { "secret", new(@"\{secret\}") },
             { "access_token", new(@"\{access_token\}") },
+            { "clientId", new(@"\{clientId\}") },
+            { "clientUuid", new(@"\{clientUuid\}") },
         };
 
         string replacedBody = await ReplaceIdsAsync(body);
@@ -518,6 +488,17 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                     {
                         var arrayItem = responseJson.AsArray()?[arrayElementIndex];
                         var idValue = arrayItem?[replacement.Key]?.ToString();
+
+                        // Special handling for dmsInstanceId - it's stored in dmsInstanceIds array
+                        if (idValue == null && replacement.Key == "dmsInstanceId")
+                        {
+                            var dmsInstanceIds = arrayItem?["dmsInstanceIds"]?.AsArray();
+                            if (dmsInstanceIds != null && dmsInstanceIds.Count > 0)
+                            {
+                                idValue = dmsInstanceIds[0]?.ToString();
+                            }
+                        }
+
                         var index = arrayElementIndex;
                         arrayElementIndex++;
                         return idValue ?? match.ToString();
@@ -531,6 +512,17 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                     match =>
                     {
                         var idValue = responseJson[replacement.Key]?.ToString();
+
+                        // Special handling for dmsInstanceId - it's stored in dmsInstanceIds array
+                        if (idValue == null && replacement.Key == "dmsInstanceId")
+                        {
+                            var dmsInstanceIds = responseJson["dmsInstanceIds"]?.AsArray();
+                            if (dmsInstanceIds != null && dmsInstanceIds.Count > 0)
+                            {
+                                idValue = dmsInstanceIds[0]?.ToString();
+                            }
+                        }
+
                         return idValue ?? match.ToString();
                     }
                 );

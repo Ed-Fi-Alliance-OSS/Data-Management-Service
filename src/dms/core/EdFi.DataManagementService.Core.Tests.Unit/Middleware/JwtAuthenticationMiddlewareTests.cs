@@ -58,6 +58,7 @@ public class JwtAuthenticationMiddlewareTests
 
             var expectedPrincipal = new ClaimsPrincipal();
             _expectedAuthorizations = new ClientAuthorizations(
+                ClientId: "",
                 TokenId: "token-123",
                 ClaimSetName: "edfi-admin",
                 EducationOrganizationIds: new List<EducationOrganizationId>(),
@@ -312,6 +313,7 @@ public class JwtAuthenticationMiddlewareTests
 
             var expectedPrincipal = new ClaimsPrincipal();
             _expectedAuthorizations = new ClientAuthorizations(
+                ClientId: "",
                 TokenId: "token-123",
                 ClaimSetName: "edfi-admin",
                 EducationOrganizationIds: new List<EducationOrganizationId>(),

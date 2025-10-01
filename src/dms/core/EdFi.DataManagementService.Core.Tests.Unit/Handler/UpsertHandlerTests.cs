@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
+using FakeItEasy;
 using FluentAssertions;
 using Json.More;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,8 +26,12 @@ public class UpsertHandlerTests
 {
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
     {
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IDocumentStoreRepository)))
+            .Returns(documentStoreRepository);
+
         return new UpsertHandler(
-            documentStoreRepository,
+            serviceProvider,
             NullLogger.Instance,
             ResiliencePipeline.Empty,
             new UpdateByIdHandlerTests.Provider(),

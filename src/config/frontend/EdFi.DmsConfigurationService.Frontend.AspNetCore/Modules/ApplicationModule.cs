@@ -88,7 +88,12 @@ public class ApplicationModule : IEndpointModule
             case ClientCreateResult.Success clientSuccess:
                 var repositoryResult = await applicationRepository.InsertApplication(
                     command,
-                    new() { ClientId = clientId, ClientUuid = clientSuccess.ClientUuid }
+                    new()
+                    {
+                        ClientId = clientId,
+                        ClientUuid = clientSuccess.ClientUuid,
+                        DmsInstanceIds = command.DmsInstanceIds,
+                    }
                 );
 
                 switch (repositoryResult)
@@ -111,6 +116,11 @@ public class ApplicationModule : IEndpointModule
                             {
                                 new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist."),
                             }
+                        );
+                    case ApplicationInsertResult.FailureDmsInstanceNotFound:
+                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
+                        throw new ValidationException(
+                            new[] { new ValidationFailure("DmsInstanceId", $"DMS instance does not exist.") }
                         );
                     case ApplicationInsertResult.FailureDuplicateApplication duplicateApp:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
@@ -200,7 +210,12 @@ public class ApplicationModule : IEndpointModule
                         case ClientUpdateResult.Success updateSuccess:
                             var applicationUpdateResult = await repository.UpdateApplication(
                                 command,
-                                new() { ClientId = client.ClientId, ClientUuid = updateSuccess.ClientUuid }
+                                new()
+                                {
+                                    ClientId = client.ClientId,
+                                    ClientUuid = updateSuccess.ClientUuid,
+                                    DmsInstanceIds = command.DmsInstanceIds,
+                                }
                             );
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
@@ -212,6 +227,13 @@ public class ApplicationModule : IEndpointModule
                                             $"Reference 'VendorId' does not exist."
                                         ),
                                     ]
+                                );
+                            }
+
+                            if (applicationUpdateResult is ApplicationUpdateResult.FailureDmsInstanceNotFound)
+                            {
+                                throw new ValidationException(
+                                    [new ValidationFailure("DmsInstanceId", $"DMS instance does not exist.")]
                                 );
                             }
 

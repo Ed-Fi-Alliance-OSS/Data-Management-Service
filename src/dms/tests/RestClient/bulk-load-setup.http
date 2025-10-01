@@ -64,6 +64,21 @@ Authorization: bearer {{configToken}}
 ###
 @vendorId={{getVendor.response.body.id}}
 
+### Create a DMS instance
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "Test DMS Instance",
+    "connectionString": "Server=localhost;Database=TestDb;"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
 ### Create an application for loading School Year.
 # @name createApplication
 POST http://localhost:{{configPort}}/v2/applications
@@ -74,7 +89,8 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Bootstrapper",
     "claimSetName": "BootstrapDescriptorsandEdOrgs",
-    "educationOrganizationIds": []
+    "educationOrganizationIds": [],
+    "dmsInstanceId": {{dmsInstanceId}}
 }
 
 ###
@@ -154,7 +170,8 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Grand Bend Loader",
     "claimSetName": "EdFiSandbox",
-    "educationOrganizationIds": [255901,19255901,2559011,200000,100000,300000,255901044,255901001,255901107,51,54]
+    "educationOrganizationIds": [255901,19255901,2559011,200000,100000,300000,255901044,255901001,255901107,51,54],
+    "dmsInstanceId": {{dmsInstanceId}}
 }
 
 ###

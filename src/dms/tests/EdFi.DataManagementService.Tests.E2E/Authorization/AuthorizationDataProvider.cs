@@ -67,6 +67,35 @@ public static class AuthorizationDataProvider
             systemAdministratorToken
         );
 
+        // Create DmsInstance first
+        using StringContent dmsInstanceContent = new(
+            JsonSerializer.Serialize(
+                new
+                {
+                    instanceType = "Test",
+                    instanceName = "E2E Test DMS Instance",
+                    connectionString = "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
+                }
+            ),
+            Encoding.UTF8,
+            "application/json"
+        );
+
+        using HttpResponseMessage dmsInstancePostResponse = await _configurationServiceClient.PostAsync(
+            "v2/dmsInstances",
+            dmsInstanceContent
+        );
+
+        var dmsInstanceLocation = dmsInstancePostResponse.Headers.Location?.AbsoluteUri ?? "";
+
+        using HttpResponseMessage dmsInstanceGetResponse = await _configurationServiceClient.GetAsync(
+            dmsInstanceLocation
+        );
+        string dmsInstanceBody = await dmsInstanceGetResponse.Content.ReadAsStringAsync();
+
+        int dmsInstanceId = JsonDocument.Parse(dmsInstanceBody).RootElement.GetProperty("id").GetInt32();
+
+        // Create vendor
         using StringContent vendorContent = new(
             JsonSerializer.Serialize(
                 new
@@ -104,6 +133,7 @@ public static class AuthorizationDataProvider
                 .ToArray();
         }
 
+        // Create application with DmsInstance
         var requestJson = JsonSerializer.Serialize(
             new
             {
@@ -111,6 +141,7 @@ public static class AuthorizationDataProvider
                 applicationName = "E2E",
                 claimSetName,
                 educationOrganizationIds,
+                dmsInstanceIds = new[] { dmsInstanceId },
             }
         );
 

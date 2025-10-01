@@ -61,6 +61,21 @@ Authorization: bearer {{configToken}}
 ###
 @vendorId={{getVendor.response.body.id}}
 
+### Create a DMS instance
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "Test DMS Instance",
+    "connectionString": "Server=localhost;Database=TestDb;"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
 ### Create a new application
 # @name createApplication
 POST http://localhost:{{configPort}}/v2/applications
@@ -71,7 +86,8 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
     "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
-    "educationOrganizationIds": [6001010, 60010, 600]
+    "educationOrganizationIds": [6001010, 60010, 600],
+    "dmsInstanceId": {{dmsInstanceId}}
 }
 
 ###
@@ -260,7 +276,8 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Demo application 22",
     "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
-    "educationOrganizationIds": [123456]
+    "educationOrganizationIds": [123456],
+    "dmsInstanceId": {{dmsInstanceId}}
 }
 
 ###

@@ -88,6 +88,7 @@ public static class WebApplicationBuilderExtensions
         );
 
         webApplicationBuilder.Services.AddTransient<IApplicationRepository, ApplicationRepository>();
+        webApplicationBuilder.Services.AddTransient<IApiClientRepository, ApiClientRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyRepository, ClaimsHierarchyRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyManager, ClaimsHierarchyManager>();
         webApplicationBuilder.Services.AddTransient<

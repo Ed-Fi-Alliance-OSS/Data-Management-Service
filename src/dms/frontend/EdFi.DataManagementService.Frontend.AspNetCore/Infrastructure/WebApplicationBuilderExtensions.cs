@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
@@ -45,11 +46,14 @@ public static class WebApplicationBuilderExtensions
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
             .AddTransient<IOAuthManager, OAuthManager>()
             .Configure<DatabaseOptions>(webAppBuilder.Configuration.GetSection("DatabaseOptions"))
-            .Configure<AppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
+            .Configure<Frontend.AspNetCore.Configuration.AppSettings>(
+                webAppBuilder.Configuration.GetSection("AppSettings")
+            )
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
-            .AddSingleton<IValidateOptions<AppSettings>, AppSettingsValidator>()
-            .Configure<ConnectionStrings>(webAppBuilder.Configuration.GetSection("ConnectionStrings"))
-            .AddSingleton<IValidateOptions<ConnectionStrings>, ConnectionStringsValidator>();
+            .AddSingleton<
+                IValidateOptions<Frontend.AspNetCore.Configuration.AppSettings>,
+                AppSettingsValidator
+            >();
 
         if (webAppBuilder.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
@@ -60,14 +64,16 @@ public static class WebApplicationBuilderExtensions
         ConfigureDatastore(webAppBuilder, logger);
         ConfigureQueryHandler(webAppBuilder, logger);
 
-        webAppBuilder.Services.AddSingleton(
-            new DbHealthCheck(
-                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
-                    ?? string.Empty,
-                webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty,
-                webAppBuilder.Services.BuildServiceProvider().GetRequiredService<ILogger<DbHealthCheck>>()
-            )
-        );
+        webAppBuilder.Services.AddSingleton<DbHealthCheck>(serviceProvider =>
+        {
+            var connectionStringProvider = serviceProvider.GetRequiredService<IConnectionStringProvider>();
+            var datastore =
+                webAppBuilder.Configuration.GetSection("AppSettings:Datastore").Value ?? string.Empty;
+            var logger = serviceProvider.GetRequiredService<ILogger<DbHealthCheck>>();
+
+            string connectionString = connectionStringProvider.GetDefaultConnectionString() ?? string.Empty;
+            return new DbHealthCheck(connectionString, datastore, logger);
+        });
 
         webAppBuilder
             .Services.AddHealthChecks()
@@ -148,6 +154,10 @@ public static class WebApplicationBuilderExtensions
             return new CachedClaimSetProvider(configurationServiceClaimSetProvider, claimSetsCache);
         });
 
+        // Register DMS Instance services
+        webAppBuilder.Services.AddSingleton<IDmsInstanceProvider, ConfigurationServiceDmsInstanceProvider>();
+        webAppBuilder.Services.AddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
+
         // Add JWT authentication services from Core
         webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
     }
@@ -162,11 +172,10 @@ public static class WebApplicationBuilderExtensions
             )
         )
         {
-            logger.Information("Injecting PostgreSQL as the primary backend datastore");
-            webAppBuilder.Services.AddPostgresqlDatastore(
-                webAppBuilder.Configuration.GetSection("ConnectionStrings:DatabaseConnection").Value
-                    ?? string.Empty
+            logger.Information(
+                "Injecting PostgreSQL as the primary backend datastore with per-request connection strings"
             );
+            webAppBuilder.Services.AddPostgresqlDatastore();
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
         }
         else
@@ -179,13 +188,7 @@ public static class WebApplicationBuilderExtensions
     private static void ConfigureQueryHandler(WebApplicationBuilder webAppBuilder, Serilog.ILogger logger)
     {
         var queryHandler = webAppBuilder.Configuration.GetSection("AppSettings:QueryHandler").Value;
-        if (
-            string.Equals(
-                queryHandler,
-                "postgresql",
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
+        if (string.Equals(queryHandler, "postgresql", StringComparison.OrdinalIgnoreCase))
         {
             logger.Information("Injecting PostgreSQL as the backend query handler");
             webAppBuilder.Services.AddPostgresqlQueryHandler();

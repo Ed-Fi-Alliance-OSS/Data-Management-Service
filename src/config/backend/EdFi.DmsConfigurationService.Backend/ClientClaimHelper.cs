@@ -15,28 +15,33 @@ namespace EdFi.DmsConfigurationService.Backend
             {
                 { "claim.name", "namespacePrefixes" },
                 { "claim.value", namespacePrefixes },
-                { "jsonType.label", "String" }
+                { "jsonType.label", "String" },
             };
         }
 
-        public static Dictionary<string, string> CreateEducationOrganizationClaim(string educationOrganizationIds)
+        public static Dictionary<string, string> CreateEducationOrganizationClaim(
+            string educationOrganizationIds
+        )
         {
             return new Dictionary<string, string>
             {
                 { "claim.name", "educationOrganizationIds" },
                 { "claim.value", educationOrganizationIds },
-                { "jsonType.label", "String" }
+                { "jsonType.label", "String" },
             };
         }
 
-        public static Dictionary<string, string> CreateRoleClaim(string roleClaimType, string userAttribute = "roles")
+        public static Dictionary<string, string> CreateRoleClaim(
+            string roleClaimType,
+            string userAttribute = "roles"
+        )
         {
             return new Dictionary<string, string>
             {
                 { "claim.name", roleClaimType },
                 { "user.attribute", userAttribute },
                 { "jsonType.label", "String" },
-                { "multivalued", "true" }
+                { "multivalued", "true" },
             };
         }
     }
