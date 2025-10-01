@@ -68,14 +68,11 @@ public class DmsConnectionStringProviderTests
         }
 
         [Test]
-        public void It_should_throw_invalid_operation_exception()
+        public void It_should_return_null()
         {
-            var exception = Assert.Throws<InvalidOperationException>(() =>
-                _connectionStringProvider!.GetConnectionString(999)
-            );
+            var result = _connectionStringProvider!.GetConnectionString(999);
 
-            exception.Should().NotBeNull();
-            exception!.Message.Should().Contain("DMS instance with ID 999 not found");
+            result.Should().BeNull();
         }
     }
 
@@ -100,15 +97,11 @@ public class DmsConnectionStringProviderTests
         }
 
         [Test]
-        public void It_should_throw_invalid_operation_exception()
+        public void It_should_return_null()
         {
-            var exception = Assert.Throws<InvalidOperationException>(() =>
-                _connectionStringProvider!.GetConnectionString(1)
-            );
+            var result = _connectionStringProvider!.GetConnectionString(1);
 
-            exception.Should().NotBeNull();
-            exception!.Message.Should().Contain("has no connection string configured");
-            exception.Message.Should().Contain("Main Instance");
+            result.Should().BeNull();
         }
     }
 
@@ -133,14 +126,11 @@ public class DmsConnectionStringProviderTests
         }
 
         [Test]
-        public void It_should_throw_invalid_operation_exception()
+        public void It_should_return_null()
         {
-            var exception = Assert.Throws<InvalidOperationException>(() =>
-                _connectionStringProvider!.GetConnectionString(1)
-            );
+            var result = _connectionStringProvider!.GetConnectionString(1);
 
-            exception.Should().NotBeNull();
-            exception!.Message.Should().Contain("has no connection string configured");
+            result.Should().BeNull();
         }
     }
 
@@ -233,15 +223,11 @@ public class DmsConnectionStringProviderTests
         }
 
         [Test]
-        public void It_should_throw_invalid_operation_exception()
+        public void It_should_return_null()
         {
-            var exception = Assert.Throws<InvalidOperationException>(() =>
-                _connectionStringProvider!.GetDefaultConnectionString()
-            );
+            var result = _connectionStringProvider!.GetDefaultConnectionString();
 
-            exception.Should().NotBeNull();
-            exception!.Message.Should().Contain("No DMS instances are configured");
-            exception.Message.Should().Contain("At least one instance is required");
+            result.Should().BeNull();
         }
     }
 
@@ -267,15 +253,11 @@ public class DmsConnectionStringProviderTests
         }
 
         [Test]
-        public void It_should_throw_invalid_operation_exception()
+        public void It_should_return_null()
         {
-            var exception = Assert.Throws<InvalidOperationException>(() =>
-                _connectionStringProvider!.GetDefaultConnectionString()
-            );
+            var result = _connectionStringProvider!.GetDefaultConnectionString();
 
-            exception.Should().NotBeNull();
-            exception!.Message.Should().Contain("has no connection string configured");
-            exception.Message.Should().Contain("Invalid Instance");
+            result.Should().BeNull();
         }
     }
 }

@@ -25,31 +25,24 @@ public class DmsConnectionStringProvider(
 
         if (instance == null)
         {
-            logger.LogError(
+            logger.LogWarning(
                 "DMS instance with ID {InstanceId} not found. Available instances: {InstanceIds}",
                 dmsInstanceId,
                 string.Join(", ", dmsInstanceProvider.GetAll().Select(i => i.Id))
             );
 
-            throw new InvalidOperationException(
-                $"DMS instance with ID {dmsInstanceId} not found. "
-                    + $"Available instance IDs: [{string.Join(", ", dmsInstanceProvider.GetAll().Select(i => i.Id))}]. "
-                    + "Ensure the instance is configured in the Configuration Service."
-            );
+            return null;
         }
 
         if (string.IsNullOrWhiteSpace(instance.ConnectionString))
         {
-            logger.LogError(
+            logger.LogWarning(
                 "DMS instance '{InstanceName}' (ID: {InstanceId}) exists but has no connection string configured",
                 instance.InstanceName,
                 dmsInstanceId
             );
 
-            throw new InvalidOperationException(
-                $"DMS instance '{instance.InstanceName}' (ID: {dmsInstanceId}) has no connection string configured. "
-                    + "Update the instance in the Configuration Service to include a valid connection string."
-            );
+            return null;
         }
 
         logger.LogDebug(
@@ -71,15 +64,12 @@ public class DmsConnectionStringProvider(
 
         if (allInstances.Count == 0)
         {
-            logger.LogError(
+            logger.LogWarning(
                 "No DMS instances are configured. The DMS instance provider returned an empty list. "
                     + "Check that instances were successfully loaded from the Configuration Service."
             );
 
-            throw new InvalidOperationException(
-                "No DMS instances are configured. At least one instance is required. "
-                    + "Please configure a DMS instance in the Configuration Service or verify the Configuration Service connection settings."
-            );
+            return null;
         }
 
         var firstInstance = allInstances.OrderBy(x => x.Id).First();
@@ -93,16 +83,13 @@ public class DmsConnectionStringProvider(
 
         if (string.IsNullOrWhiteSpace(firstInstance.ConnectionString))
         {
-            logger.LogError(
+            logger.LogWarning(
                 "Default DMS instance '{InstanceName}' (ID: {InstanceId}) has no connection string configured",
                 firstInstance.InstanceName,
                 firstInstance.Id
             );
 
-            throw new InvalidOperationException(
-                $"Default DMS instance '{firstInstance.InstanceName}' (ID: {firstInstance.Id}) has no connection string configured. "
-                    + "Update the instance in the Configuration Service to include a valid connection string."
-            );
+            return null;
         }
 
         logger.LogDebug("Successfully retrieved connection string for default DMS instance");
