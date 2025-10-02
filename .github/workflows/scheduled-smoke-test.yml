@@ -36,7 +36,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     outputs:
-      should-run-tests: ${{ steps.filecheck.outputs.openapi == 'true' || steps.apicheck.outputs.should-run-tests == 'true' }}
+      should-run-tests: ${{ steps.filecheck.outputs.openapi == 'true' || steps.filecheck.outputs.packages == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -51,40 +51,6 @@ jobs:
           $openapiChanged = $diff -match 'OpenApiDocument.cs'
           if ($packagesChanged) { echo "packages=true" >> $GITHUB_OUTPUT }
           if ($openapiChanged) { echo "openapi=true" >> $GITHUB_OUTPUT }
-
-      - name: Check for ApiSchema version changes
-        id: apicheck
-        if: steps.filecheck.outputs.packages == 'true'
-        shell: pwsh
-        run: |
-          git fetch origin main
-          $packageDiff = git diff origin/main -- src/Directory.Packages.props
-
-          $apiSchemaPackages = @(
-            "EdFi.DataStandard52.ApiSchema",
-            "EdFi.Homograph.ApiSchema",
-            "EdFi.Sample.ApiSchema",
-            "EdFi.TPDM.ApiSchema"
-          )
-
-          $apiSchemaChanged = $false
-          foreach ($package in $apiSchemaPackages) {
-            # Look for lines that show a version change (+ or -) for this specific package
-            $escapedPackage = [regex]::Escape($package)
-            if ($packageDiff -match "^[+-].*Include=`"$escapedPackage`".*Version=") {
-              Write-Host "✅ ApiSchema version bump detected for: $package"
-              $apiSchemaChanged = $true
-              break
-            }
-          }
-
-          if ($apiSchemaChanged) {
-            echo "should-run-tests=true" >> $GITHUB_OUTPUT
-            Write-Host "🚀 ApiSchema changes detected - smoke tests will run"
-          } else {
-            echo "should-run-tests=false" >> $GITHUB_OUTPUT
-            Write-Host "❌ No ApiSchema version changes detected"
-          }
 
   smoke-test:
     name: Smoke Tests
