@@ -87,14 +87,13 @@ public class InvalidResourceSchemasTests
                 new NamedAuthorizationServiceFactory(serviceProvider),
                 ResiliencePipeline.Empty,
                 new ResourceLoadOrderCalculator(
-                    A.Fake<IApiSchemaProvider>(),
                     [],
-                    [],
-                    NullLogger<ResourceLoadOrderCalculator>.Instance
+                    A.Fake<IResourceDependencyGraphFactory>()
                 ),
                 apiSchemaUploadService,
                 serviceProvider,
-                A.Fake<ClaimSetsCache>()
+                A.Fake<ClaimSetsCache>(),
+                A.Fake<IResourceDependencyGraphMLFactory>()
             );
         }
 

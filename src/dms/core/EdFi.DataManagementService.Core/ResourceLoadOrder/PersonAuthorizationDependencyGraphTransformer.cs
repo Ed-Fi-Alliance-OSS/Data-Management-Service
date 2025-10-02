@@ -3,9 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
-using Microsoft.Extensions.Logging;
 using QuickGraph;
 
 namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
@@ -15,16 +13,10 @@ namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
 /// For example, edges pointing to Student are transformed to point to StudentSchoolAssociation instead.
 /// </summary>
 internal class PersonAuthorizationDependencyGraphTransformer(
-    IApiSchemaProvider apiSchemaProvider,
-    ILogger<PersonAuthorizationDependencyGraphTransformer> logger
+    ICoreProjectNameProvider _coreProjectNameProvider
 ) : IResourceDependencyGraphTransformer
 {
-    private readonly ProjectName _coreProjectName = new ApiSchemaDocuments(
-        apiSchemaProvider.GetApiSchemaNodes(),
-        logger
-    )
-        .GetCoreProjectSchema()
-        .ProjectName;
+    private readonly ProjectName _coreProjectName = _coreProjectNameProvider.GetCoreProjectName();
 
     public void Transform(
         BidirectionalGraph<ResourceDependencyGraphVertex, ResourceDependencyGraphEdge> resourceGraph
