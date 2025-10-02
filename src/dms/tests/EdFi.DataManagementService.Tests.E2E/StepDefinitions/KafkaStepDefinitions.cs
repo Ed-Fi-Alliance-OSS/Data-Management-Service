@@ -301,6 +301,91 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
         }
     }
 
+    [Then("multiple Kafka messages should be received for cascade update")]
+    public void ThenMultipleKafkaMessagesShouldBeReceivedForCascadeUpdate()
+    {
+        ThenMultipleKafkaMessagesShouldBeReceivedForCascadeUpdateWithTotalMessages(2);
+    }
+
+    [Then("multiple Kafka messages should be received for cascade update with {int} total messages")]
+    public void ThenMultipleKafkaMessagesShouldBeReceivedForCascadeUpdateWithTotalMessages(int expectedCount)
+    {
+        if (_kafkaMessageCollector == null)
+        {
+            logger.log.Warning("Kafka message collector not initialized");
+            return;
+        }
+
+        List<KafkaTestMessage> messages = [];
+        var timeout = TimeSpan.FromSeconds(15);
+        var pollInterval = TimeSpan.FromMilliseconds(200);
+        var start = DateTime.UtcNow;
+
+        RetryUntilSuccess(
+            () =>
+            {
+                messages = _kafkaMessageCollector.GetRecentDocumentMessages().ToList();
+                return messages.Count >= expectedCount;
+            },
+            timeout,
+            pollInterval
+        );
+
+        var elapsed = DateTime.UtcNow - start;
+        logger.log.Information($"Message search completed after {elapsed.TotalMilliseconds:F0}ms");
+
+        messages.Should().HaveCountGreaterOrEqualTo(expectedCount);
+        logger.log.Information($"Found {messages.Count} Kafka messages for cascade update");
+    }
+
+    [Then("multiple Kafka messages should be received for multi-level cascade update")]
+    public void ThenMultipleKafkaMessagesShouldBeReceivedForMultiLevelCascadeUpdate()
+    {
+        ThenMultipleKafkaMessagesShouldBeReceivedForCascadeUpdateWithTotalMessages(3);
+    }
+
+    [Then("multiple Kafka messages should be received for association cascade update")]
+    public void ThenMultipleKafkaMessagesShouldBeReceivedForAssociationCascadeUpdate()
+    {
+        ThenMultipleKafkaMessagesShouldBeReceivedForCascadeUpdateWithTotalMessages(3);
+    }
+
+    [Then("Kafka messages should be received in correct order for cascade update")]
+    public void ThenKafkaMessagesShouldBeReceivedInCorrectOrderForCascadeUpdate()
+    {
+        if (_kafkaMessageCollector == null)
+        {
+            logger.log.Warning("Kafka message collector not initialized");
+            return;
+        }
+
+        List<KafkaTestMessage> messages = [];
+        var timeout = TimeSpan.FromSeconds(15);
+        var pollInterval = TimeSpan.FromMilliseconds(200);
+
+        RetryUntilSuccess(
+            () =>
+            {
+                messages = _kafkaMessageCollector
+                    .GetRecentDocumentMessages()
+                    .OrderBy(m => m.Timestamp)
+                    .ToList();
+                return messages.Count >= 2;
+            },
+            timeout,
+            pollInterval
+        );
+
+        messages.Should().HaveCountGreaterOrEqualTo(2);
+
+        for (int i = 1; i < messages.Count; i++)
+        {
+            messages[i].Timestamp.Should().BeAfter(messages[i - 1].Timestamp);
+        }
+
+        logger.log.Information($"Verified {messages.Count} messages are in correct order");
+    }
+
     private bool _disposed = false;
 
     public void Dispose()

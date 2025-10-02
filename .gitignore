@@ -447,3 +447,4 @@ CLAUDE.local.md
 # SDK generation artifacts
 /eng/sdkGen/csharp/*
 openApi-codegen-cli.jar
+.github/copilot-instructions.md

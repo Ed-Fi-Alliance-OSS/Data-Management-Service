@@ -40,10 +40,35 @@ public class SyntheticSchemaStepDefinitions(
     {
         _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
 
+        // Determine additional properties based on resource type
+        var schemaProperties = new List<(string, string)> { (identityProperty, "string") };
+
+        switch (resourceName)
+        {
+            case "Student":
+                schemaProperties.AddRange([("firstName", "string"), ("lastSurname", "string")]);
+                break;
+            case "Staff":
+                schemaProperties.AddRange([("firstName", "string"), ("lastSurname", "string")]);
+                break;
+            case "Teacher":
+                schemaProperties.AddRange([("firstName", "string"), ("lastSurname", "string")]);
+                break;
+            case "School":
+                schemaProperties.Add(("nameOfInstitution", "string"));
+                break;
+            case "District":
+                schemaProperties.Add(("nameOfInstitution", "string"));
+                break;
+            case "Section":
+                schemaProperties.Add(("sectionName", "string"));
+                break;
+        }
+
         _currentSchemaBuilder
             .WithStartResource(resourceName)
             .WithIdentityJsonPaths($"$.{identityProperty}")
-            .WithSimpleJsonSchema((identityProperty, "string"))
+            .WithSimpleJsonSchema(schemaProperties.ToArray())
             .WithEndResource();
     }
 
@@ -86,6 +111,15 @@ public class SyntheticSchemaStepDefinitions(
             }
 
             _currentSchemaBuilder.WithEndDocumentPathsMapping();
+
+            // Add common association properties
+            var associationProperties = schemaProperties.ToList();
+            if (resourceName == "StudentSchoolAssociation")
+            {
+                associationProperties.Add(("entryDate", "string"));
+            }
+
+            _currentSchemaBuilder.WithSimpleJsonSchema(associationProperties.ToArray());
         }
 
         _currentSchemaBuilder.WithEndResource();
@@ -118,21 +152,65 @@ public class SyntheticSchemaStepDefinitions(
     {
         _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
 
-        // We need to rebuild the resource with the reference
-        // TODO: For now with GradingPeriod, use gradingPeriodName as identity
-        var identityProperty =
-            targetResourceName == "GradingPeriod"
-                ? "gradingPeriodName"
-                : char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Id";
+        // Determine the identity property based on target resource
+        var identityProperty = targetResourceName switch
+        {
+            "GradingPeriod" => "gradingPeriodName",
+            "School" => "schoolId",
+            "District" => "districtId",
+            "Student" => "studentUniqueId",
+            "Staff" => "staffUniqueId",
+            "Teacher" => "teacherId",
+            _ => char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Id",
+        };
+
+        // Determine the identity property for current resource
+        var currentResourceIdentity = resourceName switch
+        {
+            "Student" => "studentUniqueId",
+            "Staff" => "staffUniqueId",
+            "Teacher" => "teacherId",
+            "School" => "schoolId",
+            "District" => "districtId",
+            "Section" => "sectionId",
+            _ => char.ToLower(resourceName[0]) + resourceName[1..] + "Id",
+        };
+
+        // Determine additional properties based on resource type
+        var additionalProperties = new List<(string, string)>();
+
+        switch (resourceName)
+        {
+            case "Student":
+                additionalProperties.AddRange([("firstName", "string"), ("lastSurname", "string")]);
+                break;
+            case "Staff":
+                additionalProperties.AddRange([("firstName", "string"), ("lastSurname", "string")]);
+                break;
+            case "Teacher":
+                additionalProperties.AddRange([("firstName", "string"), ("lastSurname", "string")]);
+                break;
+            case "School":
+                additionalProperties.Add(("nameOfInstitution", "string"));
+                break;
+            case "District":
+                additionalProperties.Add(("nameOfInstitution", "string"));
+                break;
+            case "Section":
+                additionalProperties.Add(("sectionName", "string"));
+                break;
+        }
+
+        // Build the schema properties list
+        var schemaProperties = new List<(string, string)> { (currentResourceIdentity, "string") };
+        schemaProperties.AddRange(additionalProperties);
+        schemaProperties.Add((referenceName, "object"));
 
         // Rebuild the resource with the reference
         _currentSchemaBuilder
             .WithStartResource(resourceName)
-            .WithIdentityJsonPaths($"$.{char.ToLower(resourceName[0]) + resourceName[1..] + "Id"}")
-            .WithSimpleJsonSchema(
-                (char.ToLower(resourceName[0]) + resourceName[1..] + "Id", "string"),
-                (referenceName, "object")
-            )
+            .WithIdentityJsonPaths($"$.{currentResourceIdentity}")
+            .WithSimpleJsonSchema(schemaProperties.ToArray())
             .WithStartDocumentPathsMapping()
             .WithSimpleReference(targetResourceName, identityProperty)
             .WithEndDocumentPathsMapping()
