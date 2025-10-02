@@ -341,13 +341,18 @@ function Add-Vendor {
     .PARAMETER AccessToken
         The Keycloak bearer token for API authorization. Mandatory.
 
+    .PARAMETER DmsInstanceIds
+        Array of DMS instance IDs to associate with this application. Optional.
+
     .OUTPUTS
         Hashtable containing:
+            - Id: The application's ID.
             - Key: The application's API key.
             - Secret: The application's secret.
 
     .EXAMPLE
-        $creds = Add-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp"
+        $creds = Add-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp" -DmsInstanceIds @(1,2)
+        Write-Host "App ID: $($creds.Id)"
         Write-Host "App Key: $($creds.Key)"
         Write-Host "App Secret: $($creds.Secret)"
 #>
@@ -370,7 +375,10 @@ function Add-Application {
         [string]$AccessToken,
 
         [int[]]
-        $EducationOrganizationIds = @(255901, 19255901)
+        $EducationOrganizationIds = @(255901, 19255901),
+
+        [long[]]
+        $DmsInstanceIds = @()
     )
 
     $applicationData = @{
@@ -378,6 +386,7 @@ function Add-Application {
         applicationName = $ApplicationName
         claimSetName    = $ClaimSetName
         educationOrganizationIds = $EducationOrganizationIds
+        dmsInstanceIds = $DmsInstanceIds
     }
 
     $invokeParams = @{
@@ -392,6 +401,7 @@ function Add-Application {
     $response = Invoke-Api @invokeParams
 
     return @{
+        Id     = $response.id
         Key    = $response.key
         Secret = $response.secret
     }
