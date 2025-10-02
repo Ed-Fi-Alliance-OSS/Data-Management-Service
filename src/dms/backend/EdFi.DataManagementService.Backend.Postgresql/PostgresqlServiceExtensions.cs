@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
-using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -21,20 +20,18 @@ public static class PostgresqlServiceExtensions
     /// </summary>
     public static IServiceCollection AddPostgresqlDatastore(this IServiceCollection services)
     {
-        // Register NpgsqlDataSource as scoped with lazy factory that uses per-request connection string
-        // Lazy evaluation ensures connection string is only retrieved when NpgsqlDataSource is actually used
+        // Register singleton cache for NpgsqlDataSource instances
+        services.AddSingleton<NpgsqlDataSourceCache>();
+
+        // Register scoped provider that retrieves the appropriate data source per request
+        services.AddScoped<NpgsqlDataSourceProvider>();
+
+        // Register NpgsqlDataSource as scoped, resolved from the provider
         services.AddScoped<NpgsqlDataSource>(sp =>
         {
-            var lazyDataSource = sp.GetRequiredService<Lazy<NpgsqlDataSource>>();
-            return lazyDataSource.Value;
+            var provider = sp.GetRequiredService<NpgsqlDataSourceProvider>();
+            return provider.DataSource;
         });
-
-        services.AddScoped<Lazy<NpgsqlDataSource>>(sp => new Lazy<NpgsqlDataSource>(() =>
-        {
-            var requestConnectionStringProvider = sp.GetRequiredService<IRequestConnectionStringProvider>();
-            string connectionString = requestConnectionStringProvider.GetConnectionString();
-            return NpgsqlDataSource.Create(connectionString);
-        }));
 
         // Register all repositories as scoped (they depend on scoped NpgsqlDataSource)
         services.AddScoped<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
