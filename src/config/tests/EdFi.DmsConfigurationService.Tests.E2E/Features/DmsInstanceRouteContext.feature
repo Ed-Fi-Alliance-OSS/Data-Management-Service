@@ -3,13 +3,21 @@ Feature: DMS Instance Route Context
         Background:
             Given valid credentials
               And token received
-              And an instance named "2022" of type "DMS" exists
+              And a POST request is made to "/v2/dmsInstances" with
+                  """
+                  {
+                    "instanceType": "Production",
+                    "instanceName": "Test Instance",
+                    "connectionString": "Server=localhost;Database=TestDb;"
+                  }
+                  """
+              And the response "id" is saved as "instanceId"
 
         Scenario: Create a new instance route context
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
                   {
-                    "instanceId": 1,
+                    "instanceId": <instanceId>,
                     "contextKey": "schoolYear",
                     "contextValue": "2022"
                   }
@@ -33,7 +41,7 @@ Feature: DMS Instance Route Context
                   """
                   {
                     "id": 1,
-                    "instanceId": 1,
+                    "instanceId": <instanceId>,
                     "contextKey": "schoolYear",
                     "contextValue": "2023"
                   }
