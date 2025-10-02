@@ -9,7 +9,14 @@ namespace EdFi.DataManagementService.Tests.E2E.Authorization;
 
 public static class SystemAdministrator
 {
-    public static string Token = string.Empty;
+    private static string _token = string.Empty;
+    private static readonly SemaphoreSlim _registrationLock = new(1, 1);
+
+    public static string Token
+    {
+        get => _token;
+        private set => _token = value;
+    }
 
     private static readonly HttpClient _client = new()
     {
@@ -18,26 +25,34 @@ public static class SystemAdministrator
 
     public static async Task Register(string clientId, string clientSecret)
     {
-        var formContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("ClientId", clientId),
-                new KeyValuePair<string, string>("ClientSecret", clientSecret),
-                new KeyValuePair<string, string>("DisplayName", clientId),
-            }
-        );
-
-        var registerResult = await _client.PostAsync("connect/register", formContent);
-        if (registerResult.IsSuccessStatusCode)
+        // Prevent concurrent registration attempts
+        await _registrationLock.WaitAsync();
+        try
         {
+            // If we already have a valid token for this client, reuse it
+            if (!string.IsNullOrEmpty(Token))
+            {
+                return;
+            }
+
+            var formContent = new FormUrlEncodedContent(
+                [
+                    new KeyValuePair<string, string>("ClientId", clientId),
+                    new KeyValuePair<string, string>("ClientSecret", clientSecret),
+                    new KeyValuePair<string, string>("DisplayName", clientId),
+                ]
+            );
+
+            await _client.PostAsync("connect/register", formContent);
+
+            // Client may already exist, which is OK - try to get token anyway
             var tokenRequestFormContent = new FormUrlEncodedContent(
-                new[]
-                {
+                [
                     new KeyValuePair<string, string>("client_id", clientId),
                     new KeyValuePair<string, string>("client_secret", clientSecret),
                     new KeyValuePair<string, string>("grant_type", "client_credentials"),
                     new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-                }
+                ]
             );
 
             var tokenResult = await _client.PostAsync("connect/token", tokenRequestFormContent);
@@ -48,6 +63,17 @@ public static class SystemAdministrator
                 var document = JsonDocument.Parse(body);
                 Token = document.RootElement.GetProperty("access_token").GetString() ?? "";
             }
+            else
+            {
+                var errorBody = await tokenResult.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(
+                    $"Failed to obtain token for client '{clientId}'. Status: {tokenResult.StatusCode}, Error: {errorBody}"
+                );
+            }
+        }
+        finally
+        {
+            _registrationLock.Release();
         }
     }
 }
