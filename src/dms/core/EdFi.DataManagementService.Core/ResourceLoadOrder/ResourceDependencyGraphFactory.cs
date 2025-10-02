@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
@@ -34,24 +33,26 @@ internal class ResourceDependencyGraphFactory(
         ProjectSchema[] projectSchemas = apiSchemaDocuments.GetAllProjectSchemas();
         ProjectName coreProjectName = apiSchemaDocuments.GetCoreProjectSchema().ProjectName;
 
-        List<(ProjectSchema projectSchema, JsonNode jsonNode)> allResourceSchemaNodeInfos = projectSchemas
-            .SelectMany(projectSchema => projectSchema.GetAllResourceSchemaNodes().Select(jn => (projectSchema, n: jn)))
+        List<(ProjectSchema projectSchema, ResourceSchema resourceSchema)> allResourceSchemaNodeInfos = projectSchemas
+            .SelectMany(projectSchema => projectSchema.GetAllResourceSchemaNodes().Select(jn => (projectSchema, resourceSchema: new ResourceSchema(jn))))
             .ToList();
 
         List<ResourceDependencyGraphVertex> allResourceVertices = allResourceSchemaNodeInfos
-                    .Select(resourceSchemaNode =>
+                    .Select(t =>
                     {
-                        var resourceSchema = new ResourceSchema(resourceSchemaNode.jsonNode);
 
                         return new ResourceDependencyGraphVertex(
-                            resourceSchemaNode.projectSchema.ProjectName,
-                            resourceSchemaNode.projectSchema.ProjectEndpointName,
-                            resourceSchema.ResourceName,
-                            resourceSchemaNode.projectSchema.GetEndpointNameFromResourceName(resourceSchema.ResourceName),
-                            resourceSchema.IsResourceExtension,
-                            resourceSchema.IsSubclass,
-                            resourceSchema.IsSubclass ? resourceSchema.SuperclassResourceName : default,
-                            resourceSchema.IsSchoolYearEnumeration);
+                            t.projectSchema.ProjectName,
+                            t.projectSchema.ProjectEndpointName,
+                            t.resourceSchema.ResourceName,
+                            t.resourceSchema.IsResourceExtension
+                                ? default
+                                : t.projectSchema.GetEndpointNameFromResourceName(
+                                    t.resourceSchema.ResourceName),
+                            t.resourceSchema.IsResourceExtension,
+                            t.resourceSchema.IsSubclass,
+                            t.resourceSchema.IsSubclass ? t.resourceSchema.SuperclassResourceName : default,
+                            t.resourceSchema.IsSchoolYearEnumeration);
                     })
             .ToList();
 
@@ -75,15 +76,13 @@ internal class ResourceDependencyGraphFactory(
                 .ToLookup(vertex => vertex.SuperclassResourceName);
 
         IEnumerable<ResourceDependencyGraphEdge> edges =
-            allResourceSchemaNodeInfos.SelectMany(resourceSchemaNodeInfo =>
+            allResourceSchemaNodeInfos.SelectMany(t =>
             {
-                var resourceSchema = new ResourceSchema(resourceSchemaNodeInfo.jsonNode);
-
                 var vertex = vertexByFullResourceName[new FullResourceName(
-                    resourceSchemaNodeInfo.projectSchema.ProjectName,
-                    resourceSchema.ResourceName)];
+                    t.projectSchema.ProjectName,
+                    t.resourceSchema.ResourceName)];
 
-                return resourceSchema.DocumentPaths.Where(documentPath => documentPath.IsReference)
+                return t.resourceSchema.DocumentPaths.Where(documentPath => documentPath.IsReference)
                     .SelectMany(reference => BuildVertexEdges(
                         vertex,
                         reference.ProjectName,

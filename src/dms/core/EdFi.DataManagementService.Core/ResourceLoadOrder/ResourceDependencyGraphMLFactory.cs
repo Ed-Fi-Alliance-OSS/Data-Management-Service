@@ -9,16 +9,6 @@ using QuickGraph;
 
 namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
 
-internal interface IResourceDependencyGraphMLVertexFactory
-{
-    IEnumerable<GraphMLNode> Create(IEnumerable<ResourceDependencyGraphVertex> vertices);
-}
-
-internal interface IResourceDependencyGraphMLEdgeFactory
-{
-    IEnumerable<GraphMLEdge> Create(IEnumerable<ResourceDependencyGraphEdge> edges);
-}
-
 internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFactory
 {
     private readonly IResourceDependencyGraphFactory _resourceDependencyGraphFactory;
@@ -59,8 +49,6 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
 
     public GraphML CreateGraphML()
     {
-        var retryNodeIdByPrimaryAssociationNodeId = new Dictionary<string, string>();
-
         var resourceGraph = _resourceDependencyGraphFactory.Create();
 
         // Begin authorization transformations for GraphML output
@@ -69,14 +57,19 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
             .OrderBy(n => n.Id)
             .ToList();
 
+        var retryNodeIdByPrimaryAssociationNodeId = new Dictionary<string, string>();
+
         var edges =
             resourceGraph.Edges.SelectMany(ApplyUpstreamPrimaryAssociationEdgeExpansions)
             .Concat(resourceGraph.Edges.SelectMany(ApplyDownstreamPrimaryAssociationEdgeExpansions))
             .Concat(resourceGraph.Edges.Where(e => !IsUpstreamPrimaryAssociationEdge(e) && !IsDownstreamPrimaryAssociationEdge(e)).Select(ProjectNonPrimaryAssociationEdge))
             .Distinct()
+            // Group and sort edges by source vertex
             .GroupBy(x => x.Source.Id)
             .OrderBy(g => g.Key)
+            // Then by target vertex, and flatten
             .SelectMany(g => g.OrderBy(x => x.Target.Id))
+            // Normalize the vertex references
             .Select(e => new GraphMLEdge
             {
                 Source = vertices.Single(v => v.Id == e.Source.Id),
@@ -104,17 +97,17 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
             return vertex.GetEndpointName();
         }
 
-        IEnumerable<GraphMLNode> ApplyStandardSecurityVertexExpansions(ResourceDependencyGraphVertex resource)
+        IEnumerable<GraphMLNode> ApplyStandardSecurityVertexExpansions(ResourceDependencyGraphVertex vertex)
         {
-            yield return new GraphMLNode { Id = resource.GetEndpointName() };
+            yield return new GraphMLNode { Id = vertex.GetEndpointName() };
 
             // Yield "retry" nodes for person types
-            if (resource.FullResourceName == _studentFullName
-                || resource.FullResourceName == _staffFullName
-                || resource.FullResourceName == _parentFullName
-                || resource.FullResourceName == _contactFullName)
+            if (vertex.FullResourceName == _studentFullName
+                || vertex.FullResourceName == _staffFullName
+                || vertex.FullResourceName == _parentFullName
+                || vertex.FullResourceName == _contactFullName)
             {
-                yield return new GraphMLNode() { Id = $"{resource.GetEndpointName()}{RetrySuffix}" };
+                yield return new GraphMLNode() { Id = $"{vertex.GetEndpointName()}{RetrySuffix}" };
             }
         }
 
@@ -134,7 +127,7 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
                 {
                     Source = new GraphMLNode { Id = primaryAssociationNodeId },
                     Target = new GraphMLNode { Id = retryNodeId },
-                    IsReferenceRequired = true // Upstream "Retry" edges are always required
+                    IsReferenceRequired = true // Upstream "retry" edges are always required
                 };
 
                 // Yield the standard association edge
@@ -152,7 +145,7 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
             // Add copies of the downstream dependencies of the primary associations with the #Retry node
             if (IsDownstreamPrimaryAssociationEdge(edge))
             {
-                // Yield an association edge relocated to the retry node instead
+                // Yield an association edge relocated to the retry node *instead* of the standard association edge
                 yield return new GraphMLEdge
                 {
                     Source = new GraphMLNode { Id = retryNodeIdByPrimaryAssociationNodeId[GetNodeId(edge.Source)] },

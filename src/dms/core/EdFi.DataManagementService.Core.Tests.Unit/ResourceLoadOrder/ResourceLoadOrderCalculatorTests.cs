@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using FakeItEasy;
 using FluentAssertions;
@@ -182,14 +183,13 @@ public class ResourceLoadOrderCalculatorTests
         public void Setup()
         {
             var apiSchemaProvider = A.Fake<IApiSchemaProvider>();
-
             A.CallTo(() => apiSchemaProvider.GetApiSchemaNodes()).Returns(_apiSchemaNodes);
 
+            var coreProjectNameProvider = A.Fake<ICoreProjectNameProvider>();
+            A.CallTo(() => coreProjectNameProvider.GetCoreProjectName()).Returns(new ProjectName("Ed-Fi"));
+
             var graphFactory = CreateGraphFactory(apiSchemaProvider, [
-                new PersonAuthorizationDependencyGraphTransformer(
-                    apiSchemaProvider,
-                    NullLogger<PersonAuthorizationDependencyGraphTransformer>.Instance
-                ),
+                new PersonAuthorizationDependencyGraphTransformer(coreProjectNameProvider),
             ]);
 
             _resourceLoadCalculator = new ResourceLoadOrderCalculator(
