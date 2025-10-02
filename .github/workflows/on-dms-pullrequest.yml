@@ -295,6 +295,33 @@ jobs:
           ./start-local-dms.ps1 -EnvironmentFile "./.env.e2e" -EnableConfig -r
         working-directory: eng/docker-compose/
 
+      - name: Wait for DMS to be ready
+        run: |
+          $maxAttempts = 10
+          $attempt = 0
+          $ready = $false
+
+          while (-not $ready -and $attempt -lt $maxAttempts) {
+            $attempt++
+            Write-Host "Waiting for DMS to be ready (attempt $attempt/$maxAttempts)..."
+
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -Method Head -TimeoutSec 5 -ErrorAction Stop
+              if ($response.StatusCode -eq 200) {
+                $ready = $true
+                Write-Host "DMS is ready!"
+              }
+            }
+            catch {
+              Write-Host "DMS not ready yet: $_"
+              Start-Sleep -Seconds 10
+            }
+          }
+
+          if (-not $ready) {
+            throw "DMS did not become ready within the timeout period"
+          }
+
       - name: Download OpenAPI specs
         run: |
           mkdir specs
