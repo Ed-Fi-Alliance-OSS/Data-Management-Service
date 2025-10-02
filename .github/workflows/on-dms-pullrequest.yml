@@ -306,7 +306,7 @@ jobs:
             Write-Host "Waiting for DMS to be ready (attempt $attempt/$maxAttempts)..."
 
             try {
-              $response = Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -Method Head -TimeoutSec 5 -ErrorAction Stop
+              $response = Invoke-WebRequest -Uri "http://localhost:8080/metadata/specifications/resources-spec.json" -Method Get -TimeoutSec 5 -ErrorAction Stop
               if ($response.StatusCode -eq 200) {
                 $ready = $true
                 Write-Host "DMS is ready!"
