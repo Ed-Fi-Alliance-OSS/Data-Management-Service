@@ -84,6 +84,78 @@ public class KafkaStepDefinitions(TestLogger logger) : IDisposable
         return false;
     }
 
+    [Then("multiple Kafka messages should be received with count {int}")]
+    public void ThenMultipleKafkaMessagesShouldBeReceivedWithCount(int expectedCount)
+    {
+        if (_kafkaMessageCollector == null)
+        {
+            logger.log.Warning(
+                "Kafka message collector not initialized - use 'Given I start collecting Kafka messages' step first"
+            );
+            return;
+        }
+
+        List<KafkaTestMessage> messages = [];
+        bool hasExpectedCount = false;
+
+        // Use retry logic: 15-second timeout with 200ms poll intervals
+        var timeout = TimeSpan.FromSeconds(15);
+        var pollInterval = TimeSpan.FromMilliseconds(200);
+        var start = DateTime.UtcNow;
+
+        bool success = RetryUntilSuccess(
+            () =>
+            {
+                // Get recent messages (those received after collection started)
+                messages = _kafkaMessageCollector.GetRecentDocumentMessages().ToList();
+
+                if (messages.Count == expectedCount)
+                {
+                    hasExpectedCount = true;
+                    return true;
+                }
+
+                return false;
+            },
+            timeout,
+            pollInterval
+        );
+
+        var elapsed = DateTime.UtcNow - start;
+        logger.log.Information($"Message count check completed after {elapsed.TotalMilliseconds:F0}ms");
+
+        // Log final diagnostics
+        var finalAllMessages = _kafkaMessageCollector.GetDocumentMessages().ToList();
+        var finalRecentMessages = _kafkaMessageCollector.GetRecentDocumentMessages().ToList();
+
+        logger.log.Information(
+            $"Final message count - Total: {finalAllMessages.Count}, Recent: {finalRecentMessages.Count}, Expected: {expectedCount}"
+        );
+        _kafkaMessageCollector.LogDiagnostics();
+
+        if (!success || !hasExpectedCount)
+        {
+            logger.log.Warning($"Expected {expectedCount} Kafka messages but received {messages.Count}");
+            logger.log.Warning("This might indicate:");
+            logger.log.Warning("1. Kafka messaging is not enabled in the DMS configuration");
+            logger.log.Warning("2. The cascade update did not trigger the expected number of messages");
+            logger.log.Warning("3. There's a connectivity issue between DMS and Kafka");
+            logger.log.Warning("4. Messages are being published to a different topic");
+            logger.log.Warning("5. Cascade update processing is taking longer than expected");
+        }
+
+        messages
+            .Should()
+            .HaveCountGreaterOrEqualTo(
+                expectedCount,
+                $"Expected to receive at least {expectedCount} messages on topic 'edfi.dms.document' within {timeout.TotalSeconds} seconds"
+            );
+
+        logger.log.Debug(
+            $"Successfully found {messages.Count} Kafka messages (expected {expectedCount}) after {elapsed.TotalMilliseconds:F0}ms"
+        );
+    }
+
     [Then("a Kafka message should have the deleted flag {string} and EdFiDoc")]
     public void ThenAKafkaMessageShouldHaveDeletedFlagAndEdFiDoc(
         string expectedDeletedFlag,

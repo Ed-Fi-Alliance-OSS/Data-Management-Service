@@ -41,7 +41,7 @@ public class SyntheticSchemaStepDefinitions(
         _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
 
         _currentSchemaBuilder
-            .WithStartResource(resourceName)
+            .WithStartResource(resourceName, allowIdentityUpdates: true)
             .WithIdentityJsonPaths($"$.{identityProperty}")
             .WithSimpleJsonSchema((identityProperty, "string"))
             .WithEndResource();
@@ -118,23 +118,113 @@ public class SyntheticSchemaStepDefinitions(
     {
         _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
 
-        // We need to rebuild the resource with the reference
-        // TODO: For now with GradingPeriod, use gradingPeriodName as identity
-        var identityProperty =
-            targetResourceName == "GradingPeriod"
-                ? "gradingPeriodName"
-                : char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Id";
+        // Determine identity property based on target resource name
+        string targetIdentityProperty;
+        if (targetResourceName == "Session")
+        {
+            targetIdentityProperty = "sessionName";
+        }
+        else if (targetResourceName == "GradingPeriod")
+        {
+            targetIdentityProperty = "gradingPeriodName";
+        }
+        else if (targetResourceName == "ClassPeriod")
+        {
+            targetIdentityProperty = "classPeriodName";
+        }
+        else
+        {
+            targetIdentityProperty = char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Id";
+        }
+
+        // Determine identity property for the source resource
+        string sourceIdentityProperty;
+        if (resourceName == "CourseOffering")
+        {
+            sourceIdentityProperty = "localCourseCode";
+        }
+        else if (resourceName == "ReportCard")
+        {
+            sourceIdentityProperty = "reportCardId";
+        }
+        else if (resourceName == "Grade")
+        {
+            sourceIdentityProperty = "gradeId";
+        }
+        else if (resourceName == "Section")
+        {
+            sourceIdentityProperty = "sectionIdentifier";
+        }
+        else if (resourceName == "BellSchedule")
+        {
+            sourceIdentityProperty = "bellScheduleName";
+        }
+        else
+        {
+            sourceIdentityProperty = char.ToLower(resourceName[0]) + resourceName[1..] + "Id";
+        }
 
         // Rebuild the resource with the reference
         _currentSchemaBuilder
             .WithStartResource(resourceName)
-            .WithIdentityJsonPaths($"$.{char.ToLower(resourceName[0]) + resourceName[1..] + "Id"}")
-            .WithSimpleJsonSchema(
-                (char.ToLower(resourceName[0]) + resourceName[1..] + "Id", "string"),
-                (referenceName, "object")
-            )
+            .WithIdentityJsonPaths($"$.{sourceIdentityProperty}")
+            .WithSimpleJsonSchema((sourceIdentityProperty, "string"), (referenceName, "object"))
             .WithStartDocumentPathsMapping()
-            .WithSimpleReference(targetResourceName, identityProperty)
+            .WithSimpleReference(targetResourceName, targetIdentityProperty)
+            .WithEndDocumentPathsMapping()
+            .WithEndResource();
+    }
+
+    [Given(@"the ""(.*)"" resource has collection reference ""(.*)"" to ""(.*)""")]
+    public void GivenTheResourceHasCollectionReferenceTo(
+        string resourceName,
+        string collectionName,
+        string targetResourceName
+    )
+    {
+        _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
+
+        // Determine the identity property for the target resource
+        string targetIdentityProperty;
+        if (targetResourceName == "GradingPeriod")
+        {
+            targetIdentityProperty = "gradingPeriodName";
+        }
+        else if (targetResourceName == "ClassPeriod")
+        {
+            targetIdentityProperty = "classPeriodName";
+        }
+        else
+        {
+            targetIdentityProperty = char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Id";
+        }
+
+        // Determine identity property for the source resource
+        string sourceIdentityProperty;
+        if (resourceName == "BellSchedule")
+        {
+            sourceIdentityProperty = "bellScheduleName";
+        }
+        else
+        {
+            sourceIdentityProperty = char.ToLower(resourceName[0]) + resourceName[1..] + "Id";
+        }
+
+        // Build the resource with collection reference
+        _currentSchemaBuilder
+            .WithStartResource(resourceName)
+            .WithIdentityJsonPaths($"$.{sourceIdentityProperty}")
+            .WithSimpleJsonSchema((sourceIdentityProperty, "string"), (collectionName, "array"))
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                targetResourceName,
+                [
+                    new KeyValuePair<string, string>(
+                        $"$.{targetIdentityProperty}",
+                        $"$.{collectionName}[*].{char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Reference"}.{targetIdentityProperty}"
+                    ),
+                ]
+            )
             .WithEndDocumentPathsMapping()
             .WithEndResource();
     }
