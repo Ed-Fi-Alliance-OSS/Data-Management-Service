@@ -11,45 +11,175 @@ Feature: DMS Instance Route Context
                     "connectionString": "Server=localhost;Database=TestDb;"
                   }
                   """
-              And the response "id" is saved as "instanceId"
 
-        Scenario: Create a new instance route context
+        @CleanupAfterScenario
+        Scenario: 01 Ensure clients can create a new instance route context
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
                   {
-                    "instanceId": <instanceId>,
-                    "contextKey": "schoolYear",
-                    "contextValue": "2022"
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2022"
                   }
                   """
              Then it should respond with 201
-              And the response should contain "id"
-
-        Scenario: List all instance route contexts
-             When a GET request is made to "/v2/dmsInstanceRouteContexts"
-             Then it should respond with 200
-              And the response should contain the created route context
-
-        Scenario: Get instance route context by ID
-             When a GET request is made to "/v2/dmsInstanceRouteContexts/1"
-             Then it should respond with 200
-              And the response should contain "contextKey" as "schoolYear"
-              And the response should contain "contextValue" as "2022"
-
-        Scenario: Update instance route context by ID
-             When a PUT request is made to "/v2/dmsInstanceRouteContexts/1" with
+              And the response headers include
+                  """
+                       {
+                                 "location": "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+                       }
+                  """
+              And the record can be retrieved with a GET request
                   """
                   {
-                    "id": 1,
-                    "instanceId": <instanceId>,
+                            "id": {id},
+                            "instanceId": {dmsInstanceId},
+                            "contextKey": "schoolYear",
+                            "contextValue": "2022"
+                  }
+                  """
+
+        @CleanupAfterScenario
+        Scenario: 02 Ensure clients can GET dmsInstanceRouteContexts list
+            Given a POST request is made to "/v2/dmsInstanceRouteContexts" with
+                  """
+                  {
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2022"
+                  }
+                  """
+             When a GET request is made to "/v2/dmsInstanceRouteContexts?offset=1&limit=1"
+             Then it should respond with 200
+              And the response body is
+                  """
+                      [{
+                          "id": {id},
+                          "instanceId": {dmsInstanceId},
+                          "contextKey": "schoolYear",
+                          "contextValue": "2022"
+                      }]
+                  """
+
+
+        @CleanupAfterScenario
+        Scenario: 03 Verify retrieving a single instance route context by ID
+             When a POST request is made to "/v2/dmsInstanceRouteContexts" with
+                  """
+                  {
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2022"
+                  }
+                  """
+             Then it should respond with 201
+             When a GET request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                       "id": {id},
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2022"
+                  }
+                  """
+
+        @CleanupAfterScenario
+        Scenario: 04 Put an existing instance route context
+             When a POST request is made to "/v2/dmsInstanceRouteContexts" with
+                  """
+                  {
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2022"
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}" with
+                  """
+                  {
+                    "id": {dmsInstanceRouteContextId},
+                    "instanceId": {dmsInstanceId},
                     "contextKey": "schoolYear",
                     "contextValue": "2023"
                   }
                   """
              Then it should respond with 204
-              And the response should contain "contextValue" as "2023"
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                       "id": {id},
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2023"
+                  }
+                  """
 
-        Scenario: Delete instance route context by ID
-             When a DELETE request is made to "/v2/dmsInstanceRouteContexts/1"
+        Scenario: 05 Verify deleting a specific instance route context by ID
+             When a POST request is made to "/v2/dmsInstanceRouteContexts" with
+                  """
+                  {
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2022"
+                  }
+                  """
+             Then it should respond with 201
+             When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
              Then it should respond with 204
 
+        Scenario: 06 Verify error handling when trying to get an item that has already been deleted
+             When a POST request is made to "/v2/dmsInstanceRouteContexts" with
+                  """
+                  {
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2022"
+                  }
+                  """
+             Then it should respond with 201
+             When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+             Then it should respond with 204
+             When a GET request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+             Then it should respond with 404
+
+        Scenario: 07 Verify error handling when using invalid ID
+             When a GET request is made to "/v2/dmsInstanceRouteContexts/invalid"
+             Then it should respond with 400
+
+        Scenario: 08 Verify PUT request with mismatched IDs
+             When a POST request is made to "/v2/dmsInstanceRouteContexts" with
+                  """
+                  {
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2022"
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}" with
+                  """
+                  {
+                    "id": 999,
+                    "instanceId": {dmsInstanceId},
+                    "contextKey": "schoolYear",
+                    "contextValue": "2023"
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                    {
+                        "detail": "Data validation failed. See 'validationErrors' for details.",
+                        "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                        "title": "Data Validation Failed",
+                        "status": 400,
+                        "validationErrors": {
+                            "Id": [
+                                "Request body id must match the id in the url."
+                            ]
+                        },
+                        "errors": []
+                    }
+                  """
