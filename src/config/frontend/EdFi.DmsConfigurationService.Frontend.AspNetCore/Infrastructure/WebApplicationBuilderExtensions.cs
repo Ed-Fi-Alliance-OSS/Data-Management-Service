@@ -99,6 +99,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
+        webApplicationBuilder.Services.AddTransient<IDmsInstanceRouteContextRepository, DmsInstanceRouteContextRepository>();
         webApplicationBuilder.Services.AddSingleton<IClaimsValidator, ClaimsValidator>();
         webApplicationBuilder.Services.AddSingleton<IClaimsFragmentComposer, ClaimsFragmentComposer>();
         webApplicationBuilder.Services.AddSingleton<IClaimsDataLoader, ClaimsDataLoader>();
