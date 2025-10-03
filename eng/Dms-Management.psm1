@@ -341,13 +341,18 @@ function Add-Vendor {
     .PARAMETER AccessToken
         The Keycloak bearer token for API authorization. Mandatory.
 
+    .PARAMETER DmsInstanceIds
+        Array of DMS instance IDs to associate with this application. Optional.
+
     .OUTPUTS
         Hashtable containing:
+            - Id: The application's ID.
             - Key: The application's API key.
             - Secret: The application's secret.
 
     .EXAMPLE
-        $creds = Add-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp"
+        $creds = Add-Application -VendorId 12345 -AccessToken $token -ApplicationName "MyApp" -DmsInstanceIds @(1,2)
+        Write-Host "App ID: $($creds.Id)"
         Write-Host "App Key: $($creds.Key)"
         Write-Host "App Secret: $($creds.Secret)"
 #>
@@ -370,7 +375,10 @@ function Add-Application {
         [string]$AccessToken,
 
         [int[]]
-        $EducationOrganizationIds = @(255901, 19255901)
+        $EducationOrganizationIds = @(255901, 19255901),
+
+        [long[]]
+        $DmsInstanceIds = @()
     )
 
     $applicationData = @{
@@ -378,6 +386,7 @@ function Add-Application {
         applicationName = $ApplicationName
         claimSetName    = $ClaimSetName
         educationOrganizationIds = $EducationOrganizationIds
+        dmsInstanceIds = $DmsInstanceIds
     }
 
     $invokeParams = @{
@@ -392,6 +401,7 @@ function Add-Application {
     $response = Invoke-Api @invokeParams
 
     return @{
+        Id     = $response.id
         Key    = $response.key
         Secret = $response.secret
     }
@@ -485,4 +495,150 @@ function Get-CurrentSchoolYear {
     }
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Invoke-Api
+<#
+.SYNOPSIS
+    Creates a new DMS Instance by sending a POST request to the Configuration Service.
+
+.DESCRIPTION
+    Adds a new DMS Instance with the specified instance type, name, and connection string built from individual database parameters.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server (e.g., http://localhost:8081).
+
+.PARAMETER InstanceType
+    The type of instance (e.g., "Production", "Development", "Staging"). Defaults to "Local".
+
+.PARAMETER InstanceName
+    The name of the DMS instance. Defaults to "Local DMS Instance".
+
+.PARAMETER PostgresPassword
+    The PostgreSQL password (mandatory).
+
+.PARAMETER PostgresDbName
+    The PostgreSQL database name. Defaults to "edfi_datamanagementservice".
+
+.PARAMETER PostgresHost
+    The PostgreSQL host. Defaults to "dms-postgresql" for Docker environment.
+
+.PARAMETER PostgresPort
+    The PostgreSQL port. Defaults to 5432 for Docker internal port.
+
+.PARAMETER PostgresUser
+    The PostgreSQL username. Defaults to "postgres".
+
+.PARAMETER AccessToken
+    The bearer token for authorization (mandatory).
+
+.OUTPUTS
+    [long] Returns the DMS Instance ID of the newly created instance.
+
+.EXAMPLE
+    # Create DMS Instance
+    $instanceId = Add-DmsInstance -AccessToken $token -PostgresPassword "secret123"
+#>
+function Add-DmsInstance {
+    [CmdletBinding()]
+    param (
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [ValidateNotNullOrEmpty()]
+        [string]$InstanceType = "Local",
+
+        [ValidateNotNullOrEmpty()]
+        [string]$InstanceName = "Local DMS Instance",
+
+        [Parameter(Mandatory = $true)]
+        [string]$PostgresPassword,
+
+        [ValidateNotNullOrEmpty()]
+        [string]$PostgresDbName = "edfi_datamanagementservice",
+
+        [ValidateNotNullOrEmpty()]
+        [string]$PostgresHost = "dms-postgresql",
+
+        [int]$PostgresPort = 5432,
+
+        [ValidateNotNullOrEmpty()]
+        [string]$PostgresUser = "postgres",
+
+        [Parameter(Mandatory = $true)]
+        [string]$AccessToken
+    )
+
+    # Build connection string from individual parameters
+    $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$PostgresUser;password=$PostgresPassword;database=$PostgresDbName;"
+
+    $dmsInstanceData = @{
+        instanceType = $InstanceType
+        instanceName = $InstanceName
+        connectionString = $ConnectionString
+    }
+
+    $invokeParams = @{
+        BaseUrl      = $CmsUrl
+        RelativeUrl  = "v2/dmsInstances"
+        Method       = "Post"
+        ContentType  = "application/json"
+        Body         = ConvertTo-Json -InputObject $dmsInstanceData -Depth 10
+        Headers      = @{ Authorization = "Bearer $AccessToken" }
+    }
+
+    $response = Invoke-Api @invokeParams
+
+    return $response.id
+}
+
+<#
+.SYNOPSIS
+    Retrieves all DMS Instances from the Configuration Service.
+
+.DESCRIPTION
+    Gets a list of all DMS Instances with optional paging support.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server (e.g., http://localhost:8081).
+
+.PARAMETER AccessToken
+    The bearer token for authorization (mandatory).
+
+.PARAMETER Offset
+    The offset for paging. Defaults to 0.
+
+.PARAMETER Limit
+    The limit for paging. Defaults to 100.
+
+.OUTPUTS
+    Array of DMS Instance objects.
+
+.EXAMPLE
+    $instances = Get-DmsInstances -AccessToken $token
+#>
+function Get-DmsInstances {
+    [CmdletBinding()]
+    param (
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [Parameter(Mandatory = $true)]
+        [string]$AccessToken,
+
+        [int]$Offset = 0,
+
+        [int]$Limit = 100
+    )
+
+    $invokeParams = @{
+        BaseUrl      = $CmsUrl
+        RelativeUrl  = "v2/dmsInstances?offset=$Offset&limit=$Limit"
+        Method       = "Get"
+        ContentType  = "application/json"
+        Headers      = @{ Authorization = "Bearer $AccessToken" }
+    }
+
+    $response = Invoke-Api @invokeParams
+
+    return $response
+}
+
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Invoke-Api

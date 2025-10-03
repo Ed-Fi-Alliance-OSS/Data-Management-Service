@@ -17,22 +17,44 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
         /// <summary>
         /// Adds OpenIddict identity options to the service collection.
         /// </summary>
-        public static IServiceCollection AddOpenIddictIdentityOptions(this IServiceCollection services, IConfiguration configuration)
+        public static IServiceCollection AddOpenIddictIdentityOptions(
+            this IServiceCollection services,
+            IConfiguration configuration
+        )
         {
             // Configure IdentityOptions from appsettings
             services.Configure<IdentityOptions>(options =>
             {
-                options.Audience = configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
-                options.Authority = configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
-                options.TokenExpirationMinutes = configuration.GetValue<int>("IdentitySettings:TokenExpirationMinutes", 30);
-                options.UseCertificates = configuration.GetValue<bool>("IdentitySettings:UseCertificates", false);
-                options.UseDevelopmentCertificates = configuration.GetValue<bool>("IdentitySettings:UseDevelopmentCertificates", false);
-                options.DevCertificatePath = configuration.GetValue<string>("IdentitySettings:DevCertificatePath") ?? "devcert.pfx";
-                options.DevCertificatePassword = configuration.GetValue<string>("IdentitySettings:DevCertificatePassword") ?? "password";
-                options.CertificatePath = configuration.GetValue<string>("IdentitySettings:CertificatePath") ?? string.Empty;
-                options.CertificatePassword = configuration.GetValue<string>("IdentitySettings:CertificatePassword") ?? string.Empty;
-                options.EncryptionKey = configuration.GetValue<string>("IdentitySettings:EncryptionKey") ?? string.Empty;
-                options.KeyFormatCacheSize = configuration.GetValue<int>("IdentitySettings:KeyFormatCacheSize", 100);
+                options.Audience =
+                    configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
+                options.Authority =
+                    configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
+                options.TokenExpirationMinutes = configuration.GetValue<int>(
+                    "IdentitySettings:TokenExpirationMinutes",
+                    30
+                );
+                options.UseCertificates = configuration.GetValue<bool>(
+                    "IdentitySettings:UseCertificates",
+                    false
+                );
+                options.UseDevelopmentCertificates = configuration.GetValue<bool>(
+                    "IdentitySettings:UseDevelopmentCertificates",
+                    false
+                );
+                options.DevCertificatePath =
+                    configuration.GetValue<string>("IdentitySettings:DevCertificatePath") ?? "devcert.pfx";
+                options.DevCertificatePassword =
+                    configuration.GetValue<string>("IdentitySettings:DevCertificatePassword") ?? "password";
+                options.CertificatePath =
+                    configuration.GetValue<string>("IdentitySettings:CertificatePath") ?? string.Empty;
+                options.CertificatePassword =
+                    configuration.GetValue<string>("IdentitySettings:CertificatePassword") ?? string.Empty;
+                options.EncryptionKey =
+                    configuration.GetValue<string>("IdentitySettings:EncryptionKey") ?? string.Empty;
+                options.KeyFormatCacheSize = configuration.GetValue<int>(
+                    "IdentitySettings:KeyFormatCacheSize",
+                    100
+                );
             });
 
             return services;

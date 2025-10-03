@@ -26,7 +26,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             string issuer,
             string audience,
             out JwtSecurityToken? jwtToken,
-            ILogger? logger = null)
+            ILogger? logger = null
+        )
         {
             jwtToken = null;
             try

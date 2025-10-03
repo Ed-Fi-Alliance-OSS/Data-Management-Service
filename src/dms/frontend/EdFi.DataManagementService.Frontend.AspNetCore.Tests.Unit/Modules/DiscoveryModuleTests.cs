@@ -7,7 +7,6 @@ using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
@@ -41,10 +40,8 @@ public class DiscoveryModuleTests
                 Description = "Ed-Fi data standard 5.0.0",
             }
         ).ActLike<IDataModelInfo>();
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
-        var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.GetDataModelInfo()).Returns([expectedDataModelInfo]);
+        var dataModelInfoProvider = A.Fake<IDataModelInfoProvider>();
+        A.CallTo(() => dataModelInfoProvider.GetDataModelInfo()).Returns([expectedDataModelInfo]);
 
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -52,9 +49,9 @@ public class DiscoveryModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
+                    TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient((x) => versionProvider);
-                    collection.AddTransient((x) => apiService);
-                    collection.AddTransient((x) => claimSetProvider);
+                    collection.AddTransient((x) => dataModelInfoProvider);
                 }
             );
         });
@@ -92,10 +89,8 @@ public class DiscoveryModuleTests
                 Description = "Ed-Fi data standard 5.0.0",
             }
         ).ActLike<IDataModelInfo>();
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
-        var apiService = A.Fake<IApiService>();
-        A.CallTo(() => apiService.GetDataModelInfo()).Returns([expectedDataModelInfo]);
+        var dataModelInfoProvider = A.Fake<IDataModelInfoProvider>();
+        A.CallTo(() => dataModelInfoProvider.GetDataModelInfo()).Returns([expectedDataModelInfo]);
 
         var pathBase = "dms-api";
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -112,9 +107,9 @@ public class DiscoveryModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
+                    TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient((x) => versionProvider);
-                    collection.AddTransient((x) => apiService);
-                    collection.AddTransient((x) => claimSetProvider);
+                    collection.AddTransient((x) => dataModelInfoProvider);
                 }
             );
         });

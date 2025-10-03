@@ -16,23 +16,32 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 public static class PostgresqlServiceExtensions
 {
     /// <summary>
-    /// The Postgresql backend datastore configuration
+    /// The Postgresql backend datastore configuration with per-request connection string support
     /// </summary>
-    /// <param name="connectionString">The PostgreSQL database connection string</param>
-    public static IServiceCollection AddPostgresqlDatastore(
-        this IServiceCollection services,
-        string connectionString
-    )
+    public static IServiceCollection AddPostgresqlDatastore(this IServiceCollection services)
     {
-        services.AddSingleton((sp) => NpgsqlDataSource.Create(connectionString));
-        services.AddSingleton<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
-        services.AddSingleton<IAuthorizationRepository, PostgresqlAuthorizationRepository>();
-        services.AddSingleton<IGetDocumentById, GetDocumentById>();
-        services.AddSingleton<IQueryDocument, QueryDocument>();
-        services.AddSingleton<IUpdateDocumentById, UpdateDocumentById>();
-        services.AddSingleton<IUpsertDocument, UpsertDocument>();
-        services.AddSingleton<IDeleteDocumentById, DeleteDocumentById>();
-        services.AddSingleton<ISqlAction, SqlAction>();
+        // Register singleton cache for NpgsqlDataSource instances
+        services.AddSingleton<NpgsqlDataSourceCache>();
+
+        // Register scoped provider that retrieves the appropriate data source per request
+        services.AddScoped<NpgsqlDataSourceProvider>();
+
+        // Register NpgsqlDataSource as scoped, resolved from the provider
+        services.AddScoped<NpgsqlDataSource>(sp =>
+        {
+            var provider = sp.GetRequiredService<NpgsqlDataSourceProvider>();
+            return provider.DataSource;
+        });
+
+        // Register all repositories as scoped (they depend on scoped NpgsqlDataSource)
+        services.AddScoped<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
+        services.AddScoped<IAuthorizationRepository, PostgresqlAuthorizationRepository>();
+        services.AddScoped<IGetDocumentById, GetDocumentById>();
+        services.AddScoped<IQueryDocument, QueryDocument>();
+        services.AddScoped<IUpdateDocumentById, UpdateDocumentById>();
+        services.AddScoped<IUpsertDocument, UpsertDocument>();
+        services.AddScoped<IDeleteDocumentById, DeleteDocumentById>();
+        services.AddScoped<ISqlAction, SqlAction>();
         return services;
     }
 
@@ -42,7 +51,7 @@ public static class PostgresqlServiceExtensions
     /// </summary>
     public static IServiceCollection AddPostgresqlQueryHandler(this IServiceCollection services)
     {
-        services.AddSingleton<IQueryHandler, PostgresqlDocumentStoreRepository>();
+        services.AddScoped<IQueryHandler, PostgresqlDocumentStoreRepository>();
         return services;
     }
 }

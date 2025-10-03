@@ -4,12 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using EdFi.DataManagementService.Core.Security;
-using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
@@ -22,8 +19,6 @@ public class RateLimitTests
     public async Task TestRateLimit()
     {
         // Arrange
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             // This environment has an extreme rate limit
@@ -31,7 +26,7 @@ public class RateLimitTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => claimSetProvider);
+                    TestMockHelper.AddEssentialMocks(collection);
                 }
             );
         });

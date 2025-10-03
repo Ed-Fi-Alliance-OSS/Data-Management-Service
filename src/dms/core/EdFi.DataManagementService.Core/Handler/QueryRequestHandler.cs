@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.QueryResult;
@@ -15,7 +16,7 @@ using static EdFi.DataManagementService.Core.Handler.Utility;
 namespace EdFi.DataManagementService.Core.Handler;
 
 internal class QueryRequestHandler(
-    IQueryHandler _queryHandler,
+    IServiceProvider _serviceProvider,
     ILogger _logger,
     ResiliencePipeline _resiliencePipeline
 ) : IPipelineStep
@@ -27,8 +28,11 @@ internal class QueryRequestHandler(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
+        // Resolve query handler from service provider within request scope
+        var queryHandler = _serviceProvider.GetRequiredService<IQueryHandler>();
+
         var queryResult = await _resiliencePipeline.ExecuteAsync(async t =>
-            await _queryHandler.QueryDocuments(
+            await queryHandler.QueryDocuments(
                 new QueryRequest(
                     ResourceInfo: requestInfo.ResourceInfo,
                     QueryElements: requestInfo.QueryElements,

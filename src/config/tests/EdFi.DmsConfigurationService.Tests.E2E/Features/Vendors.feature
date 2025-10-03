@@ -3,6 +3,14 @@ Feature: Vendors endpoints
         Background:
             Given valid credentials
               And token received
+              And a POST request is made to "/v2/dmsInstances" with
+                  """
+                    {
+                        "instanceType": "Test",
+                        "instanceName": "Test DMS Instance",
+                        "connectionString": "Server=localhost;Database=TestDb;"
+                    }
+                  """
 
         Scenario: 01 Ensure clients can GET vendors list
             Given the system has these "vendors"
@@ -318,7 +326,8 @@ Feature: Vendors endpoints
                    "vendorId": {vendorId},
                    "applicationName": "Demo application",
                    "claimSetName": "Claim06",
-                   "educationOrganizationIds": [1, 2, 3]
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 201
@@ -326,8 +335,8 @@ Feature: Vendors endpoints
              Then it should respond with 200
               And the response body is
                   """
-                     [
-                        {
+                  [
+                     {
                             "id": {id},
                             "applicationName": "Demo application",
                             "vendorId": {vendorId},
@@ -336,9 +345,10 @@ Feature: Vendors endpoints
                                 1,
                                 2,
                                 3
-                        ]
-                    }
-                  ]
+                            ],
+                            "dmsInstanceIds": [{dmsInstanceId}]
+                        }
+                    ]
                   """
 
         Scenario: 17 Ensure the location header has correct path when a path base is provided

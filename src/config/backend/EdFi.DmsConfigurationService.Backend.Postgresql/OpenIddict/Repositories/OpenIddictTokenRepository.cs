@@ -8,14 +8,21 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories
 {
-    public class OpenIddictTokenRepository(IOpenIddictDataRepository dataRepository) : IOpenIddictTokenRepository
+    public class OpenIddictTokenRepository(IOpenIddictDataRepository dataRepository)
+        : IOpenIddictTokenRepository
     {
         public async Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId)
         {
             return await dataRepository.GetTokenByIdAsync(tokenId);
         }
 
-        public async Task StoreTokenAsync(Guid tokenId, Guid applicationId, string subject, string payload, DateTimeOffset expiration)
+        public async Task StoreTokenAsync(
+            Guid tokenId,
+            Guid applicationId,
+            string subject,
+            string payload,
+            DateTimeOffset expiration
+        )
         {
             await dataRepository.StoreTokenAsync(tokenId, applicationId, subject, payload, expiration);
         }
@@ -33,7 +40,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
         public async Task<PrivateKeyInfo?> GetActivePrivateKeyAsync(string encryptionKey)
         {
             var result = await dataRepository.GetActivePrivateKeyInternalAsync(encryptionKey);
-            return result.HasValue ? new PrivateKeyInfo { PrivateKey = result.Value.PrivateKey, KeyId = result.Value.KeyId } : null;
+            return result.HasValue
+                ? new PrivateKeyInfo { PrivateKey = result.Value.PrivateKey, KeyId = result.Value.KeyId }
+                : null;
         }
 
         public async Task<IEnumerable<PublicKeyInfo>> GetActivePublicKeysAsync()

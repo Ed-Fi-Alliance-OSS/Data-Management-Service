@@ -6,7 +6,6 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
@@ -32,9 +31,6 @@ public class MetadataModuleTests
         public void SetUp()
         {
             // Arrange
-            var claimSetProvider = A.Fake<IClaimSetProvider>();
-            A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
-
             var apiService = A.Fake<IApiService>();
 
             using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -43,7 +39,7 @@ public class MetadataModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddTransient((x) => claimSetProvider);
+                        TestMockHelper.AddEssentialMocks(collection);
                         collection.AddTransient((x) => apiService);
                     }
                 );
@@ -100,9 +96,6 @@ public class MetadataModuleTests
         [SetUp]
         public void SetUp()
         {
-            var claimSetProvider = A.Fake<IClaimSetProvider>();
-            A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
-
             var apiService = A.Fake<IApiService>();
             A.CallTo(() => apiService.GetResourceOpenApiSpecification(A<JsonArray>._))
                 .Returns(
@@ -142,7 +135,7 @@ public class MetadataModuleTests
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        collection.AddTransient((x) => claimSetProvider);
+                        TestMockHelper.AddEssentialMocks(collection);
                         collection.AddTransient((x) => apiService);
                     }
                 );
@@ -204,8 +197,6 @@ public class MetadataModuleTests
     {
         // Arrange
         var contentProvider = A.Fake<IContentProvider>();
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
 
         var apiService = A.Fake<IApiService>();
         A.CallTo(() => apiService.GetDescriptorOpenApiSpecification(A<JsonArray>._))
@@ -233,8 +224,8 @@ public class MetadataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
+                    TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient((x) => contentProvider);
-                    collection.AddTransient((x) => claimSetProvider);
                     collection.AddTransient((x) => apiService);
                 }
             );
@@ -261,15 +252,13 @@ public class MetadataModuleTests
     public async Task Metadata_Returns_Invalid_Resource_Error()
     {
         // Arrange
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => claimSetProvider);
+                    TestMockHelper.AddEssentialMocks(collection);
                 }
             );
         });
@@ -287,8 +276,6 @@ public class MetadataModuleTests
     {
         // Arrange
         var httpContext = A.Fake<HttpContext>();
-        var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
 
         var apiService = A.Fake<IApiService>();
         var dependenciesJson = JsonNode
@@ -311,8 +298,8 @@ public class MetadataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
+                    TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient(x => httpContext);
-                    collection.AddTransient((x) => claimSetProvider);
                     collection.AddTransient((x) => apiService);
                 }
             );

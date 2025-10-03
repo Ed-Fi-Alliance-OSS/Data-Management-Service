@@ -10,6 +10,7 @@ namespace EdFi.DmsConfigurationService.Backend;
 public interface ITokenManager
 {
     public Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials);
+
     // For JWKS endpoint
     Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysAsync();
     Task<bool> ValidateTokenAsync(string rawToken);

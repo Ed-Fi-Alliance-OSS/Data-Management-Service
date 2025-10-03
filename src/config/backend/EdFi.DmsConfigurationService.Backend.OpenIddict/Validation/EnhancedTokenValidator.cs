@@ -14,8 +14,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
     /// </summary>
     public interface IEnhancedTokenValidator
     {
-        Task<TokenValidationResult> ValidateTokenAsync(string token, CancellationToken cancellationToken = default);
-        Task<ClaimsPrincipal?> ValidateAndCreatePrincipalAsync(string token, CancellationToken cancellationToken = default);
+        Task<TokenValidationResult> ValidateTokenAsync(
+            string token,
+            CancellationToken cancellationToken = default
+        );
+        Task<ClaimsPrincipal?> ValidateAndCreatePrincipalAsync(
+            string token,
+            CancellationToken cancellationToken = default
+        );
     }
 
     public class TokenValidationResult
@@ -25,11 +31,19 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
         public ClaimsPrincipal? Principal { get; init; }
         public IDictionary<string, object>? Properties { get; init; }
 
-        public static TokenValidationResult Success(ClaimsPrincipal principal, IDictionary<string, object>? properties = null)
-            => new() { IsValid = true, Principal = principal, Properties = properties };
+        public static TokenValidationResult Success(
+            ClaimsPrincipal principal,
+            IDictionary<string, object>? properties = null
+        ) =>
+            new()
+            {
+                IsValid = true,
+                Principal = principal,
+                Properties = properties,
+            };
 
-        public static TokenValidationResult Failure(string errorDescription)
-            => new() { IsValid = false, ErrorDescription = errorDescription };
+        public static TokenValidationResult Failure(string errorDescription) =>
+            new() { IsValid = false, ErrorDescription = errorDescription };
     }
 
     public class EnhancedTokenValidator : IEnhancedTokenValidator
@@ -41,14 +55,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
         public EnhancedTokenValidator(
             IServiceProvider serviceProvider,
             ITokenManager tokenManager,
-            ILogger<EnhancedTokenValidator> logger)
+            ILogger<EnhancedTokenValidator> logger
+        )
         {
             _serviceProvider = serviceProvider;
             _tokenManager = tokenManager;
             _logger = logger;
         }
 
-        public async Task<TokenValidationResult> ValidateTokenAsync(string token, CancellationToken cancellationToken = default)
+        public async Task<TokenValidationResult> ValidateTokenAsync(
+            string token,
+            CancellationToken cancellationToken = default
+        )
         {
             try
             {
@@ -67,7 +85,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
             }
         }
 
-        public async Task<ClaimsPrincipal?> ValidateAndCreatePrincipalAsync(string token, CancellationToken cancellationToken = default)
+        public async Task<ClaimsPrincipal?> ValidateAndCreatePrincipalAsync(
+            string token,
+            CancellationToken cancellationToken = default
+        )
         {
             try
             {
@@ -75,7 +96,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
                 var validationMethod = _tokenManager.GetType().GetMethod("ValidateTokenAsync");
                 if (validationMethod != null)
                 {
-                    var isValid = await (Task<bool>)validationMethod.Invoke(_tokenManager, new object[] { token })!;
+                    var isValid = await (Task<bool>)
+                        validationMethod.Invoke(_tokenManager, new object[] { token })!;
                     if (!isValid)
                     {
                         _logger.LogWarning("Token validation failed via token manager");
@@ -94,7 +116,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Validation
             }
         }
 
-        private Task<ClaimsPrincipal?> CreatePrincipalFromTokenAsync(string token, CancellationToken cancellationToken)
+        private Task<ClaimsPrincipal?> CreatePrincipalFromTokenAsync(
+            string token,
+            CancellationToken cancellationToken
+        )
         {
             try
             {

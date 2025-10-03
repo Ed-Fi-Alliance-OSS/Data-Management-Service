@@ -11,8 +11,10 @@ public class Action
 {
     [JsonPropertyName("id")]
     public required int Id { get; set; }
+
     [JsonPropertyName("name")]
     public required string Name { get; set; }
+
     [JsonPropertyName("uri")]
     public required string Uri { get; set; }
 }

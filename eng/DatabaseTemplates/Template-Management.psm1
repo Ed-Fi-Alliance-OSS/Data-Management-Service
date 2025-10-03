@@ -60,16 +60,25 @@ function Initialize-BulkLoad {
     - Retrieves an access token for the client.
     - Adds a vendor entity to the system.
     - Initializes a new application for the vendor using a predefined claim set.
-    It returns the key and secret required for authenticated communication with the DMS API.
+    It returns the application ID, key and secret required for authenticated communication with the DMS API.
 
 .PARAMETER CmsUrl
     The base URL of the DMS configuration service.
 
+.PARAMETER CmsToken
+    The CMS access token for authorization.
+
+.PARAMETER ClaimSetName
+    The claim set to assign to the application.
+
+.PARAMETER ApplicationName
+    The name of the application to create.
+
 .OUTPUTS
-    A hashtable containing the Key and Secret for the initialized DMS application.
+    A hashtable containing the Id, Key and Secret for the initialized DMS application.
 
 .EXAMPLE
-    $secrets = Get-KeySecret -CmsUrl "http://localhost:8081"
+    $secrets = Get-KeySecret -CmsUrl "http://localhost:8081" -CmsToken $token -ClaimSetName "EdfiSandbox"
 #>
 function Get-KeySecret() {
     param (
@@ -82,7 +91,9 @@ function Get-KeySecret() {
         [Parameter(Mandatory = $true)]
         [string]$ClaimSetName,
 
-        [string]$ApplicationName = "Demo application"
+        [string]$ApplicationName = "Demo application",
+
+        [long[]]$DmsInstanceIds = @()
     )
 
     $params = @{
@@ -93,9 +104,10 @@ function Get-KeySecret() {
     # Add Vendor
     $params.VendorId = Add-Vendor @params
 
-    # Add an Application and get Key and Secret
+    # Add an Application and get Id, Key and Secret
     $params.ClaimSetName = $ClaimSetName
     $params.ApplicationName = $ApplicationName
+    $params.DmsInstanceIds = $DmsInstanceIds
     $keySecret = Add-Application @params
 
     return $keySecret
@@ -437,6 +449,12 @@ enum TemplateType {
 .PARAMETER PackageVersion
     The version to assign to the generated NuGet package.
 
+.PARAMETER ApplicationName
+    The name of the application to create. Defaults to "Demo application".
+
+.PARAMETER PostgresPassword
+    The PostgreSQL password for database connection. Defaults to environment variable POSTGRES_PASSWORD or "abcdefgh1!".
+
 .EXAMPLE
     Build-Template -TemplateType Minimal `
         -DmsUrl "http://localhost:8080" `
@@ -446,7 +464,8 @@ enum TemplateType {
         -Extension "ed-fi" `
         -ConfigFilePath "./MinimalTemplateSettings.psd1" `
         -StandardVersion "5.3.0" `
-        -PackageVersion "1.0.0"
+        -PackageVersion "1.0.0" `
+        -PostgresPassword "mypassword"
 #>
 function Build-Template {
     param (
@@ -477,22 +496,34 @@ function Build-Template {
         [Parameter(Mandatory = $true)]
         [string]$PackageVersion,
 
-        [string]$ApplicationName = "Demo application"
+        [string]$ApplicationName = "Demo application",
+
+        [string]$PostgresPassword = $env:POSTGRES_PASSWORD ?? "abcdefgh1!"
     )
 
     Add-CmsClient -CmsUrl $CmsUrl
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    $keySecret = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap"
-    $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $keySecret.Key -Secret $keySecret.Secret
+    # Get or create DMS instance
+    $dmsInstances = Get-DmsInstances -CmsUrl $CmsUrl -AccessToken $cmsToken
+    if ($dmsInstances.Count -eq 0) {
+        $dmsInstanceId = Add-DmsInstance -CmsUrl $CmsUrl -AccessToken $cmsToken -PostgresPassword $PostgresPassword
+    } else {
+        $dmsInstanceId = $dmsInstances[0].id
+    }
+
+    # Create Bootstrap application and assign to DMS instance
+    $bootstrapApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'BootstrapDescriptorsandEdOrgs' -ApplicationName "$ApplicationName Bootstrap" -DmsInstanceIds @($dmsInstanceId)
+
+    $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $bootstrapApp.Key -Secret $bootstrapApp.Secret
 
     Invoke-SchoolYearLoader -DmsUrl $DmsUrl -DmsToken $dmsToken
 
     $bulkLoadClientPaths = Initialize-BulkLoad
 
     Invoke-BulkLoad -BaseUrl $DmsUrl `
-        -Key $keySecret.Key `
-        -Secret $keySecret.Secret `
+        -Key $bootstrapApp.Key `
+        -Secret $bootstrapApp.Secret `
         -SampleDataDirectory $MinimalSampleDataDirectory `
         -Extension $Extension `
         -BulkLoadClientPaths $bulkLoadClientPaths `
@@ -505,12 +536,14 @@ function Build-Template {
             throw "PopulatedSampleDataDirectory must be specified when TemplateType is 'Populated'."
         }
 
-        $keySecret = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox"
-        $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $keySecret.Key -Secret $keySecret.Secret
+        # Create Sandbox application and assign to DMS instance
+        $sandboxApp = Get-KeySecret -CmsUrl $CmsUrl -CmsToken $CmsToken -ClaimSetName 'EdFiSandbox' -ApplicationName "$ApplicationName Sandbox" -DmsInstanceIds @($dmsInstanceId)
+
+        $dmsToken = Get-DmsToken -DmsUrl $DmsUrl -Key $sandboxApp.Key -Secret $sandboxApp.Secret
 
         Invoke-BulkLoad -BaseUrl $DmsUrl `
-            -Key $keySecret.Key `
-            -Secret $keySecret.Secret `
+            -Key $sandboxApp.Key `
+            -Secret $sandboxApp.Secret `
             -SampleDataDirectory $PopulatedSampleDataDirectory `
             -Extension $Extension `
             -BulkLoadClientPaths $bulkLoadClientPaths `

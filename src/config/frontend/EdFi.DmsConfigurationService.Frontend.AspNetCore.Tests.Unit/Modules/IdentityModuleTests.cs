@@ -28,17 +28,16 @@ public class RegisterEndpointTests
     public void Setup()
     {
         _clientRepository = A.Fake<IClientRepository>();
-        A.CallTo(
-                () =>
-                    _clientRepository.CreateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored
-                    )
+        A.CallTo(() =>
+                _clientRepository.CreateClientAsync(
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored
+                )
             )
             .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
         var clientList = A.Fake<IEnumerable<string>>();
@@ -449,8 +448,8 @@ public class TokenEndpointTests
                 "token_type":"bearer"
             }
             """;
-        A.CallTo(
-                () => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+        A.CallTo(() =>
+                _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
             )
             .Returns(new TokenResult.Success(token));
     }
@@ -536,11 +535,8 @@ public class TokenEndpointTests
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             _tokenManager = A.Fake<ITokenManager>();
-            A.CallTo(
-                    () =>
-                        _tokenManager.GetAccessTokenAsync(
-                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
-                        )
+            A.CallTo(() =>
+                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
                 )
                 .Returns(
                     new TokenResult.FailureUnknown(
@@ -583,11 +579,8 @@ public class TokenEndpointTests
         {
             _tokenManager = A.Fake<ITokenManager>();
 
-            A.CallTo(
-                    () =>
-                        _tokenManager.GetAccessTokenAsync(
-                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
-                        )
+            A.CallTo(() =>
+                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
                 )
                 .Returns(
                     new TokenResult.FailureIdentityProvider(
@@ -650,11 +643,8 @@ public class TokenEndpointTests
         {
             _tokenManager = A.Fake<ITokenManager>();
 
-            A.CallTo(
-                    () =>
-                        _tokenManager.GetAccessTokenAsync(
-                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
-                        )
+            A.CallTo(() =>
+                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
                 )
                 .Returns(
                     new TokenResult.FailureIdentityProvider(
@@ -719,11 +709,8 @@ public class TokenEndpointTests
         {
             _tokenManager = A.Fake<ITokenManager>();
 
-            A.CallTo(
-                    () =>
-                        _tokenManager.GetAccessTokenAsync(
-                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
-                        )
+            A.CallTo(() =>
+                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
                 )
                 .Returns(
                     new TokenResult.FailureIdentityProvider(
@@ -765,11 +752,8 @@ public class TokenEndpointTests
         {
             _tokenManager = A.Fake<ITokenManager>();
 
-            A.CallTo(
-                    () =>
-                        _tokenManager.GetAccessTokenAsync(
-                            A<IEnumerable<KeyValuePair<string, string>>>.Ignored
-                        )
+            A.CallTo(() =>
+                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
                 )
                 .Returns(
                     new TokenResult.FailureIdentityProvider(

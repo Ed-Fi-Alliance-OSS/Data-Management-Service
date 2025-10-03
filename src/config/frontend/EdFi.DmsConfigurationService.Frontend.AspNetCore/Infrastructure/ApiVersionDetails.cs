@@ -17,7 +17,6 @@ public static class ApiVersionDetails
     /// <summary>
     /// Assembly version of the DMS Configuration Api.
     /// </summary>
-    public static readonly string Build = Assembly.GetExecutingAssembly()
-        .GetName()
-        .Version?.ToString() ?? Version;
+    public static readonly string Build =
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? Version;
 }

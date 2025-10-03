@@ -17,7 +17,10 @@ public class OpenIddictErrorHandlingMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<OpenIddictErrorHandlingMiddleware> _logger;
 
-    public OpenIddictErrorHandlingMiddleware(RequestDelegate next, ILogger<OpenIddictErrorHandlingMiddleware> logger)
+    public OpenIddictErrorHandlingMiddleware(
+        RequestDelegate next,
+        ILogger<OpenIddictErrorHandlingMiddleware> logger
+    )
     {
         _next = next;
         _logger = logger;
@@ -37,13 +40,13 @@ public class OpenIddictErrorHandlingMiddleware
 
     private static bool IsOAuthEndpoint(PathString path)
     {
-        return path.StartsWithSegments("/connect/token") ||
-               path.StartsWithSegments("/connect/authorize") ||
-               path.StartsWithSegments("/connect/introspect") ||
-               path.StartsWithSegments("/connect/revoke") ||
-               path.StartsWithSegments("/connect/userinfo") ||
-               path.StartsWithSegments("/.well-known/openid_configuration") ||
-               path.StartsWithSegments("/.well-known/jwks");
+        return path.StartsWithSegments("/connect/token")
+            || path.StartsWithSegments("/connect/authorize")
+            || path.StartsWithSegments("/connect/introspect")
+            || path.StartsWithSegments("/connect/revoke")
+            || path.StartsWithSegments("/connect/userinfo")
+            || path.StartsWithSegments("/.well-known/openid_configuration")
+            || path.StartsWithSegments("/.well-known/jwks");
     }
 
     private async Task HandleOAuthErrorAsync(HttpContext context, Exception exception)
@@ -54,10 +57,10 @@ public class OpenIddictErrorHandlingMiddleware
         context.Response.ContentType = "application/json";
 
         var errorResponse = CreateErrorResponse(exception);
-        var json = JsonSerializer.Serialize(errorResponse, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-        });
+        var json = JsonSerializer.Serialize(
+            errorResponse,
+            new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }
+        );
 
         await context.Response.WriteAsync(json);
     }
@@ -69,33 +72,33 @@ public class OpenIddictErrorHandlingMiddleware
             ArgumentException when exception.Message.Contains("client") => new
             {
                 Error = OpenIddictConstants.Errors.InvalidClient,
-                ErrorDescription = "The client credentials are invalid."
+                ErrorDescription = "The client credentials are invalid.",
             },
             ArgumentException when exception.Message.Contains("grant") => new
             {
                 Error = OpenIddictConstants.Errors.UnsupportedGrantType,
-                ErrorDescription = "The authorization grant type is not supported."
+                ErrorDescription = "The authorization grant type is not supported.",
             },
             ArgumentException when exception.Message.Contains("scope") => new
             {
                 Error = OpenIddictConstants.Errors.InvalidScope,
-                ErrorDescription = "The requested scope is invalid, unknown, or malformed."
+                ErrorDescription = "The requested scope is invalid, unknown, or malformed.",
             },
             UnauthorizedAccessException => new
             {
                 Error = OpenIddictConstants.Errors.AccessDenied,
-                ErrorDescription = "The resource owner or authorization server denied the request."
+                ErrorDescription = "The resource owner or authorization server denied the request.",
             },
             InvalidOperationException when exception.Message.Contains("token") => new
             {
                 Error = OpenIddictConstants.Errors.InvalidToken,
-                ErrorDescription = "The access token provided is expired, revoked, malformed, or invalid."
+                ErrorDescription = "The access token provided is expired, revoked, malformed, or invalid.",
             },
             _ => new
             {
                 Error = OpenIddictConstants.Errors.ServerError,
-                ErrorDescription = "The authorization server encountered an unexpected condition that prevented it from fulfilling the request."
-            }
+                ErrorDescription = "The authorization server encountered an unexpected condition that prevented it from fulfilling the request.",
+            },
         };
     }
 }

@@ -26,16 +26,20 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// <param name="existingProtocolMappersJson">Existing protocol mappers JSON string.</param>
         /// <param name="namespacePrefixes">New namespacePrefixes value.</param>
         /// <returns>Updated protocol mappers JSON string.</returns>
-        private static string MergeNamespacePrefixClaim(string existingProtocolMappersJson, string namespacePrefixes)
+        private static string MergeNamespacePrefixClaim(
+            string existingProtocolMappersJson,
+            string namespacePrefixes
+        )
         {
             List<Dictionary<string, string>> protocolMappers = new();
             if (!string.IsNullOrWhiteSpace(existingProtocolMappersJson))
             {
                 try
                 {
-                    protocolMappers = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(
-                        existingProtocolMappersJson
-                    ) ?? new List<Dictionary<string, string>>();
+                    protocolMappers =
+                        JsonSerializer.Deserialize<List<Dictionary<string, string>>>(
+                            existingProtocolMappersJson
+                        ) ?? new List<Dictionary<string, string>>();
                 }
                 catch
                 {
@@ -43,8 +47,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                 }
             }
             // Remove any existing namespacePrefixes claim
-            protocolMappers.RemoveAll(
-                m => m.ContainsKey("claim.name") && m["claim.name"] == "namespacePrefixes"
+            protocolMappers.RemoveAll(m =>
+                m.ContainsKey("claim.name") && m["claim.name"] == "namespacePrefixes"
             );
             // Add the updated namespacePrefixes claim
             protocolMappers.Add(ClientClaimHelper.CreateNamespacePrefixClaim(namespacePrefixes));
@@ -57,16 +61,20 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// <param name="existingProtocolMappersJson">Existing protocol mappers JSON string.</param>
         /// <param name="educationOrganizationIds">New educationOrganizationIds value.</param>
         /// <returns>Updated protocol mappers JSON string.</returns>
-        private static string MergeEducationOrganizationClaim(string existingProtocolMappersJson, string educationOrganizationIds)
+        private static string MergeEducationOrganizationClaim(
+            string existingProtocolMappersJson,
+            string educationOrganizationIds
+        )
         {
             List<Dictionary<string, string>> protocolMappers = new();
             if (!string.IsNullOrWhiteSpace(existingProtocolMappersJson))
             {
                 try
                 {
-                    protocolMappers = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(
-                        existingProtocolMappersJson
-                    ) ?? new List<Dictionary<string, string>>();
+                    protocolMappers =
+                        JsonSerializer.Deserialize<List<Dictionary<string, string>>>(
+                            existingProtocolMappersJson
+                        ) ?? new List<Dictionary<string, string>>();
                 }
                 catch
                 {
@@ -74,13 +82,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                 }
             }
             // Remove any existing educationOrganizationIds claim
-            protocolMappers.RemoveAll(
-                m => m.ContainsKey("claim.name") && m["claim.name"] == "educationOrganizationIds"
+            protocolMappers.RemoveAll(m =>
+                m.ContainsKey("claim.name") && m["claim.name"] == "educationOrganizationIds"
             );
             // Add the updated educationOrganizationIds claim
             protocolMappers.Add(ClientClaimHelper.CreateEducationOrganizationClaim(educationOrganizationIds));
             return JsonSerializer.Serialize(protocolMappers);
         }
+
         public async Task<ClientCreateResult> CreateClientAsync(
             string clientId,
             string clientSecret,
@@ -88,7 +97,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string displayName,
             string scope,
             string namespacePrefixes,
-            string educationOrganizationIds)
+            string educationOrganizationIds
+        )
         {
             try
             {
@@ -110,17 +120,20 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                 }
 
                 var namespacePrefixClaim = ClientClaimHelper.CreateNamespacePrefixClaim(namespacePrefixes);
-                var educationOrgClaim = ClientClaimHelper.CreateEducationOrganizationClaim(educationOrganizationIds);
+                var educationOrgClaim = ClientClaimHelper.CreateEducationOrganizationClaim(
+                    educationOrganizationIds
+                );
                 var protocolMappers = new List<Dictionary<string, string>>
                 {
                     namespacePrefixClaim,
-                    educationOrgClaim
+                    educationOrgClaim,
                 };
 
                 // Hash the client secret for secure storage
                 var hashedClientSecret = await secretHasher.HashSecretAsync(clientSecret);
 
-                var permissions = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
+                var permissions =
+                    scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
                 var requirementsArray = Array.Empty<string>();
                 var protocolMappersJson = JsonSerializer.Serialize(protocolMappers);
 
@@ -134,23 +147,41 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     "confidential",
                     protocolMappersJson,
                     connection,
-                    transaction);
+                    transaction
+                );
 
                 // 3. Insert scopes and join records if scope is not null
                 if (!string.IsNullOrWhiteSpace(scope))
                 {
-                    var scopes = scope.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var scopes = scope.Split(
+                        ',',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    );
                     foreach (var scopeName in scopes)
                     {
                         // Insert scope if not exists
-                        var scopeId = await dataRepository.FindScopeIdByNameAsync(scopeName, connection, transaction);
+                        var scopeId = await dataRepository.FindScopeIdByNameAsync(
+                            scopeName,
+                            connection,
+                            transaction
+                        );
                         if (scopeId == null)
                         {
                             scopeId = Guid.NewGuid();
-                            await dataRepository.InsertScopeAsync(scopeId.Value, scopeName, connection, transaction);
+                            await dataRepository.InsertScopeAsync(
+                                scopeId.Value,
+                                scopeName,
+                                connection,
+                                transaction
+                            );
                         }
                         // Insert into join table
-                        await dataRepository.InsertApplicationScopeAsync(clientUuid, scopeId.Value, connection, transaction);
+                        await dataRepository.InsertApplicationScopeAsync(
+                            clientUuid,
+                            scopeId.Value,
+                            connection,
+                            transaction
+                        );
                     }
                 }
 
@@ -171,7 +202,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string clientUuid,
             string displayName,
             string scope,
-            string educationOrganizationIds)
+            string educationOrganizationIds
+        )
         {
             try
             {
@@ -192,16 +224,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                 }
 
                 // Merge the educationOrganizationIds claim with existing protocol mappers
-                var protocolMappersJson = MergeEducationOrganizationClaim(application.ProtocolMappers, educationOrganizationIds);
+                var protocolMappersJson = MergeEducationOrganizationClaim(
+                    application.ProtocolMappers,
+                    educationOrganizationIds
+                );
 
-                var permissions = scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
+                var permissions =
+                    scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();
                 var rows = await dataRepository.UpdateApplicationAsync(
                     Guid.Parse(clientUuid),
                     displayName,
                     permissions,
                     protocolMappersJson,
                     connection,
-                    transaction);
+                    transaction
+                );
 
                 if (rows == 0)
                 {
@@ -216,24 +253,38 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     await dataRepository.DeleteApplicationScopesByApplicationIdAsync(
                         Guid.Parse(clientUuid),
                         connection,
-                        transaction);
+                        transaction
+                    );
 
-                    var scopes = scope.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var scopes = scope.Split(
+                        ',',
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    );
                     foreach (var scopeName in scopes)
                     {
                         // Insert scope if not exists
-                        var scopeId = await dataRepository.FindScopeIdByNameAsync(scopeName, connection, transaction);
+                        var scopeId = await dataRepository.FindScopeIdByNameAsync(
+                            scopeName,
+                            connection,
+                            transaction
+                        );
                         if (scopeId == null)
                         {
                             scopeId = Guid.NewGuid();
-                            await dataRepository.InsertScopeAsync(scopeId.Value, scopeName, connection, transaction);
+                            await dataRepository.InsertScopeAsync(
+                                scopeId.Value,
+                                scopeName,
+                                connection,
+                                transaction
+                            );
                         }
                         // Insert into join table
                         await dataRepository.InsertApplicationScopeAsync(
                             Guid.Parse(clientUuid),
                             scopeId.Value,
                             connection,
-                            transaction);
+                            transaction
+                        );
                     }
                 }
 
@@ -247,7 +298,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             }
         }
 
-        public async Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(string clientUuid, string namespacePrefixes)
+        public async Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(
+            string clientUuid,
+            string namespacePrefixes
+        )
         {
             try
             {
@@ -267,13 +321,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     return new ClientUpdateResult.FailureNotFound($"Client {clientUuid} not found");
                 }
 
-                var protocolMappersJson = MergeNamespacePrefixClaim(application.ProtocolMappers, namespacePrefixes);
+                var protocolMappersJson = MergeNamespacePrefixClaim(
+                    application.ProtocolMappers,
+                    namespacePrefixes
+                );
 
                 var rows = await dataRepository.UpdateApplicationProtocolMappersAsync(
                     Guid.Parse(clientUuid),
                     protocolMappersJson,
                     connection,
-                    transaction);
+                    transaction
+                );
 
                 if (rows == 0)
                 {
@@ -335,7 +393,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                 var rows = await dataRepository.UpdateClientSecretAsync(
                     Guid.Parse(clientUuid),
                     hashedNewSecret,
-                    connection);
+                    connection
+                );
 
                 if (rows == 0)
                 {

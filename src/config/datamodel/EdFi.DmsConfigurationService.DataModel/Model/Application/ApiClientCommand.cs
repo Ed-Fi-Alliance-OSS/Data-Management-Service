@@ -9,4 +9,5 @@ public class ApiClientCommand
 {
     public required string ClientId { get; set; }
     public required Guid ClientUuid { get; set; }
+    public long[] DmsInstanceIds { get; set; } = [];
 }

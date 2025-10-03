@@ -33,10 +33,8 @@ namespace EdFi.DataManagementService.Core;
 internal class ApiService : IApiService
 {
     private readonly IApiSchemaProvider _apiSchemaProvider;
-    private readonly IDocumentStoreRepository _documentStoreRepository;
     private readonly IClaimSetProvider _claimSetProvider;
     private readonly IDocumentValidator _documentValidator;
-    private readonly IQueryHandler _queryHandler;
     private readonly IMatchingDocumentUuidsValidator _matchingDocumentUuidsValidator;
     private readonly IEqualityConstraintValidator _equalityConstraintValidator;
     private readonly IDecimalValidator _decimalValidator;
@@ -86,10 +84,8 @@ internal class ApiService : IApiService
 
     public ApiService(
         IApiSchemaProvider apiSchemaProvider,
-        IDocumentStoreRepository documentStoreRepository,
         IClaimSetProvider claimSetProvider,
         IDocumentValidator documentValidator,
-        IQueryHandler queryHandler,
         IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
         IEqualityConstraintValidator equalityConstraintValidator,
         IDecimalValidator decimalValidator,
@@ -104,10 +100,8 @@ internal class ApiService : IApiService
     )
     {
         _apiSchemaProvider = apiSchemaProvider;
-        _documentStoreRepository = documentStoreRepository;
         _claimSetProvider = claimSetProvider;
         _documentValidator = documentValidator;
-        _queryHandler = queryHandler;
         _matchingDocumentUuidsValidator = matchingDocumentUuidsValidator;
         _equalityConstraintValidator = equalityConstraintValidator;
         _decimalValidator = decimalValidator;
@@ -164,6 +158,7 @@ internal class ApiService : IApiService
             new RequestResponseLoggingMiddleware(_logger),
             new CoreExceptionLoggingMiddleware(_logger),
             _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>(),
+            _serviceProvider.GetRequiredService<DmsInstanceSelectionMiddleware>(),
         ];
     }
 
@@ -215,7 +210,7 @@ internal class ApiService : IApiService
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationPathwayMiddleware(_logger),
                 new UpsertHandler(
-                    _documentStoreRepository,
+                    _serviceProvider,
                     _logger,
                     _resiliencePipeline,
                     _apiSchemaProvider,
@@ -244,7 +239,7 @@ internal class ApiService : IApiService
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                 new GetByIdHandler(
-                    _documentStoreRepository,
+                    _serviceProvider,
                     _logger,
                     _resiliencePipeline,
                     _authorizationServiceFactory
@@ -272,7 +267,7 @@ internal class ApiService : IApiService
                 new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
                 new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                new QueryRequestHandler(_queryHandler, _logger, _resiliencePipeline),
+                new QueryRequestHandler(_serviceProvider, _logger, _resiliencePipeline),
             ]
         );
 
@@ -327,7 +322,7 @@ internal class ApiService : IApiService
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationPathwayMiddleware(_logger),
                 new UpdateByIdHandler(
-                    _documentStoreRepository,
+                    _serviceProvider,
                     _logger,
                     _resiliencePipeline,
                     _apiSchemaProvider,
@@ -356,7 +351,7 @@ internal class ApiService : IApiService
                 new ProvideAuthorizationPathwayMiddleware(_logger),
                 new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                 new DeleteByIdHandler(
-                    _documentStoreRepository,
+                    _serviceProvider,
                     _logger,
                     _resiliencePipeline,
                     _authorizationServiceFactory

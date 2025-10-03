@@ -46,6 +46,7 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IApiSchemaProvider>(provider => provider.GetRequiredService<ApiSchemaProvider>())
             .AddSingleton<IUploadApiSchemaService, UploadApiSchemaService>()
             .AddSingleton<IApiService, ApiService>()
+            .AddSingleton<IDataModelInfoProvider, DataModelInfoProvider>()
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
@@ -69,7 +70,15 @@ public static class DmsCoreServiceExtensions
             .AddTransient<RelationshipsWithStudentsOnlyFiltersProvider>()
             .AddTransient<RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider>()
             .AddTransient<NamespaceBasedFiltersProvider>()
-            .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline);
+            .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline)
+            .AddScoped<IRequestConnectionStringProvider, RequestConnectionStringProvider>()
+            .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
+            .AddSingleton<ConfigurationServiceApplicationProvider>()
+            .AddSingleton<ApplicationContextCache>(sp => new ApplicationContextCache(
+                sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
+                TimeSpan.FromMinutes(10)
+            ))
+            .AddScoped<DmsInstanceSelectionMiddleware>();
 
         return services;
 

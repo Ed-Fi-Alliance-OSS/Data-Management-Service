@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.GetResult;
@@ -20,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// Handles a get by id request that has made it through the middleware pipeline steps.
 /// </summary>
 internal class GetByIdHandler(
-    IDocumentStoreRepository _documentStoreRepository,
+    IServiceProvider _serviceProvider,
     ILogger _logger,
     ResiliencePipeline _resiliencePipeline,
     IAuthorizationServiceFactory authorizationServiceFactory
@@ -30,8 +31,11 @@ internal class GetByIdHandler(
     {
         _logger.LogDebug("Entering GetByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
 
+        // Resolve repository from service provider within request scope
+        var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
+
         var getResult = await _resiliencePipeline.ExecuteAsync(async t =>
-            await _documentStoreRepository.GetDocumentById(
+            await documentStoreRepository.GetDocumentById(
                 new GetRequest(
                     DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                     ResourceInfo: requestInfo.ResourceInfo,

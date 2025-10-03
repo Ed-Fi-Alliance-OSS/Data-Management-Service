@@ -26,8 +26,10 @@ public static class WebApplicationExtensions
         {
             if (!string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
             {
-                if (moduleClass.Name == typeof(JwksEndpointModule).Name ||
-                    moduleClass.Name == typeof(OpenIdConfigurationModule).Name)
+                if (
+                    moduleClass.Name == typeof(JwksEndpointModule).Name
+                    || moduleClass.Name == typeof(OpenIdConfigurationModule).Name
+                )
                 {
                     continue;
                 }

@@ -29,15 +29,17 @@ public class JwksEndpointModule : IEndpointModule
 
         var jwks = new
         {
-            keys = publicKeys.Select(pk => new JsonWebKey
-            {
-                Kty = "RSA",
-                Use = "sig",
-                Kid = pk.KeyId,
-                E = Base64UrlEncoder.Encode(pk.RsaParameters.Exponent ?? Array.Empty<byte>()),
-                N = Base64UrlEncoder.Encode(pk.RsaParameters.Modulus ?? Array.Empty<byte>()),
-                Alg = "RS256",
-            }).ToArray()
+            keys = publicKeys
+                .Select(pk => new JsonWebKey
+                {
+                    Kty = "RSA",
+                    Use = "sig",
+                    Kid = pk.KeyId,
+                    E = Base64UrlEncoder.Encode(pk.RsaParameters.Exponent ?? Array.Empty<byte>()),
+                    N = Base64UrlEncoder.Encode(pk.RsaParameters.Modulus ?? Array.Empty<byte>()),
+                    Alg = "RS256",
+                })
+                .ToArray(),
         };
         return Results.Ok(jwks);
     }

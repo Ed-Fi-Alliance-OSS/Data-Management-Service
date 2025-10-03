@@ -7,7 +7,6 @@ using System.Net;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Frontend.AspNetCore;
 using EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 using FakeItEasy;
 using FluentAssertions;
@@ -84,6 +83,9 @@ public class ManagementEndpointModuleTests
                             .Build();
                         collection.AddSingleton<IConfiguration>(configuration);
 
+                        // Add essential mocks to prevent startup crashes
+                        TestMockHelper.AddEssentialMocks(collection);
+
                         // Add mocked dependencies
                         collection.AddTransient((x) => _apiService);
                         collection.AddTransient((x) => _logger);
@@ -124,6 +126,9 @@ public class ManagementEndpointModuleTests
                             .AddInMemoryCollection(configurationValues)
                             .Build();
                         collection.AddSingleton<IConfiguration>(configuration);
+
+                        // Add essential mocks to prevent startup crashes
+                        TestMockHelper.AddEssentialMocks(collection);
 
                         // Add mocked dependencies
                         collection.AddTransient((x) => _apiService);
@@ -309,6 +314,9 @@ public class ManagementEndpointModuleTests
                             .Build();
                         collection.AddSingleton<IConfiguration>(configuration);
 
+                        // Add essential mocks to prevent startup crashes
+                        TestMockHelper.AddEssentialMocks(collection);
+
                         // Add mocked dependencies
                         collection.AddTransient((x) => _apiService);
                         collection.AddTransient((x) => _logger);
@@ -365,6 +373,9 @@ public class ManagementEndpointModuleTests
                             .AddInMemoryCollection(configurationValues)
                             .Build();
                         collection.AddSingleton<IConfiguration>(configuration);
+
+                        // Add essential mocks to prevent startup crashes
+                        TestMockHelper.AddEssentialMocks(collection);
 
                         // Add mocked dependencies
                         collection.AddTransient((x) => _apiService);
