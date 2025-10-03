@@ -12,7 +12,7 @@ Feature: DMS Instance Route Context
                   }
                   """
 
-        @CleanupAfterScenario
+       
         Scenario: 01 Ensure clients can create a new instance route context
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
@@ -38,8 +38,12 @@ Feature: DMS Instance Route Context
                             "contextValue": "2022"
                   }
                   """
+             When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+             Then it should respond with 204
+             When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 204
 
-        @CleanupAfterScenario
+       
         Scenario: 02 Ensure clients can GET dmsInstanceRouteContexts list
             Given a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
@@ -49,7 +53,7 @@ Feature: DMS Instance Route Context
                        "contextValue": "2022"
                   }
                   """
-             When a GET request is made to "/v2/dmsInstanceRouteContexts?offset=1&limit=1"
+             When a GET request is made to "/v2/dmsInstanceRouteContexts?offset=0&limit=1"
              Then it should respond with 200
               And the response body is
                   """
@@ -60,9 +64,13 @@ Feature: DMS Instance Route Context
                           "contextValue": "2022"
                       }]
                   """
+             When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+             Then it should respond with 204
+             When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 204
 
 
-        @CleanupAfterScenario
+       
         Scenario: 03 Verify retrieving a single instance route context by ID
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
@@ -84,8 +92,12 @@ Feature: DMS Instance Route Context
                        "contextValue": "2022"
                   }
                   """
+             When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+             Then it should respond with 204
+             When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 204
 
-        @CleanupAfterScenario
+       
         Scenario: 04 Put an existing instance route context
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
@@ -115,6 +127,10 @@ Feature: DMS Instance Route Context
                        "contextValue": "2023"
                   }
                   """
+             When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+             Then it should respond with 204
+             When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 204
 
         Scenario: 05 Verify deleting a specific instance route context by ID
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
@@ -127,6 +143,8 @@ Feature: DMS Instance Route Context
                   """
              Then it should respond with 201
              When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+             Then it should respond with 204
+             When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
              Then it should respond with 204
 
         Scenario: 06 Verify error handling when trying to get an item that has already been deleted
@@ -143,10 +161,14 @@ Feature: DMS Instance Route Context
              Then it should respond with 204
              When a GET request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
              Then it should respond with 404
+             When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 204
 
         Scenario: 07 Verify error handling when using invalid ID
              When a GET request is made to "/v2/dmsInstanceRouteContexts/invalid"
              Then it should respond with 400
+             When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 204
 
         Scenario: 08 Verify PUT request with mismatched IDs
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
@@ -183,3 +205,7 @@ Feature: DMS Instance Route Context
                         "errors": []
                     }
                   """
+             When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
+             Then it should respond with 204
+             When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 204
