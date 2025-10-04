@@ -136,10 +136,6 @@ void InitializeDatabase(WebApplication app)
             var databaseDeploy = app.Services.GetRequiredService<IDatabaseDeploy>();
 
             var allInstances = dmsInstanceProvider.GetAll();
-            bool isPostgresql = appSettings.QueryHandler.Equals(
-                "postgresql",
-                StringComparison.OrdinalIgnoreCase
-            );
 
             foreach (var instance in allInstances)
             {
@@ -152,7 +148,7 @@ void InitializeDatabase(WebApplication app)
                 string connectionString =
                     connectionStringProvider.GetConnectionString(instance.Id) ?? string.Empty;
 
-                var result = databaseDeploy.DeployDatabase(connectionString, isPostgresql);
+                var result = databaseDeploy.DeployDatabase(connectionString);
 
                 if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
                 {
