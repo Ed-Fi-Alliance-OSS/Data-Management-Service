@@ -13,4 +13,5 @@ CREATE TABLE IF NOT EXISTS dms.StudentSecurableDocument(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS IX_FK_StudentSecurableDocument_Document ON dms.StudentSecurableDocument (StudentSecurableDocumentId, StudentSecurableDocumentPartitionKey);
 CREATE INDEX IF NOT EXISTS IX_StudentSecurableDocument_StudentUniqueId ON dms.StudentSecurableDocument (StudentUniqueId);

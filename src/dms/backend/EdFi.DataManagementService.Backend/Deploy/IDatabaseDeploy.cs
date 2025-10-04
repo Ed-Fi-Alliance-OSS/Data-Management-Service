@@ -10,5 +10,5 @@ namespace EdFi.DataManagementService.Backend.Deploy;
 /// </summary>
 public interface IDatabaseDeploy
 {
-    DatabaseDeployResult DeployDatabase(string connectionString, bool optimizeForQueryHandler);
+    DatabaseDeployResult DeployDatabase(string connectionString);
 }

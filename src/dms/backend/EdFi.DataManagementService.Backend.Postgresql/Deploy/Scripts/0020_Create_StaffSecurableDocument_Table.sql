@@ -13,4 +13,4 @@ CREATE TABLE IF NOT EXISTS dms.StaffSecurableDocument(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS IX_StaffSecurableDocument_StaffSecurableDocumentId ON dms.StaffSecurableDocument (StaffSecurableDocumentId);
+CREATE INDEX IF NOT EXISTS IX_FK_StaffSecurableDocument_Document ON dms.StaffSecurableDocument (StaffSecurableDocumentId, StaffSecurableDocumentPartitionKey);

@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Backend.Mssql.Deploy;
 
 public class DatabaseDeploy : IDatabaseDeploy
 {
-    public DatabaseDeployResult DeployDatabase(string connectionString, bool optimizeForQueryHandler)
+    public DatabaseDeployResult DeployDatabase(string connectionString)
     {
         throw new NotImplementedException();
     }

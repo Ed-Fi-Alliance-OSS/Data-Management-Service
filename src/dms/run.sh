@@ -23,12 +23,7 @@ if [ "$NEED_DATABASE_SETUP" = true ]; then
 
   echo "Installing Data Management Service schema."
 
-  installer_args="-e postgresql -c ${DATABASE_CONNECTION_STRING_ADMIN}"
-  if [ "$AppSettings__QueryHandler" = "postgresql" ]; then
-    installer_args="$installer_args --optimizeForQueryHandler"
-  fi
-
-  dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll $installer_args
+  dotnet Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c ${DATABASE_CONNECTION_STRING_ADMIN}
 
   export NEED_DATABASE_SETUP=false
 

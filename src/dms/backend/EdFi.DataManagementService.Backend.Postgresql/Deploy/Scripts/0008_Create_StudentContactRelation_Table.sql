@@ -20,5 +20,6 @@ CREATE TABLE IF NOT EXISTS dms.StudentContactRelation(
     )
 );
 
+CREATE INDEX IF NOT EXISTS IX_FK_StudentContactAssociation_Document ON dms.StudentContactRelation (StudentContactAssociationDocumentId, StudentContactAssociationDocumentPartitionKey);
 CREATE INDEX IF NOT EXISTS IX_StudentContactRelation_StudentUniqueId ON dms.StudentContactRelation (StudentUniqueId);
 CREATE INDEX IF NOT EXISTS IX_StudentContactRelation_ContactUniqueId ON dms.StudentContactRelation (ContactUniqueId);

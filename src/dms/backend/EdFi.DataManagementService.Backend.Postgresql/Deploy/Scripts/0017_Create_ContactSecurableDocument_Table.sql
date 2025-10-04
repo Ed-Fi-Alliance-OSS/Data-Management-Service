@@ -13,4 +13,5 @@ CREATE TABLE IF NOT EXISTS dms.ContactSecurableDocument(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS IX_ContactSecurableDocument_ContactSecurableDocumentId ON dms.ContactSecurableDocument (ContactUniqueId);
+CREATE INDEX IF NOT EXISTS IX_FK_ContactSecurableDocument_Document ON dms.ContactSecurableDocument (ContactSecurableDocumentId, ContactSecurableDocumentPartitionKey);
+CREATE INDEX IF NOT EXISTS IX_ContactSecurableDocument_ContactUniqueId ON dms.ContactSecurableDocument (ContactUniqueId);
