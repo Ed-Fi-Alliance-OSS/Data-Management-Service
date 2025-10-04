@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS dms.EducationOrganizationHierarchy(
     ParentId BIGINT REFERENCES dms.EducationOrganizationHierarchy(Id) ON DELETE CASCADE,
     DocumentId BIGINT NOT NULL,
     DocumentPartitionKey SMALLINT NOT NULL,
-    UNIQUE (ProjectName, ResourceName, EducationOrganizationId, ParentId)
+    PRIMARY KEY (Id),
+	UNIQUE (ProjectName, ResourceName, EducationOrganizationId, ParentId)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS UX_EducationOrganizationHierarchy_EducationOrganizationId ON dms.EducationOrganizationHierarchy (EducationOrganizationId);
