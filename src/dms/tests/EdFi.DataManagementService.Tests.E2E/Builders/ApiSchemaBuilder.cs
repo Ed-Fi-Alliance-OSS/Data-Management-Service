@@ -238,6 +238,7 @@ public class ApiSchemaBuilder
         var schemaBuilder = new JsonSchemaBuilder().Type(SchemaValueType.Object).AdditionalProperties(false);
 
         var props = new Dictionary<string, JsonSchema>();
+        var requiredProps = new List<string>();
 
         foreach (var (propertyName, type) in properties)
         {
@@ -253,9 +254,15 @@ public class ApiSchemaBuilder
             };
 
             props[propertyName] = propertySchema;
+            requiredProps.Add(propertyName);
         }
 
         schemaBuilder.Properties(props);
+        if (requiredProps.Count > 0)
+        {
+            schemaBuilder.Required(requiredProps);
+        }
+
         return WithJsonSchemaForInsert(schemaBuilder.Build());
     }
 

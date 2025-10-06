@@ -30,7 +30,7 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
     {
         _logger.log.Information("===== BeforeScenario: Universal cache clearing =====");
 
-        const int MaxRetries = 3;
+        const int MaxRetries = 5;
         int attempt = 0;
         Exception? lastException = null;
 
@@ -40,6 +40,9 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
             {
                 attempt++;
                 _logger.log.Information($"Cache clear attempt {attempt}/{MaxRetries}");
+
+                // Wait for services to be ready (especially important in CI environments)
+                await WaitForServicesReady();
 
                 // Ensure we have a system administrator token (use consistent credentials)
                 await EnsureSystemAdministratorToken(
@@ -56,7 +59,7 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
                 await VerifyDmsCacheState();
 
                 // Small delay to ensure cache operations complete
-                await Task.Delay(100);
+                await Task.Delay(500);
 
                 _logger.log.Information("===== Cache clearing completed successfully =====");
                 return; // Success
@@ -68,8 +71,10 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
 
                 if (attempt < MaxRetries)
                 {
-                    // Wait before retry with exponential backoff
-                    int delayMs = 500 * attempt;
+                    // Exponential backoff with jitter for CI environments
+                    int baseDelay = 1000 * attempt;
+                    int jitter = Random.Shared.Next(0, 500);
+                    int delayMs = baseDelay + jitter;
                     _logger.log.Information($"Retrying in {delayMs}ms...");
                     await Task.Delay(delayMs);
                 }
@@ -94,20 +99,23 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
 
         try
         {
+            // Wait for services to be ready
+            await WaitForServicesReady();
+
             // First reset CMS claimsets
             _logger.log.Information("Resetting CMS claimsets...");
             await EnsureSystemAdministratorToken("SystemAdministratorClient", "SystemAdministratorSecret");
             await ReloadCmsClaimsets();
 
             // Wait for CMS to process the reload
-            await Task.Delay(500);
+            await Task.Delay(1000);
 
             // Then reset DMS claimsets
             _logger.log.Information("Resetting DMS claimsets...");
             await ReloadDmsClaimsets();
 
             // Wait for DMS to process the reload
-            await Task.Delay(1000);
+            await Task.Delay(1500);
 
             _logger.log.Information("Claimsets successfully reset in both CMS and DMS");
         }
@@ -116,6 +124,46 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
             _logger.log.Error($"Error resetting claimsets: {ex.Message}");
             throw;
         }
+    }
+
+    /// <summary>
+    /// Waits for services to be ready before attempting operations.
+    /// This is especially important in CI environments where services may take time to start.
+    /// </summary>
+    private async Task WaitForServicesReady()
+    {
+        const int MaxHealthCheckRetries = 10;
+        const int HealthCheckDelayMs = 2000;
+
+        for (int i = 0; i < MaxHealthCheckRetries; i++)
+        {
+            try
+            {
+                _logger.log.Information($"Health check attempt {i + 1}/{MaxHealthCheckRetries}");
+
+                var healthResponse = await _playwrightContext.ApiRequestContext?.GetAsync("health")!;
+
+                if (healthResponse.Status == 200)
+                {
+                    _logger.log.Information("Services are ready");
+                    return;
+                }
+
+                _logger.log.Warning($"Health check returned status {healthResponse.Status}");
+            }
+            catch (Exception ex)
+            {
+                _logger.log.Warning($"Health check failed: {ex.Message}");
+            }
+
+            if (i < MaxHealthCheckRetries - 1)
+            {
+                _logger.log.Information($"Waiting {HealthCheckDelayMs}ms before next health check...");
+                await Task.Delay(HealthCheckDelayMs);
+            }
+        }
+
+        _logger.log.Warning("Services may not be fully ready, but proceeding with test operations");
     }
 
     /// <summary>
@@ -139,10 +187,18 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
     {
         List<KeyValuePair<string, string>> headers = CreateAuthHeaders();
 
+        // Increased timeout for CI environments
+        var options = new APIRequestContextOptions
+        {
+            Data = "{}",
+            Headers = headers,
+            Timeout = 30000, // 30 seconds timeout
+        };
+
         // Call reload-claimsets to clear the cache
         IAPIResponse reloadResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
             "management/reload-claimsets",
-            new() { Data = "{}", Headers = headers }
+            options
         )!;
 
         _logger.log.Information($"DMS reload-claimsets response status: {reloadResponse.Status}");
@@ -171,6 +227,7 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
         using HttpClient httpClient = new()
         {
             BaseAddress = new Uri($"http://localhost:{AppSettings.ConfigServicePort}/"),
+            Timeout = TimeSpan.FromSeconds(30), // Increased timeout for CI
         };
 
         httpClient.DefaultRequestHeaders.Authorization =
@@ -196,9 +253,15 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
     {
         var headers = CreateAuthHeaders();
 
+        var options = new APIRequestContextOptions
+        {
+            Headers = headers,
+            Timeout = 30000, // 30 seconds timeout
+        };
+
         IAPIResponse viewResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
             "management/view-claimsets",
-            new() { Headers = headers }
+            options
         )!;
 
         if (viewResponse.Status == 200)

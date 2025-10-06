@@ -25,7 +25,13 @@ public class PlaywrightContext
         var playwright = await Playwright.CreateAsync();
 
         _requestContext = playwright.APIRequest.NewContextAsync(
-            new APIRequestNewContextOptions { BaseURL = ApiUrl, IgnoreHTTPSErrors = true }
+            new APIRequestNewContextOptions
+            {
+                BaseURL = ApiUrl,
+                IgnoreHTTPSErrors = true,
+                // Increase timeout for CI environments where services may be slower to respond
+                Timeout = 60000, // 60 seconds
+            }
         );
     }
 }
