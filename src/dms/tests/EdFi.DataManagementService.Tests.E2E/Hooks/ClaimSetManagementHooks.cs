@@ -73,7 +73,7 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
                 {
                     // Exponential backoff with jitter for CI environments
                     int baseDelay = 1000 * attempt;
-                    int jitter = new Random().Next(0, 500);
+                    int jitter = Random.Shared.Next(0, 500);
                     int delayMs = baseDelay + jitter;
                     _logger.log.Information($"Retrying in {delayMs}ms...");
                     await Task.Delay(delayMs);
