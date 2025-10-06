@@ -18,7 +18,7 @@ client_id={{sysAdminId}}
 ### Read the token from the response body
 @configToken={{configTokenRequest.response.body.access_token}}
 
-### Create a new vendor
+### Create a new dmsInstance
 # @name createDmsInstance
 POST http://localhost:{{configPort}}/v2/dmsInstances
 Content-Type: application/json

@@ -18,7 +18,7 @@ public class DmsInstanceRouteContextUpdateCommand
     {
         public Validator()
         {
-            RuleFor(x => x.Id).NotEmpty().GreaterThan(0);
+            RuleFor(x => x.Id).GreaterThan(0);
             RuleFor(x => x.InstanceId).NotEmpty().GreaterThan(0);
             RuleFor(x => x.ContextKey).NotEmpty().MaximumLength(256);
             RuleFor(x => x.ContextValue).NotEmpty().MaximumLength(256);
