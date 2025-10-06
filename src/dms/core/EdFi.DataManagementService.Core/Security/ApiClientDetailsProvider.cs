@@ -27,10 +27,12 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
             .ToDictionary(c => c.Type, c => c.Value);
         string claimSetName = claimsDictionary.GetValueOrDefault("scope", string.Empty);
         string tokenId = GetTokenId(claimsDictionary, jwtTokenHashCode);
+        string clientId = claimsDictionary.GetValueOrDefault("client_id", string.Empty);
         string[] namespacePrefixes = GetNamespacePrefixes(claimsDictionary);
         string[] edOrgIds = GetEducationOrganizationIds(claimsDictionary);
         ClientAuthorizations clientAuthorizations = new(
             tokenId,
+            clientId,
             claimSetName,
             edOrgIds.Select(x => new EducationOrganizationId(long.Parse(x))).ToList(),
             namespacePrefixes.Select(x => new NamespacePrefix(x)).ToList()

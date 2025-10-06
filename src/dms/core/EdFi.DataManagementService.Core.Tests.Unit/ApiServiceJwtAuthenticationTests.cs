@@ -6,7 +6,6 @@
 using System.Reflection;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
@@ -42,15 +41,52 @@ public class ApiServiceJwtAuthenticationTests
             NullLogger<JwtAuthenticationMiddleware>.Instance
         );
 
+        // Register DMS Instance Selection services
+        services.AddTransient<DmsInstanceSelectionMiddleware>();
+
+        var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
+        A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
+            .Returns(
+                Task.FromResult<ApplicationContext?>(
+                    new ApplicationContext(
+                        Id: 1,
+                        ApplicationId: 1,
+                        ClientId: "test-client",
+                        ClientUuid: Guid.NewGuid(),
+                        DmsInstanceIds: [1]
+                    )
+                )
+            );
+        services.AddSingleton<IApplicationContextProvider>(fakeApplicationContextProvider);
+
+        var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+        A.CallTo(() => fakeDmsInstanceProvider.GetById(A<long>._))
+            .Returns(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "Test",
+                    InstanceName: "Test Instance",
+                    ConnectionString: "test-connection-string"
+                )
+            );
+        services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
+
+        var fakeRequestConnectionStringProvider = A.Fake<IRequestConnectionStringProvider>();
+        A.CallTo(() => fakeRequestConnectionStringProvider.GetConnectionString())
+            .Returns("test-connection-string");
+        services.AddSingleton<IRequestConnectionStringProvider>(fakeRequestConnectionStringProvider);
+
+        services.AddTransient<ILogger<DmsInstanceSelectionMiddleware>>(_ =>
+            NullLogger<DmsInstanceSelectionMiddleware>.Instance
+        );
+
         var serviceProvider = services.BuildServiceProvider();
 
         // Create an instance of ApiService to test GetCommonInitialSteps
         var apiService = new ApiService(
             A.Fake<IApiSchemaProvider>(),
-            A.Fake<IDocumentStoreRepository>(),
             A.Fake<IClaimSetProvider>(),
             A.Fake<IDocumentValidator>(),
-            A.Fake<IQueryHandler>(),
             A.Fake<IMatchingDocumentUuidsValidator>(),
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
@@ -75,8 +111,9 @@ public class ApiServiceJwtAuthenticationTests
         var steps = (List<IPipelineStep>)getCommonInitialStepsMethod!.Invoke(apiService, null)!;
 
         // Assert
-        steps.Should().HaveCount(3); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + JwtAuthenticationMiddleware
+        steps.Should().HaveCount(4); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + JwtAuthenticationMiddleware + DmsInstanceSelectionMiddleware
         steps[2].Should().BeOfType<JwtAuthenticationMiddleware>();
+        steps[3].Should().BeOfType<DmsInstanceSelectionMiddleware>();
     }
 
     [Test]
@@ -95,10 +132,8 @@ public class ApiServiceJwtAuthenticationTests
         // Create an instance of ApiService to test GetCommonInitialSteps
         var apiService = new ApiService(
             A.Fake<IApiSchemaProvider>(),
-            A.Fake<IDocumentStoreRepository>(),
             A.Fake<IClaimSetProvider>(),
             A.Fake<IDocumentValidator>(),
-            A.Fake<IQueryHandler>(),
             A.Fake<IMatchingDocumentUuidsValidator>(),
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),

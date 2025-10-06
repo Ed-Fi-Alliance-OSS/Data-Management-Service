@@ -33,12 +33,12 @@ public class DiscoveryEndpointModule : IEndpointModule
     private static async Task BuildDiscoveryResponse(
         HttpContext httpContext,
         IVersionProvider versionProvider,
-        IApiService apiService,
+        IDataModelInfoProvider dataModelInfoProvider,
         IOptions<AppSettings> appSettings
     )
     {
-        // Get available data models from the API service
-        IList<IDataModelInfo> dataModelInfos = apiService.GetDataModelInfo();
+        // Get available data models without requiring database access
+        IList<IDataModelInfo> dataModelInfos = dataModelInfoProvider.GetDataModelInfo();
 
         // Extract base URL for constructing metadata URLs
         string rootUrl = httpContext.Request.RootUrl();

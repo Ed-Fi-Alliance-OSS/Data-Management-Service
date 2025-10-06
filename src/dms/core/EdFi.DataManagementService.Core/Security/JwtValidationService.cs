@@ -119,6 +119,7 @@ internal class JwtValidationService(
             claims.Find(c => c.Type == "jti")?.Value
             ?? jwtToken?.RawData?.GetHashCode().ToString()
             ?? string.Empty;
+        string clientId = claims.Find(c => c.Type == "client_id")?.Value ?? string.Empty;
 
         string[] namespacePrefixes =
             claims
@@ -134,6 +135,7 @@ internal class JwtValidationService(
 
         return new ClientAuthorizations(
             TokenId: tokenId,
+            ClientId: clientId,
             ClaimSetName: claimSetName,
             EducationOrganizationIds: educationOrganizationIds,
             NamespacePrefixes: namespacePrefixes.Select(np => new NamespacePrefix(np)).ToList()

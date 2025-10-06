@@ -148,6 +148,7 @@ internal static class No
     /// </summary>
     public static readonly ClientAuthorizations ClientAuthorizations = new(
         TokenId: "",
+        ClientId: "",
         ClaimSetName: "",
         EducationOrganizationIds: [],
         NamespacePrefixes: []

@@ -11,6 +11,10 @@ public record ClientAuthorizations(
     /// </summary>
     string TokenId,
     /// <summary>
+    /// Client identifier from the JWT token
+    /// </summary>
+    string ClientId,
+    /// <summary>
     /// Claim set name associated with vendor application key and secret
     /// </summary>
     string ClaimSetName,

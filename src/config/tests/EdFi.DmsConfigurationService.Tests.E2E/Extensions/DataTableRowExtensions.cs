@@ -17,7 +17,7 @@ internal static class DataTableRowExtensions
         var options = new JsonSerializerOptions
         {
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            WriteIndented = true
+            WriteIndented = true,
         };
 
         var rowDict = new Dictionary<string, object>();
@@ -42,25 +42,13 @@ internal static class DataTableRowExtensions
             return intValue;
         }
 
-        if (
-            decimal.TryParse(
-                value,
-                NumberStyles.Number,
-                CultureInfo.InvariantCulture,
-                out var decimalValue
-            )
-        )
+        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var decimalValue))
         {
             return decimalValue;
         }
 
         if (
-            DateTime.TryParse(
-                value,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out var dateTimeValue
-            )
+            DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var dateTimeValue)
         )
         {
             return dateTimeValue.Date.ToString("yyyy-MM-dd");
@@ -74,7 +62,8 @@ internal static class DataTableRowExtensions
         if (value.StartsWith('[') && value.EndsWith(']') || value.StartsWith('{') && value.EndsWith('}'))
         {
             using var document =
-                JsonDocument.Parse(value) ?? throw new InvalidOperationException($"Error while parsing {value}");
+                JsonDocument.Parse(value)
+                ?? throw new InvalidOperationException($"Error while parsing {value}");
 
             return document.RootElement.Clone();
         }

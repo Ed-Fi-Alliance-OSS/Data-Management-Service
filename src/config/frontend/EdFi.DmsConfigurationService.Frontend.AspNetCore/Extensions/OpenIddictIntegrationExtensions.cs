@@ -20,10 +20,14 @@ public static class OpenIddictIntegrationExtensions
     /// <param name="services">The service collection</param>
     /// <param name="configuration">The configuration</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddEnhancedOpenIddict(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddEnhancedOpenIddict(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
     {
         // Add OpenIddict validation components
-        services.AddOpenIddict()
+        services
+            .AddOpenIddict()
             .AddValidation(options =>
             {
                 // Configure validation to use local authorization server
@@ -33,7 +37,8 @@ public static class OpenIddictIntegrationExtensions
                 options.UseSystemNetHttp();
 
                 // Configure the validation handler to use introspection
-                options.UseIntrospection()
+                options
+                    .UseIntrospection()
                     .SetClientId("validation-client")
                     .SetClientSecret("validation-secret");
 
@@ -67,7 +72,10 @@ public static class OpenIddictIntegrationExtensions
     /// <param name="services">The service collection</param>
     /// <param name="configuration">The configuration</param>
     /// <returns>The service collection for chaining</returns>
-    public static IServiceCollection AddOpenIddictEnhancements(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddOpenIddictEnhancements(
+        this IServiceCollection services,
+        IConfiguration configuration
+    )
     {
         return services.AddEnhancedOpenIddict(configuration);
     }

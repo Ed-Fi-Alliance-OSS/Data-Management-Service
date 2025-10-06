@@ -236,6 +236,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             };
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
             var clientAuthorizations = new ClientAuthorizations(
+                ClientId: "",
                 TokenId: "token123",
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
@@ -316,6 +317,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             };
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
             var clientAuthorizations = new ClientAuthorizations(
+                ClientId: "",
                 TokenId: "token123",
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
@@ -380,6 +382,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             var claims = new List<Claim> { new Claim(ClaimTypes.Name, "test-user") };
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
             var clientAuthorizations = new ClientAuthorizations(
+                ClientId: "",
                 TokenId: "token123",
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
@@ -449,6 +452,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             };
             var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"));
             var clientAuthorizations = new ClientAuthorizations(
+                ClientId: "",
                 TokenId: "token123",
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],

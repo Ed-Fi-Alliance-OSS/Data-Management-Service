@@ -9,7 +9,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using FluentAssertions;
@@ -26,7 +25,6 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class XsdMetaDataModuleTests
 {
     private IApiService? _apiService;
-    private IClaimSetProvider? _claimSetProvider;
     private IContentProvider? _contentProvider;
 
     [SetUp]
@@ -55,9 +53,6 @@ public class XsdMetaDataModuleTests
         A.CallTo(() => _apiService.GetDataModelInfo())
             .Returns(new[] { expectededfiModel, expectedtpdmModel });
 
-        _claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => _claimSetProvider.GetAllClaimSets()).Returns([]);
-
         var files = new List<string> { "file1.xsd", "file2.xsd", "file3.xsd" };
 
         _contentProvider = A.Fake<IContentProvider>();
@@ -74,8 +69,8 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
+                    TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient((x) => _apiService!);
-                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });
@@ -106,9 +101,9 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
+                    TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
-                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });
@@ -136,7 +131,7 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((x) => _claimSetProvider!);
+                    TestMockHelper.AddEssentialMocks(collection);
                 }
             );
         });
@@ -159,9 +154,9 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
+                    TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
-                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });
@@ -196,9 +191,9 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
+                    TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
-                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });
@@ -226,9 +221,9 @@ public class XsdMetaDataModuleTests
             builder.ConfigureServices(
                 (collection) =>
                 {
+                    TestMockHelper.AddEssentialMocks(collection);
                     collection.AddTransient((x) => _apiService!);
                     collection.AddTransient((x) => _contentProvider!);
-                    collection.AddTransient((x) => _claimSetProvider!);
                 }
             );
         });

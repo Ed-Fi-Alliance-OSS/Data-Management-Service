@@ -17,7 +17,6 @@ public record IdentityProviderError(string FailureMessage)
     /// </summary>
     public record NotFound(string FailureMessage) : IdentityProviderError(FailureMessage);
 
-
     /// <summary>
     /// Bad credentials
     /// </summary>

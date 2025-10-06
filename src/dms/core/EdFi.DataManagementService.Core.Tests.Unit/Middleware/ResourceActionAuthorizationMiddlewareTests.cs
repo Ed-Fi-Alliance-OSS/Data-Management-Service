@@ -102,7 +102,7 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
@@ -143,7 +143,7 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "NO-MATCH", [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "NO-MATCH", [], []),
                 PathComponents = new PathComponents(
                     new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
@@ -189,7 +189,7 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("stateDescriptor"),
@@ -235,7 +235,7 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
@@ -275,7 +275,7 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
@@ -345,7 +345,7 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("stateDescriptor"),
@@ -392,7 +392,7 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),
@@ -433,7 +433,7 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "SIS-Vendor", [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], []),
                 PathComponents = new PathComponents(
                     new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     new EndpointName("schools"),

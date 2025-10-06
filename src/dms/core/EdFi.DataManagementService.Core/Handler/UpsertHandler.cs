@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Security;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
@@ -22,7 +23,7 @@ namespace EdFi.DataManagementService.Core.Handler;
 /// Handles an upsert request that has made it through the middleware pipeline steps.
 /// </summary>
 internal class UpsertHandler(
-    IDocumentStoreRepository _documentStoreRepository,
+    IServiceProvider _serviceProvider,
     ILogger _logger,
     ResiliencePipeline _resiliencePipeline,
     IApiSchemaProvider _apiSchemaProvider,
@@ -33,6 +34,9 @@ internal class UpsertHandler(
     {
         _logger.LogDebug("Entering UpsertHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
 
+        // Resolve repository from service provider within request scope
+        var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
+
         var upsertResult = await _resiliencePipeline.ExecuteAsync(async t =>
         {
             // A document uuid that will be assigned if this is a new document
@@ -40,7 +44,7 @@ internal class UpsertHandler(
 
             var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
-            return await _documentStoreRepository.UpsertDocument(
+            return await documentStoreRepository.UpsertDocument(
                 new UpsertRequest(
                     ResourceInfo: requestInfo.ResourceInfo,
                     DocumentInfo: requestInfo.DocumentInfo,

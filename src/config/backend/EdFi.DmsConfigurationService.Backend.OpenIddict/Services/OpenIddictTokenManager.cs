@@ -25,7 +25,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         IOptions<IdentityOptions> identityOptions,
         ILogger<OpenIddictTokenManager> logger,
         IClientSecretHasher secretHasher,
-        IOpenIddictTokenRepository tokenRepository) : ITokenManager, ITokenRevocationManager
+        IOpenIddictTokenRepository tokenRepository
+    ) : ITokenManager, ITokenRevocationManager
     {
         private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
         private readonly ILogger<OpenIddictTokenManager> _logger = logger;
@@ -49,13 +50,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// Static helper to validate a JWT token and check its revocation status using a service provider.
         /// This allows easy integration into authentication middleware or endpoint handlers.
         /// </summary>
-        public static async Task<bool> ValidateTokenWithRevocationAsync(string token, IServiceProvider serviceProvider)
+        public static async Task<bool> ValidateTokenWithRevocationAsync(
+            string token,
+            IServiceProvider serviceProvider
+        )
         {
             var tokenManager = serviceProvider.GetService<OpenIddictTokenManager>();
             if (tokenManager == null)
             {
                 throw new InvalidOperationException(
-                    "OpenIddictTokenManager is not registered in the service provider.");
+                    "OpenIddictTokenManager is not registered in the service provider."
+                );
             }
             return await tokenManager.ValidateTokenAsync(token);
         }
@@ -106,7 +111,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     cert = new X509Certificate2(certPath, certPassword);
                 }
                 var signingKey = new X509SecurityKey(cert);
-                return await Task.FromResult(new SigningKeyResult { SecurityKey = signingKey, KeyId = cert.Thumbprint });
+                return await Task.FromResult(
+                    new SigningKeyResult { SecurityKey = signingKey, KeyId = cert.Thumbprint }
+                );
             }
             else
             {
@@ -115,13 +122,20 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 var certPassword = _identityOptions.Value.CertificatePassword;
                 if (string.IsNullOrEmpty(certPath))
                 {
-                    throw new InvalidOperationException("CertificatePath must be set when not using development certificates.");
+                    throw new InvalidOperationException(
+                        "CertificatePath must be set when not using development certificates."
+                    );
                 }
                 var cert = string.IsNullOrEmpty(certPassword)
                     ? new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath)
-                    : new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath, certPassword);
+                    : new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                        certPath,
+                        certPassword
+                    );
                 var signingKey = new X509SecurityKey(cert);
-                return await Task.FromResult(new SigningKeyResult { SecurityKey = signingKey, KeyId = cert.Thumbprint });
+                return await Task.FromResult(
+                    new SigningKeyResult { SecurityKey = signingKey, KeyId = cert.Thumbprint }
+                );
             }
         }
 
@@ -135,13 +149,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 var encryptionKey = _identityOptions.Value.EncryptionKey;
                 if (string.IsNullOrEmpty(encryptionKey))
                 {
-                    throw new InvalidOperationException("IdentitySettings:EncryptionKey must be set when using database keys.");
+                    throw new InvalidOperationException(
+                        "IdentitySettings:EncryptionKey must be set when using database keys."
+                    );
                 }
 
                 var keyRecord = await _tokenRepository.GetActivePrivateKeyAsync(encryptionKey);
                 if (keyRecord == null)
                 {
-                    throw new InvalidOperationException("No active private key or key id found in OpenIddictKey table.");
+                    throw new InvalidOperationException(
+                        "No active private key or key id found in OpenIddictKey table."
+                    );
                 }
 
                 var signingKey = JwtSigningKeyHelper.GenerateSigningKey(keyRecord.PrivateKey);
@@ -150,12 +168,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to load private key from database");
-                throw new InvalidOperationException("Failed to load private key from database. Please check the database connection, OpenIddictKey table, and encryption key.", ex);
+                throw new InvalidOperationException(
+                    "Failed to load private key from database. Please check the database connection, OpenIddictKey table, and encryption key.",
+                    ex
+                );
             }
         }
 
         public async Task<TokenResult> GetAccessTokenAsync(
-            IEnumerable<KeyValuePair<string, string>> credentials)
+            IEnumerable<KeyValuePair<string, string>> credentials
+        )
         {
             try
             {
@@ -191,14 +213,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 if (applicationInfo == null)
                 {
                     return new TokenResult.FailureIdentityProvider(
-                            new IdentityProviderError.InvalidClient("Invalid client or Invalid client credentials"));
+                        new IdentityProviderError.InvalidClient(
+                            "Invalid client or Invalid client credentials"
+                        )
+                    );
                 }
                 // Verify the client secret using the hasher
-                var isValidSecret = await _secretHasher.VerifySecretAsync(clientSecret, applicationInfo.ClientSecret ?? string.Empty);
+                var isValidSecret = await _secretHasher.VerifySecretAsync(
+                    clientSecret,
+                    applicationInfo.ClientSecret ?? string.Empty
+                );
                 if (!isValidSecret)
                 {
                     return new TokenResult.FailureIdentityProvider(
-                           new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials"));
+                        new IdentityProviderError.Unauthorized("Invalid client or Invalid client credentials")
+                    );
                 }
 
                 _logger.LogDebug(
@@ -211,11 +240,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     : string.Join(",", applicationInfo.Permissions ?? new string[0]);
 
                 // Generate JWT token
-                var token = await GenerateJwtTokenAsync(
-                    applicationInfo,
-                    clientId,
-                    listOfScopes
-                );
+                var token = await GenerateJwtTokenAsync(applicationInfo, clientId, listOfScopes);
                 int tokenExpirationMinutes = _identityOptions.Value.TokenExpirationMinutes;
                 // Calculate expires_in (seconds)
                 var expiresIn = tokenExpirationMinutes * 60;
@@ -226,7 +251,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     expires_in = expiresIn,
                     refresh_expires_in = 0,
                     token_type = "Bearer",
-                    scope = listOfScopes
+                    scope = listOfScopes,
                 };
 
                 // Return as JSON string
@@ -243,7 +268,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         private async Task<string> GenerateJwtTokenAsync(
             ApplicationInfo applicationInfo,
             string clientId,
-            string scope)
+            string scope
+        )
         {
             var tokenId = Guid.NewGuid();
             var now = DateTimeOffset.UtcNow;
@@ -274,7 +300,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             );
 
             // Store token in database
-            await _tokenRepository.StoreTokenAsync(tokenId, applicationInfo.Id, clientId, tokenString, expiration);
+            await _tokenRepository.StoreTokenAsync(
+                tokenId,
+                applicationInfo.Id,
+                clientId,
+                tokenString,
+                expiration
+            );
 
             return tokenString;
         }
@@ -289,12 +321,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 string audience = _identityOptions.Value.Audience;
                 string issuer = _identityOptions.Value.Authority;
                 var publicKeys = await GetPublicKeysAsync();
-                var signingKeys = publicKeys
-                    .ToDictionary(
-                        k => k.KeyId,
-                        k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
-                    );
-                if (!JwtTokenValidator.ValidateToken(
+                var signingKeys = publicKeys.ToDictionary(
+                    k => k.KeyId,
+                    k => (SecurityKey)new RsaSecurityKey(k.RsaParameters)
+                );
+                if (
+                    !JwtTokenValidator.ValidateToken(
                         rawToken,
                         signingKeys,
                         issuer,
@@ -367,7 +399,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// <summary>
         /// Gets public keys from X.509 certificates (existing implementation)
         /// </summary>
-        private async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysFromCertificatesAsync()
+        private async Task<
+            IEnumerable<(RSAParameters RsaParameters, string KeyId)>
+        > GetPublicKeysFromCertificatesAsync()
         {
             if (_identityOptions.Value.UseDevelopmentCertificates)
             {
@@ -377,8 +411,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 if (!System.IO.File.Exists(certPath))
                 {
                     using var rsa = RSA.Create(2048);
-                    var certRequest = new CertificateRequest("CN=DevCert", rsa, System.Security.Cryptography.HashAlgorithmName.SHA256, System.Security.Cryptography.RSASignaturePadding.Pkcs1);
-                    cert = certRequest.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+                    var certRequest = new CertificateRequest(
+                        "CN=DevCert",
+                        rsa,
+                        System.Security.Cryptography.HashAlgorithmName.SHA256,
+                        System.Security.Cryptography.RSASignaturePadding.Pkcs1
+                    );
+                    cert = certRequest.CreateSelfSigned(
+                        DateTimeOffset.UtcNow.AddDays(-1),
+                        DateTimeOffset.UtcNow.AddYears(1)
+                    );
                     var bytes = cert.Export(X509ContentType.Pfx, certPassword);
                     await System.IO.File.WriteAllBytesAsync(certPath, bytes);
                 }
@@ -395,11 +437,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 var certPassword = _identityOptions.Value.CertificatePassword;
                 if (string.IsNullOrEmpty(certPath))
                 {
-                    throw new InvalidOperationException("CertificatePath must be set when not using development certificates.");
+                    throw new InvalidOperationException(
+                        "CertificatePath must be set when not using development certificates."
+                    );
                 }
                 var cert = string.IsNullOrEmpty(certPassword)
                     ? new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath)
-                    : new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath, certPassword);
+                    : new System.Security.Cryptography.X509Certificates.X509Certificate2(
+                        certPath,
+                        certPassword
+                    );
                 using var pubRsa = cert.GetRSAPublicKey();
                 return await Task.FromResult(new[] { (pubRsa!.ExportParameters(false), cert.Thumbprint) });
             }
@@ -408,7 +455,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// <summary>
         /// Gets public keys from database (OpenIddictKey table)
         /// </summary>
-        private async Task<IEnumerable<(RSAParameters RsaParameters, string KeyId)>> GetPublicKeysFromDatabaseAsync()
+        private async Task<
+            IEnumerable<(RSAParameters RsaParameters, string KeyId)>
+        > GetPublicKeysFromDatabaseAsync()
         {
             var keys = new List<(RSAParameters, string)>();
             try

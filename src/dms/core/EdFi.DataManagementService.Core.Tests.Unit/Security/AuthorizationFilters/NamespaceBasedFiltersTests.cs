@@ -27,6 +27,7 @@ public class NamespaceBasedFiltersTests
                 new ClientAuthorizations(
                     "",
                     "",
+                    "",
                     [],
                     [new NamespacePrefix("uri://namespace1"), new NamespacePrefix("uri://namespace2")]
                 )
@@ -53,7 +54,7 @@ public class NamespaceBasedFiltersTests
         {
             // Arrange
             var filters = new NamespaceBasedFiltersProvider();
-            var clientAuthorizations = new ClientAuthorizations("", "", [], []);
+            var clientAuthorizations = new ClientAuthorizations("", "", "", [], []);
 
             // Act & Assert
             var exception = Assert.Throws<AuthorizationException>(() =>

@@ -54,6 +54,21 @@ Authorization: bearer {{configToken}}
 ### Read the newly-created Vendor ID from the response body
 @vendorId={{createVendor.response.body.id}}
 
+### Create a DMS instance
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "Test DMS Instance",
+    "connectionString": "Server=localhost;Database=TestDb;"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
 ### Create a new application for working with education organizations
 # @name edOrgApplication
 POST http://localhost:{{configPort}}/v2/applications
@@ -64,7 +79,8 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "For ed orgs",
     "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
-    "educationOrganizationIds": [ 255, 255901 ]
+    "educationOrganizationIds": [ 255, 255901 ],
+    "dmsInstanceId": {{dmsInstanceId}}
 }
 
 ###

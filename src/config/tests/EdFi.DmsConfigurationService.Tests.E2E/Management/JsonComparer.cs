@@ -74,7 +74,10 @@ public class JsonComparer
             var expectedProperties = expected.EnumerateObject().OrderBy(p => p.Name);
             var responseProperties = response.EnumerateObject().OrderBy(p => p.Name);
 
-            var result = expectedProperties.SequenceEqual(responseProperties, PropertyEqualityComparer.Compare);
+            var result = expectedProperties.SequenceEqual(
+                responseProperties,
+                PropertyEqualityComparer.Compare
+            );
             return result;
         }
 
@@ -93,7 +96,8 @@ public class JsonComparer
 
             public bool Equals(JsonProperty expected, JsonProperty response)
             {
-                var result = expected.Name == response.Name && Instance.Equals(expected.Value, response.Value);
+                var result =
+                    expected.Name == response.Name && Instance.Equals(expected.Value, response.Value);
                 return result;
             }
 

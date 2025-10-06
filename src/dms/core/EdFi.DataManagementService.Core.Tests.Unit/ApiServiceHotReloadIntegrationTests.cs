@@ -7,7 +7,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
-using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
@@ -74,11 +73,48 @@ public class ApiServiceHotReloadIntegrationTests
             NullLogger<JwtAuthenticationMiddleware>.Instance
         );
 
+        // Register DMS Instance Selection services
+        services.AddTransient<DmsInstanceSelectionMiddleware>();
+
+        var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
+        A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
+            .Returns(
+                Task.FromResult<ApplicationContext?>(
+                    new ApplicationContext(
+                        Id: 1,
+                        ApplicationId: 1,
+                        ClientId: "test-client",
+                        ClientUuid: Guid.NewGuid(),
+                        DmsInstanceIds: [1]
+                    )
+                )
+            );
+        services.AddSingleton<IApplicationContextProvider>(fakeApplicationContextProvider);
+
+        var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+        A.CallTo(() => fakeDmsInstanceProvider.GetById(A<long>._))
+            .Returns(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "Test",
+                    InstanceName: "Test Instance",
+                    ConnectionString: "test-connection-string"
+                )
+            );
+        services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
+
+        var fakeRequestConnectionStringProvider = A.Fake<IRequestConnectionStringProvider>();
+        A.CallTo(() => fakeRequestConnectionStringProvider.GetConnectionString())
+            .Returns("test-connection-string");
+        services.AddSingleton<IRequestConnectionStringProvider>(fakeRequestConnectionStringProvider);
+
+        services.AddTransient<ILogger<DmsInstanceSelectionMiddleware>>(_ =>
+            NullLogger<DmsInstanceSelectionMiddleware>.Instance
+        );
+
         var serviceProvider = services.BuildServiceProvider();
-        var documentStoreRepository = A.Fake<IDocumentStoreRepository>();
         var claimSetProvider = new NoClaimsClaimSetProvider(NullLogger.Instance);
         var documentValidator = new DocumentValidator();
-        var queryHandler = A.Fake<IQueryHandler>();
         var matchingDocumentUuidsValidator = new MatchingDocumentUuidsValidator();
         var equalityConstraintValidator = new EqualityConstraintValidator();
         var decimalValidator = new DecimalValidator();
@@ -89,10 +125,8 @@ public class ApiServiceHotReloadIntegrationTests
 
         _apiService = new ApiService(
             _apiSchemaFileLoader,
-            documentStoreRepository,
             claimSetProvider,
             documentValidator,
-            queryHandler,
             matchingDocumentUuidsValidator,
             equalityConstraintValidator,
             decimalValidator,
@@ -340,10 +374,8 @@ public class ApiServiceHotReloadIntegrationTests
 
             var apiServiceWithDisabledEndpoints = new ApiService(
                 _apiSchemaFileLoader,
-                A.Fake<IDocumentStoreRepository>(),
                 new NoClaimsClaimSetProvider(NullLogger.Instance),
                 new DocumentValidator(),
-                A.Fake<IQueryHandler>(),
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 new DecimalValidator(),

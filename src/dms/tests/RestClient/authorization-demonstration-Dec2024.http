@@ -66,6 +66,21 @@ Authorization: bearer {{configToken}}
 ###
 @vendorId={{getVendor.response.body.id}}
 
+### Create a DMS instance
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "Test DMS Instance",
+    "connectionString": "Server=localhost;Database=TestDb;"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
 ### Create a new application
 # @name createApplication
 POST http://localhost:{{configPort}}/v2/applications
@@ -75,7 +90,8 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
-    "claimSetName": "SIS-Vendor"
+    "claimSetName": "SIS-Vendor",
+    "dmsInstanceId": {{dmsInstanceId}}
 }
 
 ###
@@ -104,7 +120,8 @@ Authorization: bearer {{configToken}}
 {
     "vendorId": {{vendorId}},
     "applicationName": "Delete me",
-    "claimSetName": "Delete-me"
+    "claimSetName": "Delete-me",
+    "dmsInstanceId": {{dmsInstanceId}}
 }
 
 ###

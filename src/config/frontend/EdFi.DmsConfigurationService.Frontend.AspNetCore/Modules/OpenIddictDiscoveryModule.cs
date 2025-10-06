@@ -23,13 +23,15 @@ public class OpenIddictDiscoveryModule : IEndpointModule
         var settings = identitySettings.Value;
         var enableOpenIddictServer = false;
 
-        return Results.Json(new
-        {
-            OpenIddictServerEnabled = enableOpenIddictServer,
-            Authority = settings.Authority,
-            DiscoveryEndpoint = $"{settings.Authority}.well-known/openid-configuration",
-            JwksEndpoint = $"{settings.Authority}.well-known/jwks",
-            TokenEndpoint = $"{settings.Authority}connect/token"
-        });
+        return Results.Json(
+            new
+            {
+                OpenIddictServerEnabled = enableOpenIddictServer,
+                Authority = settings.Authority,
+                DiscoveryEndpoint = $"{settings.Authority}.well-known/openid-configuration",
+                JwksEndpoint = $"{settings.Authority}.well-known/jwks",
+                TokenEndpoint = $"{settings.Authority}connect/token",
+            }
+        );
     }
 }

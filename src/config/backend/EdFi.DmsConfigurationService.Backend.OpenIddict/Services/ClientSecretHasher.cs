@@ -13,9 +13,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 /// Implementation of client secret hashing using a custom password hasher.
 /// Uses dependency injection to allow for flexible password hashing implementations.
 /// </summary>
-public class ClientSecretHasher(
-    ILogger<ClientSecretHasher> logger,
-    IOptions<IdentityOptions> identityOptions) : IClientSecretHasher
+public class ClientSecretHasher(ILogger<ClientSecretHasher> logger, IOptions<IdentityOptions> identityOptions)
+    : IClientSecretHasher
 {
     private readonly ILogger<ClientSecretHasher> _logger = logger;
     private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
@@ -50,10 +49,10 @@ public class ClientSecretHasher(
         using var memoryStream = new MemoryStream();
         using var writer = new BinaryWriter(memoryStream);
 
-        writer.Write(Version);              // 1 byte
-        writer.Write(SaltLength);           // 4 bytes
-        writer.Write(salt);                 // 16 bytes
-        writer.Write(subkey);               // 32 bytes
+        writer.Write(Version); // 1 byte
+        writer.Write(SaltLength); // 4 bytes
+        writer.Write(salt); // 16 bytes
+        writer.Write(subkey); // 32 bytes
 
         writer.Flush();
         byte[] finalBytes = memoryStream.ToArray();

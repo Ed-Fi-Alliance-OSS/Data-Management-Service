@@ -20,12 +20,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             var jwtSettings = new JwtSettings();
             if (configuration != null)
             {
-                jwtSettings.Audience = configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
-                jwtSettings.Issuer = configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
+                jwtSettings.Audience =
+                    configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
+                jwtSettings.Issuer =
+                    configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
             }
             return jwtSettings;
         }
-
 
         public static string GenerateJwtToken(
             Guid tokenId,
@@ -64,7 +65,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 new Claim("scope", scope),
                 // Add audience and issuer as claims if present
                 new Claim(JwtRegisteredClaimNames.Aud, audience),
-                new Claim(JwtRegisteredClaimNames.Iss, issuer)
+                new Claim(JwtRegisteredClaimNames.Iss, issuer),
             };
             if (!string.IsNullOrEmpty(protocolMappersJson))
             {
@@ -110,26 +111,36 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             // Create a JwtPayload directly to handle arrays properly
             var payload = new JwtPayload();
 
-            // Add all standard claims
-            foreach (var claim in claims)
+            // Group claims by type to handle duplicates
+            var claimGroups = claims.GroupBy(c => c.Type);
+
+            foreach (var group in claimGroups)
             {
-                payload.Add(claim.Type, claim.Value);
+                var values = group.Select(c => c.Value).ToList();
+
+                // If there's only one value, add it directly; otherwise add as an array
+                if (values.Count == 1)
+                {
+                    payload.Add(group.Key, values[0]);
+                }
+                else
+                {
+                    payload.Add(group.Key, values.ToArray());
+                }
             }
 
             // Add roles as an actual array if present
             if (roles != null && roles.Length > 0)
             {
-                var rolesClaim = configuration?.GetValue<string>("Authentication:RoleClaimAttribute")
+                var rolesClaim =
+                    configuration?.GetValue<string>("Authentication:RoleClaimAttribute")
                     ?? "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
                 payload.Add(rolesClaim, roles);
             }
 
             // Create the JWT with header and payload, including kid
             var header = new JwtHeader(signingCredentials);
-            var token = new JwtSecurityToken(
-                header,
-                payload
-            );
+            var token = new JwtSecurityToken(header, payload);
 
             var tokenHandler = new JwtSecurityTokenHandler();
             return tokenHandler.WriteToken(token);

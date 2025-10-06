@@ -4,12 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Deploy;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
+using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 // Disable reload to work around .NET file watcher bug on Linux. See:
 // https://github.com/dotnet/runtime/issues/62869
@@ -79,6 +81,8 @@ app.UseMiddleware<LoggingMiddleware>();
 
 if (!ReportInvalidConfiguration(app))
 {
+    // Initialize DMS instances first to ensure connection strings are available
+    await InitializeDmsInstances(app);
     InitializeDatabase(app);
     await RetrieveAndCacheClaimSets(app);
 }
@@ -108,7 +112,6 @@ bool ReportInvalidConfiguration(WebApplication app)
     {
         // Accessing IOptions<T> forces validation
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
-        _ = app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
     }
     catch (OptionsValidationException ex)
@@ -125,20 +128,54 @@ void InitializeDatabase(WebApplication app)
 
     if (appSettings.DeployDatabaseOnStartup)
     {
-        app.Logger.LogInformation("Running initial database deploy");
+        app.Logger.LogInformation("Running initial database deploy on all DMS instances");
         try
         {
-            var result = app
-                .Services.GetRequiredService<IDatabaseDeploy>()
-                .DeployDatabase(
-                    app.Services.GetRequiredService<IOptions<ConnectionStrings>>().Value.DatabaseConnection,
-                    appSettings.QueryHandler.Equals("postgresql", StringComparison.OrdinalIgnoreCase)
-                );
-            if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
+            var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
+            var connectionStringProvider = app.Services.GetRequiredService<IConnectionStringProvider>();
+            var databaseDeploy = app.Services.GetRequiredService<IDatabaseDeploy>();
+
+            var allInstances = dmsInstanceProvider.GetAll();
+            bool isPostgresql = appSettings.QueryHandler.Equals(
+                "postgresql",
+                StringComparison.OrdinalIgnoreCase
+            );
+
+            foreach (var instance in allInstances)
             {
-                app.Logger.LogCritical(failure.Error, "Database Deploy Failure");
-                Environment.Exit(-1);
+                app.Logger.LogInformation(
+                    "Deploying database schema to DMS instance '{InstanceName}' (ID: {InstanceId})",
+                    instance.InstanceName,
+                    instance.Id
+                );
+
+                string connectionString =
+                    connectionStringProvider.GetConnectionString(instance.Id) ?? string.Empty;
+
+                var result = databaseDeploy.DeployDatabase(connectionString, isPostgresql);
+
+                if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
+                {
+                    app.Logger.LogCritical(
+                        failure.Error,
+                        "Database Deploy Failure for instance '{InstanceName}' (ID: {InstanceId})",
+                        instance.InstanceName,
+                        instance.Id
+                    );
+                    Environment.Exit(-1);
+                }
+
+                app.Logger.LogInformation(
+                    "Successfully deployed database schema to DMS instance '{InstanceName}' (ID: {InstanceId})",
+                    instance.InstanceName,
+                    instance.Id
+                );
             }
+
+            app.Logger.LogInformation(
+                "Database deploy completed for all {InstanceCount} DMS instances",
+                allInstances.Count
+            );
         }
         catch (Exception ex)
         {
@@ -162,6 +199,48 @@ async Task RetrieveAndCacheClaimSets(WebApplication app)
         // of loading claims set list from Configuration service without
         // impacting the application's availability.
         app.Logger.LogCritical(ex, "Retrieving and caching required claim sets failure");
+    }
+}
+
+async Task InitializeDmsInstances(WebApplication app)
+{
+    app.Logger.LogInformation("Loading DMS instances from Configuration Service");
+    try
+    {
+        var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
+
+        IList<DmsInstance> instances = await dmsInstanceProvider.LoadDmsInstances();
+
+        if (instances.Count == 0)
+        {
+            app.Logger.LogCritical(
+                "No DMS instances were loaded from Configuration Service. DMS cannot start without instance configuration."
+            );
+            Environment.Exit(-1);
+        }
+
+        app.Logger.LogInformation("Successfully loaded {InstanceCount} DMS instances", instances.Count);
+
+        // Log instance details for debugging
+        foreach (var instance in instances)
+        {
+            var hasConnectionString = !string.IsNullOrWhiteSpace(instance.ConnectionString);
+            app.Logger.LogInformation(
+                "DMS Instance: ID={InstanceId}, Name='{InstanceName}', Type='{InstanceType}', HasConnectionString={HasConnectionString}",
+                instance.Id,
+                instance.InstanceName,
+                instance.InstanceType,
+                hasConnectionString
+            );
+        }
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogCritical(
+            ex,
+            "Critical failure: Unable to load DMS instances from Configuration Service. DMS cannot start without proper instance configuration."
+        );
+        Environment.Exit(-1);
     }
 }
 

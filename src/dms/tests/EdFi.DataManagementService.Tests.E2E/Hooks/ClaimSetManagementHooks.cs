@@ -30,38 +30,57 @@ public class ClaimSetManagementHooks(PlaywrightContext playwrightContext, TestLo
     {
         _logger.log.Information("===== BeforeScenario: Universal cache clearing =====");
 
-        try
+        const int MaxRetries = 3;
+        int attempt = 0;
+        Exception? lastException = null;
+
+        while (attempt < MaxRetries)
         {
-            // Ensure we have a system administrator token
-            await EnsureSystemAdministratorToken(
-                "sys-admin-cache-clear-" + Guid.NewGuid().ToString(),
-                "CacheClear#2024!"
-            );
+            try
+            {
+                attempt++;
+                _logger.log.Information($"Cache clear attempt {attempt}/{MaxRetries}");
 
-            // Clear DMS claimsets cache
-            _logger.log.Information("Clearing DMS claimsets cache...");
-            await ReloadDmsClaimsets();
+                // Ensure we have a system administrator token (use consistent credentials)
+                await EnsureSystemAdministratorToken(
+                    "SystemAdministratorClient",
+                    "SystemAdministratorSecret"
+                );
 
-            // Verify cache state by calling view-claimsets
-            _logger.log.Information("Verifying cache state...");
-            await VerifyDmsCacheState();
+                // Clear DMS claimsets cache
+                _logger.log.Information("Clearing DMS claimsets cache...");
+                await ReloadDmsClaimsets();
 
-            // Small delay to ensure cache operations complete
-            await Task.Delay(100);
+                // Verify cache state by calling view-claimsets
+                _logger.log.Information("Verifying cache state...");
+                await VerifyDmsCacheState();
 
-            _logger.log.Information("===== Cache clearing completed successfully =====");
+                // Small delay to ensure cache operations complete
+                await Task.Delay(100);
+
+                _logger.log.Information("===== Cache clearing completed successfully =====");
+                return; // Success
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                _logger.log.Warning($"Cache clearing attempt {attempt} failed: {ex.Message}");
+
+                if (attempt < MaxRetries)
+                {
+                    // Wait before retry with exponential backoff
+                    int delayMs = 500 * attempt;
+                    _logger.log.Information($"Retrying in {delayMs}ms...");
+                    await Task.Delay(delayMs);
+                }
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.log.Error($"Critical error during cache clearing: {ex.Message}");
-            _logger.log.Error($"Stack trace: {ex.StackTrace}");
 
-            // Re-throw to fail the test - we cannot proceed with potentially polluted cache
-            throw new InvalidOperationException(
-                "Failed to clear cache before scenario. Test isolation cannot be guaranteed.",
-                ex
-            );
-        }
+        // Re-throw to fail the test - we cannot proceed with potentially polluted cache
+        throw new InvalidOperationException(
+            $"Failed to clear cache before scenario after {MaxRetries} attempts. Test isolation cannot be guaranteed.",
+            lastException
+        );
     }
 
     /// <summary>

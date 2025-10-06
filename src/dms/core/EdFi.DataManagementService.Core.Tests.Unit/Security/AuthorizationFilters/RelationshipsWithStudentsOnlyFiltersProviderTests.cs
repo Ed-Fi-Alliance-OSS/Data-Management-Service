@@ -27,6 +27,7 @@ public class RelationshipsWithStudentsOnlyFiltersProviderTests
                 new ClientAuthorizations(
                     "",
                     "",
+                    "",
                     [new EducationOrganizationId(255901), new EducationOrganizationId(255902)],
                     []
                 )
@@ -61,7 +62,7 @@ public class RelationshipsWithStudentsOnlyFiltersProviderTests
         {
             // Arrange
             var filtersProvider = new RelationshipsWithStudentsOnlyFiltersProvider();
-            var clientAuthorizations = new ClientAuthorizations("", "", [], []);
+            var clientAuthorizations = new ClientAuthorizations("", "", "", [], []);
 
             // Act & Assert
             var exception = Assert.Throws<AuthorizationException>(() =>

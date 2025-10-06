@@ -265,7 +265,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             try
             {
-                string sql = """
+                // First get applications with edOrgs
+                string sqlEdOrgs = """
                         SELECT
                             v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName,
                             eo.EducationOrganizationId
@@ -279,7 +280,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 Dictionary<long, ApplicationResponse> response = [];
 
                 await connection.QueryAsync<ApplicationResponse, long?, ApplicationResponse>(
-                    sql,
+                    sqlEdOrgs,
                     (application, educationOrganizationId) =>
                     {
                         vendorExists = application.VendorId == vendorId;
@@ -289,21 +290,20 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                             return application;
                         }
 
-                        if (
-                            response.TryGetValue(application.Id, out ApplicationResponse? thisApplication)
-                            && educationOrganizationId != null
-                        )
+                        if (response.TryGetValue(application.Id, out ApplicationResponse? thisApplication))
                         {
-                            thisApplication.EducationOrganizationIds.Add(educationOrganizationId.Value);
+                            if (educationOrganizationId != null)
+                            {
+                                thisApplication.EducationOrganizationIds.Add(educationOrganizationId.Value);
+                            }
                         }
                         else
                         {
+                            if (educationOrganizationId != null)
+                            {
+                                application.EducationOrganizationIds.Add(educationOrganizationId.Value);
+                            }
                             response.Add(application.Id, application);
-                        }
-
-                        if (educationOrganizationId != null)
-                        {
-                            application.EducationOrganizationIds.Add(educationOrganizationId.Value);
                         }
 
                         return application;
@@ -311,6 +311,37 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                     param: new { VendorId = vendorId },
                     splitOn: "EducationOrganizationId"
                 );
+
+                // Now get DMS instance IDs for each application through ApiClient
+                if (response.Any())
+                {
+                    string sqlDmsInstances = """
+                            SELECT
+                                a.Id as ApplicationId,
+                                acdi.DmsInstanceId
+                            FROM dmscs.Application a
+                            INNER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
+                            INNER JOIN dmscs.ApiClientDmsInstance acdi ON ac.Id = acdi.ApiClientId
+                            WHERE a.VendorId = @VendorId;
+                        """;
+
+                    await connection.QueryAsync<long, long, long>(
+                        sqlDmsInstances,
+                        (applicationId, dmsInstanceId) =>
+                        {
+                            if (
+                                response.TryGetValue(applicationId, out ApplicationResponse? application)
+                                && !application.DmsInstanceIds.Contains(dmsInstanceId)
+                            )
+                            {
+                                application.DmsInstanceIds.Add(dmsInstanceId);
+                            }
+                            return applicationId;
+                        },
+                        param: new { VendorId = vendorId },
+                        splitOn: "DmsInstanceId"
+                    );
+                }
 
                 if (!vendorExists)
                 {

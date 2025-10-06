@@ -34,7 +34,7 @@ public class OpenIdConfigurationModule : IEndpointModule
             Scheme = request.Scheme,
             Host = request.Host.Host,
             Port = request.Host.Port ?? (request.Scheme == "https" ? 443 : 80),
-            Path = string.IsNullOrEmpty(pathBase) ? "" : pathBase
+            Path = string.IsNullOrEmpty(pathBase) ? "" : pathBase,
         };
         baseUrl = uriBuilder.Uri.ToString().TrimEnd('/');
 
@@ -47,14 +47,20 @@ public class OpenIdConfigurationModule : IEndpointModule
             var openIdConfig = new
             {
                 issuer = enhancedConfig.Issuer,
-                authorization_endpoint = string.IsNullOrEmpty(enhancedConfig.AuthorizationEndpoint) ? null : enhancedConfig.AuthorizationEndpoint,
+                authorization_endpoint = string.IsNullOrEmpty(enhancedConfig.AuthorizationEndpoint)
+                    ? null
+                    : enhancedConfig.AuthorizationEndpoint,
                 token_endpoint = enhancedConfig.TokenEndpoint,
-                userinfo_endpoint = string.IsNullOrEmpty(enhancedConfig.UserinfoEndpoint) ? null : enhancedConfig.UserinfoEndpoint,
+                userinfo_endpoint = string.IsNullOrEmpty(enhancedConfig.UserinfoEndpoint)
+                    ? null
+                    : enhancedConfig.UserinfoEndpoint,
                 jwks_uri = enhancedConfig.JwksUri,
                 registration_endpoint = enhancedConfig.RegistrationEndpoint,
                 introspection_endpoint = enhancedConfig.IntrospectionEndpoint,
                 revocation_endpoint = enhancedConfig.RevocationEndpoint,
-                end_session_endpoint = string.IsNullOrEmpty(enhancedConfig.EndSessionEndpoint) ? null : enhancedConfig.EndSessionEndpoint,
+                end_session_endpoint = string.IsNullOrEmpty(enhancedConfig.EndSessionEndpoint)
+                    ? null
+                    : enhancedConfig.EndSessionEndpoint,
 
                 // Capabilities
                 scopes_supported = enhancedConfig.ScopesSupported,
@@ -80,7 +86,7 @@ public class OpenIdConfigurationModule : IEndpointModule
                 require_request_uri_registration = enhancedConfig.RequireRequestUriRegistration,
                 claims_parameter_supported = enhancedConfig.ClaimsParameterSupported,
                 introspection_endpoint_auth_methods_supported = new[] { "client_secret_basic" },
-                revocation_endpoint_auth_methods_supported = new[] { "client_secret_basic" }
+                revocation_endpoint_auth_methods_supported = new[] { "client_secret_basic" },
             };
 
             return Results.Ok(openIdConfig);
@@ -99,7 +105,12 @@ public class OpenIdConfigurationModule : IEndpointModule
             backchannel_logout_supported = false,
             backchannel_logout_session_supported = false,
             scopes_supported = new[] { "openid", "profile", "email", "api", "edfi_admin_api/full_access" },
-            claims_supported = new[] { "sub", "name", "http://schemas.microsoft.com/ws/2008/06/identity/claims/role" },
+            claims_supported = new[]
+            {
+                "sub",
+                "name",
+                "http://schemas.microsoft.com/ws/2008/06/identity/claims/role",
+            },
             grant_types_supported = new[] { "client_credentials" },
             response_types_supported = new[] { "token" },
             token_endpoint_auth_methods_supported = new[] { "client_secret_post", "client_secret_basic" },
