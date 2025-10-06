@@ -4,7 +4,7 @@ Feature: Synthetic Test - Cascade Update Kafka Validation
         Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
 
     @kafka
-    Scenario: 01 Update with a single referencing document should trigger multiple Kafka messages
+        Scenario: 01 Update with a single referencing document should trigger multiple Kafka messages
         Given a synthetic core schema with project "Ed-Fi"
           And the schema has resource "Session" with identity "sessionName"
           And the schema has resource "CourseOffering" with identity "localCourseCode"
