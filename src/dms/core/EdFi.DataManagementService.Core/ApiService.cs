@@ -46,6 +46,7 @@ internal class ApiService : IApiService
     private readonly IUploadApiSchemaService _apiSchemaUploadService;
     private readonly IServiceProvider _serviceProvider;
     private readonly ClaimSetsCache _claimSetsCache;
+    private readonly IResourceDependencyGraphMLFactory _resourceDependencyGraphMLFactory;
 
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -96,7 +97,8 @@ internal class ApiService : IApiService
         ResourceLoadOrderCalculator resourceLoadCalculator,
         IUploadApiSchemaService apiSchemaUploadService,
         IServiceProvider serviceProvider,
-        ClaimSetsCache claimSetsCache
+        ClaimSetsCache claimSetsCache,
+        IResourceDependencyGraphMLFactory resourceDependencyGraphMLFactory
     )
     {
         _apiSchemaProvider = apiSchemaProvider;
@@ -113,6 +115,7 @@ internal class ApiService : IApiService
         _apiSchemaUploadService = apiSchemaUploadService;
         _serviceProvider = serviceProvider;
         _claimSetsCache = claimSetsCache;
+        _resourceDependencyGraphMLFactory = resourceDependencyGraphMLFactory;
 
         // Initialize VersionedLazy instances with schema version provider
         _upsertSteps = new VersionedLazy<PipelineProvider>(
@@ -496,6 +499,15 @@ internal class ApiService : IApiService
                 )
                 .ToArray<JsonNode?>()
         );
+    }
+
+    /// <summary>
+    /// DMS entry point to get resource dependencies in GraphML format
+    /// </summary>
+    /// <returns>JSON array ordered by dependency sequence</returns>
+    public GraphML GetDependenciesAsGraphML()
+    {
+        return _resourceDependencyGraphMLFactory.CreateGraphML();
     }
 
     /// <summary>

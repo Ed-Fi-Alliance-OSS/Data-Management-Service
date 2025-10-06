@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -38,7 +39,22 @@ public partial class MetadataEndpointModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/metadata", GetMetadata);
-        endpoints.MapGet("/metadata/dependencies", GetDependencies);
+        // Combine the conflicting routes into a single MapGet
+        endpoints.MapGet("/metadata/dependencies", async (HttpContext httpContext, IApiService apiService) =>
+        {
+            var acceptHeader = httpContext.Request.Headers["Accept"].ToString();
+
+            if (acceptHeader.Contains("application/graphml", StringComparison.OrdinalIgnoreCase))
+            {
+                // Respond using GraphML-specific logic
+                await GetDependenciesGraphML(httpContext, apiService);
+            }
+            else
+            {
+                // Default behavior
+                await GetDependencies(httpContext, apiService);
+            }
+        });
         endpoints.MapGet("/metadata/specifications", GetSections);
         endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
@@ -62,6 +78,44 @@ public partial class MetadataEndpointModule : IEndpointModule
     {
         JsonArray content = apiService.GetDependencies();
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+
+    internal static async Task GetDependenciesGraphML(HttpContext httpContext, IApiService apiService)
+    {
+        var graphML = apiService.GetDependenciesAsGraphML();
+
+        // Set GraphML content type
+        httpContext.Response.ContentType = "application/graphml";
+
+        // Serialize the GraphML content to XML
+        await httpContext.Response.WriteAsync(CreateXml());
+
+        string CreateXml()
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+
+            sb.AppendLine(
+                "<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd\">");
+
+            sb.AppendLine($"<graph id=\"{graphML.Id}\" edgedefault=\"directed\">");
+
+            foreach (var node in graphML.Nodes)
+            {
+                sb.AppendLine($"<node id=\"{node.Id}\"/>");
+            }
+
+            foreach (var edge in graphML.Edges)
+            {
+                sb.AppendLine($"<edge source=\"{edge.Source}\" target=\"{edge.Target}\"/>");
+            }
+
+            sb.AppendLine("</graph>");
+            sb.AppendLine("</graphml>");
+
+            return sb.ToString();
+        }
     }
 
     internal static async Task GetResourceOpenApiSpec(HttpContext httpContext, IApiService apiService)
