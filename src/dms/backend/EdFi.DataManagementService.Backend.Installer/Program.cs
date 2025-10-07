@@ -22,14 +22,6 @@ public class Options
 
     [Option('c', "connectionString", Required = true, HelpText = "The connection string to the database.")]
     public string? ConnectionString { get; set; }
-
-    [Option(
-        'o',
-        "optimizeForQueryHandler",
-        Required = false,
-        HelpText = "When enabled, executes *QueryHandler.sql scripts during database deployment."
-    )]
-    public bool OptimizeForQueryHandler { get; set; }
 }
 
 public static class Program
@@ -48,17 +40,13 @@ public static class Program
                     case "postgresql":
                         HandleResult(
                             new Postgresql.Deploy.DatabaseDeploy().DeployDatabase(
-                                runOptions.ConnectionString!,
-                                runOptions.OptimizeForQueryHandler
+                                runOptions.ConnectionString!
                             )
                         );
                         break;
                     case "mssql":
                         HandleResult(
-                            new Mssql.Deploy.DatabaseDeploy().DeployDatabase(
-                                runOptions.ConnectionString!,
-                                runOptions.OptimizeForQueryHandler
-                            )
+                            new Mssql.Deploy.DatabaseDeploy().DeployDatabase(runOptions.ConnectionString!)
                         );
                         break;
                     default:

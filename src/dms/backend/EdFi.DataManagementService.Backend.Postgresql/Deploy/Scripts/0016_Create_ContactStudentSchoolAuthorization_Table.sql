@@ -19,6 +19,12 @@ CREATE TABLE IF NOT EXISTS dms.ContactStudentSchoolAuthorization(
         REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
 );
 
+CREATE INDEX IF NOT EXISTS IX_FK_ContactStudentSchoolAuthorization_SSA_Document
+ON dms.ContactStudentSchoolAuthorization(StudentSchoolAssociationId, StudentSchoolAssociationPartitionKey);
+
+CREATE INDEX IF NOT EXISTS IX_FK_ContactStudentSchoolAuthorization_SCA_Document
+ON dms.ContactStudentSchoolAuthorization(StudentContactAssociationId, StudentContactAssociationPartitionKey);
+
 CREATE INDEX IF NOT EXISTS IX_ContactStudentSchoolAuthorization_ContactUniqueId
 ON dms.ContactStudentSchoolAuthorization(ContactUniqueId);
 
