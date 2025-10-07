@@ -49,6 +49,14 @@ public interface IApiService
     public JsonArray GetDependencies();
 
     /// <summary>
+    /// Retrieves dependency data in the GraphML format.
+    /// </summary>
+    /// <returns>
+    /// A GraphML model representing dependencies to be serialized to GraphML format (XML-based).
+    /// </returns>
+    public GraphML GetDependenciesAsGraphML();
+
+    /// <summary>
     /// DMS entry point to get the OpenAPI specification for resources, derived from core and extension ApiSchemas
     /// Servers array should be provided by the front end.
     /// </summary>

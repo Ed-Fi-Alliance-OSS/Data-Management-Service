@@ -119,12 +119,7 @@ public class ApiServiceHotReloadIntegrationTests
         var equalityConstraintValidator = new EqualityConstraintValidator();
         var decimalValidator = new DecimalValidator();
         var authorizationServiceFactory = new NamedAuthorizationServiceFactory(serviceProvider);
-        var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator(
-            _apiSchemaFileLoader,
-            [],
-            [],
-            NullLogger<ResourceLoadOrderCalculator>.Instance
-        );
+        var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>());
 
         var apiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
 
@@ -142,7 +137,8 @@ public class ApiServiceHotReloadIntegrationTests
             resourceLoadOrderCalculator,
             apiSchemaUploadService,
             serviceProvider,
-            A.Fake<ClaimSetsCache>()
+            A.Fake<ClaimSetsCache>(),
+            A.Fake<IResourceDependencyGraphMLFactory>()
         );
     }
 
@@ -387,15 +383,11 @@ public class ApiServiceHotReloadIntegrationTests
                 disabledSettings,
                 new NamedAuthorizationServiceFactory(new ServiceCollection().BuildServiceProvider()),
                 ResiliencePipeline.Empty,
-                new ResourceLoadOrderCalculator(
-                    _apiSchemaFileLoader,
-                    [],
-                    [],
-                    NullLogger<ResourceLoadOrderCalculator>.Instance
-                ),
+                new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
                 apiSchemaUploadService,
                 new ServiceCollection().BuildServiceProvider(),
-                A.Fake<ClaimSetsCache>()
+                A.Fake<ClaimSetsCache>(),
+                A.Fake<IResourceDependencyGraphMLFactory>()
             );
 
             await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Student", "5.0.0"));

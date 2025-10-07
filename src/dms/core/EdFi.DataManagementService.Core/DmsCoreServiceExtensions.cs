@@ -56,6 +56,9 @@ public static class DmsCoreServiceExtensions
                 IResourceDependencyGraphTransformer,
                 PersonAuthorizationDependencyGraphTransformer
             >()
+            .AddSingleton<ICoreProjectNameProvider, CoreProjectNameProvider>()
+            .AddSingleton<IResourceDependencyGraphFactory, ResourceDependencyGraphFactory>()
+            .AddSingleton<IResourceDependencyGraphMLFactory, ResourceDependencyGraphMLFactory>()
             .AddSingleton<IResourceLoadOrderTransformer, PersonAuthorizationLoadOrderTransformer>()
             .AddSingleton<ResourceLoadOrderCalculator>()
             .AddTransient<NoFurtherAuthorizationRequiredValidator>()

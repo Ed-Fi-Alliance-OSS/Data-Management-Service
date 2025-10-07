@@ -28,6 +28,49 @@ public class SyntheticSchemaStepDefinitions(
     // Cached JsonSerializerOptions for performance
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
+    // Centralized identity property mappings
+    private static readonly Dictionary<string, string> _resourceIdentityMappings = new()
+    {
+        // Resources with special identity property names
+        ["CourseOffering"] = "localCourseCode",
+        ["ReportCard"] = "reportCardId",
+        ["Grade"] = "gradeId",
+        ["Section"] = "sectionIdentifier",
+        ["BellSchedule"] = "bellScheduleName",
+        ["Session"] = "sessionName",
+        ["GradingPeriod"] = "gradingPeriodName",
+        ["ClassPeriod"] = "classPeriodName",
+    };
+
+    /// <summary>
+    /// Gets the identity property name for a given resource name.
+    /// Uses predefined mappings for special cases, otherwise generates standard naming pattern.
+    /// </summary>
+    /// <param name="resourceName">The name of the resource</param>
+    /// <returns>The identity property name for the resource</returns>
+    private static string GetIdentityPropertyForResource(string resourceName)
+    {
+        if (_resourceIdentityMappings.TryGetValue(resourceName, out var identityProperty))
+        {
+            return identityProperty;
+        }
+
+        // Default pattern: lowercase first letter + "Id"
+        return char.ToLower(resourceName[0]) + resourceName[1..] + "Id";
+    }
+
+    /// <summary>
+    /// Gets the identity property name for a target resource (used in references).
+    /// This method handles special naming conventions for certain resources.
+    /// </summary>
+    /// <param name="targetResourceName">The name of the target resource being referenced</param>
+    /// <returns>The identity property name for the target resource</returns>
+    private static string GetTargetIdentityPropertyForResource(string targetResourceName)
+    {
+        // For target resources, we use the same mapping logic
+        return GetIdentityPropertyForResource(targetResourceName);
+    }
+
     [Given(@"a synthetic (?:core|extension) schema with project ""(.*)""")]
     public void GivenASyntheticSchemaWithProject(string projectName)
     {
@@ -41,7 +84,7 @@ public class SyntheticSchemaStepDefinitions(
         _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
 
         _currentSchemaBuilder
-            .WithStartResource(resourceName)
+            .WithStartResource(resourceName, allowIdentityUpdates: true)
             .WithIdentityJsonPaths($"$.{identityProperty}")
             .WithSimpleJsonSchema((identityProperty, "string"))
             .WithEndResource();
@@ -118,23 +161,49 @@ public class SyntheticSchemaStepDefinitions(
     {
         _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
 
-        // We need to rebuild the resource with the reference
-        // TODO: For now with GradingPeriod, use gradingPeriodName as identity
-        var identityProperty =
-            targetResourceName == "GradingPeriod"
-                ? "gradingPeriodName"
-                : char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Id";
+        // Use centralized method to determine identity properties
+        var targetIdentityProperty = GetTargetIdentityPropertyForResource(targetResourceName);
+        var sourceIdentityProperty = GetIdentityPropertyForResource(resourceName);
 
         // Rebuild the resource with the reference
         _currentSchemaBuilder
             .WithStartResource(resourceName)
-            .WithIdentityJsonPaths($"$.{char.ToLower(resourceName[0]) + resourceName[1..] + "Id"}")
-            .WithSimpleJsonSchema(
-                (char.ToLower(resourceName[0]) + resourceName[1..] + "Id", "string"),
-                (referenceName, "object")
-            )
+            .WithIdentityJsonPaths($"$.{sourceIdentityProperty}")
+            .WithSimpleJsonSchema((sourceIdentityProperty, "string"), (referenceName, "object"))
             .WithStartDocumentPathsMapping()
-            .WithSimpleReference(targetResourceName, identityProperty)
+            .WithSimpleReference(targetResourceName, targetIdentityProperty)
+            .WithEndDocumentPathsMapping()
+            .WithEndResource();
+    }
+
+    [Given(@"the ""(.*)"" resource has collection reference ""(.*)"" to ""(.*)""")]
+    public void GivenTheResourceHasCollectionReferenceTo(
+        string resourceName,
+        string collectionName,
+        string targetResourceName
+    )
+    {
+        _currentSchemaBuilder = _scenarioContext.Get<ApiSchemaBuilder>("currentSchemaBuilder");
+
+        // Use centralized method to determine identity properties
+        var targetIdentityProperty = GetTargetIdentityPropertyForResource(targetResourceName);
+        var sourceIdentityProperty = GetIdentityPropertyForResource(resourceName);
+
+        // Build the resource with collection reference
+        _currentSchemaBuilder
+            .WithStartResource(resourceName)
+            .WithIdentityJsonPaths($"$.{sourceIdentityProperty}")
+            .WithSimpleJsonSchema((sourceIdentityProperty, "string"), (collectionName, "array"))
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                targetResourceName,
+                [
+                    new KeyValuePair<string, string>(
+                        $"$.{targetIdentityProperty}",
+                        $"$.{collectionName}[*].{char.ToLower(targetResourceName[0]) + targetResourceName[1..] + "Reference"}.{targetIdentityProperty}"
+                    ),
+                ]
+            )
             .WithEndDocumentPathsMapping()
             .WithEndResource();
     }
