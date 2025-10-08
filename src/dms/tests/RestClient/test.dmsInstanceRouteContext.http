@@ -27,7 +27,7 @@ Authorization: bearer {{configToken}}
 {
     "instanceType": "Production",
     "instanceName": "Test Instance",
-    "connectionString": "Server=localhost;Database=TestDb;"
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 }
 
 ### Read the newly-created Instance ID from the response body

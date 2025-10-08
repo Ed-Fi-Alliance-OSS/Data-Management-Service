@@ -37,7 +37,7 @@ public class IdentityModule : IEndpointModule
     private async Task<IResult> RegisterClient(
         RegisterRequest.Validator validator,
         [FromForm] RegisterRequest model,
-        IClientRepository clientRepository,
+        IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
         HttpContext httpContext
     )

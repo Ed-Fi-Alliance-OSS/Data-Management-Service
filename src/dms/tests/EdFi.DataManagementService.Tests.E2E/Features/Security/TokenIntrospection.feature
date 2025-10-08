@@ -84,3 +84,8 @@ Feature: JWT Token Introspection
               And the token signature is manipulated
              When a GET request is made to "/ed-fi/academicWeeks"
              Then it should respond with 401
+
+        @DMS-823
+        Scenario: Verify JWT token contains dmsInstanceIds claim
+            Given the SIS Vendor is authorized with namespacePrefixes "uri://ed-fi.org"
+             Then the JWT token should contain the dmsInstanceIds claim

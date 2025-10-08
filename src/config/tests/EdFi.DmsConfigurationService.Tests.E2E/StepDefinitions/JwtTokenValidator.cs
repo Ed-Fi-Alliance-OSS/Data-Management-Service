@@ -20,8 +20,11 @@ public static class JwtTokenValidator
                 var scopeClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "scope");
                 if (scopeClaim != null)
                 {
-                    var scopes = scopeClaim.Value.Split(' ');
-                    return scopes.Contains(requiredScope);
+                    var scopes = scopeClaim.Value.Split(
+                        new[] { ' ', ',' },
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    );
+                    return scopes.Contains(requiredScope, StringComparer.OrdinalIgnoreCase);
                 }
             }
             return false;

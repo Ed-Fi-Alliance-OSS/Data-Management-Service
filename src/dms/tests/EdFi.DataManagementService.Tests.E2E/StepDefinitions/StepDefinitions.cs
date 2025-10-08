@@ -1410,6 +1410,25 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             return list;
         }
 
+        [Then("the JWT token should contain the dmsInstanceIds claim")]
+        public void ThenTheJwtTokenShouldContainTheDmsInstanceIdsClaim()
+        {
+            // Extract the Bearer token
+            var token = _dmsToken.Replace("Bearer ", string.Empty);
+
+            // Parse the JWT token
+            var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
+            tokenHandler.CanReadToken(token).Should().BeTrue("Token should be a valid JWT");
+
+            var jwtToken = tokenHandler.ReadJwtToken(token);
+
+            // Verify the dmsInstanceIds claim exists
+            var dmsInstanceIdsClaim = jwtToken.Claims.FirstOrDefault(c => c.Type == "dmsInstanceIds");
+            dmsInstanceIdsClaim.Should().NotBeNull("JWT token should contain dmsInstanceIds claim");
+
+            _logger.log.Information($"dmsInstanceIds claim value: {dmsInstanceIdsClaim?.Value}");
+        }
+
         // Helper class for deserializing the claim set response
         private class ClaimSetResponse
         {
