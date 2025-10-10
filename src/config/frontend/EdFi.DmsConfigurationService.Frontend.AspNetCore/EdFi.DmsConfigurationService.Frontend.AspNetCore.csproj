@@ -7,6 +7,10 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <ImplicitUsings>enable</ImplicitUsings>
     </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit" />
+    </ItemGroup>
     <ItemGroup>
         <Content Include="EdFi.DmsConfigurationService.Frontend.AspNetCore.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
     </ItemGroup>
