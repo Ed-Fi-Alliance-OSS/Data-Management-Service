@@ -29,7 +29,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             // Add identity options
             services.AddOpenIddictIdentityOptions(configuration);
             services.AddSingleton<IOpenIddictDataRepository, OpenIddictDataRepository>();
-            services.AddSingleton<IClientRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
             services.AddSingleton<OpenIddictTokenManager>();
             services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
@@ -86,7 +86,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             // Add identity options
             services.AddOpenIddictIdentityOptions(configuration);
 
-            services.AddSingleton<IClientRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
             services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
             services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();

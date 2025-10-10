@@ -17,7 +17,7 @@ namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 public class KeycloakClientRepository(
     KeycloakContext keycloakContext,
     ILogger<KeycloakClientRepository> logger
-) : IClientRepository
+) : IIdentityProviderRepository
 {
     private readonly KeycloakClient _keycloakClient = new(
         $"{keycloakContext.Url.Trim('/')}/",
@@ -33,7 +33,8 @@ public class KeycloakClientRepository(
         string displayName,
         string scope,
         string namespacePrefixes,
-        string educationOrganizationIds
+        string educationOrganizationIds,
+        long[]? dmsInstanceIds = null
     )
     {
         try
@@ -41,6 +42,13 @@ public class KeycloakClientRepository(
             var protocolMappers = ConfigServiceRoleProtocolMapper();
             protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
             protocolMappers.Add(EducationOrganizationProtocolMapper(educationOrganizationIds));
+
+            // Add DMS instance IDs as sorted comma-separated string
+            if (dmsInstanceIds != null && dmsInstanceIds.Length > 0)
+            {
+                var sortedInstanceIds = string.Join(",", dmsInstanceIds.OrderBy(id => id));
+                protocolMappers.Add(DmsInstanceIdsProtocolMapper(sortedInstanceIds));
+            }
 
             Client client = new()
             {
@@ -272,7 +280,8 @@ public class KeycloakClientRepository(
         string clientUuid,
         string displayName,
         string scope,
-        string educationOrganizationIds
+        string educationOrganizationIds,
+        long[]? dmsInstanceIds = null
     )
     {
         try
@@ -284,7 +293,9 @@ public class KeycloakClientRepository(
             {
                 // Delete the existing client
                 await _keycloakClient.DeleteClientAsync(_realm, clientUuid);
-                CheckAndUpdateEducationOrganizationIds(client.ProtocolMappers.ToList());
+                var protocolMappers = client.ProtocolMappers.ToList();
+                CheckAndUpdateEducationOrganizationIds(protocolMappers);
+                CheckAndUpdateDmsInstanceIds(protocolMappers, dmsInstanceIds);
                 Client newClient = new()
                 {
                     ClientId = client.ClientId,
@@ -293,7 +304,7 @@ public class KeycloakClientRepository(
                     Name = displayName,
                     ServiceAccountsEnabled = true,
                     DefaultClientScopes = [scope],
-                    ProtocolMappers = client.ProtocolMappers,
+                    ProtocolMappers = protocolMappers,
                 };
                 // Re-create the client
                 string? newClientId = await _keycloakClient.CreateClientAndRetrieveClientIdAsync(
@@ -338,6 +349,21 @@ public class KeycloakClientRepository(
                 edOrgClaim.Config["claim.value"] = educationOrganizationIds;
             }
         }
+
+        void CheckAndUpdateDmsInstanceIds(List<ClientProtocolMapper> protocolMappers, long[]? dmsInstanceIds)
+        {
+            // Remove existing DMS instance IDs claim
+            protocolMappers.RemoveAll(x =>
+                x.Config.ContainsKey("claim.name") && x.Config["claim.name"].Equals("dmsInstanceIds")
+            );
+
+            // Add updated DMS instance IDs if provided
+            if (dmsInstanceIds != null && dmsInstanceIds.Length > 0)
+            {
+                var sortedInstanceIds = string.Join(",", dmsInstanceIds.OrderBy(id => id));
+                protocolMappers.Add(DmsInstanceIdsProtocolMapper(sortedInstanceIds));
+            }
+        }
     }
 
     private ClientProtocolMapper NamespacePrefixProtocolMapper(string value)
@@ -348,6 +374,11 @@ public class KeycloakClientRepository(
     private ClientProtocolMapper EducationOrganizationProtocolMapper(string value)
     {
         return ProtocolMapper("Education Organization Ids", "educationOrganizationIds", value);
+    }
+
+    private ClientProtocolMapper DmsInstanceIdsProtocolMapper(string value)
+    {
+        return ProtocolMapper("DMS Instance IDs", "dmsInstanceIds", value);
     }
 
     private ClientProtocolMapper ProtocolMapper(string name, string claimName, string value)

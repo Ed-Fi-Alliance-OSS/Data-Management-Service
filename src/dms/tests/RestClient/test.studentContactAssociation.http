@@ -379,7 +379,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Demo application 2",
     "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [123456789],
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###
@@ -413,7 +413,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Demo application 3",
     "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [6001011],
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###

@@ -35,7 +35,7 @@ public class ApplicationModule : IEndpointModule
         HttpContext httpContext,
         IApplicationRepository applicationRepository,
         IVendorRepository vendorRepository,
-        IClientRepository clientRepository,
+        IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
         ILogger<ApplicationModule> logger
     )
@@ -68,7 +68,8 @@ public class ApplicationModule : IEndpointModule
             command.ApplicationName,
             command.ClaimSetName,
             namespacePrefixes,
-            string.Join(",", command.EducationOrganizationIds)
+            string.Join(",", command.EducationOrganizationIds),
+            command.DmsInstanceIds
         );
 
         switch (clientCreateResult)
@@ -185,7 +186,7 @@ public class ApplicationModule : IEndpointModule
         ApplicationUpdateCommand command,
         HttpContext httpContext,
         IApplicationRepository repository,
-        IClientRepository clientRepository,
+        IIdentityProviderRepository clientRepository,
         ILogger<ApplicationModule> logger
     )
     {
@@ -203,7 +204,8 @@ public class ApplicationModule : IEndpointModule
                         client.ClientUuid.ToString(),
                         command.ApplicationName,
                         command.ClaimSetName,
-                        string.Join(",", command.EducationOrganizationIds)
+                        string.Join(",", command.EducationOrganizationIds),
+                        command.DmsInstanceIds
                     );
                     switch (clientUpdateResult)
                     {
@@ -301,7 +303,7 @@ public class ApplicationModule : IEndpointModule
         long id,
         HttpContext httpContext,
         IApplicationRepository repository,
-        IClientRepository clientRepository,
+        IIdentityProviderRepository clientRepository,
         ILogger<ApplicationModule> logger
     )
     {
@@ -369,7 +371,7 @@ public class ApplicationModule : IEndpointModule
         long id,
         HttpContext httpContext,
         IApplicationRepository repository,
-        IClientRepository clientRepository,
+        IIdentityProviderRepository clientRepository,
         ILogger<ApplicationModule> logger
     )
     {

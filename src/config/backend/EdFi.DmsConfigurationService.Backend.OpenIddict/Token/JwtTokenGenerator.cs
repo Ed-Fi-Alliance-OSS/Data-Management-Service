@@ -42,7 +42,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
             string audience,
             SecurityKey signingKey,
             string keyId,
-            IConfiguration? configuration = null
+            IConfiguration? configuration = null,
+            long[]? dmsInstanceIds = null
         )
         {
             var claims = new List<Claim>
@@ -76,6 +77,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                 {
                     foreach (var mapper in protocolMappers)
                     {
+                        // Skip dmsInstanceIds as it will be added separately if provided
+                        if (mapper.ClaimName == "dmsInstanceIds" && dmsInstanceIds != null)
+                        {
+                            continue;
+                        }
                         claims.Add(new Claim(mapper.ClaimName, mapper.ClaimValue ?? string.Empty));
                     }
                 }
@@ -136,6 +142,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                     configuration?.GetValue<string>("Authentication:RoleClaimAttribute")
                     ?? "http://schemas.microsoft.com/ws/2008/06/identity/claims/role";
                 payload.Add(rolesClaim, roles);
+            }
+
+            // Add dmsInstanceIds as a sorted comma-separated string (empty string if no instances)
+            if (dmsInstanceIds != null)
+            {
+                var sortedInstanceIds =
+                    dmsInstanceIds.Length > 0
+                        ? string.Join(",", dmsInstanceIds.OrderBy(id => id))
+                        : string.Empty;
+                payload.Add("dmsInstanceIds", sortedInstanceIds);
             }
 
             // Create the JWT with header and payload, including kid

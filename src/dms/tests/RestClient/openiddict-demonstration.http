@@ -63,7 +63,7 @@ Authorization: bearer {{configToken}}
 {
     "instanceType": "Test",
     "instanceName": "Test DMS Instance",
-    "connectionString": "Server=localhost;Database=TestDb;"
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 }
 
 ###
@@ -80,7 +80,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "For ed orgs",
     "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
     "educationOrganizationIds": [ 255, 255901 ],
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###

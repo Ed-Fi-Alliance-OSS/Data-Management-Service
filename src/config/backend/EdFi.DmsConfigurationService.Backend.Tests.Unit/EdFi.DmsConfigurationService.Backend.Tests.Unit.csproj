@@ -32,6 +32,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+      <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.OpenIddict\EdFi.DmsConfigurationService.Backend.OpenIddict.csproj" />
     </ItemGroup>
 
 </Project>

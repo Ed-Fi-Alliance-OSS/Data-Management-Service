@@ -10,6 +10,7 @@ using System.Security.Cryptography.X509Certificates;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
+using EdFi.DmsConfigurationService.DataModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -233,11 +234,47 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 _logger.LogDebug(
                     "Application found: {ApplicationId}, Display Name: {DisplayName}",
                     applicationInfo.Id,
-                    applicationInfo.DisplayName
+                    LoggingUtility.SanitizeForLog(applicationInfo.DisplayName)
                 );
-                var listOfScopes = !string.IsNullOrEmpty(scope)
-                    ? string.Join(",", scope)
-                    : string.Join(",", applicationInfo.Permissions ?? new string[0]);
+
+                // Determine scopes to include in token
+                string listOfScopes;
+                if (!string.IsNullOrEmpty(scope))
+                {
+                    // Validate requested scopes against application's permitted scopes
+                    var requestedScopes = scope.Split(
+                        new[] { ' ', ',' },
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    );
+                    var allowedScopes = applicationInfo.Permissions ?? Array.Empty<string>();
+                    // Only include scopes that are both requested AND allowed
+                    var validScopes = requestedScopes
+                        .Where(s => allowedScopes.Contains(s, StringComparer.OrdinalIgnoreCase))
+                        .ToArray();
+
+                    if (validScopes.Length == 0)
+                    {
+                        // If no valid scopes, use the application's default permissions
+                        listOfScopes = string.Join(",", allowedScopes);
+                        _logger.LogWarning(
+                            "No valid requested scopes found, using application defaults: {ListOfScopes}",
+                            LoggingUtility.SanitizeForLog(listOfScopes)
+                        );
+                    }
+                    else
+                    {
+                        listOfScopes = string.Join(",", validScopes);
+                    }
+                }
+                else
+                {
+                    // No scope requested, use application's default permissions
+                    listOfScopes = string.Join(",", applicationInfo.Permissions ?? Array.Empty<string>());
+                    _logger.LogInformation(
+                        "No scope requested, using application defaults: {ListOfScopes}",
+                        LoggingUtility.SanitizeForLog(listOfScopes)
+                    );
+                }
 
                 // Generate JWT token
                 var token = await GenerateJwtTokenAsync(applicationInfo, clientId, listOfScopes);
@@ -296,7 +333,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 issuer,
                 audience,
                 signingKeyResult.SecurityKey,
-                signingKeyResult.KeyId
+                signingKeyResult.KeyId,
+                dmsInstanceIds: applicationInfo.DmsInstanceIds
             );
 
             // Store token in database
@@ -494,7 +532,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                             }
                         }
 
-                        _logger.LogDebug("Key {KeyId} format detected as: {Format}", record.KeyId, keyFormat);
+                        _logger.LogDebug(
+                            "Key {KeyId} format detected as: {Format}",
+                            LoggingUtility.SanitizeForLog(record.KeyId),
+                            keyFormat
+                        );
 
                         // Import the key using the detected format
                         switch (keyFormat)
@@ -514,7 +556,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                                 break;
 
                             default:
-                                _logger.LogWarning("Unknown key format for key ID: {KeyId}", record.KeyId);
+                                _logger.LogWarning(
+                                    "Unknown key format for key ID: {KeyId}",
+                                    LoggingUtility.SanitizeForLog(record.KeyId)
+                                );
                                 continue; // Skip this key
                         }
 
@@ -522,7 +567,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     }
                     catch (Exception keyEx)
                     {
-                        _logger.LogError(keyEx, "Failed to process key with ID {KeyId}", record.KeyId);
+                        _logger.LogError(
+                            keyEx,
+                            "Failed to process key with ID {KeyId}",
+                            LoggingUtility.SanitizeForLog(record.KeyId)
+                        );
                     }
                 }
             }

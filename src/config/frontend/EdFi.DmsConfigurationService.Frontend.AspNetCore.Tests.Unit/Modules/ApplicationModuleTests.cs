@@ -25,7 +25,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class ApplicationModuleTests
 {
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
-    private readonly IClientRepository _clientRepository = A.Fake<IClientRepository>();
+    private readonly IIdentityProviderRepository _clientRepository = A.Fake<IIdentityProviderRepository>();
     private readonly IVendorRepository _vendorRepository = A.Fake<IVendorRepository>();
 
     private HttpClient SetUpClient()
@@ -130,7 +130,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<string>.Ignored
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -143,7 +144,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<string>.Ignored
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -389,7 +391,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<string>.Ignored
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -609,7 +612,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<string>.Ignored
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -638,7 +642,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<string>.Ignored
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -755,7 +760,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<string>.Ignored
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -799,7 +805,8 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<string>.Ignored
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
                     )
                 )
                 .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
@@ -917,10 +924,175 @@ public class ApplicationModuleTests
                         A<string>.Ignored,
                         A<string>.Ignored,
                         A<string>.Ignored,
-                        A<string>.Ignored
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
                     )
                 )
                 .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+        }
+    }
+
+    [TestFixture]
+    public class FailureDmsInstanceNotFoundTests : ApplicationModuleTests
+    {
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
+                    )
+                )
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+
+            A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "Test Prefix",
+                        }
+                    )
+                );
+
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(new ApplicationInsertResult.FailureDmsInstanceNotFound());
+
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Returns(new ApplicationUpdateResult.FailureDmsInstanceNotFound());
+
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(
+                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid())])
+                );
+
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<long[]?>.Ignored
+                    )
+                )
+                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_for_invalid_dms_instance_id_on_insert()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var insertResponse = await client.PostAsync(
+                "/v2/applications",
+                new StringContent(
+                    """
+                    {
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DmsInstanceIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string responseBody = await insertResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseBody);
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "DmsInstanceId": [
+                      "DMS instance does not exist."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public async Task Should_return_bad_request_for_invalid_dms_instance_id_on_update()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var updateResponse = await client.PutAsync(
+                "/v2/applications/1",
+                new StringContent(
+                    """
+                    {
+                        "Id": 1,
+                        "ApplicationName": "Test Application",
+                        "ClaimSetName": "TestClaimSet",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [1],
+                        "DmsInstanceIds": [999]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+
+            // Assert
+            updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            string responseBody = await updateResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseBody);
+            var expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "DmsInstanceId": [
+                      "DMS instance does not exist."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
+            );
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
     }
 }

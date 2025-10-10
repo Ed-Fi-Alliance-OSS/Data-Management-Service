@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
-public interface IClientRepository
+public interface IIdentityProviderRepository
 {
     Task<ClientCreateResult> CreateClientAsync(
         string clientId,
@@ -14,14 +14,16 @@ public interface IClientRepository
         string displayName,
         string scope,
         string namespacePrefixes,
-        string educationOrganizationIds
+        string educationOrganizationIds,
+        long[]? dmsInstanceIds = null
     );
 
     Task<ClientUpdateResult> UpdateClientAsync(
         string clientUuid,
         string displayName,
         string scope,
-        string educationOrganizationIds
+        string educationOrganizationIds,
+        long[]? dmsInstanceIds = null
     );
 
     Task<ClientUpdateResult> UpdateClientNamespaceClaimAsync(string clientUuid, string namespacePrefixes);

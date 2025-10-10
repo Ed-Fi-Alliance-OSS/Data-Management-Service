@@ -75,7 +75,7 @@ Authorization: bearer {{configToken}}
 {
     "instanceType": "Test",
     "instanceName": "Test DMS Instance",
-    "connectionString": "Server=localhost;Database=TestDb;"
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 }
 
 ###
@@ -91,7 +91,7 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Demo application",
     "claimSetName": "SIS-Vendor",
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###
@@ -121,7 +121,7 @@ Authorization: bearer {{configToken}}
     "vendorId": {{vendorId}},
     "applicationName": "Delete me",
     "claimSetName": "Delete-me",
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###

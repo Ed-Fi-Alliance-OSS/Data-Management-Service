@@ -42,7 +42,7 @@ public static class KeycloakServiceExtensions
 
         services.AddScoped(x => new KeycloakContext(baseUrl, realm, ClientId, ClientSecret, RoleClaimType));
 
-        services.AddTransient<IClientRepository, KeycloakClientRepository>();
+        services.AddTransient<IIdentityProviderRepository, KeycloakClientRepository>();
         services.AddTransient<ITokenManager, KeycloakTokenManager>();
 
         return services;

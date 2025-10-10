@@ -11,14 +11,14 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 {
     /// <summary>
-    /// Database-agnostic OpenIddict client repository that implements IClientRepository.
+    /// Database-agnostic OpenIddict client repository that implements IIdentityProviderRepository.
     /// Uses IOpenIddictDataRepository for database operations.
     /// </summary>
     public class OpenIddictClientRepository(
         ILogger<OpenIddictClientRepository> logger,
         IClientSecretHasher secretHasher,
         IOpenIddictDataRepository dataRepository
-    ) : IClientRepository
+    ) : IIdentityProviderRepository
     {
         /// <summary>
         /// Updates or adds the namespacePrefixes claim in the protocol mappers JSON.
@@ -90,6 +90,42 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             return JsonSerializer.Serialize(protocolMappers);
         }
 
+        /// <summary>
+        /// Updates or adds the dmsInstanceIds claim in the protocol mappers JSON.
+        /// </summary>
+        /// <param name="existingProtocolMappersJson">Existing protocol mappers JSON string.</param>
+        /// <param name="dmsInstanceIds">Array of DMS instance IDs.</param>
+        /// <returns>Updated protocol mappers JSON string.</returns>
+        private static string MergeDmsInstanceIdsClaim(
+            string existingProtocolMappersJson,
+            long[] dmsInstanceIds
+        )
+        {
+            List<Dictionary<string, string>> protocolMappers = new();
+            if (!string.IsNullOrWhiteSpace(existingProtocolMappersJson))
+            {
+                try
+                {
+                    protocolMappers =
+                        JsonSerializer.Deserialize<List<Dictionary<string, string>>>(
+                            existingProtocolMappersJson
+                        ) ?? new List<Dictionary<string, string>>();
+                }
+                catch
+                {
+                    protocolMappers = new List<Dictionary<string, string>>();
+                }
+            }
+            // Remove any existing dmsInstanceIds claim
+            protocolMappers.RemoveAll(m =>
+                m.ContainsKey("claim.name") && m["claim.name"] == "dmsInstanceIds"
+            );
+            // Add the updated dmsInstanceIds claim as sorted comma-separated string
+            var sortedInstanceIds = string.Join(",", dmsInstanceIds.OrderBy(id => id));
+            protocolMappers.Add(ClientClaimHelper.CreateDmsInstanceIdsClaim(sortedInstanceIds));
+            return JsonSerializer.Serialize(protocolMappers);
+        }
+
         public async Task<ClientCreateResult> CreateClientAsync(
             string clientId,
             string clientSecret,
@@ -97,7 +133,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string displayName,
             string scope,
             string namespacePrefixes,
-            string educationOrganizationIds
+            string educationOrganizationIds,
+            long[]? dmsInstanceIds = null
         )
         {
             try
@@ -128,6 +165,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     namespacePrefixClaim,
                     educationOrgClaim,
                 };
+
+                // Add dmsInstanceIds claim if provided
+                if (dmsInstanceIds != null)
+                {
+                    var sortedInstanceIds = string.Join(",", dmsInstanceIds.OrderBy(id => id));
+                    protocolMappers.Add(ClientClaimHelper.CreateDmsInstanceIdsClaim(sortedInstanceIds));
+                }
 
                 // Hash the client secret for secure storage
                 var hashedClientSecret = await secretHasher.HashSecretAsync(clientSecret);
@@ -202,7 +246,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string clientUuid,
             string displayName,
             string scope,
-            string educationOrganizationIds
+            string educationOrganizationIds,
+            long[]? dmsInstanceIds = null
         )
         {
             try
@@ -228,6 +273,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     application.ProtocolMappers,
                     educationOrganizationIds
                 );
+
+                // Merge the dmsInstanceIds claim with existing protocol mappers if provided
+                if (dmsInstanceIds != null)
+                {
+                    protocolMappersJson = MergeDmsInstanceIdsClaim(protocolMappersJson, dmsInstanceIds);
+                }
 
                 var permissions =
                     scope?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? Array.Empty<string>();

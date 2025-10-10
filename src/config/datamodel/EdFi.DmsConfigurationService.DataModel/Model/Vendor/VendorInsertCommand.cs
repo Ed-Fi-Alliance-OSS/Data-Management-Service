@@ -29,7 +29,7 @@ public class VendorInsertCommand
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     );
-                    return split != null && !split.Any(x => x.Length >= 128);
+                    return split != null && !split.Any(x => x.Length > 128);
                 })
                 .WithMessage("Each NamespacePrefix length must be 128 characters or fewer.");
         }
