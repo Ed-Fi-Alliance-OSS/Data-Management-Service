@@ -116,7 +116,7 @@ public class VendorModule : IEndpointModule
         HttpContext httpContext,
         IVendorRepository repository,
         IApplicationRepository applicationRepository,
-        IClientRepository clientRepository,
+        IIdentityProviderRepository clientRepository,
         ILogger<ApplicationModule> logger
     )
     {

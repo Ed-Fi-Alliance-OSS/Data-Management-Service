@@ -70,7 +70,7 @@ Authorization: bearer {{configToken}}
 {
     "instanceType": "Test",
     "instanceName": "Test DMS Instance",
-    "connectionString": "Server=localhost;Database=TestDb;"
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 }
 
 ###
@@ -87,7 +87,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Demo application",
     "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
     "educationOrganizationIds": [6001010, 60010, 600],
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###
@@ -105,10 +105,11 @@ GET http://localhost:{{dmsPort}}
 
 ###
 @dataApi={{discovery.response.body.urls.dataManagementApi}}
+@tokenUrl={{discovery.response.body.urls.oauth}}
 
 ### Create a DMS token
 # @name dmsTokenRequest
-POST http://localhost:{{dmsPort}}/oauth/token
+POST {{tokenUrl}}
 Authorization: basic {{clientKey}}:{{clientSecret}}
 Content-Type: application/x-www-form-urlencoded
 
@@ -277,7 +278,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Demo application 22",
     "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
     "educationOrganizationIds": [123456],
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###

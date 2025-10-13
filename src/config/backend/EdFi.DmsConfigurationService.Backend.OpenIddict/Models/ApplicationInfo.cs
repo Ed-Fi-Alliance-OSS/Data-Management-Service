@@ -73,4 +73,10 @@ public class ApplicationInfo
     /// Used to add or transform claims in issued tokens for this application.
     /// </summary>
     public string ProtocolMappers { get; set; } = string.Empty;
+
+    /// <summary>
+    /// List of DMS instance IDs associated with this API client.
+    /// These IDs are included in the dmsInstanceIds claim in issued JWT tokens.
+    /// </summary>
+    public long[] DmsInstanceIds { get; set; } = [];
 }

@@ -77,7 +77,7 @@ Authorization: bearer {{configToken}}
 {
     "instanceType": "Test",
     "instanceName": "Test DMS Instance",
-    "connectionString": "Server=localhost;Database=TestDb;"
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 }
 
 ###
@@ -94,7 +94,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Demo application",
     "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [6001010, 6001011],
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###
@@ -274,7 +274,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Demo application 2",
     "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [6001010],
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###

@@ -22,12 +22,12 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 [TestFixture]
 public class RegisterEndpointTests
 {
-    private IClientRepository? _clientRepository;
+    private IIdentityProviderRepository? _clientRepository;
 
     [SetUp]
     public void Setup()
     {
-        _clientRepository = A.Fake<IClientRepository>();
+        _clientRepository = A.Fake<IIdentityProviderRepository>();
         A.CallTo(() =>
                 _clientRepository.CreateClientAsync(
                     A<string>.Ignored,
@@ -36,7 +36,8 @@ public class RegisterEndpointTests
                     A<string>.Ignored,
                     A<string>.Ignored,
                     A<string>.Ignored,
-                    A<string>.Ignored
+                    A<string>.Ignored,
+                    A<long[]?>.Ignored
                 )
             )
             .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
@@ -163,7 +164,7 @@ public class RegisterEndpointTests
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            _clientRepository = A.Fake<IClientRepository>();
+            _clientRepository = A.Fake<IIdentityProviderRepository>();
 
             var error = new IdentityProviderError.Unauthorized("Unauthorized");
 
@@ -203,7 +204,7 @@ public class RegisterEndpointTests
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            _clientRepository = A.Fake<IClientRepository>();
+            _clientRepository = A.Fake<IIdentityProviderRepository>();
 
             var error = new IdentityProviderError.Forbidden("Forbidden.");
 
@@ -243,7 +244,7 @@ public class RegisterEndpointTests
         // Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            _clientRepository = A.Fake<IClientRepository>();
+            _clientRepository = A.Fake<IIdentityProviderRepository>();
 
             var error = new IdentityProviderError.NotFound(
                 """
@@ -301,7 +302,7 @@ public class RegisterEndpointTests
     {
         // Arrange
         var clientList = A.Fake<IEnumerable<string>>();
-        _clientRepository = A.Fake<IClientRepository>();
+        _clientRepository = A.Fake<IIdentityProviderRepository>();
         clientList = clientList.Append("CSClient2");
         A.CallTo(() => _clientRepository.GetAllClientsAsync())
             .Returns(new ClientClientsResult.Success(clientList));
@@ -379,7 +380,7 @@ public class RegisterEndpointTests
         //Arrange
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            _clientRepository = A.Fake<IClientRepository>();
+            _clientRepository = A.Fake<IIdentityProviderRepository>();
 
             var error = new IdentityProviderError.Unreachable(
                 "No connection could be made because the target machine actively refused it."

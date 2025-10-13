@@ -73,7 +73,7 @@ Authorization: bearer {{configToken}}
 {
     "instanceType": "Test",
     "instanceName": "Test DMS Instance",
-    "connectionString": "Server=localhost;Database=TestDb;"
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 }
 
 ###
@@ -90,7 +90,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Bootstrapper",
     "claimSetName": "BootstrapDescriptorsandEdOrgs",
     "educationOrganizationIds": [],
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###
@@ -171,7 +171,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Grand Bend Loader",
     "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [255901,19255901,2559011,200000,100000,300000,255901044,255901001,255901107,51,54],
-    "dmsInstanceId": {{dmsInstanceId}}
+    "dmsInstanceIds": [{{dmsInstanceId}}]
 }
 
 ###

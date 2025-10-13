@@ -31,6 +31,16 @@ namespace EdFi.DmsConfigurationService.Backend
             };
         }
 
+        public static Dictionary<string, string> CreateDmsInstanceIdsClaim(string dmsInstanceIds)
+        {
+            return new Dictionary<string, string>
+            {
+                { "claim.name", "dmsInstanceIds" },
+                { "claim.value", dmsInstanceIds },
+                { "jsonType.label", "String" },
+            };
+        }
+
         public static Dictionary<string, string> CreateRoleClaim(
             string roleClaimType,
             string userAttribute = "roles"

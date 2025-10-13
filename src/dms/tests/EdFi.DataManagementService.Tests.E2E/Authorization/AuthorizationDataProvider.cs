@@ -152,11 +152,30 @@ public static class AuthorizationDataProvider
         );
 
         string applicationBody = await applicationPostResponse.Content.ReadAsStringAsync();
+
+        if (!applicationPostResponse.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Failed to create application. Status: {applicationPostResponse.StatusCode}, "
+                    + $"Response: {applicationBody}"
+            );
+        }
+
         var applicationJson = JsonDocument.Parse(applicationBody);
 
+        if (
+            !applicationJson.RootElement.TryGetProperty("key", out var keyProperty)
+            || !applicationJson.RootElement.TryGetProperty("secret", out var secretProperty)
+        )
+        {
+            throw new InvalidOperationException(
+                $"Application response missing key or secret. Response: {applicationBody}"
+            );
+        }
+
         _clientCredentials = new ClientCredentials(
-            applicationJson.RootElement.GetProperty("key").GetString() ?? "",
-            applicationJson.RootElement.GetProperty("secret").GetString() ?? ""
+            keyProperty.GetString() ?? "",
+            secretProperty.GetString() ?? ""
         );
     }
 
@@ -177,8 +196,23 @@ public static class AuthorizationDataProvider
         _dmsClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue($"Basic", basicB64);
         var tokenResponse = await _dmsClient.PostAsync("oauth/token", formData);
         var jsonString = await tokenResponse.Content.ReadAsStringAsync();
+
+        if (!tokenResponse.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Failed to get token. Status: {tokenResponse.StatusCode}, " + $"Response: {jsonString}"
+            );
+        }
+
         var tokenJson = JsonDocument.Parse(jsonString);
 
-        return tokenJson.RootElement.GetProperty("access_token").GetString() ?? "";
+        if (!tokenJson.RootElement.TryGetProperty("access_token", out var accessTokenProperty))
+        {
+            throw new InvalidOperationException(
+                $"Token response missing access_token. Response: {jsonString}"
+            );
+        }
+
+        return accessTokenProperty.GetString() ?? "";
     }
 }
