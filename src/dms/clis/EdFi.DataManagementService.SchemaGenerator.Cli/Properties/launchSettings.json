@@ -1,0 +1,8 @@
+{
+  "profiles": {
+  "EdFi.DataManagementService.SchemaGenerator.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "-- --provider all --input C:\\GAP\\ED-FI\\Tickets\\DMS-833\\Data-Management-Service\\sample-apischema.json --output /temp/out-pgsql"
+    }
+  }
+}
