@@ -16,6 +16,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
         /// <param name="apiSchema">The deserialized ApiSchema metadata object.</param>
         /// <param name="outputDirectory">The directory to write output scripts to.</param>
         /// <param name="includeExtensions">Whether to include extensions in the DDL.</param>
-        void GenerateDdl(ApiSchema apiSchema, string outputDirectory, bool includeExtensions);
+        void GenerateDdl(ApiSchema apiSchema, string outputDirectory, bool includeExtensions, bool skipUnionViews = false);
     }
 }

@@ -1,0 +1,6 @@
+-- PostgreSQL Union View
+CREATE OR REPLACE VIEW "{{viewName}}" AS
+{{#each selectStatements}}
+{{#if @first}}{{else}}UNION ALL
+{{/if}}{{{this}}}
+{{/each}};
