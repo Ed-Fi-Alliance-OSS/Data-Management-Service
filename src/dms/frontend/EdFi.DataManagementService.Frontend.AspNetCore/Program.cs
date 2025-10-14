@@ -85,20 +85,20 @@ if (!ReportInvalidConfiguration(app))
     await InitializeDmsInstances(app);
     InitializeDatabase(app);
     await RetrieveAndCacheClaimSets(app);
+
+    app.UseRouting();
+
+    if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
+    {
+        app.UseRateLimiter();
+    }
+
+    app.UseCors("AllowSwaggerUI");
+
+    app.MapRouteEndpoints();
+
+    app.MapHealthChecks("/health");
 }
-
-app.UseRouting();
-
-if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
-{
-    app.UseRateLimiter();
-}
-
-app.UseCors("AllowSwaggerUI");
-
-app.MapRouteEndpoints();
-
-app.MapHealthChecks("/health");
 
 await app.RunAsync();
 

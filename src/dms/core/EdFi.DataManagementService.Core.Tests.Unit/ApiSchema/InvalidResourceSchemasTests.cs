@@ -161,7 +161,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -182,7 +183,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -203,7 +205,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -229,7 +232,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -250,7 +254,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -271,7 +276,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -292,7 +298,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -313,7 +320,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -334,7 +342,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -355,7 +364,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -376,7 +386,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -397,7 +408,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -418,7 +430,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act

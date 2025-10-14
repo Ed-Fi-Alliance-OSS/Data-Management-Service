@@ -56,7 +56,8 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -120,7 +121,8 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -186,7 +188,8 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -250,7 +253,8 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -314,7 +318,8 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -368,7 +373,8 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -435,7 +441,8 @@ public class DuplicatePropertiesMiddlewareTest
                 Body: jsonBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_requestInfo, NullNext);

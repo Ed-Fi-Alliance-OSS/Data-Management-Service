@@ -97,7 +97,8 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
@@ -138,7 +139,8 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
@@ -184,7 +186,8 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
@@ -230,7 +233,8 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
@@ -270,7 +274,8 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
@@ -340,7 +345,8 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT)
@@ -387,7 +393,8 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)
@@ -428,7 +435,8 @@ public class ResourceActionAuthorizationMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST)

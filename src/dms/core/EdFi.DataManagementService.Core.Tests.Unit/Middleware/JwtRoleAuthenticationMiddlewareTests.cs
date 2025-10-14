@@ -53,7 +53,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                 Body: "{}",
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                 QueryParameters: [],
-                TraceId: new TraceId("trace123")
+                TraceId: new TraceId("trace123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -123,7 +124,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                     ["Authorization"] = "Invalid token",
                 },
                 QueryParameters: [],
-                TraceId: new TraceId("trace123")
+                TraceId: new TraceId("trace123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -170,7 +172,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                     ["Authorization"] = "Bearer invalid-token",
                 },
                 QueryParameters: [],
-                TraceId: new TraceId("trace123")
+                TraceId: new TraceId("trace123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -225,7 +228,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                     ["Authorization"] = "Bearer valid-token",
                 },
                 QueryParameters: [],
-                TraceId: new TraceId("trace123")
+                TraceId: new TraceId("trace123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -306,7 +310,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                     ["Authorization"] = "Bearer valid-token",
                 },
                 QueryParameters: [],
-                TraceId: new TraceId("trace123")
+                TraceId: new TraceId("trace123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -375,7 +380,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                     ["Authorization"] = "Bearer valid-token",
                 },
                 QueryParameters: [],
-                TraceId: new TraceId("trace123")
+                TraceId: new TraceId("trace123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -441,7 +447,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                     ["authorization"] = "Bearer valid-token", // lowercase
                 },
                 QueryParameters: [],
-                TraceId: new TraceId("trace123")
+                TraceId: new TraceId("trace123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 

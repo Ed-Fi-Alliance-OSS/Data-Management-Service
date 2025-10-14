@@ -60,7 +60,8 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/assessments",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )
@@ -121,7 +122,8 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )
@@ -185,7 +187,8 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )

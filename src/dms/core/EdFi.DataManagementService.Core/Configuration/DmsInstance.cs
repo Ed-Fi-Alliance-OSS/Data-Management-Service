@@ -3,17 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Model;
+
 namespace EdFi.DataManagementService.Core.Configuration;
-
-/// <summary>
-/// The name/key of a route qualifier (e.g., "district", "schoolYear")
-/// </summary>
-public record struct RouteQualifierName(string Value);
-
-/// <summary>
-/// The value of a route qualifier (e.g., "255901", "2024")
-/// </summary>
-public record struct RouteQualifierValue(string Value);
 
 /// <summary>
 /// Represents a DMS instance configuration fetched from the Configuration Service

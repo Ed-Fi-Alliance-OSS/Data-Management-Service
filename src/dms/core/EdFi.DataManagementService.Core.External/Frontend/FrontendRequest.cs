@@ -31,5 +31,11 @@ public record FrontendRequest(
     /// <summary>
     /// A request identifier provided by the frontend service, used for log tracing
     /// </summary>
-    TraceId TraceId
+    TraceId TraceId,
+    /// <summary>
+    /// Route qualifiers extracted from the URL path (e.g., district ID, school year)
+    /// that determine which DMS instance to route the request to.
+    /// Empty if no route qualifiers are configured.
+    /// </summary>
+    Dictionary<RouteQualifierName, RouteQualifierValue> RouteQualifiers
 );

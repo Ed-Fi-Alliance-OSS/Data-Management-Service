@@ -91,7 +91,14 @@ internal static class No
     /// The null object for FrontendRequest
     /// </summary>
     public static FrontendRequest CreateFrontendRequest(string traceId) =>
-        new(Body: "{}", Headers: [], Path: "", QueryParameters: [], TraceId: new TraceId(traceId));
+        new(
+            Body: "{}",
+            Headers: [],
+            Path: "",
+            QueryParameters: [],
+            TraceId: new TraceId(traceId),
+            RouteQualifiers: []
+        );
 
     /// <summary>
     /// The null object for FrontendResponse

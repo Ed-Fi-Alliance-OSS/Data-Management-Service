@@ -142,7 +142,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -172,7 +173,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -202,7 +204,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -277,7 +280,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -307,7 +311,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -337,7 +342,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -379,7 +385,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -424,7 +431,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.PUT);
             await Middleware().Execute(_requestInfo, Next());
@@ -467,7 +475,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -513,7 +522,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -559,7 +569,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -590,7 +601,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -636,7 +648,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -681,7 +694,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -727,7 +741,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -757,7 +772,8 @@ public class ValidateDocumentMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -772,7 +788,8 @@ public class ValidateDocumentMiddlewareTests
                     Body: null,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.GET
             );

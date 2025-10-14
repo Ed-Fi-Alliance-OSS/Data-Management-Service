@@ -102,7 +102,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
                 );
 
                 _requestInfo = new(frontEndRequest, RequestMethod.POST)
@@ -200,7 +201,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
                 );
 
                 _requestInfo = new(frontEndRequest, RequestMethod.POST)
@@ -277,7 +279,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
                 );
 
                 _requestInfo = new(frontEndRequest, RequestMethod.POST)
@@ -354,7 +357,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
                 );
 
                 _requestInfo = new(frontEndRequest, RequestMethod.POST)
@@ -432,7 +436,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
                 );
 
                 _requestInfo = new(frontEndRequest, RequestMethod.POST)
@@ -518,7 +523,8 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     Body: requestBody,
                     Headers: [],
                     QueryParameters: [],
-                    TraceId: new TraceId("traceId")
+                    TraceId: new TraceId("traceId"),
+                    RouteQualifiers: []
                 );
 
                 _requestInfo = new(frontEndRequest, RequestMethod.POST)

@@ -113,7 +113,8 @@ public class ValidateEqualityConstraintMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, Next());
@@ -167,7 +168,8 @@ public class ValidateEqualityConstraintMiddlewareTests
                 Body: jsonData,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
             _requestInfo = Context(frontEndRequest, RequestMethod.POST);
 

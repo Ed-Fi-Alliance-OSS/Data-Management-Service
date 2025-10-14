@@ -5,6 +5,7 @@
 
 using System.Net.Http.Headers;
 using System.Text.Json;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.Logging;
 

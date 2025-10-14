@@ -34,11 +34,12 @@ public class RejectResourceIdentifierMiddlewareTests
         public async Task Setup()
         {
             FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/students",
                 Body: """{"id":"2a5a8b65-40c9-4524-8eb8-a1b3bb857b32","studentUniqueId":"333333","birthDate": "2017-08-26","firstName": "hello firstName","lastSurname":"lastSurname"}""",
                 Headers: [],
-                Path: "/ed-fi/students",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -78,11 +79,12 @@ public class RejectResourceIdentifierMiddlewareTests
         public async Task Setup()
         {
             FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/students",
                 Body: """{"studentUniqueId":"333333","birthDate": "2017-08-26","firstName": "hello firstName","lastSurname":"lastSurname"}""",
                 Headers: [],
-                Path: "/ed-fi/students",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);

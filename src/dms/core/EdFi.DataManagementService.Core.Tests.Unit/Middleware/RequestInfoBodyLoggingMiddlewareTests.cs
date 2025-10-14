@@ -65,7 +65,8 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new(frontEndRequest, RequestMethod.POST);
@@ -124,7 +125,8 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 Body: """{"schoolId":"12345","nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new(frontEndRequest, RequestMethod.POST);
@@ -185,7 +187,8 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new(frontEndRequest, RequestMethod.POST);
@@ -244,7 +247,8 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new(frontEndRequest, RequestMethod.POST);

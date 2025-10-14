@@ -54,7 +54,8 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
             Body: jsonBody,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("")
+            TraceId: new TraceId(""),
+            RouteQualifiers: []
         );
 
         RequestInfo requestInfo = new(frontEndRequest, method)

@@ -49,7 +49,8 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -119,7 +120,8 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.GET);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -224,7 +226,8 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
 
             _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
@@ -373,7 +376,8 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
 
             _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
@@ -449,7 +453,8 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
 
             _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);
@@ -529,7 +534,8 @@ public class ValidateQueryMiddlewareTests
                 Body: null,
                 Headers: [],
                 QueryParameters: queryParameters,
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
 
             _requestInfo = NewRequestInfo(frontendRequest, RequestMethod.GET);

@@ -417,7 +417,8 @@ public class ApiServiceHotReloadIntegrationTests
             Body: body,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("test-trace-id")
+            TraceId: new TraceId("test-trace-id"),
+            RouteQualifiers: []
         );
     }
 

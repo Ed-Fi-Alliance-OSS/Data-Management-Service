@@ -37,7 +37,8 @@ public class ArrayUniquenessValidationMiddlewareTests
             Body: jsonBody,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("")
+            TraceId: new TraceId(""),
+            RouteQualifiers: []
         );
 
         RequestInfo requestInfo = new(frontEndRequest, RequestMethod.POST)
