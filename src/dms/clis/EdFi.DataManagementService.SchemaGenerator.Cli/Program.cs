@@ -9,6 +9,8 @@ using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Serilog;
 
 
 namespace EdFi.DataManagementService.SchemaGenerator.Cli
@@ -33,11 +35,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
 
             // Setup DI
             var services = new ServiceCollection();
-            services.AddSingleton<IConfiguration>(config);
-            services.AddTransient<ApiSchemaLoader>();
-            services.AddTransient<IDdlGeneratorStrategy, PgsqlDdlGeneratorStrategy>();
-            services.AddTransient<IDdlGeneratorStrategy, MssqlDdlGeneratorStrategy>();
+            ConfigureServices(services, config);
             var serviceProvider = services.BuildServiceProvider();
+
+            var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
 
             // Manual argument parsing (simple, extend as needed)
             string? input = null;
@@ -79,36 +80,97 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
 
             if (string.IsNullOrWhiteSpace(input) || string.IsNullOrWhiteSpace(output))
             {
-                Console.Error.WriteLine("--input and --output are required (via command line, env, or appsettings.json)");
+                logger.LogError("--input and --output are required (via command line, env, or appsettings.json)");
                 return 1;
             }
 
             try
             {
+                logger.LogInformation("Starting DDL generation. Input: {Input}, Output: {Output}, Provider: {Provider}, Extensions: {Extensions}, SkipUnionViews: {SkipUnionViews}",
+                    input, output, provider, extensions, skipUnionViews);
+
                 var loader = serviceProvider.GetRequiredService<ApiSchemaLoader>();
                 var strategies = serviceProvider.GetServices<IDdlGeneratorStrategy>().ToList();
                 var apiSchema = loader.Load(input);
 
                 if (provider == "pgsql" || provider == "all")
                 {
+                    logger.LogInformation("Generating PostgreSQL DDL...");
                     var pgsql = strategies.FirstOrDefault(s => s.GetType().Name.Contains("Pgsql"));
                     pgsql?.GenerateDdl(apiSchema, output, extensions, skipUnionViews);
+                    logger.LogInformation("PostgreSQL DDL generation completed");
                 }
 
                 if (provider == "mssql" || provider == "all")
                 {
+                    logger.LogInformation("Generating SQL Server DDL...");
                     var mssql = strategies.FirstOrDefault(s => s.GetType().Name.Contains("Mssql"));
                     mssql?.GenerateDdl(apiSchema, output, extensions, skipUnionViews);
+                    logger.LogInformation("SQL Server DDL generation completed");
                 }
 
-                Console.WriteLine($"DDL generation completed successfully. Output: {output}");
+                logger.LogInformation("DDL generation completed successfully. Output: {Output}", output);
                 return 0;
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Error: {ex.Message}");
+                logger.LogCritical(ex, "An error occurred while generating DDL");
                 return 2;
             }
+        }
+
+        /// <summary>
+        /// Configures dependency injection services.
+        /// </summary>
+        private static void ConfigureServices(IServiceCollection services, IConfiguration config)
+        {
+            // Read log file path from configuration with default value
+            var logFilePath = config.GetValue<string>("Logging:LogFilePath") ?? "logs/SchemaGenerator.log";
+            var minimumLevel = config.GetValue<string>("Logging:MinimumLevel") ?? "Information";
+
+            var logConfiguration = new LoggerConfiguration();
+
+            // Set minimum level from configuration
+            if (minimumLevel.Equals("Debug", StringComparison.OrdinalIgnoreCase))
+            {
+                logConfiguration.MinimumLevel.Debug();
+            }
+            else if (minimumLevel.Equals("Warning", StringComparison.OrdinalIgnoreCase))
+            {
+                logConfiguration.MinimumLevel.Warning();
+            }
+            else if (minimumLevel.Equals("Error", StringComparison.OrdinalIgnoreCase))
+            {
+                logConfiguration.MinimumLevel.Error();
+            }
+            else
+            {
+                logConfiguration.MinimumLevel.Information();
+            }
+
+            if (Console.IsOutputRedirected)
+            {
+                logConfiguration.WriteTo.File(logFilePath, rollingInterval: RollingInterval.Day);
+            }
+            else
+            {
+                logConfiguration.WriteTo.Console();
+                logConfiguration.WriteTo.File(logFilePath, rollingInterval: RollingInterval.Day);
+            }
+
+            Log.Logger = logConfiguration.CreateLogger();
+
+            services.AddLogging(loggingConfig =>
+            {
+                loggingConfig.ClearProviders();
+                loggingConfig.AddSerilog();
+            });
+
+            services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
+            services.AddSingleton<IConfiguration>(config);
+            services.AddTransient<ApiSchemaLoader>();
+            services.AddTransient<IDdlGeneratorStrategy, PgsqlDdlGeneratorStrategy>();
+            services.AddTransient<IDdlGeneratorStrategy, MssqlDdlGeneratorStrategy>();
         }
     }
 }

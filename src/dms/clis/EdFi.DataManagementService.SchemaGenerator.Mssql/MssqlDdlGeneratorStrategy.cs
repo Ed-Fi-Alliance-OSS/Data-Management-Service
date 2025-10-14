@@ -24,6 +24,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
         {
             Directory.CreateDirectory(outputDirectory);
 
+            var ddl = GenerateDdlString(apiSchema, includeExtensions, skipUnionViews);
+
+            File.WriteAllText(Path.Combine(outputDirectory, "schema-mssql.sql"), ddl);
+        }
+
+        /// <summary>
+        /// Generates SQL Server DDL scripts as a string (useful for testing).
+        /// </summary>
+        /// <param name="apiSchema">The deserialized ApiSchema metadata object.</param>
+        /// <param name="includeExtensions">Whether to include extensions in the DDL.</param>
+        /// <param name="skipUnionViews">Whether to skip generating union views.</param>
+        /// <returns>The DDL script.</returns>
+        public string GenerateDdlString(ApiSchema apiSchema, bool includeExtensions, bool skipUnionViews = false)
+        {
+
             if (apiSchema.ProjectSchema == null || apiSchema.ProjectSchema.ResourceSchemas == null)
             {
                 throw new InvalidDataException("ApiSchema does not contain valid projectSchema.");
@@ -40,7 +55,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             var template = Handlebars.Compile(templateContent);
 
             var sb = new StringBuilder();
-            var summary = new StringBuilder();
 
             // Process each resource schema
             foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas)
@@ -60,7 +74,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 }
 
                 // Recursively generate DDL for root table and all child tables
-                GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, summary, null, null);
+                GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, null, null);
             }
 
             // Generate union views for abstract resources unless skipped
@@ -121,7 +135,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     if (resourceSchema.FlatteningMetadata?.Table != null)
                     {
                         var table = resourceSchema.FlatteningMetadata.Table;
-                        
+
                         // Check if this table has polymorphic reference indicators
                         bool hasPolymorphicRef = table.Columns.Any(c => c.IsPolymorphicReference);
                         bool hasDiscriminator = table.Columns.Any(c => c.IsDiscriminator);
@@ -158,15 +172,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 }
             }
 
-            File.WriteAllText(Path.Combine(outputDirectory, "schema-mssql.sql"), sb.ToString());
-            File.WriteAllText(Path.Combine(outputDirectory, "schema-mssql-summary.txt"), summary.ToString());
+            return sb.ToString();
         }
 
         private void GenerateTableDdl(
             TableMetadata table,
             HandlebarsTemplate<object, object> template,
             StringBuilder sb,
-            StringBuilder summary,
             string? parentTableName,
             List<string>? parentPkColumns)
         {
@@ -214,12 +226,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 fkColumns
             };
             sb.AppendLine(template(data));
-            summary.AppendLine($"{table.BaseName}: will be created if not exists");
 
             // Recursively process child tables, passing this table's PK columns
             foreach (var childTable in table.ChildTables)
             {
-                GenerateTableDdl(childTable, template, sb, summary, table.BaseName, pkColumns);
+                GenerateTableDdl(childTable, template, sb, table.BaseName, pkColumns);
             }
         }
 
