@@ -1,0 +1,6 @@
+-- SQL Server Union View
+CREATE VIEW [{{viewName}}] AS
+{{#each selectStatements}}
+{{#if @first}}{{else}}UNION ALL
+{{/if}}{{{this}}}
+{{/each}};
