@@ -24,5 +24,10 @@ public record DmsInstance(
     /// <summary>
     /// The database connection string for this instance
     /// </summary>
-    string? ConnectionString
+    string? ConnectionString,
+    /// <summary>
+    /// Route qualifier context for this instance, mapping qualifier names to values
+    /// (e.g., "district" -> "255901", "schoolYear" -> "2024")
+    /// </summary>
+    Dictionary<string, string> RouteContext
 );

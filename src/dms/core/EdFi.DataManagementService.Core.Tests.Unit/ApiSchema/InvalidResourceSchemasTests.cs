@@ -95,7 +95,8 @@ public class InvalidResourceSchemasTests
                         Id: 1,
                         InstanceType: "Test",
                         InstanceName: "Test Instance",
-                        ConnectionString: "test-connection-string"
+                        ConnectionString: "test-connection-string",
+                        RouteContext: []
                     )
                 );
             services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
@@ -123,10 +124,7 @@ public class InvalidResourceSchemasTests
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
                 new NamedAuthorizationServiceFactory(serviceProvider),
                 ResiliencePipeline.Empty,
-                new ResourceLoadOrderCalculator(
-                    [],
-                    A.Fake<IResourceDependencyGraphFactory>()
-                ),
+                new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
                 apiSchemaUploadService,
                 serviceProvider,
                 A.Fake<ClaimSetsCache>(),

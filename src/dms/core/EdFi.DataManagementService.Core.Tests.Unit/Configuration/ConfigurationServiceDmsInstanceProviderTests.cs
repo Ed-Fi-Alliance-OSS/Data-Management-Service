@@ -50,6 +50,25 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
 
+            var routeContextsResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    InstanceId = 1L,
+                    ContextKey = "district",
+                    ContextValue = "255901",
+                },
+                new
+                {
+                    Id = 2L,
+                    InstanceId = 1L,
+                    ContextKey = "schoolYear",
+                    ContextValue = "2024",
+                },
+            };
+            handler.SetResponse("v2/dmsinstanceroutecontexts/", routeContextsResponse);
+
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
             var context = new ConfigurationServiceContext("clientId", "secret", "scope");
@@ -98,6 +117,31 @@ public class ConfigurationServiceDmsInstanceProviderTests
             var instance = _provider!.GetById(999);
             instance.Should().BeNull();
         }
+
+        [Test]
+        public void It_should_load_route_contexts_for_instances()
+        {
+            var instance = _provider!.GetById(1);
+            instance.Should().NotBeNull();
+            instance!.RouteContext.Should().NotBeNull();
+            instance.RouteContext.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void It_should_map_context_keys_to_context_values()
+        {
+            var instance = _provider!.GetById(1);
+            instance!.RouteContext["district"].Should().Be("255901");
+            instance.RouteContext["schoolYear"].Should().Be("2024");
+        }
+
+        [Test]
+        public void It_should_have_empty_route_context_for_instance_without_contexts()
+        {
+            var instance = _provider!.GetById(2);
+            instance.Should().NotBeNull();
+            instance!.RouteContext.Should().BeEmpty();
+        }
     }
 
     [TestFixture]
@@ -114,6 +158,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 .Returns("valid-token");
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
+            handler.SetResponse("v2/dmsinstanceroutecontexts/", Array.Empty<object>());
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
             var context = new ConfigurationServiceContext("clientId", "secret", "scope");
@@ -242,6 +287,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
             };
 
             handler.SetResponse("v2/dmsInstances/", firstResponse);
+            handler.SetResponse("v2/dmsinstanceroutecontexts/", Array.Empty<object>());
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -326,6 +372,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 """;
 
             handler.SetJsonResponse("v2/dmsInstances/", dmsInstancesJson);
+            handler.SetResponse("v2/dmsinstanceroutecontexts/", Array.Empty<object>());
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -352,6 +399,324 @@ public class ConfigurationServiceDmsInstanceProviderTests
             var instance = _provider!.GetById(2);
             instance.Should().NotBeNull();
             instance!.ConnectionString.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Instances_With_Multiple_Route_Contexts
+    {
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+        private IList<DmsInstance>? _loadedInstances;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            var dmsInstancesResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    InstanceType = "Production",
+                    InstanceName = "District 255901 - 2024",
+                    ConnectionString = "host=localhost;database=edfi_255901_2024;",
+                },
+                new
+                {
+                    Id = 2L,
+                    InstanceType = "Production",
+                    InstanceName = "District 255901 - 2025",
+                    ConnectionString = "host=localhost;database=edfi_255901_2025;",
+                },
+                new
+                {
+                    Id = 3L,
+                    InstanceType = "Production",
+                    InstanceName = "District 255902 - 2024",
+                    ConnectionString = "host=localhost;database=edfi_255902_2024;",
+                },
+            };
+
+            var routeContextsResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    InstanceId = 1L,
+                    ContextKey = "district",
+                    ContextValue = "255901",
+                },
+                new
+                {
+                    Id = 2L,
+                    InstanceId = 1L,
+                    ContextKey = "schoolYear",
+                    ContextValue = "2024",
+                },
+                new
+                {
+                    Id = 3L,
+                    InstanceId = 2L,
+                    ContextKey = "district",
+                    ContextValue = "255901",
+                },
+                new
+                {
+                    Id = 4L,
+                    InstanceId = 2L,
+                    ContextKey = "schoolYear",
+                    ContextValue = "2025",
+                },
+                new
+                {
+                    Id = 5L,
+                    InstanceId = 3L,
+                    ContextKey = "district",
+                    ContextValue = "255902",
+                },
+                new
+                {
+                    Id = 6L,
+                    InstanceId = 3L,
+                    ContextKey = "schoolYear",
+                    ContextValue = "2024",
+                },
+            };
+
+            handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
+            handler.SetResponse("v2/dmsinstanceroutecontexts/", routeContextsResponse);
+
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+            );
+            _loadedInstances = await _provider.LoadDmsInstances();
+        }
+
+        [Test]
+        public void It_should_load_all_instances_with_route_contexts()
+        {
+            _loadedInstances.Should().HaveCount(3);
+            _loadedInstances!.Should().AllSatisfy(i => i.RouteContext.Should().HaveCount(2));
+        }
+
+        [Test]
+        public void It_should_correctly_map_route_contexts_to_first_instance()
+        {
+            var instance = _provider!.GetById(1);
+            instance!.RouteContext["district"].Should().Be("255901");
+            instance.RouteContext["schoolYear"].Should().Be("2024");
+        }
+
+        [Test]
+        public void It_should_correctly_map_route_contexts_to_second_instance()
+        {
+            var instance = _provider!.GetById(2);
+            instance!.RouteContext["district"].Should().Be("255901");
+            instance.RouteContext["schoolYear"].Should().Be("2025");
+        }
+
+        [Test]
+        public void It_should_correctly_map_route_contexts_to_third_instance()
+        {
+            var instance = _provider!.GetById(3);
+            instance!.RouteContext["district"].Should().Be("255902");
+            instance.RouteContext["schoolYear"].Should().Be("2024");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Route_Contexts_Without_Matching_Instances
+    {
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            var dmsInstancesResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    InstanceType = "Production",
+                    InstanceName = "Valid Instance",
+                    ConnectionString = "host=localhost;database=edfi;",
+                },
+            };
+
+            // Route contexts reference non-existent instance IDs
+            var routeContextsResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    InstanceId = 999L,
+                    ContextKey = "district",
+                    ContextValue = "255901",
+                },
+                new
+                {
+                    Id = 2L,
+                    InstanceId = 999L,
+                    ContextKey = "schoolYear",
+                    ContextValue = "2024",
+                },
+            };
+
+            handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
+            handler.SetResponse("v2/dmsinstanceroutecontexts/", routeContextsResponse);
+
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+            );
+            await _provider.LoadDmsInstances();
+        }
+
+        [Test]
+        public void It_should_load_instance_with_empty_route_context()
+        {
+            var instance = _provider!.GetById(1);
+            instance.Should().NotBeNull();
+            instance!.RouteContext.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Route_Contexts_Endpoint_Returns_Empty
+    {
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+        private IList<DmsInstance>? _loadedInstances;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            var dmsInstancesResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    InstanceType = "Production",
+                    InstanceName = "Instance Without Route Context",
+                    ConnectionString = "host=localhost;database=edfi;",
+                },
+            };
+
+            handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
+            handler.SetResponse("v2/dmsinstanceroutecontexts/", Array.Empty<object>());
+
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+            );
+            _loadedInstances = await _provider.LoadDmsInstances();
+        }
+
+        [Test]
+        public void It_should_load_instances_successfully()
+        {
+            _loadedInstances.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_should_have_empty_route_contexts()
+        {
+            var instance = _provider!.GetById(1);
+            instance.Should().NotBeNull();
+            instance!.RouteContext.Should().NotBeNull();
+            instance.RouteContext.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Single_Route_Context_Per_Instance
+    {
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            var dmsInstancesResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    InstanceType = "Production",
+                    InstanceName = "District Only Instance",
+                    ConnectionString = "host=localhost;database=edfi;",
+                },
+            };
+
+            var routeContextsResponse = new[]
+            {
+                new
+                {
+                    Id = 1L,
+                    InstanceId = 1L,
+                    ContextKey = "district",
+                    ContextValue = "255901",
+                },
+            };
+
+            handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
+            handler.SetResponse("v2/dmsinstanceroutecontexts/", routeContextsResponse);
+
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+            );
+            await _provider.LoadDmsInstances();
+        }
+
+        [Test]
+        public void It_should_have_single_route_context_entry()
+        {
+            var instance = _provider!.GetById(1);
+            instance!.RouteContext.Should().HaveCount(1);
+            instance.RouteContext["district"].Should().Be("255901");
         }
     }
 

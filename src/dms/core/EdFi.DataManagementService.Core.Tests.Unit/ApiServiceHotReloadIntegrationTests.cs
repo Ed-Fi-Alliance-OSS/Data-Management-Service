@@ -98,7 +98,8 @@ public class ApiServiceHotReloadIntegrationTests
                     Id: 1,
                     InstanceType: "Test",
                     InstanceName: "Test Instance",
-                    ConnectionString: "test-connection-string"
+                    ConnectionString: "test-connection-string",
+                    RouteContext: []
                 )
             );
         services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
@@ -119,7 +120,10 @@ public class ApiServiceHotReloadIntegrationTests
         var equalityConstraintValidator = new EqualityConstraintValidator();
         var decimalValidator = new DecimalValidator();
         var authorizationServiceFactory = new NamedAuthorizationServiceFactory(serviceProvider);
-        var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>());
+        var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator(
+            [],
+            A.Fake<IResourceDependencyGraphFactory>()
+        );
 
         var apiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
 

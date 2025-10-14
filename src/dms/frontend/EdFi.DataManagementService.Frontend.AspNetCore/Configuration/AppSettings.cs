@@ -15,6 +15,7 @@ public class AppSettings
     public bool DeployDatabaseOnStartup { get; set; }
     public required string CorrelationIdHeader { get; set; }
     public string DomainsExcludedFromOpenApi { get; set; } = string.Empty;
+    public string[] RouteQualifierSegments { get; set; } = [];
 }
 
 public class AppSettingsValidator : IValidateOptions<AppSettings>
@@ -46,9 +47,7 @@ public class AppSettingsValidator : IValidateOptions<AppSettings>
             return ValidateOptionsResult.Fail("Missing required AppSettings value: Datastore");
         }
 
-        if (
-            !options.QueryHandler.Equals("postgresql", StringComparison.CurrentCultureIgnoreCase)
-        )
+        if (!options.QueryHandler.Equals("postgresql", StringComparison.CurrentCultureIgnoreCase))
         {
             return ValidateOptionsResult.Fail(
                 "AppSettings value QueryHandler must be 'postgresql'. Only 'postgresql' is currently supported for QueryHandler. This validation exists to prevent misconfiguration and may allow more options in the future."
