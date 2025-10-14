@@ -1,0 +1,12 @@
+-- MSSQL CREATE TABLE {{tableName}}
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '{{tableName}}')
+BEGIN
+    CREATE TABLE [{{tableName}}] (
+{{#each columns}}
+        [{{name}}] {{type}}{{#if @last}}{{else}},{{/if}}
+{{/each}}
+    );
+    PRINT 'Table {{tableName}} created.';
+END
+ELSE
+    PRINT 'Table {{tableName}} already exists, skipped.';
