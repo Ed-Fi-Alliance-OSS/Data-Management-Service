@@ -1,14 +1,14 @@
--- PgSQL CREATE TABLE {{tableName}}
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = '{{tableName}}') THEN
-        CREATE TABLE "{{tableName}}" (
+
+CREATE TABLE IF NOT EXISTS "{{tableName}}" (
 {{#each columns}}
-            "{{name}}" {{type}}{{#if @last}}{{else}},{{/if}}
+    "{{name}}" {{type}}{{#if isRequired}} NOT NULL{{/if}}{{#unless @last}},{{/unless}}
 {{/each}}
-        );
-        RAISE NOTICE 'Table {{tableName}} created.';
-    ELSE
-        RAISE NOTICE 'Table {{tableName}} already exists, skipped.';
-    END IF;
-END$$;
+{{#each pkColumns}}
+{{#if @first}}
+{{#if ../columns}},{{/if}}
+    PRIMARY KEY ({{/if}}"{{this}}"{{#unless @last}}, {{else}}){{/unless}}
+{{/each}}
+{{#each fkColumns}},
+    FOREIGN KEY ("{{column}}") REFERENCES "{{parentTable}}"("{{parentColumn}}")
+{{/each}}
+);

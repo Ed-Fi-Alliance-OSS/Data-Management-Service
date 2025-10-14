@@ -3,7 +3,15 @@ IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '{{tableName}}')
 BEGIN
     CREATE TABLE [{{tableName}}] (
 {{#each columns}}
-        [{{name}}] {{type}}{{#if @last}}{{else}},{{/if}}
+    [{{name}}] {{type}}{{#if isRequired}} NOT NULL{{/if}}{{#unless @last}},{{/unless}}
+{{/each}}
+{{#each pkColumns}}
+{{#if @first}}
+{{#if ../columns}},{{/if}}
+    CONSTRAINT [PK_{{../tableName}}] PRIMARY KEY ({{/if}}[{{this}}]{{#unless @last}}, {{else}}){{/unless}}
+{{/each}}
+{{#each fkColumns}},
+    CONSTRAINT [FK_{{../tableName}}_{{column}}] FOREIGN KEY ([{{column}}]) REFERENCES [{{parentTable}}]([{{parentColumn}}])
 {{/each}}
     );
     PRINT 'Table {{tableName}} created.';
