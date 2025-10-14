@@ -44,6 +44,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
             string? output = null;
             string provider = "all";
             bool extensions = false;
+            bool skipUnionViews = false;
             for (int i = 0; i < args.Length; i++)
             {
                 switch (args[i])
@@ -53,14 +54,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                         {
                             input = args[++i];
                         }
-
                         break;
                     case "--output":
                         if (i + 1 < args.Length)
                         {
                             output = args[++i];
                         }
-
                         break;
                     case "--provider":
                     case "--db":
@@ -68,10 +67,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                         {
                             provider = args[++i];
                         }
-
                         break;
                     case "--extensions":
                         extensions = true;
+                        break;
+                    case "--skip-union-views":
+                        skipUnionViews = true;
                         break;
                 }
             }
@@ -91,13 +92,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                 if (provider == "pgsql" || provider == "all")
                 {
                     var pgsql = strategies.FirstOrDefault(s => s.GetType().Name.Contains("Pgsql"));
-                    pgsql?.GenerateDdl(apiSchema, output, extensions);
+                    pgsql?.GenerateDdl(apiSchema, output, extensions, skipUnionViews);
                 }
 
                 if (provider == "mssql" || provider == "all")
                 {
                     var mssql = strategies.FirstOrDefault(s => s.GetType().Name.Contains("Mssql"));
-                    mssql?.GenerateDdl(apiSchema, output, extensions);
+                    mssql?.GenerateDdl(apiSchema, output, extensions, skipUnionViews);
                 }
 
                 Console.WriteLine($"DDL generation completed successfully. Output: {output}");
