@@ -60,7 +60,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 }
 
                 // Recursively generate DDL for root table and all child tables
-                GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, summary, null);
+                GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, summary, null, null);
             }
 
             File.WriteAllText(Path.Combine(outputDirectory, "schema-pgsql.sql"), sb.ToString());
@@ -72,25 +72,57 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             HandlebarsTemplate<object, object> template,
             StringBuilder sb,
             StringBuilder summary,
-            string? parentTableName)
+            string? parentTableName,
+            List<string>? parentPkColumns)
         {
             var columns = table.Columns
                 .Select(c => new
                 {
                     name = c.ColumnName,
                     type = MapColumnType(c),
-                    isRequired = c.IsRequired
+                    isRequired = c.IsRequired,
+                    isNaturalKey = c.IsNaturalKey,
+                    isParentReference = c.IsParentReference,
+                    fromReferencePath = c.FromReferencePath
                 })
                 .ToList();
 
-            var data = new { tableName = table.BaseName, columns };
+            // Primary key columns
+            var pkColumns = table.Columns.Where(c => c.IsNaturalKey).Select(c => c.ColumnName).ToList();
+
+            // Foreign key columns (parent reference only)
+            var fkColumns = new List<object>();
+            if (parentTableName != null && parentPkColumns != null && parentPkColumns.Count > 0)
+            {
+                foreach (var col in table.Columns.Where(c => c.IsParentReference))
+                {
+                    // Reference all parent PK columns (usually one, but support composite)
+                    foreach (var parentPk in parentPkColumns)
+                    {
+                        fkColumns.Add(new
+                        {
+                            column = col.ColumnName,
+                            parentTable = parentTableName,
+                            parentColumn = parentPk
+                        });
+                    }
+                }
+            }
+
+            var data = new
+            {
+                tableName = table.BaseName,
+                columns,
+                pkColumns,
+                fkColumns
+            };
             sb.AppendLine(template(data));
             summary.AppendLine($"{table.BaseName}: will be created if not exists");
 
-            // Recursively process child tables
+            // Recursively process child tables, passing this table's PK columns
             foreach (var childTable in table.ChildTables)
             {
-                GenerateTableDdl(childTable, template, sb, summary, table.BaseName);
+                GenerateTableDdl(childTable, template, sb, summary, table.BaseName, pkColumns);
             }
         }
 

@@ -58,9 +58,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = File.ReadAllText(Path.Combine(outputDir, "schema-pgsql.sql"));
             Assert.That(sql, Does.Contain("DO $$"));
             Assert.That(sql, Does.Contain("CREATE TABLE \"TestTable\""));
-            Assert.That(sql, Does.Contain("Id BIGSERIAL"));
-            Assert.That(sql, Does.Contain("Name TEXT"));
+            Assert.That(sql, Does.Contain("Id BIGINT NOT NULL"));
+            Assert.That(sql, Does.Contain("Name VARCHAR(100) NOT NULL"));
             Assert.That(sql, Does.Contain("IsActive BOOLEAN"));
+            Assert.That(sql, Does.Contain("PRIMARY KEY (\"Id\")"));
         }
 
         [Test]
@@ -74,9 +75,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = File.ReadAllText(Path.Combine(outputDir, "schema-mssql.sql"));
             Assert.That(sql, Does.Contain("IF NOT EXISTS"));
             Assert.That(sql, Does.Contain("CREATE TABLE [TestTable]"));
-            Assert.That(sql, Does.Contain("Id BIGINT IDENTITY(1,1)"));
-            Assert.That(sql, Does.Contain("Name NVARCHAR(MAX)"));
+            Assert.That(sql, Does.Contain("Id BIGINT NOT NULL"));
+            Assert.That(sql, Does.Contain("Name NVARCHAR(100) NOT NULL"));
             Assert.That(sql, Does.Contain("IsActive BIT"));
+            Assert.That(sql, Does.Contain("PRIMARY KEY ([Id])"));
         }
     }
 }
