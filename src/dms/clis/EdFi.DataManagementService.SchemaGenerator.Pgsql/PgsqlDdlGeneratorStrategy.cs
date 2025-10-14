@@ -78,7 +78,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             var columns = table.Columns
                 .Select(c => new
                 {
-                    name = c.ColumnName,
+                    name = PgsqlNamingHelper.MakePgsqlIdentifier(c.ColumnName),
                     type = MapColumnType(c),
                     isRequired = c.IsRequired,
                     isNaturalKey = c.IsNaturalKey,
@@ -88,7 +88,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 .ToList();
 
             // Primary key columns
-            var pkColumns = table.Columns.Where(c => c.IsNaturalKey).Select(c => c.ColumnName).ToList();
+            var pkColumns = table.Columns.Where(c => c.IsNaturalKey).Select(c => PgsqlNamingHelper.MakePgsqlIdentifier(c.ColumnName)).ToList();
 
             // Foreign key columns (parent reference only)
             var fkColumns = new List<object>();
@@ -96,14 +96,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             {
                 foreach (var col in table.Columns.Where(c => c.IsParentReference))
                 {
-                    // Reference all parent PK columns (usually one, but support composite)
                     foreach (var parentPk in parentPkColumns)
                     {
                         fkColumns.Add(new
                         {
-                            column = col.ColumnName,
-                            parentTable = parentTableName,
-                            parentColumn = parentPk
+                            column = PgsqlNamingHelper.MakePgsqlIdentifier(col.ColumnName),
+                            parentTable = PgsqlNamingHelper.MakePgsqlIdentifier(parentTableName),
+                            parentColumn = PgsqlNamingHelper.MakePgsqlIdentifier(parentPk)
                         });
                     }
                 }
@@ -111,7 +110,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
             var data = new
             {
-                tableName = table.BaseName,
+                tableName = PgsqlNamingHelper.MakePgsqlIdentifier(table.BaseName),
                 columns,
                 pkColumns,
                 fkColumns
