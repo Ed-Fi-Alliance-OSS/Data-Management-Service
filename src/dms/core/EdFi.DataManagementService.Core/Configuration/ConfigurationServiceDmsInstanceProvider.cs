@@ -155,7 +155,8 @@ public class ConfigurationServiceDmsInstanceProvider(
             return [];
         }
 
-        Dictionary<long, Dictionary<string, string>> routeContextsByInstanceId = await FetchRouteContexts();
+        Dictionary<long, Dictionary<RouteQualifierName, RouteQualifierValue>> routeContextsByInstanceId =
+            await FetchRouteContexts();
 
         return dmsInstanceResponses
             .Select(response => new DmsInstance(
@@ -172,7 +173,9 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// Fetches route context information from the Configuration Service API
     /// and maps it by InstanceId
     /// </summary>
-    private async Task<Dictionary<long, Dictionary<string, string>>> FetchRouteContexts()
+    private async Task<
+        Dictionary<long, Dictionary<RouteQualifierName, RouteQualifierValue>>
+    > FetchRouteContexts()
     {
         const string RouteContextsEndpoint = "v2/dmsinstanceroutecontexts/";
 
@@ -214,7 +217,11 @@ public class ConfigurationServiceDmsInstanceProvider(
             .GroupBy(rc => rc.InstanceId)
             .ToDictionary(
                 group => group.Key,
-                group => group.ToDictionary(rc => rc.ContextKey, rc => rc.ContextValue)
+                group =>
+                    group.ToDictionary(
+                        rc => new RouteQualifierName(rc.ContextKey),
+                        rc => new RouteQualifierValue(rc.ContextValue)
+                    )
             );
     }
 

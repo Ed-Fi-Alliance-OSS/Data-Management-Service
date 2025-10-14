@@ -131,8 +131,14 @@ public class ConfigurationServiceDmsInstanceProviderTests
         public void It_should_map_context_keys_to_context_values()
         {
             var instance = _provider!.GetById(1);
-            instance!.RouteContext["district"].Should().Be("255901");
-            instance.RouteContext["schoolYear"].Should().Be("2024");
+            instance!
+                .RouteContext[new RouteQualifierName("district")]
+                .Should()
+                .Be(new RouteQualifierValue("255901"));
+            instance
+                .RouteContext[new RouteQualifierName("schoolYear")]
+                .Should()
+                .Be(new RouteQualifierValue("2024"));
         }
 
         [Test]
@@ -514,24 +520,42 @@ public class ConfigurationServiceDmsInstanceProviderTests
         public void It_should_correctly_map_route_contexts_to_first_instance()
         {
             var instance = _provider!.GetById(1);
-            instance!.RouteContext["district"].Should().Be("255901");
-            instance.RouteContext["schoolYear"].Should().Be("2024");
+            instance!
+                .RouteContext[new RouteQualifierName("district")]
+                .Should()
+                .Be(new RouteQualifierValue("255901"));
+            instance
+                .RouteContext[new RouteQualifierName("schoolYear")]
+                .Should()
+                .Be(new RouteQualifierValue("2024"));
         }
 
         [Test]
         public void It_should_correctly_map_route_contexts_to_second_instance()
         {
             var instance = _provider!.GetById(2);
-            instance!.RouteContext["district"].Should().Be("255901");
-            instance.RouteContext["schoolYear"].Should().Be("2025");
+            instance!
+                .RouteContext[new RouteQualifierName("district")]
+                .Should()
+                .Be(new RouteQualifierValue("255901"));
+            instance
+                .RouteContext[new RouteQualifierName("schoolYear")]
+                .Should()
+                .Be(new RouteQualifierValue("2025"));
         }
 
         [Test]
         public void It_should_correctly_map_route_contexts_to_third_instance()
         {
             var instance = _provider!.GetById(3);
-            instance!.RouteContext["district"].Should().Be("255902");
-            instance.RouteContext["schoolYear"].Should().Be("2024");
+            instance!
+                .RouteContext[new RouteQualifierName("district")]
+                .Should()
+                .Be(new RouteQualifierValue("255902"));
+            instance
+                .RouteContext[new RouteQualifierName("schoolYear")]
+                .Should()
+                .Be(new RouteQualifierValue("2024"));
         }
     }
 
@@ -716,7 +740,10 @@ public class ConfigurationServiceDmsInstanceProviderTests
         {
             var instance = _provider!.GetById(1);
             instance!.RouteContext.Should().HaveCount(1);
-            instance.RouteContext["district"].Should().Be("255901");
+            instance
+                .RouteContext[new RouteQualifierName("district")]
+                .Should()
+                .Be(new RouteQualifierValue("255901"));
         }
     }
 
