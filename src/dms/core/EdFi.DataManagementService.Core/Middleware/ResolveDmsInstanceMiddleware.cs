@@ -90,6 +90,13 @@ internal class ResolveDmsInstanceMiddleware(
         // If still no match found after reload, error out
         if (matchedInstance == null)
         {
+            // Check if an error response was already set (e.g., by TryFindMatchingInstance for ambiguous routing)
+            if (requestInfo.FrontendResponse != No.FrontendResponse)
+            {
+                // Error already set (e.g., multiple matches), just return
+                return;
+            }
+
             string qualifierDetails =
                 requestQualifiers.Count > 0
                     ? string.Join(
