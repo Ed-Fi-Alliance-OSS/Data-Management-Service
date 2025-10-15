@@ -25,11 +25,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS \"TestTable\"");
-            sql.Should().Contain("\"Id\" BIGINT NOT NULL");
-            sql.Should().Contain("\"Name\" VARCHAR(100) NOT NULL");
-            sql.Should().Contain("\"IsActive\" BOOLEAN");
-            sql.Should().Contain("PRIMARY KEY (\"Id\")");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS TestTable");
+            sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
+            sql.Should().Contain("Document_Id BIGINT NOT NULL");
+            sql.Should().Contain("Document_PartitionKey SMALLINT NOT NULL");
+            sql.Should().Contain("Name VARCHAR(100) NOT NULL");
+            sql.Should().Contain("IsActive BOOLEAN");
+            sql.Should().Contain("CONSTRAINT FK_TestTable_Document");
+            sql.Should().Contain("REFERENCES Document((Id, DocumentPartitionKey)) ON DELETE CASCADE");
+            sql.Should().Contain("CONSTRAINT UQ_TestTable_NaturalKey");
         }
 
         [Test]
@@ -43,7 +47,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("PRIMARY KEY (\"Id\")");
+            sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
+            sql.Should().NotContain("CONSTRAINT PK_");
         }
 
         [Test]
@@ -57,9 +62,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("\"Id\" BIGINT NOT NULL");
-            sql.Should().Contain("\"Name\" VARCHAR(100) NOT NULL");
-            sql.Should().NotContain("\"IsActive\" BOOLEAN NOT NULL");
+            sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
+            sql.Should().Contain("Document_Id BIGINT NOT NULL");
+            sql.Should().Contain("Document_PartitionKey SMALLINT NOT NULL");
+            sql.Should().Contain("Name VARCHAR(100) NOT NULL");
+            sql.Should().Contain("IsActive BOOLEAN");
+            sql.Should().NotContain("IsActive BOOLEAN NOT NULL");
         }
 
         [Test]
@@ -73,10 +81,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE OR REPLACE VIEW \"EducationOrganizationReference\" AS");
-            sql.Should().Contain("SELECT \"EducationOrganizationId\", 'School' AS \"Discriminator\" FROM \"School\"");
+            sql.Should().Contain("CREATE OR REPLACE VIEW EducationOrganizationReference AS");
+            // Union views use unquoted identifiers for consistency with table DDL
+            sql.Should().Contain("SELECT EducationOrganizationId, 'School' AS Discriminator FROM School");
             sql.Should().Contain("UNION ALL");
-            sql.Should().Contain("SELECT \"EducationOrganizationId\", 'LocalEducationAgency' AS \"Discriminator\" FROM \"LocalEducationAgency\"");
+            sql.Should().Contain("SELECT EducationOrganizationId, 'LocalEducationAgency' AS Discriminator FROM LocalEducationAgency");
         }
 
         [Test]
@@ -105,8 +114,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS \"School\"");
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS \"LocalEducationAgency\"");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS School");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS LocalEducationAgency");
+            sql.Should().Contain("EducationOrganizationReference_Id BIGINT NOT NULL");
+            sql.Should().Contain("CONSTRAINT FK_School_EducationOrganizationReference");
+            sql.Should().Contain("REFERENCES EducationOrganizationReference(Id) ON DELETE CASCADE");
         }
 
         [Test]
@@ -120,8 +132,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("SELECT \"EducationOrganizationId\", 'School' AS \"Discriminator\" FROM \"School\"");
-            sql.Should().NotContain("SELECT \"EducationOrganizationId\", \"SchoolName\""); // Should not include non-key columns
+            // Union views use unquoted identifiers for consistency with table DDL
+            sql.Should().Contain("SELECT EducationOrganizationId, 'School' AS Discriminator FROM School");
+            sql.Should().NotContain("SELECT EducationOrganizationId, SchoolName"); // Should not include non-key columns
         }
     }
 }

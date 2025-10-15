@@ -1,20 +1,32 @@
 -- MSSQL CREATE TABLE {{tableName}}
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '{{tableName}}')
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '{{tableName}}' AND SCHEMA_NAME(schema_id) = 'dms')
 BEGIN
-    CREATE TABLE [{{tableName}}] (
-{{#each columns}}
-    [{{name}}] {{type}}{{#if isRequired}} NOT NULL{{/if}}{{#unless @last}},{{/unless}}
-{{/each}}
-{{#each pkColumns}}
-{{#if @first}}
-{{#if ../columns}},{{/if}}
-    CONSTRAINT [PK_{{../tableName}}] PRIMARY KEY ({{/if}}[{{this}}]{{#unless @last}}, {{else}}){{/unless}}
-{{/each}}
-{{#each fkColumns}},
-    CONSTRAINT [FK_{{../tableName}}_{{column}}] FOREIGN KEY ([{{column}}]) REFERENCES [{{parentTable}}]([{{parentColumn}}])
+    CREATE TABLE [dms].[{{tableName}}] (
+    {{#if hasId}}[{{id}}] BIGINT PRIMARY KEY IDENTITY(1,1),{{/if}}
+{{#if hasDocumentColumns}}    [{{documentId}}] BIGINT NOT NULL,
+    [{{documentPartitionKey}}] TINYINT NOT NULL,
+{{/if}}{{#each columns}}    [{{name}}] {{type}}{{#if isRequired}} NOT NULL{{/if}}{{#unless @last}},{{/unless}}
+{{/each}}{{#if fkColumns}},
+{{/if}}{{#each fkColumns}}    CONSTRAINT [{{constraintName}}]
+        FOREIGN KEY ([{{column}}])
+        REFERENCES [dms].[{{parentTable}}]([{{parentColumn}}]){{#if cascade}} ON DELETE CASCADE{{/if}}{{#unless @last}},{{/unless}}
+{{/each}}{{#if uniqueConstraints}},
+{{/if}}{{#each uniqueConstraints}}    CONSTRAINT [{{constraintName}}]
+        UNIQUE ({{#each columns}}[{{this}}]{{#unless @last}}, {{/unless}}{{/each}}){{#unless @last}},{{/unless}}
 {{/each}}
     );
     PRINT 'Table {{tableName}} created.';
 END
 ELSE
     PRINT 'Table {{tableName}} already exists, skipped.';
+
+{{#if indexes}}
+{{#each indexes}}
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = '{{indexName}}' AND object_id = OBJECT_ID('[dms].[{{tableName}}]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [{{indexName}}]
+        ON [dms].[{{tableName}}]({{#each columns}}[{{this}}]{{#unless @last}}, {{/unless}}{{/each}});
+    PRINT 'Index {{indexName}} created.';
+END
+{{/each}}
+{{/if}}
