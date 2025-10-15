@@ -26,10 +26,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
 
             // Assert
             sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TestTable')");
-            sql.Should().Contain("[Id] BIGINT NOT NULL");
+            sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
+            sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
+            sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
             sql.Should().Contain("[Name] NVARCHAR(100) NOT NULL");
             sql.Should().Contain("[IsActive] BIT");
-            sql.Should().Contain("PRIMARY KEY ([Id])");
+            sql.Should().Contain("CONSTRAINT [FK_TestTable_Document]");
+            sql.Should().Contain("REFERENCES [Document]([(Id, DocumentPartitionKey)]) ON DELETE CASCADE");
+            sql.Should().Contain("CONSTRAINT [UQ_TestTable_NaturalKey]");
         }
 
         [Test]
@@ -43,7 +47,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("PRIMARY KEY ([Id])");
+            sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
+            sql.Should().NotContain("CONSTRAINT [PK_TestTable]");
         }
 
         [Test]
@@ -57,8 +62,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("[Id] BIGINT NOT NULL");
+            sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
+            sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
+            sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
             sql.Should().Contain("[Name] NVARCHAR(100) NOT NULL");
+            sql.Should().Contain("[IsActive] BIT");
             sql.Should().NotContain("[IsActive] BIT NOT NULL");
         }
 
@@ -107,6 +115,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             // Assert
             sql.Should().Contain("[School]");
             sql.Should().Contain("[LocalEducationAgency]");
+            sql.Should().Contain("[EducationOrganizationReference_Id] BIGINT NOT NULL");
+            sql.Should().Contain("CONSTRAINT [FK_School_EducationOrganizationReference]");
+            sql.Should().Contain("REFERENCES [EducationOrganizationReference]([Id]) ON DELETE CASCADE");
         }
 
         [Test]
