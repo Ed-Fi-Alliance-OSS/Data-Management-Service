@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using FluentAssertions;
 
@@ -25,14 +26,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TestTable')");
+            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TestTable' AND SCHEMA_NAME(schema_id) = 'dms')");
             sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
             sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
             sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
             sql.Should().Contain("[Name] NVARCHAR(100) NOT NULL");
             sql.Should().Contain("[IsActive] BIT");
             sql.Should().Contain("CONSTRAINT [FK_TestTable_Document]");
-            sql.Should().Contain("REFERENCES [Document]([(Id, DocumentPartitionKey)]) ON DELETE CASCADE");
+            sql.Should().Contain("REFERENCES [dms].[Document]([(Id, DocumentPartitionKey)]) ON DELETE CASCADE");
             sql.Should().Contain("CONSTRAINT [UQ_TestTable_NaturalKey]");
         }
 
@@ -81,10 +82,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE VIEW [EducationOrganizationReference] AS");
-            sql.Should().Contain("SELECT [EducationOrganizationId], 'School' AS [Discriminator] FROM [School]");
+            sql.Should().Contain("CREATE VIEW [dms].[EducationOrganizationReference] AS");
+            sql.Should().Contain("SELECT [EducationOrganizationId], ''School'' AS [Discriminator] FROM [dms].[School]");
             sql.Should().Contain("UNION ALL");
-            sql.Should().Contain("SELECT [EducationOrganizationId], 'LocalEducationAgency' AS [Discriminator] FROM [LocalEducationAgency]");
+            sql.Should().Contain("SELECT [EducationOrganizationId], ''LocalEducationAgency'' AS [Discriminator] FROM [dms].[LocalEducationAgency]");
         }
 
         [Test]
@@ -113,11 +114,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("[School]");
-            sql.Should().Contain("[LocalEducationAgency]");
+            sql.Should().Contain("[dms].[School]");
+            sql.Should().Contain("[dms].[LocalEducationAgency]");
             sql.Should().Contain("[EducationOrganizationReference_Id] BIGINT NOT NULL");
             sql.Should().Contain("CONSTRAINT [FK_School_EducationOrganizationReference]");
-            sql.Should().Contain("REFERENCES [EducationOrganizationReference]([Id]) ON DELETE CASCADE");
+            sql.Should().Contain("REFERENCES [dms].[EducationOrganizationReference]([Id]) ON DELETE CASCADE");
         }
 
         [Test]
@@ -131,7 +132,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("SELECT [EducationOrganizationId], 'School' AS [Discriminator] FROM [School]");
+            sql.Should().Contain("SELECT [EducationOrganizationId], ''School'' AS [Discriminator] FROM [dms].[School]");
             sql.Should().NotContain("SELECT [EducationOrganizationId], [SchoolName]"); // Should not include non-key columns
         }
 
@@ -150,6 +151,166 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             sql.Should().Contain("[Id]");
             sql.Should().Contain("[Name]");
             sql.Should().Contain("[IsActive]");
+        }
+
+        [Test]
+        public void GeneratesTableCreationStatement()
+        {
+            // Arrange
+            var schema = TestHelpers.GetBasicSchema();
+            var generator = new MssqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert
+            sql.Should().Contain("CREATE TABLE [dms].[TestTable]");
+            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TestTable'");
+        }
+
+        [Test]
+        public void GeneratesIndexesForForeignKeys()
+        {
+            // Arrange
+            var schema = TestHelpers.GetBasicSchema();
+            var generator = new MssqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert
+            sql.Should().Contain("CREATE NONCLUSTERED INDEX [IX_TestTable_Document]");
+            sql.Should().Contain("ON [dms].[TestTable]([Document_Id], [Document_PartitionKey])");
+        }
+
+                [Test]
+        public void HandlesEmptySchema()
+        {
+            // Arrange
+            var schema = TestHelpers.GetEmptySchema();
+            var generator = new MssqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert
+            sql.Should().BeEmpty();
+        }
+
+        [Test]
+        public void GeneratesExtensionTablesDifferently()
+        {
+            // Arrange
+            var schema = GetSchemaWithExtensionTable();
+            var generator = new MssqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: true);
+
+            // Assert
+            sql.Should().Contain("[dms].[TestExtension]");
+            sql.Should().Contain("CREATE TABLE [dms].[TestExtension]");
+        }
+
+        [Test]
+        public void SkipsExtensionTablesWhenFlagIsFalse()
+        {
+            // Arrange
+            var schema = GetSchemaWithExtensionTable();
+            var generator = new MssqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert
+            sql.Should().NotContain("TestExtension");
+        }
+
+        [Test]
+        public void GeneratesComplexConstraints()
+        {
+            // Arrange
+            var schema = GetSchemaWithComplexConstraints();
+            var generator = new MssqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert
+            sql.Should().Contain("CONSTRAINT [UQ_ComplexTable_NaturalKey]");
+            sql.Should().Contain("UNIQUE ([FirstKey], [SecondKey])");
+        }
+
+        private static ApiSchema GetSchemaWithExtensionTable()
+        {
+            return new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "ExtensionProject",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = true,
+                    Description = "Extension test schema.",
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["TestExtension"] = new ResourceSchema
+                        {
+                            ResourceName = "TestExtension",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "TestExtension",
+                                    JsonPath = "$.TestExtension",
+                                    IsExtensionTable = true,
+                                    Columns =
+                                    [
+                                        new ColumnMetadata { ColumnName = "ExtensionId", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "ExtensionValue", ColumnType = "string", MaxLength = "200", IsRequired = true }
+                                    ],
+                                    ChildTables = []
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        private static ApiSchema GetSchemaWithComplexConstraints()
+        {
+            return new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "ComplexProject",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    Description = "Complex constraint test schema.",
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["ComplexTable"] = new ResourceSchema
+                        {
+                            ResourceName = "ComplexTable",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "ComplexTable",
+                                    JsonPath = "$.ComplexTable",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata { ColumnName = "FirstKey", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "SecondKey", ColumnType = "string", MaxLength = "50", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "Value", ColumnType = "string", MaxLength = "100", IsRequired = false }
+                                    ],
+                                    ChildTables = []
+                                }
+                            }
+                        }
+                    }
+                }
+            };
         }
     }
 }

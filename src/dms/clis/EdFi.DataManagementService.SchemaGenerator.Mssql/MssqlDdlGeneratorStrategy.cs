@@ -56,17 +56,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
             var sb = new StringBuilder();
 
-            // Create schema if not exists
-            sb.AppendLine("-- Create DMS schema");
-            sb.AppendLine("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms')");
-            sb.AppendLine("BEGIN");
-            sb.AppendLine("    EXEC('CREATE SCHEMA dms');");
-            sb.AppendLine("    PRINT 'Schema dms created.';");
-            sb.AppendLine("END");
-            sb.AppendLine("ELSE");
-            sb.AppendLine("    PRINT 'Schema dms already exists, skipped.';");
-            sb.AppendLine();
-
             // Process each resource schema
             foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas)
             {
