@@ -24,11 +24,12 @@ public class Given_NpgsqlDataSourceProvider
     public void Setup()
     {
         var applicationLifetime = A.Fake<IHostApplicationLifetime>();
-        var logger = A.Fake<ILogger<NpgsqlDataSourceCache>>();
+        var cacheLogger = A.Fake<ILogger<NpgsqlDataSourceCache>>();
+        var providerLogger = A.Fake<ILogger<NpgsqlDataSourceProvider>>();
 
         _dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
-        _cache = new NpgsqlDataSourceCache(applicationLifetime, logger);
-        _provider = new NpgsqlDataSourceProvider(_dmsInstanceSelection, _cache);
+        _cache = new NpgsqlDataSourceCache(applicationLifetime, cacheLogger);
+        _provider = new NpgsqlDataSourceProvider(_dmsInstanceSelection, _cache, providerLogger);
     }
 
     [TearDown]
@@ -109,8 +110,9 @@ public class Given_NpgsqlDataSourceProvider
         A.CallTo(() => dmsInstanceSelection1.GetSelectedDmsInstance()).Returns(dmsInstance1);
         A.CallTo(() => dmsInstanceSelection2.GetSelectedDmsInstance()).Returns(dmsInstance2);
 
-        var provider1 = new NpgsqlDataSourceProvider(dmsInstanceSelection1, _cache);
-        var provider2 = new NpgsqlDataSourceProvider(dmsInstanceSelection2, _cache);
+        var providerLogger = A.Fake<ILogger<NpgsqlDataSourceProvider>>();
+        var provider1 = new NpgsqlDataSourceProvider(dmsInstanceSelection1, _cache, providerLogger);
+        var provider2 = new NpgsqlDataSourceProvider(dmsInstanceSelection2, _cache, providerLogger);
 
         // Act
         var dataSource1 = provider1.DataSource;
@@ -148,8 +150,9 @@ public class Given_NpgsqlDataSourceProvider
         A.CallTo(() => dmsInstanceSelection1.GetSelectedDmsInstance()).Returns(dmsInstance1);
         A.CallTo(() => dmsInstanceSelection2.GetSelectedDmsInstance()).Returns(dmsInstance2);
 
-        var provider1 = new NpgsqlDataSourceProvider(dmsInstanceSelection1, _cache);
-        var provider2 = new NpgsqlDataSourceProvider(dmsInstanceSelection2, _cache);
+        var providerLogger = A.Fake<ILogger<NpgsqlDataSourceProvider>>();
+        var provider1 = new NpgsqlDataSourceProvider(dmsInstanceSelection1, _cache, providerLogger);
+        var provider2 = new NpgsqlDataSourceProvider(dmsInstanceSelection2, _cache, providerLogger);
 
         // Act
         var dataSource1 = provider1.DataSource;

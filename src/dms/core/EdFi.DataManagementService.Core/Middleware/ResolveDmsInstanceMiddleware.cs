@@ -52,51 +52,42 @@ internal class ResolveDmsInstanceMiddleware(
             .RouteQualifiers;
 
         // Try to find matching DMS instance
-        DmsInstance? matchedInstance = null;
+        DmsInstance? matchedInstance = await TryFindMatchingInstance(
+            requestInfo,
+            requestQualifiers,
+            reloadOnCacheMiss: false
+        );
 
-#pragma warning disable S3267 // Loops should be simplified with "LINQ" expressions - False positive: this loop has complex logic with early exits and side effects
-        foreach (DmsInstanceId dmsInstanceId in requestInfo.ClientAuthorizations.DmsInstanceIds)
-#pragma warning restore S3267
+        // If no match found and we haven't tried reloading yet, attempt cache reload
+        if (matchedInstance == null)
         {
-            DmsInstance? dmsInstance = dmsInstanceProvider.GetById(dmsInstanceId.Value);
+            logger.LogInformation(
+                "No matching DMS instance found in cache, attempting reload from CMS - TraceId: {TraceId}",
+                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+            );
 
-            if (dmsInstance == null)
+            try
             {
-                logger.LogWarning(
-                    "DMS instance {DmsInstanceId} not found - TraceId: {TraceId}",
-                    LoggingSanitizer.SanitizeForLogging(dmsInstanceId.Value.ToString()),
+                await dmsInstanceProvider.LoadDmsInstances();
+
+                // Retry matching after reload
+                matchedInstance = await TryFindMatchingInstance(
+                    requestInfo,
+                    requestQualifiers,
+                    reloadOnCacheMiss: true
+                );
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Failed to reload DMS instances from CMS - TraceId: {TraceId}",
                     LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
                 );
-                continue;
-            }
-
-            // Check if this instance's route context matches the request qualifiers
-            if (IsRouteContextMatch(dmsInstance.RouteContext, requestQualifiers))
-            {
-                if (matchedInstance != null)
-                {
-                    // Multiple matches - not supported
-                    logger.LogError(
-                        "Multiple DMS instances match route qualifiers (instances {FirstId} and {SecondId}) - TraceId: {TraceId}",
-                        LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
-                        LoggingSanitizer.SanitizeForLogging(dmsInstance.Id.ToString()),
-                        LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
-                    );
-
-                    requestInfo.FrontendResponse = CreateErrorResponse(
-                        400,
-                        "Route Resolution Error",
-                        "Multiple database instances match the request route qualifiers - ambiguous routing not supported",
-                        requestInfo.FrontendRequest.TraceId
-                    );
-                    return;
-                }
-
-                matchedInstance = dmsInstance;
             }
         }
 
-        // If no match found, error out
+        // If still no match found after reload, error out
         if (matchedInstance == null)
         {
             string qualifierDetails =
@@ -150,8 +141,8 @@ internal class ResolveDmsInstanceMiddleware(
         // Set selected DMS instance in scoped provider for repository access
         dmsInstanceSelection.SetSelectedDmsInstance(matchedInstance);
 
-        logger.LogInformation(
-            "Resolved request to DMS instance {DmsInstanceId} ('{InstanceName}') - TraceId: {TraceId}",
+        logger.LogDebug(
+            "Selected DMS instance {DmsInstanceId} ('{InstanceName}') - TraceId: {TraceId}",
             LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
             LoggingSanitizer.SanitizeForLogging(matchedInstance.InstanceName),
             LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
@@ -159,6 +150,68 @@ internal class ResolveDmsInstanceMiddleware(
 
         // Continue to next middleware
         await next();
+    }
+
+    /// <summary>
+    /// Attempts to find a DMS instance matching the route qualifiers from authorized instances
+    /// </summary>
+    private Task<DmsInstance?> TryFindMatchingInstance(
+        RequestInfo requestInfo,
+        Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers,
+        bool reloadOnCacheMiss
+    )
+    {
+        DmsInstance? matchedInstance = null;
+
+#pragma warning disable S3267 // Loops should be simplified with "LINQ" expressions - False positive: this loop has complex logic with early exits and side effects
+        foreach (DmsInstanceId dmsInstanceId in requestInfo.ClientAuthorizations.DmsInstanceIds)
+#pragma warning restore S3267
+        {
+            DmsInstance? dmsInstance = dmsInstanceProvider.GetById(dmsInstanceId.Value);
+
+            if (dmsInstance == null)
+            {
+                string logMessage = reloadOnCacheMiss
+                    ? "DMS instance {DmsInstanceId} still not found after cache reload - TraceId: {TraceId}"
+                    : "DMS instance {DmsInstanceId} not found in cache - TraceId: {TraceId}";
+
+                logger.LogWarning(
+                    logMessage,
+                    LoggingSanitizer.SanitizeForLogging(dmsInstanceId.Value.ToString()),
+                    LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                );
+                continue;
+            }
+
+            // Check if this instance's route context matches the request qualifiers
+            bool isMatch = IsRouteContextMatch(dmsInstance.RouteContext, requestQualifiers);
+
+            if (isMatch)
+            {
+                if (matchedInstance != null)
+                {
+                    // Multiple matches - not supported
+                    logger.LogError(
+                        "Multiple DMS instances match route qualifiers (instances {FirstId} and {SecondId}) - TraceId: {TraceId}",
+                        LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
+                        LoggingSanitizer.SanitizeForLogging(dmsInstance.Id.ToString()),
+                        LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                    );
+
+                    requestInfo.FrontendResponse = CreateErrorResponse(
+                        400,
+                        "Route Resolution Error",
+                        "Multiple database instances match the request route qualifiers - ambiguous routing not supported",
+                        requestInfo.FrontendRequest.TraceId
+                    );
+                    return Task.FromResult<DmsInstance?>(null);
+                }
+
+                matchedInstance = dmsInstance;
+            }
+        }
+
+        return Task.FromResult(matchedInstance);
     }
 
     /// <summary>

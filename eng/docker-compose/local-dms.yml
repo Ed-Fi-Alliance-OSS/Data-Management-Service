@@ -45,6 +45,8 @@ services:
       AppSettings__EnableManagementEndpoints: ${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}
       AppSettings__EnableClaimsetReload: ${DMS_ENABLE_CLAIMSET_RELOAD:-false}
       AppSettings__DomainsExcludedFromOpenApi: ${DOMAINS_EXCLUDED_FROM_OPEN_API:-}
+      AppSettings__RouteQualifierSegments__0: ${APPSETTINGS__ROUTEQUALIFIERSEGMENTS__0:-}
+      AppSettings__RouteQualifierSegments__1: ${APPSETTINGS__ROUTEQUALIFIERSEGMENTS__1:-}
       SCHEMA_PACKAGES: ${SCHEMA_PACKAGES}
       # JWT Authentication
       JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
@@ -57,7 +59,7 @@ services:
       JwtAuthentication__RefreshIntervalMinutes: ${DMS_JWT_REFRESH_INTERVAL_MINUTES:-60}
       JwtAuthentication__AutomaticRefreshIntervalHours: ${DMS_JWT_AUTOMATIC_REFRESH_INTERVAL_HOURS:-24}
     ports:
-      - '127.0.0.1:${DMS_HTTP_PORTS}:${DMS_HTTP_PORTS}'
+      - "127.0.0.1:${DMS_HTTP_PORTS}:${DMS_HTTP_PORTS}"
     volumes:
       - ../../src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets:/app/additional-claims
     networks:

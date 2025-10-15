@@ -13,12 +13,14 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 /// <summary>
 /// Implements IAuthorizationRepository to retrieve the authorization related data from the database.
 /// </summary>
-public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISqlAction sqlAction)
-    : IAuthorizationRepository
+public class PostgresqlAuthorizationRepository(
+    NpgsqlDataSourceProvider dataSourceProvider,
+    ISqlAction sqlAction
+) : IAuthorizationRepository
 {
     public async Task<long[]> GetAncestorEducationOrganizationIds(long[] educationOrganizationIds)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await dataSourceProvider.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         var organizationIds = await sqlAction.GetAncestorEducationOrganizationIds(
             educationOrganizationIds,
@@ -31,7 +33,7 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISq
 
     public async Task<long[]> GetEducationOrganizationsForContact(string contactUniqueId)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await dataSourceProvider.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         JsonElement? response = await sqlAction.GetContactStudentSchoolAuthorizationEducationOrganizationIds(
             contactUniqueId,
@@ -49,7 +51,7 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISq
 
     public async Task<long[]> GetEducationOrganizationsForStudent(string studentUniqueId)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await dataSourceProvider.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         JsonElement? response = await sqlAction.GetStudentSchoolAuthorizationEducationOrganizationIds(
             studentUniqueId,
@@ -67,7 +69,7 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISq
 
     public async Task<long[]> GetEducationOrganizationsForStudentResponsibility(string studentUniqueId)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await dataSourceProvider.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         JsonElement? response = await sqlAction.GetStudentEdOrgResponsibilityAuthorizationIds(
             studentUniqueId,
@@ -85,7 +87,7 @@ public class PostgresqlAuthorizationRepository(NpgsqlDataSource _dataSource, ISq
 
     public async Task<long[]> GetEducationOrganizationsForStaff(string staffUniqueId)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await dataSourceProvider.DataSource.OpenConnectionAsync();
         await using var transaction = await connection.BeginTransactionAsync();
         JsonElement? response = await sqlAction.GetStaffEducationOrganizationAuthorizationEdOrgIds(
             staffUniqueId,

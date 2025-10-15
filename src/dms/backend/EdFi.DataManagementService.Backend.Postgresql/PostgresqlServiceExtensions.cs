@@ -6,7 +6,6 @@
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Interface;
 using Microsoft.Extensions.DependencyInjection;
-using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
@@ -26,14 +25,11 @@ public static class PostgresqlServiceExtensions
         // Register scoped provider that retrieves the appropriate data source per request
         services.AddScoped<NpgsqlDataSourceProvider>();
 
-        // Register NpgsqlDataSource as scoped, resolved from the provider
-        services.AddScoped<NpgsqlDataSource>(sp =>
-        {
-            var provider = sp.GetRequiredService<NpgsqlDataSourceProvider>();
-            return provider.DataSource;
-        });
+        // NOTE: NpgsqlDataSource is NOT registered in DI container.
+        // Repositories inject NpgsqlDataSourceProvider instead and call provider.DataSource on each operation.
+        // This ensures the correct data source is used.
 
-        // Register all repositories as scoped (they depend on scoped NpgsqlDataSource)
+        // Register all repositories as scoped (they depend on scoped NpgsqlDataSourceProvider)
         services.AddScoped<IDocumentStoreRepository, PostgresqlDocumentStoreRepository>();
         services.AddScoped<IAuthorizationRepository, PostgresqlAuthorizationRepository>();
         services.AddScoped<IGetDocumentById, GetDocumentById>();

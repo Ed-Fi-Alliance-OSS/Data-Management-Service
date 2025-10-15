@@ -40,7 +40,7 @@ public sealed class NpgsqlDataSourceCache(
             connectionString,
             cs =>
             {
-                _logger.LogInformation(
+                _logger.LogDebug(
                     "Creating new NpgsqlDataSource for connection string hash: {Hash}",
                     cs.GetHashCode()
                 );

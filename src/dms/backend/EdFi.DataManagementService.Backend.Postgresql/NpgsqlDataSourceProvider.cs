@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Configuration;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
@@ -14,17 +15,24 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 /// </summary>
 public sealed class NpgsqlDataSourceProvider(
     IDmsInstanceSelection dmsInstanceSelection,
-    NpgsqlDataSourceCache dataSourceCache
+    NpgsqlDataSourceCache dataSourceCache,
+    ILogger<NpgsqlDataSourceProvider> logger
 )
 {
-    private NpgsqlDataSource? _dataSource;
-
     /// <summary>
     /// Gets the NpgsqlDataSource for the current request's DMS instance connection string.
-    /// Lazily initialized on first access.
+    /// Always retrieves fresh from the selected instance to ensure correct routing.
     /// </summary>
-    public NpgsqlDataSource DataSource =>
-        _dataSource ??= dataSourceCache.GetOrCreate(
-            dmsInstanceSelection.GetSelectedDmsInstance().ConnectionString!
-        );
+    public NpgsqlDataSource DataSource
+    {
+        get
+        {
+            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
+            string connectionString = selectedInstance.ConnectionString!;
+
+            logger.LogDebug("NpgsqlDataSourceProvider using instance {InstanceId}", selectedInstance.Id);
+
+            return dataSourceCache.GetOrCreate(connectionString);
+        }
+    }
 }
