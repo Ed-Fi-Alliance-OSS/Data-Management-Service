@@ -73,8 +73,8 @@ public class ApiServiceHotReloadIntegrationTests
             NullLogger<JwtAuthenticationMiddleware>.Instance
         );
 
-        // Register DMS Instance Selection services
-        services.AddTransient<DmsInstanceSelectionMiddleware>();
+        // Register DMS Instance Resolution services
+        services.AddTransient<ResolveDmsInstanceMiddleware>();
 
         var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
         A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
@@ -109,8 +109,8 @@ public class ApiServiceHotReloadIntegrationTests
             .Returns("test-connection-string");
         services.AddSingleton<IRequestConnectionStringProvider>(fakeRequestConnectionStringProvider);
 
-        services.AddTransient<ILogger<DmsInstanceSelectionMiddleware>>(_ =>
-            NullLogger<DmsInstanceSelectionMiddleware>.Instance
+        services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
+            NullLogger<ResolveDmsInstanceMiddleware>.Instance
         );
 
         var serviceProvider = services.BuildServiceProvider();

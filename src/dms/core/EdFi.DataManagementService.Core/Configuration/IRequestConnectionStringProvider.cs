@@ -13,7 +13,7 @@ public interface IRequestConnectionStringProvider
 {
     /// <summary>
     /// Sets the connection string for the current request
-    /// Called by DmsInstanceSelectionMiddleware
+    /// Called by ResolveDmsInstanceMiddleware
     /// </summary>
     void SetConnectionString(string connectionString, long dmsInstanceId);
 

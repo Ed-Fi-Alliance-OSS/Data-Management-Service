@@ -161,7 +161,7 @@ internal class ApiService : IApiService
             new RequestResponseLoggingMiddleware(_logger),
             new CoreExceptionLoggingMiddleware(_logger),
             _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>(),
-            _serviceProvider.GetRequiredService<DmsInstanceSelectionMiddleware>(),
+            _serviceProvider.GetRequiredService<ResolveDmsInstanceMiddleware>(),
         ];
     }
 

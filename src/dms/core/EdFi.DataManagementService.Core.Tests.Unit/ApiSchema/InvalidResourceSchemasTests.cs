@@ -55,7 +55,7 @@ public class InvalidResourceSchemasTests
                                 ClaimSetName: "test-claimset",
                                 EducationOrganizationIds: new List<EducationOrganizationId>(),
                                 NamespacePrefixes: new List<NamespacePrefix>(),
-                                DmsInstanceIds: new List<DmsInstanceId>()
+                                DmsInstanceIds: [new DmsInstanceId(1)]
                             )
                         )
                     )
@@ -71,8 +71,8 @@ public class InvalidResourceSchemasTests
                 NullLogger<JwtAuthenticationMiddleware>.Instance
             );
 
-            // Register DMS Instance Selection services
-            services.AddTransient<DmsInstanceSelectionMiddleware>();
+            // Register DMS Instance Resolution services
+            services.AddTransient<ResolveDmsInstanceMiddleware>();
 
             var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
             A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
@@ -107,8 +107,8 @@ public class InvalidResourceSchemasTests
                 .Returns("test-connection-string");
             services.AddSingleton<IRequestConnectionStringProvider>(fakeRequestConnectionStringProvider);
 
-            services.AddTransient<ILogger<DmsInstanceSelectionMiddleware>>(_ =>
-                NullLogger<DmsInstanceSelectionMiddleware>.Instance
+            services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
+                NullLogger<ResolveDmsInstanceMiddleware>.Instance
             );
 
             var serviceProvider = services.BuildServiceProvider();

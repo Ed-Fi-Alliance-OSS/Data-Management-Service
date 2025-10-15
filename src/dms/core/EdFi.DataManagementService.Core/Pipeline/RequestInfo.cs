@@ -125,14 +125,15 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
     public ClientAuthorizations ClientAuthorizations { get; set; } = No.ClientAuthorizations;
 
     /// <summary>
-    /// The DMS instance ID to use for this request, selected based on the client's application configuration.
-    /// Populated by DmsInstanceSelectionMiddleware.
+    /// The DMS instance ID to use for this request, resolved based on route qualifiers
+    /// and the client's authorized DMS instances from the JWT token.
+    /// Populated by ResolveDmsInstanceMiddleware.
     /// </summary>
     public long DmsInstanceId { get; set; }
 
     /// <summary>
     /// The database connection string for the selected DMS instance.
-    /// Populated by DmsInstanceSelectionMiddleware.
+    /// Populated by ResolveDmsInstanceMiddleware.
     /// </summary>
     public string? ConnectionString { get; set; }
 

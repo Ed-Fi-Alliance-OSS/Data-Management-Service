@@ -40,7 +40,7 @@ public class RequestConnectionStringProvider : IRequestConnectionStringProvider
         {
             throw new InvalidOperationException(
                 "Connection string has not been set for this request. "
-                    + "Ensure DmsInstanceSelectionMiddleware is registered in the pipeline before repositories are accessed."
+                    + "Ensure ResolveDmsInstanceMiddleware is registered in the pipeline before repositories are accessed."
             );
         }
 
@@ -54,7 +54,7 @@ public class RequestConnectionStringProvider : IRequestConnectionStringProvider
         {
             throw new InvalidOperationException(
                 "DMS instance ID has not been set for this request. "
-                    + "Ensure DmsInstanceSelectionMiddleware is registered in the pipeline."
+                    + "Ensure ResolveDmsInstanceMiddleware is registered in the pipeline."
             );
         }
 
