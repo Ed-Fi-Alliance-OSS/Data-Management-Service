@@ -19,20 +19,28 @@ public sealed class NpgsqlDataSourceProvider(
     ILogger<NpgsqlDataSourceProvider> logger
 )
 {
+    private NpgsqlDataSource? _cachedDataSource;
+
     /// <summary>
     /// Gets the NpgsqlDataSource for the current request's DMS instance connection string.
-    /// Always retrieves fresh from the selected instance to ensure correct routing.
+    /// Caches the result for the lifetime of this provider instance (scoped to the request).
     /// </summary>
     public NpgsqlDataSource DataSource
     {
         get
         {
+            if (_cachedDataSource != null)
+            {
+                return _cachedDataSource;
+            }
+
             var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
             string connectionString = selectedInstance.ConnectionString!;
 
             logger.LogDebug("NpgsqlDataSourceProvider using instance {InstanceId}", selectedInstance.Id);
 
-            return dataSourceCache.GetOrCreate(connectionString);
+            _cachedDataSource = dataSourceCache.GetOrCreate(connectionString);
+            return _cachedDataSource;
         }
     }
 }
