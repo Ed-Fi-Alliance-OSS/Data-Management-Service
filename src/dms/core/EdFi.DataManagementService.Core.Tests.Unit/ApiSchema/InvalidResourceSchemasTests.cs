@@ -102,10 +102,18 @@ public class InvalidResourceSchemasTests
                 );
             services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
 
-            var fakeRequestConnectionStringProvider = A.Fake<IRequestConnectionStringProvider>();
-            A.CallTo(() => fakeRequestConnectionStringProvider.GetConnectionString())
-                .Returns("test-connection-string");
-            services.AddSingleton<IRequestConnectionStringProvider>(fakeRequestConnectionStringProvider);
+            var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
+            A.CallTo(() => fakeDmsInstanceSelection.GetSelectedDmsInstance())
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "Test Instance",
+                        ConnectionString: "test-connection-string",
+                        RouteContext: []
+                    )
+                );
+            services.AddSingleton<IDmsInstanceSelection>(fakeDmsInstanceSelection);
 
             services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
                 NullLogger<ResolveDmsInstanceMiddleware>.Instance

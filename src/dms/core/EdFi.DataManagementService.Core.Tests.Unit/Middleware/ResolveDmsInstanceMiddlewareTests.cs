@@ -23,20 +23,16 @@ public class ResolveDmsInstanceMiddlewareTests
     internal static (
         ResolveDmsInstanceMiddleware middleware,
         IDmsInstanceProvider dmsInstanceProvider,
-        IRequestConnectionStringProvider requestConnectionStringProvider
+        IDmsInstanceSelection dmsInstanceSelection
     ) CreateMiddleware()
     {
         var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-        var requestConnectionStringProvider = A.Fake<IRequestConnectionStringProvider>();
+        var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
         var logger = A.Fake<ILogger<ResolveDmsInstanceMiddleware>>();
 
-        var middleware = new ResolveDmsInstanceMiddleware(
-            dmsInstanceProvider,
-            requestConnectionStringProvider,
-            logger
-        );
+        var middleware = new ResolveDmsInstanceMiddleware(dmsInstanceProvider, dmsInstanceSelection, logger);
 
-        return (middleware, dmsInstanceProvider, requestConnectionStringProvider);
+        return (middleware, dmsInstanceProvider, dmsInstanceSelection);
     }
 
     [TestFixture]
@@ -107,7 +103,8 @@ public class ResolveDmsInstanceMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
         private bool _nextCalled = false;
-        private IRequestConnectionStringProvider _requestConnectionStringProvider = null!;
+        private IDmsInstanceSelection _dmsInstanceSelection = null!;
+        private DmsInstance _expectedInstance = null!;
 
         [SetUp]
         public async Task Setup()
@@ -133,20 +130,19 @@ public class ResolveDmsInstanceMiddlewareTests
                 ),
             };
 
-            var (middleware, dmsInstanceProvider, requestConnectionStringProvider) = CreateMiddleware();
-            _requestConnectionStringProvider = requestConnectionStringProvider;
+            var (middleware, dmsInstanceProvider, dmsInstanceSelection) = CreateMiddleware();
+            _dmsInstanceSelection = dmsInstanceSelection;
 
             // Setup instance with no route context
-            A.CallTo(() => dmsInstanceProvider.GetById(1))
-                .Returns(
-                    new DmsInstance(
-                        Id: 1,
-                        InstanceType: "Test",
-                        InstanceName: "Test Instance",
-                        ConnectionString: "test-connection",
-                        RouteContext: [] // Empty route context matches empty qualifiers
-                    )
-                );
+            _expectedInstance = new DmsInstance(
+                Id: 1,
+                InstanceType: "Test",
+                InstanceName: "Test Instance",
+                ConnectionString: "test-connection",
+                RouteContext: [] // Empty route context matches empty qualifiers
+            );
+
+            A.CallTo(() => dmsInstanceProvider.GetById(1)).Returns(_expectedInstance);
 
             await middleware.Execute(
                 _requestInfo,
@@ -177,9 +173,9 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_calls_set_connection_string_on_provider()
+        public void It_calls_SetSelectedDmsInstance_on_provider()
         {
-            A.CallTo(() => _requestConnectionStringProvider.SetConnectionString("test-connection", 1))
+            A.CallTo(() => _dmsInstanceSelection.SetSelectedDmsInstance(_expectedInstance))
                 .MustHaveHappened();
         }
 

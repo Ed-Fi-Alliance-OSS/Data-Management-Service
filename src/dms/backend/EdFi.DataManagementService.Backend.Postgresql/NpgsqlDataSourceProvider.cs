@@ -10,19 +10,21 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 
 /// <summary>
 /// Scoped service that provides the appropriate NpgsqlDataSource for the current request
-/// by retrieving the per-request connection string and using the singleton cache.
+/// by retrieving the selected DMS instance and using the singleton cache.
 /// </summary>
 public sealed class NpgsqlDataSourceProvider(
-    IRequestConnectionStringProvider requestConnectionStringProvider,
+    IDmsInstanceSelection dmsInstanceSelection,
     NpgsqlDataSourceCache dataSourceCache
 )
 {
     private NpgsqlDataSource? _dataSource;
 
     /// <summary>
-    /// Gets the NpgsqlDataSource for the current request's connection string.
+    /// Gets the NpgsqlDataSource for the current request's DMS instance connection string.
     /// Lazily initialized on first access.
     /// </summary>
     public NpgsqlDataSource DataSource =>
-        _dataSource ??= dataSourceCache.GetOrCreate(requestConnectionStringProvider.GetConnectionString());
+        _dataSource ??= dataSourceCache.GetOrCreate(
+            dmsInstanceSelection.GetSelectedDmsInstance().ConnectionString!
+        );
 }

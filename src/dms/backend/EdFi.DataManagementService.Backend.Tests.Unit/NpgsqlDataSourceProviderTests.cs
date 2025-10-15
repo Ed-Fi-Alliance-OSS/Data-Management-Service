@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [TestFixture]
 public class Given_NpgsqlDataSourceProvider
 {
-    private IRequestConnectionStringProvider _connectionStringProvider = null!;
+    private IDmsInstanceSelection _dmsInstanceSelection = null!;
     private NpgsqlDataSourceCache _cache = null!;
     private NpgsqlDataSourceProvider _provider = null!;
 
@@ -26,9 +26,9 @@ public class Given_NpgsqlDataSourceProvider
         var applicationLifetime = A.Fake<IHostApplicationLifetime>();
         var logger = A.Fake<ILogger<NpgsqlDataSourceCache>>();
 
-        _connectionStringProvider = A.Fake<IRequestConnectionStringProvider>();
+        _dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
         _cache = new NpgsqlDataSourceCache(applicationLifetime, logger);
-        _provider = new NpgsqlDataSourceProvider(_connectionStringProvider, _cache);
+        _provider = new NpgsqlDataSourceProvider(_dmsInstanceSelection, _cache);
     }
 
     [TearDown]
@@ -38,26 +38,40 @@ public class Given_NpgsqlDataSourceProvider
     }
 
     [Test]
-    public void It_should_retrieve_data_source_from_cache_using_request_connection_string()
+    public void It_should_retrieve_data_source_from_cache_using_selected_dms_instance()
     {
         // Arrange
-        const string connectionString = "Host=localhost;Database=test;Username=user;Password=pass";
-        A.CallTo(() => _connectionStringProvider.GetConnectionString()).Returns(connectionString);
+        const string ConnectionString = "Host=localhost;Database=test;Username=user;Password=pass";
+        var dmsInstance = new DmsInstance(
+            Id: 1,
+            InstanceType: "Test",
+            InstanceName: "Test Instance",
+            ConnectionString: ConnectionString,
+            RouteContext: []
+        );
+        A.CallTo(() => _dmsInstanceSelection.GetSelectedDmsInstance()).Returns(dmsInstance);
 
         // Act
         var dataSource = _provider.DataSource;
 
         // Assert
         dataSource.Should().NotBeNull();
-        A.CallTo(() => _connectionStringProvider.GetConnectionString()).MustHaveHappenedOnceExactly();
+        A.CallTo(() => _dmsInstanceSelection.GetSelectedDmsInstance()).MustHaveHappenedOnceExactly();
     }
 
     [Test]
     public void It_should_cache_data_source_for_same_provider_instance()
     {
         // Arrange
-        const string connectionString = "Host=localhost;Database=test;Username=user;Password=pass";
-        A.CallTo(() => _connectionStringProvider.GetConnectionString()).Returns(connectionString);
+        const string ConnectionString = "Host=localhost;Database=test;Username=user;Password=pass";
+        var dmsInstance = new DmsInstance(
+            Id: 1,
+            InstanceType: "Test",
+            InstanceName: "Test Instance",
+            ConnectionString: ConnectionString,
+            RouteContext: []
+        );
+        A.CallTo(() => _dmsInstanceSelection.GetSelectedDmsInstance()).Returns(dmsInstance);
 
         // Act
         var dataSource1 = _provider.DataSource;
@@ -65,23 +79,38 @@ public class Given_NpgsqlDataSourceProvider
 
         // Assert
         dataSource1.Should().BeSameAs(dataSource2);
-        A.CallTo(() => _connectionStringProvider.GetConnectionString()).MustHaveHappenedOnceExactly();
+        A.CallTo(() => _dmsInstanceSelection.GetSelectedDmsInstance()).MustHaveHappenedOnceExactly();
     }
 
     [Test]
     public void It_should_reuse_cached_data_source_across_provider_instances_for_same_connection_string()
     {
         // Arrange
-        const string connectionString = "Host=localhost;Database=test;Username=user;Password=pass";
+        const string ConnectionString = "Host=localhost;Database=test;Username=user;Password=pass";
 
-        var connectionStringProvider1 = A.Fake<IRequestConnectionStringProvider>();
-        var connectionStringProvider2 = A.Fake<IRequestConnectionStringProvider>();
+        var dmsInstanceSelection1 = A.Fake<IDmsInstanceSelection>();
+        var dmsInstanceSelection2 = A.Fake<IDmsInstanceSelection>();
 
-        A.CallTo(() => connectionStringProvider1.GetConnectionString()).Returns(connectionString);
-        A.CallTo(() => connectionStringProvider2.GetConnectionString()).Returns(connectionString);
+        var dmsInstance1 = new DmsInstance(
+            Id: 1,
+            InstanceType: "Test",
+            InstanceName: "Test Instance 1",
+            ConnectionString: ConnectionString,
+            RouteContext: []
+        );
+        var dmsInstance2 = new DmsInstance(
+            Id: 2,
+            InstanceType: "Test",
+            InstanceName: "Test Instance 2",
+            ConnectionString: ConnectionString,
+            RouteContext: []
+        );
 
-        var provider1 = new NpgsqlDataSourceProvider(connectionStringProvider1, _cache);
-        var provider2 = new NpgsqlDataSourceProvider(connectionStringProvider2, _cache);
+        A.CallTo(() => dmsInstanceSelection1.GetSelectedDmsInstance()).Returns(dmsInstance1);
+        A.CallTo(() => dmsInstanceSelection2.GetSelectedDmsInstance()).Returns(dmsInstance2);
+
+        var provider1 = new NpgsqlDataSourceProvider(dmsInstanceSelection1, _cache);
+        var provider2 = new NpgsqlDataSourceProvider(dmsInstanceSelection2, _cache);
 
         // Act
         var dataSource1 = provider1.DataSource;
@@ -95,17 +124,32 @@ public class Given_NpgsqlDataSourceProvider
     public void It_should_create_different_data_sources_for_different_connection_strings()
     {
         // Arrange
-        const string connectionString1 = "Host=localhost;Database=test1;Username=user;Password=pass";
-        const string connectionString2 = "Host=localhost;Database=test2;Username=user;Password=pass";
+        const string ConnectionString1 = "Host=localhost;Database=test1;Username=user;Password=pass";
+        const string ConnectionString2 = "Host=localhost;Database=test2;Username=user;Password=pass";
 
-        var connectionStringProvider1 = A.Fake<IRequestConnectionStringProvider>();
-        var connectionStringProvider2 = A.Fake<IRequestConnectionStringProvider>();
+        var dmsInstanceSelection1 = A.Fake<IDmsInstanceSelection>();
+        var dmsInstanceSelection2 = A.Fake<IDmsInstanceSelection>();
 
-        A.CallTo(() => connectionStringProvider1.GetConnectionString()).Returns(connectionString1);
-        A.CallTo(() => connectionStringProvider2.GetConnectionString()).Returns(connectionString2);
+        var dmsInstance1 = new DmsInstance(
+            Id: 1,
+            InstanceType: "Test",
+            InstanceName: "Test Instance 1",
+            ConnectionString: ConnectionString1,
+            RouteContext: []
+        );
+        var dmsInstance2 = new DmsInstance(
+            Id: 2,
+            InstanceType: "Test",
+            InstanceName: "Test Instance 2",
+            ConnectionString: ConnectionString2,
+            RouteContext: []
+        );
 
-        var provider1 = new NpgsqlDataSourceProvider(connectionStringProvider1, _cache);
-        var provider2 = new NpgsqlDataSourceProvider(connectionStringProvider2, _cache);
+        A.CallTo(() => dmsInstanceSelection1.GetSelectedDmsInstance()).Returns(dmsInstance1);
+        A.CallTo(() => dmsInstanceSelection2.GetSelectedDmsInstance()).Returns(dmsInstance2);
+
+        var provider1 = new NpgsqlDataSourceProvider(dmsInstanceSelection1, _cache);
+        var provider2 = new NpgsqlDataSourceProvider(dmsInstanceSelection2, _cache);
 
         // Act
         var dataSource1 = provider1.DataSource;

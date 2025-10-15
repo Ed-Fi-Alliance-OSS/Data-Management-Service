@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ResolveDmsInstanceMiddleware(
     IDmsInstanceProvider dmsInstanceProvider,
-    IRequestConnectionStringProvider requestConnectionStringProvider,
+    IDmsInstanceSelection dmsInstanceSelection,
     ILogger<ResolveDmsInstanceMiddleware> logger
 ) : IPipelineStep
 {
@@ -151,11 +151,8 @@ internal class ResolveDmsInstanceMiddleware(
         requestInfo.DmsInstanceId = matchedInstance.Id;
         requestInfo.ConnectionString = matchedInstance.ConnectionString;
 
-        // Set connection string in scoped provider for repository access
-        requestConnectionStringProvider.SetConnectionString(
-            matchedInstance.ConnectionString,
-            matchedInstance.Id
-        );
+        // Set selected DMS instance in scoped provider for repository access
+        dmsInstanceSelection.SetSelectedDmsInstance(matchedInstance);
 
         logger.LogInformation(
             "Resolved request to DMS instance {DmsInstanceId} ('{InstanceName}') - TraceId: {TraceId}",

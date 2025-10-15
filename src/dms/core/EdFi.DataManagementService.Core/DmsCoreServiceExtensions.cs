@@ -74,7 +74,7 @@ public static class DmsCoreServiceExtensions
             .AddTransient<RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider>()
             .AddTransient<NamespaceBasedFiltersProvider>()
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline)
-            .AddScoped<IRequestConnectionStringProvider, RequestConnectionStringProvider>()
+            .AddScoped<IDmsInstanceSelection, DmsInstanceSelection>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<ConfigurationServiceApplicationProvider>()
             .AddSingleton<ApplicationContextCache>(sp => new ApplicationContextCache(
