@@ -56,11 +56,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
             var sb = new StringBuilder();
 
-            // Create schema if not exists
-            sb.AppendLine("-- Create DMS schema");
-            sb.AppendLine("CREATE SCHEMA IF NOT EXISTS dms;");
-            sb.AppendLine();
-
             // Process each resource schema
             foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas)
             {

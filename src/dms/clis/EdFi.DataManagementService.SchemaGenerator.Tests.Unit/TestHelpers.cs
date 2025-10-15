@@ -128,5 +128,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
                 }
             };
         }
+
+        /// <summary>
+        /// Creates an empty schema with no resource schemas for testing edge cases.
+        /// </summary>
+        public static ApiSchema GetEmptySchema()
+        {
+            return new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EmptyProject",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    Description = "Empty test schema.",
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>()
+                }
+            };
+        }
     }
 }
