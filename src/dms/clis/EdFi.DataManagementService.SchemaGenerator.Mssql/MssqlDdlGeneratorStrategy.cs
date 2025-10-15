@@ -56,6 +56,17 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
             var sb = new StringBuilder();
 
+            // Create schema if not exists
+            sb.AppendLine("-- Create DMS schema");
+            sb.AppendLine("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms')");
+            sb.AppendLine("BEGIN");
+            sb.AppendLine("    EXEC('CREATE SCHEMA dms');");
+            sb.AppendLine("    PRINT 'Schema dms created.';");
+            sb.AppendLine("END");
+            sb.AppendLine("ELSE");
+            sb.AppendLine("    PRINT 'Schema dms already exists, skipped.';");
+            sb.AppendLine();
+
             // Process each resource schema
             foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas)
             {
@@ -120,7 +131,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                     var columns = table.Columns.Select(c => $"[{c.ColumnName}]").ToList();
                                     var selectCols = string.Join(", ", columns);
                                     var discriminator = table.DiscriminatorValue ?? subclassType;
-                                    selectStatements.Add($"SELECT {selectCols}, '{discriminator}' as Discriminator FROM [{table.BaseName}]");
+                                    selectStatements.Add($"SELECT {selectCols}, ''{discriminator}'' as Discriminator FROM [dms].[{table.BaseName}]");
                                 }
                             }
                             var viewData = new { viewName = unionViewName, selectStatements };
@@ -159,7 +170,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                 var selectCols = string.Join(", ", naturalKeyColumns.Select(c => $"[{c}]"));
                                 var discriminatorValue = childTable.DiscriminatorValue;
                                 var tableName = childTable.BaseName;
-                                selectStatements.Add($"SELECT {selectCols}, '{discriminatorValue}' AS [Discriminator] FROM [{tableName}]");
+                                selectStatements.Add($"SELECT {selectCols}, ''{discriminatorValue}'' AS [Discriminator] FROM [dms].[{tableName}]");
                             }
 
                             if (selectStatements.Any())
@@ -182,55 +193,174 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             string? parentTableName,
             List<string>? parentPkColumns)
         {
+            var tableName = table.BaseName;
+            var isRootTable = parentTableName == null;
+
+            // Track cross-resource references for FK and index generation
+            var crossResourceReferences = new List<(string columnName, string referencedResource)>();
+
+            // Generate data columns (excluding parent references and system columns)
             var columns = table.Columns
-                .Select(c => new
+                .Where(c => !c.IsParentReference) // Parent FKs handled separately
+                .Select(c =>
                 {
-                    name = c.ColumnName,
-                    type = MapColumnType(c),
-                    isRequired = c.IsRequired,
-                    isNaturalKey = c.IsNaturalKey,
-                    isParentReference = c.IsParentReference,
-                    fromReferencePath = c.FromReferencePath
+                    // Track cross-resource references
+                    if (!string.IsNullOrEmpty(c.FromReferencePath) && c.ColumnName.EndsWith("_Id"))
+                    {
+                        var referencedResource = ResolveResourceNameFromPath(c.FromReferencePath);
+                        if (!string.IsNullOrEmpty(referencedResource))
+                        {
+                            crossResourceReferences.Add((c.ColumnName, referencedResource));
+                        }
+                    }
+
+                    return new
+                    {
+                        name = c.ColumnName,
+                        type = MapColumnType(c),
+                        isRequired = c.IsRequired
+                    };
                 })
                 .ToList();
 
-            // Primary key columns
-            var pkColumns = table.Columns
-                .Where(c => c.IsNaturalKey)
+            // Natural key columns for unique constraint
+            var naturalKeyColumns = table.Columns
+                .Where(c => c.IsNaturalKey && !c.IsParentReference)
                 .Select(c => c.ColumnName)
                 .ToList();
 
-            // Foreign key columns (parent reference only)
+            // Foreign key constraints
             var fkColumns = new List<object>();
-            if (parentTableName != null && parentPkColumns != null && parentPkColumns.Count > 0)
+
+            // 1. FK to parent table (for child tables)
+            if (parentTableName != null)
             {
-                foreach (var col in table.Columns.Where(c => c.IsParentReference))
+                var parentFkColumn = $"{parentTableName}_Id";
+                columns.Insert(0, new
                 {
-                    foreach (var parentPk in parentPkColumns)
+                    name = parentFkColumn,
+                    type = "BIGINT",
+                    isRequired = true
+                });
+
+                fkColumns.Add(new
+                {
+                    constraintName = $"FK_{table.BaseName}_{parentTableName}",
+                    column = parentFkColumn,
+                    parentTable = parentTableName,
+                    parentColumn = "Id", // Always reference surrogate key
+                    cascade = true
+                });
+            }
+
+            // 2. FK to cross-resource references
+            foreach (var (columnName, referencedResource) in crossResourceReferences)
+            {
+                fkColumns.Add(new
+                {
+                    constraintName = $"FK_{table.BaseName}_{referencedResource}",
+                    column = columnName,
+                    parentTable = referencedResource,
+                    parentColumn = "Id",
+                    cascade = false // Use RESTRICT for cross-resource FKs to prevent accidental data loss
+                });
+            }
+
+            // 3. FK to Document table (all tables)
+            fkColumns.Add(new
+            {
+                constraintName = $"FK_{table.BaseName}_Document",
+                column = "(Document_Id, Document_PartitionKey)",
+                parentTable = "Document",
+                parentColumn = "(Id, DocumentPartitionKey)",
+                cascade = true
+            });
+
+            // Unique constraints
+            var uniqueConstraints = new List<object>();
+
+            // For root tables: Natural key uniqueness
+            if (isRootTable && naturalKeyColumns.Count > 0)
+            {
+                uniqueConstraints.Add(new
+                {
+                    constraintName = $"UQ_{table.BaseName}_NaturalKey",
+                    columns = naturalKeyColumns
+                });
+            }
+
+            // For child tables: Parent FK + natural key columns
+            if (!isRootTable)
+            {
+                var identityColumns = new List<string>
+                {
+                    $"{parentTableName}_Id"
+                };
+                identityColumns.AddRange(naturalKeyColumns);
+
+                if (identityColumns.Count > 1) // Only if there are identifying columns beyond parent FK
+                {
+                    uniqueConstraints.Add(new
                     {
-                        fkColumns.Add(new
-                        {
-                            column = col.ColumnName,
-                            parentTable = parentTableName,
-                            parentColumn = parentPk
-                        });
-                    }
+                        constraintName = $"UQ_{table.BaseName}_Identity",
+                        columns = identityColumns
+                    });
                 }
             }
 
+            // Index generation for foreign keys (critical for performance)
+            var indexes = new List<object>();
+
+            // 1. Index on parent FK (for child tables)
+            if (parentTableName != null)
+            {
+                indexes.Add(new
+                {
+                    indexName = $"IX_{table.BaseName}_{parentTableName}",
+                    tableName,
+                    columns = new[] { $"{parentTableName}_Id" }
+                });
+            }
+
+            // 2. Indexes on cross-resource FKs
+            foreach (var (columnName, referencedResource) in crossResourceReferences)
+            {
+                indexes.Add(new
+                {
+                    indexName = $"IX_{table.BaseName}_{referencedResource}",
+                    tableName,
+                    columns = new[] { columnName }
+                });
+            }
+
+            // 3. Index on Document FK (composite index for performance)
+            indexes.Add(new
+            {
+                indexName = $"IX_{table.BaseName}_Document",
+                tableName,
+                columns = new[] { "Document_Id", "Document_PartitionKey" }
+            });
+
             var data = new
             {
-                tableName = table.BaseName,
+                tableName,
+                hasId = true,
+                id = "Id",
+                hasDocumentColumns = true,
+                documentId = "Document_Id",
+                documentPartitionKey = "Document_PartitionKey",
                 columns,
-                pkColumns,
-                fkColumns
+                fkColumns,
+                uniqueConstraints,
+                indexes
             };
+
             sb.AppendLine(template(data));
 
-            // Recursively process child tables, passing this table's PK columns
+            // Recursively process child tables
             foreach (var childTable in table.ChildTables)
             {
-                GenerateTableDdl(childTable, template, sb, table.BaseName, pkColumns);
+                GenerateTableDdl(childTable, template, sb, table.BaseName, null);
             }
         }
 
@@ -238,9 +368,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
         {
             var baseType = column.ColumnType.ToLower() switch
             {
-                "bigint" => "BIGINT",
-                "integer" or "int" => "INT",
-                "short" => "SMALLINT",
+                "int64" or "bigint" => "BIGINT",
+                "int32" or "integer" or "int" => "INT",
+                "int16" or "short" => "SMALLINT",
                 "string" => column.MaxLength != null
                     ? (int.Parse(column.MaxLength) > 4000 ? "NVARCHAR(MAX)" : $"NVARCHAR({column.MaxLength})")
                     : "NVARCHAR(MAX)",
@@ -260,6 +390,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             };
 
             return baseType;
+        }
+
+        /// <summary>
+        /// Resolves the target resource name from a reference path.
+        /// For example: "StudentReference" -> "Student", "SchoolReference" -> "School"
+        /// </summary>
+        private string ResolveResourceNameFromPath(string referencePath)
+        {
+            if (string.IsNullOrEmpty(referencePath))
+            {
+                return string.Empty;
+            }
+
+            // Remove "Reference" suffix if present
+            if (referencePath.EndsWith("Reference", StringComparison.OrdinalIgnoreCase))
+            {
+                return referencePath.Substring(0, referencePath.Length - "Reference".Length);
+            }
+
+            // Otherwise, assume the path itself is the resource name
+            return referencePath;
         }
     }
 }
