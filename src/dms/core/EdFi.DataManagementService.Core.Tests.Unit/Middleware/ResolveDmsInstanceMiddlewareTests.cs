@@ -161,18 +161,6 @@ public class ResolveDmsInstanceMiddlewareTests
         }
 
         [Test]
-        public void It_sets_connection_string_in_request_info()
-        {
-            _requestInfo.ConnectionString.Should().Be("test-connection");
-        }
-
-        [Test]
-        public void It_sets_dms_instance_id_in_request_info()
-        {
-            _requestInfo.DmsInstanceId.Should().Be(1);
-        }
-
-        [Test]
         public void It_calls_SetSelectedDmsInstance_on_provider()
         {
             A.CallTo(() => _dmsInstanceSelection.SetSelectedDmsInstance(_expectedInstance))
@@ -271,13 +259,6 @@ public class ResolveDmsInstanceMiddlewareTests
         public void It_calls_the_next_middleware()
         {
             _nextCalled.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_selects_the_matching_instance()
-        {
-            _requestInfo.DmsInstanceId.Should().Be(2);
-            _requestInfo.ConnectionString.Should().Be("correct-connection");
         }
     }
 
@@ -662,7 +643,6 @@ public class ResolveDmsInstanceMiddlewareTests
         public void It_matches_case_insensitively()
         {
             _nextCalled.Should().BeTrue();
-            _requestInfo.DmsInstanceId.Should().Be(1);
         }
     }
 

@@ -147,10 +147,6 @@ internal class ResolveDmsInstanceMiddleware(
             return;
         }
 
-        // Set the selected DMS instance and connection string
-        requestInfo.DmsInstanceId = matchedInstance.Id;
-        requestInfo.ConnectionString = matchedInstance.ConnectionString;
-
         // Set selected DMS instance in scoped provider for repository access
         dmsInstanceSelection.SetSelectedDmsInstance(matchedInstance);
 
