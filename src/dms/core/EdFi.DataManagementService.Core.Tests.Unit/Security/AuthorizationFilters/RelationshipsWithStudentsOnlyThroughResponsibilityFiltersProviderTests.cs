@@ -29,6 +29,7 @@ public class RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProviderTe
                     "",
                     "",
                     [new EducationOrganizationId(255901), new EducationOrganizationId(255902)],
+                    [],
                     []
                 )
             );
@@ -64,7 +65,7 @@ public class RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProviderTe
         {
             // Arrange
             var filtersProvider = new RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider();
-            var clientAuthorizations = new ClientAuthorizations("", "", "", [], []);
+            var clientAuthorizations = new ClientAuthorizations("", "", "", [], [], []);
 
             // Act & Assert
             var exception = Assert.Throws<AuthorizationException>(() =>
@@ -90,7 +91,7 @@ public class RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProviderTe
         {
             var filters = new RelationshipsWithStudentsOnlyThroughResponsibilityFiltersProvider();
             _expectedResult = filters.GetFilters(
-                new ClientAuthorizations("", "", "", [new EducationOrganizationId(123456)], [])
+                new ClientAuthorizations("", "", "", [new EducationOrganizationId(123456)], [], [])
             );
         }
 

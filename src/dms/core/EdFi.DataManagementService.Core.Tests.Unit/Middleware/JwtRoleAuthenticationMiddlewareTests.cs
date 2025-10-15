@@ -244,7 +244,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TokenId: "token123",
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
-                NamespacePrefixes: []
+                NamespacePrefixes: [],
+                DmsInstanceIds: []
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware();
@@ -326,7 +327,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TokenId: "token123",
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
-                NamespacePrefixes: []
+                NamespacePrefixes: [],
+                DmsInstanceIds: []
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware();
@@ -392,7 +394,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TokenId: "token123",
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
-                NamespacePrefixes: []
+                NamespacePrefixes: [],
+                DmsInstanceIds: []
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware(clientRole: string.Empty);
@@ -463,7 +466,8 @@ public class JwtRoleAuthenticationMiddlewareTests
                 TokenId: "token123",
                 ClaimSetName: "test",
                 EducationOrganizationIds: [],
-                NamespacePrefixes: []
+                NamespacePrefixes: [],
+                DmsInstanceIds: []
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware();

@@ -54,7 +54,8 @@ public class InvalidResourceSchemasTests
                                 TokenId: "test-token",
                                 ClaimSetName: "test-claimset",
                                 EducationOrganizationIds: new List<EducationOrganizationId>(),
-                                NamespacePrefixes: new List<NamespacePrefix>()
+                                NamespacePrefixes: new List<NamespacePrefix>(),
+                                DmsInstanceIds: new List<DmsInstanceId>()
                             )
                         )
                     )

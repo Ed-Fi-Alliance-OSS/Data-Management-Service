@@ -63,7 +63,8 @@ public class JwtAuthenticationMiddlewareTests
                 TokenId: "token-123",
                 ClaimSetName: "edfi-admin",
                 EducationOrganizationIds: new List<EducationOrganizationId>(),
-                NamespacePrefixes: new List<NamespacePrefix>()
+                NamespacePrefixes: new List<NamespacePrefix>(),
+                DmsInstanceIds: new List<DmsInstanceId>()
             );
 
             var (middleware, jwtValidationService) = CreateMiddleware();
@@ -322,7 +323,8 @@ public class JwtAuthenticationMiddlewareTests
                 TokenId: "token-123",
                 ClaimSetName: "edfi-admin",
                 EducationOrganizationIds: new List<EducationOrganizationId>(),
-                NamespacePrefixes: new List<NamespacePrefix>()
+                NamespacePrefixes: new List<NamespacePrefix>(),
+                DmsInstanceIds: new List<DmsInstanceId>()
             );
 
             var (middleware, jwtValidationService) = CreateMiddleware();

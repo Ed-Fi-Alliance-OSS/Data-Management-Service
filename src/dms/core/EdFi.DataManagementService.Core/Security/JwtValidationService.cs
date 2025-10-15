@@ -133,12 +133,20 @@ internal class JwtValidationService(
                 .Select(id => new EducationOrganizationId(long.Parse(id)))
                 .ToList() ?? [];
 
+        List<DmsInstanceId> dmsInstanceIds =
+            claims
+                .Find(c => c.Type == "dmsInstanceIds")
+                ?.Value.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(id => new DmsInstanceId(long.Parse(id)))
+                .ToList() ?? [];
+
         return new ClientAuthorizations(
             TokenId: tokenId,
             ClientId: clientId,
             ClaimSetName: claimSetName,
             EducationOrganizationIds: educationOrganizationIds,
-            NamespacePrefixes: namespacePrefixes.Select(np => new NamespacePrefix(np)).ToList()
+            NamespacePrefixes: namespacePrefixes.Select(np => new NamespacePrefix(np)).ToList(),
+            DmsInstanceIds: dmsInstanceIds
         );
     }
 }

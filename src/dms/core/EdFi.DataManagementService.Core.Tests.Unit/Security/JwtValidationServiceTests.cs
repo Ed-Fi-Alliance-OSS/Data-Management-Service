@@ -108,6 +108,7 @@ public class JwtValidationServiceTests
                 new Claim("scope", "edfi-admin"),
                 new Claim("namespacePrefixes", "uri://ed-fi.org,uri://tpdm.ed-fi.org"),
                 new Claim("educationOrganizationIds", "123,456"),
+                new Claim("dmsInstanceIds", "1,2"),
             };
 
             var token = CreateTestToken(
@@ -163,6 +164,14 @@ public class JwtValidationServiceTests
             _clientAuthorizations!.EducationOrganizationIds.Should().HaveCount(2);
             _clientAuthorizations.EducationOrganizationIds[0].Value.Should().Be(123);
             _clientAuthorizations.EducationOrganizationIds[1].Value.Should().Be(456);
+        }
+
+        [Test]
+        public void It_extracts_dms_instance_ids()
+        {
+            _clientAuthorizations!.DmsInstanceIds.Should().HaveCount(2);
+            _clientAuthorizations.DmsInstanceIds[0].Value.Should().Be(1);
+            _clientAuthorizations.DmsInstanceIds[1].Value.Should().Be(2);
         }
     }
 
@@ -343,6 +352,12 @@ public class JwtValidationServiceTests
         public void It_uses_empty_education_organization_ids()
         {
             _clientAuthorizations!.EducationOrganizationIds.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_uses_empty_dms_instance_ids()
+        {
+            _clientAuthorizations!.DmsInstanceIds.Should().BeEmpty();
         }
     }
 }

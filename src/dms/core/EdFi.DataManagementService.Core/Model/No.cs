@@ -158,6 +158,7 @@ internal static class No
         ClientId: "",
         ClaimSetName: "",
         EducationOrganizationIds: [],
-        NamespacePrefixes: []
+        NamespacePrefixes: [],
+        DmsInstanceIds: []
     );
 }
