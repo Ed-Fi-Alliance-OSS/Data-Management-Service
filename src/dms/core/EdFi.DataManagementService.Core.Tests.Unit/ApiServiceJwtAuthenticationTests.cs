@@ -41,8 +41,8 @@ public class ApiServiceJwtAuthenticationTests
             NullLogger<JwtAuthenticationMiddleware>.Instance
         );
 
-        // Register DMS Instance Selection services
-        services.AddTransient<DmsInstanceSelectionMiddleware>();
+        // Register DMS Instance Resolution services
+        services.AddTransient<ResolveDmsInstanceMiddleware>();
 
         var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
         A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
@@ -66,18 +66,27 @@ public class ApiServiceJwtAuthenticationTests
                     Id: 1,
                     InstanceType: "Test",
                     InstanceName: "Test Instance",
-                    ConnectionString: "test-connection-string"
+                    ConnectionString: "test-connection-string",
+                    RouteContext: []
                 )
             );
         services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
 
-        var fakeRequestConnectionStringProvider = A.Fake<IRequestConnectionStringProvider>();
-        A.CallTo(() => fakeRequestConnectionStringProvider.GetConnectionString())
-            .Returns("test-connection-string");
-        services.AddSingleton<IRequestConnectionStringProvider>(fakeRequestConnectionStringProvider);
+        var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
+        A.CallTo(() => fakeDmsInstanceSelection.GetSelectedDmsInstance())
+            .Returns(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "Test",
+                    InstanceName: "Test Instance",
+                    ConnectionString: "test-connection-string",
+                    RouteContext: []
+                )
+            );
+        services.AddSingleton<IDmsInstanceSelection>(fakeDmsInstanceSelection);
 
-        services.AddTransient<ILogger<DmsInstanceSelectionMiddleware>>(_ =>
-            NullLogger<DmsInstanceSelectionMiddleware>.Instance
+        services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
+            NullLogger<ResolveDmsInstanceMiddleware>.Instance
         );
 
         var serviceProvider = services.BuildServiceProvider();
@@ -111,9 +120,9 @@ public class ApiServiceJwtAuthenticationTests
         var steps = (List<IPipelineStep>)getCommonInitialStepsMethod!.Invoke(apiService, null)!;
 
         // Assert
-        steps.Should().HaveCount(4); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + JwtAuthenticationMiddleware + DmsInstanceSelectionMiddleware
+        steps.Should().HaveCount(4); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + JwtAuthenticationMiddleware + ResolveDmsInstanceMiddleware
         steps[2].Should().BeOfType<JwtAuthenticationMiddleware>();
-        steps[3].Should().BeOfType<DmsInstanceSelectionMiddleware>();
+        steps[3].Should().BeOfType<ResolveDmsInstanceMiddleware>();
     }
 
     [Test]

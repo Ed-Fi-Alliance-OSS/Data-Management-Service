@@ -6,30 +6,25 @@
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
-/// Provides the database connection string for the current request
+/// Provides the selected DMS instance for the current request
 /// This is a scoped service that is populated by middleware and consumed by repositories
 /// </summary>
-public interface IRequestConnectionStringProvider
+public interface IDmsInstanceSelection
 {
     /// <summary>
-    /// Sets the connection string for the current request
-    /// Called by DmsInstanceSelectionMiddleware
+    /// Sets the selected DMS instance for the current request
+    /// Called by ResolveDmsInstanceMiddleware
     /// </summary>
-    void SetConnectionString(string connectionString, long dmsInstanceId);
+    void SetSelectedDmsInstance(DmsInstance dmsInstance);
 
     /// <summary>
-    /// Gets the connection string for the current request
+    /// Gets the selected DMS instance for the current request
     /// Called by repository factories
     /// </summary>
-    string GetConnectionString();
+    DmsInstance GetSelectedDmsInstance();
 
     /// <summary>
-    /// Gets the DMS instance ID for the current request
-    /// </summary>
-    long GetDmsInstanceId();
-
-    /// <summary>
-    /// Indicates whether the connection string has been set for this request
+    /// Indicates whether the DMS instance has been set for this request
     /// </summary>
     bool IsSet { get; }
 }

@@ -61,7 +61,8 @@ public class ExtractDocumentInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/schools",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )

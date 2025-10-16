@@ -28,7 +28,8 @@ public class DmsConnectionStringProviderTests
                 1,
                 "Production",
                 "Main Instance",
-                "host=localhost;port=5432;username=postgres;database=edfi;"
+                "host=localhost;port=5432;username=postgres;database=edfi;",
+                []
             );
 
             A.CallTo(() => _dmsInstanceProvider.GetById(1)).Returns(instance);
@@ -86,7 +87,7 @@ public class DmsConnectionStringProviderTests
         public void Setup()
         {
             _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-            var instance = new DmsInstance(1, "Production", "Main Instance", null);
+            var instance = new DmsInstance(1, "Production", "Main Instance", null, []);
 
             A.CallTo(() => _dmsInstanceProvider.GetById(1)).Returns(instance);
 
@@ -115,7 +116,7 @@ public class DmsConnectionStringProviderTests
         public void Setup()
         {
             _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-            var instance = new DmsInstance(1, "Production", "Main Instance", "   ");
+            var instance = new DmsInstance(1, "Production", "Main Instance", "   ", []);
 
             A.CallTo(() => _dmsInstanceProvider.GetById(1)).Returns(instance);
 
@@ -148,9 +149,9 @@ public class DmsConnectionStringProviderTests
 
             var instances = new List<DmsInstance>
             {
-                new(3, "Production", "Third Instance", "host=third;database=db3;"),
-                new(1, "Production", "First Instance", "host=first;database=db1;"),
-                new(2, "Development", "Second Instance", "host=second;database=db2;"),
+                new(3, "Production", "Third Instance", "host=third;database=db3;", []),
+                new(1, "Production", "First Instance", "host=first;database=db1;", []),
+                new(2, "Development", "Second Instance", "host=second;database=db2;", []),
             };
 
             A.CallTo(() => _dmsInstanceProvider.GetAll()).Returns(instances);
@@ -184,7 +185,7 @@ public class DmsConnectionStringProviderTests
 
             var instances = new List<DmsInstance>
             {
-                new(5, "Production", "Only Instance", "host=only;database=dbonly;"),
+                new(5, "Production", "Only Instance", "host=only;database=dbonly;", []),
             };
 
             A.CallTo(() => _dmsInstanceProvider.GetAll()).Returns(instances);
@@ -242,7 +243,7 @@ public class DmsConnectionStringProviderTests
         {
             _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
 
-            var instances = new List<DmsInstance> { new(1, "Production", "Invalid Instance", null) };
+            var instances = new List<DmsInstance> { new(1, "Production", "Invalid Instance", null, []) };
 
             A.CallTo(() => _dmsInstanceProvider.GetAll()).Returns(instances);
 

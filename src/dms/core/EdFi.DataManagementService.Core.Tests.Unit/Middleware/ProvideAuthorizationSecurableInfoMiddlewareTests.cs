@@ -59,7 +59,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/students",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )
@@ -115,7 +116,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/students",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )
@@ -180,11 +182,12 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             requestInfo = new(
                 new(
+                    Path: "/ed-fi/StudentContactAssociations",
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
-                    Path: "/ed-fi/StudentContactAssociations",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )
@@ -240,11 +243,12 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             requestInfo = new(
                 new(
+                    Path: "/ed-fi/contacts",
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
-                    Path: "/ed-fi/contacts",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )
@@ -296,11 +300,12 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             requestInfo = new(
                 new(
+                    Path: "/ed-fi/Contacts",
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
-                    Path: "/ed-fi/Contacts",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )
@@ -352,7 +357,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/staffs",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )
@@ -408,7 +414,8 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/staffs",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )
@@ -472,11 +479,12 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
 
             requestInfo = new(
                 new(
+                    Path: "/ed-fi/StudentStaffAssociations",
                     Body: body,
                     Headers: [],
                     QueryParameters: [],
-                    Path: "/ed-fi/StudentStaffAssociations",
-                    TraceId: new TraceId("123")
+                    TraceId: new TraceId("123"),
+                    RouteQualifiers: []
                 ),
                 RequestMethod.POST
             )

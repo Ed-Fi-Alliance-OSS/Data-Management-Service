@@ -54,7 +54,8 @@ public class InvalidResourceSchemasTests
                                 TokenId: "test-token",
                                 ClaimSetName: "test-claimset",
                                 EducationOrganizationIds: new List<EducationOrganizationId>(),
-                                NamespacePrefixes: new List<NamespacePrefix>()
+                                NamespacePrefixes: new List<NamespacePrefix>(),
+                                DmsInstanceIds: [new DmsInstanceId(1)]
                             )
                         )
                     )
@@ -70,8 +71,8 @@ public class InvalidResourceSchemasTests
                 NullLogger<JwtAuthenticationMiddleware>.Instance
             );
 
-            // Register DMS Instance Selection services
-            services.AddTransient<DmsInstanceSelectionMiddleware>();
+            // Register DMS Instance Resolution services
+            services.AddTransient<ResolveDmsInstanceMiddleware>();
 
             var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
             A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
@@ -95,18 +96,27 @@ public class InvalidResourceSchemasTests
                         Id: 1,
                         InstanceType: "Test",
                         InstanceName: "Test Instance",
-                        ConnectionString: "test-connection-string"
+                        ConnectionString: "test-connection-string",
+                        RouteContext: []
                     )
                 );
             services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
 
-            var fakeRequestConnectionStringProvider = A.Fake<IRequestConnectionStringProvider>();
-            A.CallTo(() => fakeRequestConnectionStringProvider.GetConnectionString())
-                .Returns("test-connection-string");
-            services.AddSingleton<IRequestConnectionStringProvider>(fakeRequestConnectionStringProvider);
+            var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
+            A.CallTo(() => fakeDmsInstanceSelection.GetSelectedDmsInstance())
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "Test Instance",
+                        ConnectionString: "test-connection-string",
+                        RouteContext: []
+                    )
+                );
+            services.AddSingleton<IDmsInstanceSelection>(fakeDmsInstanceSelection);
 
-            services.AddTransient<ILogger<DmsInstanceSelectionMiddleware>>(_ =>
-                NullLogger<DmsInstanceSelectionMiddleware>.Instance
+            services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
+                NullLogger<ResolveDmsInstanceMiddleware>.Instance
             );
 
             var serviceProvider = services.BuildServiceProvider();
@@ -123,10 +133,7 @@ public class InvalidResourceSchemasTests
                 Options.Create(new AppSettings { AllowIdentityUpdateOverrides = "" }),
                 new NamedAuthorizationServiceFactory(serviceProvider),
                 ResiliencePipeline.Empty,
-                new ResourceLoadOrderCalculator(
-                    [],
-                    A.Fake<IResourceDependencyGraphFactory>()
-                ),
+                new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
                 apiSchemaUploadService,
                 serviceProvider,
                 A.Fake<ClaimSetsCache>(),
@@ -163,7 +170,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -184,7 +192,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -205,7 +214,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -231,7 +241,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -252,7 +263,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -273,7 +285,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -294,7 +307,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -315,7 +329,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -336,7 +351,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -357,7 +373,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -378,7 +395,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -399,7 +417,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act
@@ -420,7 +439,8 @@ public class InvalidResourceSchemasTests
                     Body: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
-                    TraceId: new TraceId("")
+                    TraceId: new TraceId(""),
+                    RouteQualifiers: []
                 );
 
                 // Act

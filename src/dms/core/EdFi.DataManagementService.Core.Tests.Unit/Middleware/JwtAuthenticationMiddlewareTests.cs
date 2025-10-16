@@ -52,7 +52,8 @@ public class JwtAuthenticationMiddlewareTests
                     ["Authorization"] = "Bearer valid-token",
                 },
                 QueryParameters: [],
-                TraceId: new TraceId("123")
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -62,7 +63,8 @@ public class JwtAuthenticationMiddlewareTests
                 TokenId: "token-123",
                 ClaimSetName: "edfi-admin",
                 EducationOrganizationIds: new List<EducationOrganizationId>(),
-                NamespacePrefixes: new List<NamespacePrefix>()
+                NamespacePrefixes: new List<NamespacePrefix>(),
+                DmsInstanceIds: new List<DmsInstanceId>()
             );
 
             var (middleware, jwtValidationService) = CreateMiddleware();
@@ -126,7 +128,8 @@ public class JwtAuthenticationMiddlewareTests
                     ["Authorization"] = "Bearer invalid-token",
                 },
                 QueryParameters: [],
-                TraceId: new TraceId("123")
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -200,7 +203,8 @@ public class JwtAuthenticationMiddlewareTests
                 Body: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                 QueryParameters: [],
-                TraceId: new TraceId("123")
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -253,7 +257,8 @@ public class JwtAuthenticationMiddlewareTests
                     ["Authorization"] = "Basic dXNlcjpwYXNz",
                 },
                 QueryParameters: [],
-                TraceId: new TraceId("123")
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -307,7 +312,8 @@ public class JwtAuthenticationMiddlewareTests
                     ["authorization"] = "Bearer valid-token",
                 }, // lowercase
                 QueryParameters: [],
-                TraceId: new TraceId("123")
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
             );
             _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET);
 
@@ -317,7 +323,8 @@ public class JwtAuthenticationMiddlewareTests
                 TokenId: "token-123",
                 ClaimSetName: "edfi-admin",
                 EducationOrganizationIds: new List<EducationOrganizationId>(),
-                NamespacePrefixes: new List<NamespacePrefix>()
+                NamespacePrefixes: new List<NamespacePrefix>(),
+                DmsInstanceIds: new List<DmsInstanceId>()
             );
 
             var (middleware, jwtValidationService) = CreateMiddleware();

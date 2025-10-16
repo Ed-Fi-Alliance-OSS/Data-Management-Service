@@ -19,8 +19,8 @@ public class DmsInstanceRouteContextModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v2/dmsinstanceroutecontexts/", InsertDmsInstanceRouteContext);
-        endpoints.MapSecuredGet("/v2/dmsinstanceroutecontexts/", GetAll);
-        endpoints.MapSecuredGet($"/v2/dmsinstanceroutecontexts/{{id}}", GetById);
+        endpoints.MapLimitedAccess("/v2/dmsinstanceroutecontexts/", GetAll);
+        endpoints.MapLimitedAccess($"/v2/dmsinstanceroutecontexts/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v2/dmsinstanceroutecontexts/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v2/dmsinstanceroutecontexts/{{id}}", Delete);
     }

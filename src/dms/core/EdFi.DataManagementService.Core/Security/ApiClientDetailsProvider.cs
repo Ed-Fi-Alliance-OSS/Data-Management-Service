@@ -35,7 +35,8 @@ public class ApiClientDetailsProvider() : IApiClientDetailsProvider
             clientId,
             claimSetName,
             edOrgIds.Select(x => new EducationOrganizationId(long.Parse(x))).ToList(),
-            namespacePrefixes.Select(x => new NamespacePrefix(x)).ToList()
+            namespacePrefixes.Select(x => new NamespacePrefix(x)).ToList(),
+            []
         );
         return clientAuthorizations;
     }

@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Model;
+
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
@@ -24,5 +26,10 @@ public record DmsInstance(
     /// <summary>
     /// The database connection string for this instance
     /// </summary>
-    string? ConnectionString
+    string? ConnectionString,
+    /// <summary>
+    /// Route qualifier context for this instance, mapping qualifier names to values
+    /// (e.g., "district" -> "255901", "schoolYear" -> "2024")
+    /// </summary>
+    Dictionary<RouteQualifierName, RouteQualifierValue> RouteContext
 );

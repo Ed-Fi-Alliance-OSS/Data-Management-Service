@@ -1,0 +1,409 @@
+### Multi-Instance Route Qualifiers Testing
+### This file demonstrates DMS instance routing with route qualifiers (districtId and schoolYear)
+### Make sure to deploy with the multi-instance.env configuration first
+
+@configPort = 8081
+@dmsPort = 8080
+@sysAdminId = DmsConfigurationService
+@sysAdminSecret = s3creT@09
+
+### Variables for testing
+@districtId1 = 255901
+@districtId2 = 255902
+@schoolYear1 = 2024
+@schoolYear2 = 2025
+
+### ============================================================================
+### STEP 1: Get Access Token from Configuration Service
+### ============================================================================
+
+### Get token for Configuration Service
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken = {{configTokenRequest.response.body.access_token}}
+
+
+### ============================================================================
+### STEP 2: Create Vendor
+### ============================================================================
+
+### Create a new vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Multi-District Test Vendor",
+    "contactName": "Test Admin",
+    "contactEmailAddress": "admin@testdistrict.edu",
+    "namespacePrefixes": "uri://ed-fi.org,uri://testdistrict.edu"
+}
+
+###
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
+
+
+### ============================================================================
+### STEP 3: Create DMS Instances with Route Contexts
+### ============================================================================
+
+### Create DMS Instance 1 - District 255901, School Year 2024
+# @name createInstance1
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "instanceType": "District",
+  "instanceName": "District 255901 - School Year 2024",
+  "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2024;"
+}
+
+###
+@instance1Id = {{createInstance1.response.body.id}}
+
+### Create Route Context for Instance 1 - districtId
+# @name createRouteContext1A
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance1Id}},
+  "contextKey": "districtId",
+  "contextValue": "{{districtId1}}"
+}
+
+### Create Route Context for Instance 1 - schoolYear
+# @name createRouteContext1B
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance1Id}},
+  "contextKey": "schoolYear",
+  "contextValue": "{{schoolYear1}}"
+}
+
+
+### ============================================================================
+### Create DMS Instance 2 - District 255901, School Year 2025
+# @name createInstance2
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "instanceType": "District",
+  "instanceName": "District 255901 - School Year 2025",
+  "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2025;"
+}
+
+###
+@instance2Id = {{createInstance2.response.body.id}}
+
+### Create Route Context for Instance 2 - districtId
+# @name createRouteContext2A
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance2Id}},
+  "contextKey": "districtId",
+  "contextValue": "{{districtId1}}"
+}
+
+### Create Route Context for Instance 2 - schoolYear
+# @name createRouteContext2B
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance2Id}},
+  "contextKey": "schoolYear",
+  "contextValue": "{{schoolYear2}}"
+}
+
+
+### ============================================================================
+### Create DMS Instance 3 - District 255902, School Year 2024
+# @name createInstance3
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "instanceType": "District",
+  "instanceName": "District 255902 - School Year 2024",
+  "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255902_sy2024;"
+}
+
+###
+@instance3Id = {{createInstance3.response.body.id}}
+
+### Create Route Context for Instance 3 - districtId
+# @name createRouteContext3A
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance3Id}},
+  "contextKey": "districtId",
+  "contextValue": "{{districtId2}}"
+}
+
+### Create Route Context for Instance 3 - schoolYear
+# @name createRouteContext3B
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance3Id}},
+  "contextKey": "schoolYear",
+  "contextValue": "{{schoolYear1}}"
+}
+
+
+### ============================================================================
+### STEP 4: View Created Instances and Route Contexts
+### ============================================================================
+
+### List all DMS Instances
+GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+Authorization: bearer {{configToken}}
+
+### Get specific instance by ID
+GET http://localhost:{{configPort}}/v2/dmsInstances/{{instance1Id}}
+Authorization: bearer {{configToken}}
+
+### List all Route Contexts
+GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts?offset=0&limit=25
+Authorization: bearer {{configToken}}
+
+
+### ============================================================================
+### STEP 5: Create Application with Multiple Instances
+### ============================================================================
+
+### Create Application
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "vendorId": {{vendorId}},
+  "applicationName": "Multi-District Test App",
+  "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+  "educationOrganizationIds": [255901, 255902],
+  "dmsInstanceIds": [{{instance1Id}}, {{instance2Id}}, {{instance3Id}}]
+}
+
+###
+@clientKey = {{createApplication.response.body.key}}
+@clientSecret = {{createApplication.response.body.secret}}
+@applicationId = {{createApplication.response.body.id}}
+
+
+### ============================================================================
+### STEP 6: Get DMS Access Token
+### ============================================================================
+
+### Read the Token URL from the Discovery API
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+@tokenUrl={{discovery.response.body.urls.oauth}}
+
+
+### Get token for DMS using the application credentials
+# @name dmsTokenRequest
+POST {{tokenUrl}}
+Authorization: basic {{clientKey}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsToken = {{dmsTokenRequest.response.body.access_token}}
+
+
+### ============================================================================
+### STEP 7: Test Route Qualifier Routing - Create Descriptors
+### ============================================================================
+
+### Create Descriptor in District 255901, School Year 2024 (Instance 1)
+### URL pattern: /{districtId}/{schoolYear}/data/ed-fi/{resource}
+# @name createDescriptor1
+POST http://localhost:{{dmsPort}}/{{districtId1}}/{{schoolYear1}}/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "codeValue": "District255901-2024",
+  "shortDescription": "Test descriptor for District 255901 Year 2024",
+  "description": "Test descriptor for District 255901 Year 2024",
+  "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+### Expected: Creates descriptor in database edfi_datamanagementservice_d255901_sy2024
+###
+@descriptor1Location = {{createDescriptor1.response.headers.location}}
+
+
+### ============================================================================
+### Create Descriptor in District 255901, School Year 2025 (Instance 2)
+# @name createDescriptor2
+POST http://localhost:{{dmsPort}}/{{districtId1}}/{{schoolYear2}}/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "codeValue": "District255901-2025",
+  "shortDescription": "Test descriptor for District 255901 Year 2025",
+  "description": "Test descriptor for District 255901 Year 2025",
+  "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+### Expected: Creates descriptor in database edfi_datamanagementservice_d255901_sy2025
+###
+@descriptor2Location = {{createDescriptor2.response.headers.location}}
+
+
+### ============================================================================
+### Create Descriptor in District 255902, School Year 2024 (Instance 3)
+# @name createDescriptor3
+POST http://localhost:{{dmsPort}}/{{districtId2}}/{{schoolYear1}}/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{dmsToken}}
+Content-Type: application/json
+
+{
+  "codeValue": "District255902-2024",
+  "shortDescription": "Test descriptor for District 255902 Year 2024",
+  "description": "Test descriptor for District 255902 Year 2024",
+  "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+### Expected: Creates descriptor in database edfi_datamanagementservice_d255902_sy2024
+###
+@descriptor3Location = {{createDescriptor3.response.headers.location}}
+
+
+### ============================================================================
+### STEP 8: Verify Route Qualifier Resolution - GET Descriptors
+### ============================================================================
+
+### GET all descriptors from District 255901, School Year 2024
+GET http://localhost:{{dmsPort}}/{{districtId1}}/{{schoolYear1}}/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{dmsToken}}
+
+### Expected: Returns descriptors from database edfi_datamanagementservice_d255901_sy2024 (should include District255901-2024)
+
+
+### GET all descriptors from District 255901, School Year 2025
+GET http://localhost:{{dmsPort}}/{{districtId1}}/{{schoolYear2}}/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{dmsToken}}
+
+### Expected: Returns descriptors from database edfi_datamanagementservice_d255901_sy2025 (should include District255901-2025)
+
+
+### GET all descriptors from District 255902, School Year 2024
+GET http://localhost:{{dmsPort}}/{{districtId2}}/{{schoolYear1}}/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{dmsToken}}
+
+### Expected: Returns descriptors from database edfi_datamanagementservice_d255902_sy2024 (should include District255902-2024)
+
+
+### GET specific descriptor by location (Instance 1)
+GET {{descriptor1Location}}
+Authorization: bearer {{dmsToken}}
+
+### Expected: Returns "District255901-2024" descriptor
+
+
+### GET specific descriptor by location (Instance 2)
+GET {{descriptor2Location}}
+Authorization: bearer {{dmsToken}}
+
+### Expected: Returns "District255901-2025" descriptor
+
+
+### GET specific descriptor by location (Instance 3)
+GET {{descriptor3Location}}
+Authorization: bearer {{dmsToken}}
+
+### Expected: Returns "District255902-2024" descriptor
+
+
+### ============================================================================
+### STEP 9: Test Error Cases
+### ============================================================================
+
+### Try to access with invalid district ID (should return 404)
+GET http://localhost:{{dmsPort}}/999999/{{schoolYear1}}/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{dmsToken}}
+
+### Expected: 404 - No database instance found matching the request route qualifiers
+
+
+### Try to access with invalid school year (should return 404)
+GET http://localhost:{{dmsPort}}/{{districtId1}}/2099/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{dmsToken}}
+
+### Expected: 404 - No database instance found matching the request route qualifiers
+
+
+### Try to access without route qualifiers (should return 400 or 404)
+GET http://localhost:{{dmsPort}}/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{dmsToken}}
+
+### Expected: Error - Route qualifiers required or path not found
+
+
+### ============================================================================
+### CLEANUP (Optional)
+### ============================================================================
+
+### Delete Instance 1
+DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance1Id}}
+Authorization: bearer {{configToken}}
+
+### Delete Instance 2
+DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance2Id}}
+Authorization: bearer {{configToken}}
+
+### Delete Instance 3
+DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance3Id}}
+Authorization: bearer {{configToken}}
+
+### Delete Application
+DELETE http://localhost:{{configPort}}/v2/applications/{{applicationId}}
+Authorization: bearer {{configToken}}
+
+### Delete Vendor
+DELETE http://localhost:{{configPort}}/v2/vendors/{{vendorId}}
+Authorization: bearer {{configToken}}

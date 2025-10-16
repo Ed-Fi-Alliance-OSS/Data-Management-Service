@@ -102,7 +102,8 @@ public class CoerceDateTimesMiddlewareTests
                 Body: requestBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new(frontEndRequest, RequestMethod.POST)
@@ -210,7 +211,8 @@ public class CoerceDateTimesMiddlewareTests
                 Body: requestBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new(frontEndRequest, RequestMethod.POST)
@@ -290,7 +292,8 @@ public class CoerceDateTimesMiddlewareTests
                 Body: requestBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new(frontEndRequest, RequestMethod.POST)
@@ -366,7 +369,8 @@ public class CoerceDateTimesMiddlewareTests
                 Body: requestBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new(frontEndRequest, RequestMethod.POST)
@@ -461,7 +465,8 @@ public class CoerceDateTimesMiddlewareTests
                 Body: requestBody,
                 Headers: [],
                 QueryParameters: [],
-                TraceId: new TraceId("traceId")
+                TraceId: new TraceId("traceId"),
+                RouteQualifiers: []
             );
 
             _requestInfo = new(frontEndRequest, RequestMethod.POST)

@@ -14,7 +14,7 @@ using Npgsql;
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
 public class PostgresqlDocumentStoreRepository(
-    NpgsqlDataSource _dataSource,
+    NpgsqlDataSourceProvider _dataSourceProvider,
     ILogger<PostgresqlDocumentStoreRepository> _logger,
     IGetDocumentById _getDocumentById,
     IUpdateDocumentById _updateDocumentById,
@@ -35,7 +35,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
             await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
 
             UpsertResult result = await _upsertDocument.Upsert(upsertRequest, connection, transaction);
@@ -72,7 +72,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
             await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
 
             GetResult result = await _getDocumentById.GetById(getRequest, connection, transaction);
@@ -104,7 +104,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
             await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
 
             UpdateResult result = await _updateDocumentById.UpdateById(
@@ -144,7 +144,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
             await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
             DeleteResult result = await _deleteDocumentById.DeleteById(
                 deleteRequest,
@@ -183,7 +183,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
+            await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
             await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
 
             QueryResult result = await _queryDocument.QueryDocuments(queryRequest, connection, transaction);

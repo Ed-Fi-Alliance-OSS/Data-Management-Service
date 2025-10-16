@@ -22,7 +22,9 @@ public static class WebApplicationExtensions
 
         foreach (var moduleClass in moduleClasses)
         {
-            if (Activator.CreateInstance(moduleClass) is IEndpointModule module)
+            if (
+                ActivatorUtilities.CreateInstance(application.Services, moduleClass) is IEndpointModule module
+            )
             {
                 modules.Add(module);
             }

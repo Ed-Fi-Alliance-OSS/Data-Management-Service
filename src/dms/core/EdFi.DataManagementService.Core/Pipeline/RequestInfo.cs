@@ -125,14 +125,9 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
     public ClientAuthorizations ClientAuthorizations { get; set; } = No.ClientAuthorizations;
 
     /// <summary>
-    /// The DMS instance ID to use for this request, selected based on the client's application configuration.
-    /// Populated by DmsInstanceSelectionMiddleware.
+    /// Route qualifiers extracted from the URL path (e.g., district ID, school year)
+    /// that determine which DMS instance to route the request to.
+    /// Empty if no route qualifiers are configured.
     /// </summary>
-    public long DmsInstanceId { get; set; }
-
-    /// <summary>
-    /// The database connection string for the selected DMS instance.
-    /// Populated by DmsInstanceSelectionMiddleware.
-    /// </summary>
-    public string? ConnectionString { get; set; }
+    public Dictionary<RouteQualifierName, RouteQualifierValue> RouteQualifiers { get; set; } = [];
 }

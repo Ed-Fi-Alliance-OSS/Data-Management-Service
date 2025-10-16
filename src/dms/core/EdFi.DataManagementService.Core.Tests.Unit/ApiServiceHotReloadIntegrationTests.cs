@@ -73,8 +73,8 @@ public class ApiServiceHotReloadIntegrationTests
             NullLogger<JwtAuthenticationMiddleware>.Instance
         );
 
-        // Register DMS Instance Selection services
-        services.AddTransient<DmsInstanceSelectionMiddleware>();
+        // Register DMS Instance Resolution services
+        services.AddTransient<ResolveDmsInstanceMiddleware>();
 
         var fakeApplicationContextProvider = A.Fake<IApplicationContextProvider>();
         A.CallTo(() => fakeApplicationContextProvider.GetApplicationByClientIdAsync(A<string>._))
@@ -98,18 +98,27 @@ public class ApiServiceHotReloadIntegrationTests
                     Id: 1,
                     InstanceType: "Test",
                     InstanceName: "Test Instance",
-                    ConnectionString: "test-connection-string"
+                    ConnectionString: "test-connection-string",
+                    RouteContext: []
                 )
             );
         services.AddSingleton<IDmsInstanceProvider>(fakeDmsInstanceProvider);
 
-        var fakeRequestConnectionStringProvider = A.Fake<IRequestConnectionStringProvider>();
-        A.CallTo(() => fakeRequestConnectionStringProvider.GetConnectionString())
-            .Returns("test-connection-string");
-        services.AddSingleton<IRequestConnectionStringProvider>(fakeRequestConnectionStringProvider);
+        var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
+        A.CallTo(() => fakeDmsInstanceSelection.GetSelectedDmsInstance())
+            .Returns(
+                new DmsInstance(
+                    Id: 1,
+                    InstanceType: "Test",
+                    InstanceName: "Test Instance",
+                    ConnectionString: "test-connection-string",
+                    RouteContext: []
+                )
+            );
+        services.AddSingleton<IDmsInstanceSelection>(fakeDmsInstanceSelection);
 
-        services.AddTransient<ILogger<DmsInstanceSelectionMiddleware>>(_ =>
-            NullLogger<DmsInstanceSelectionMiddleware>.Instance
+        services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
+            NullLogger<ResolveDmsInstanceMiddleware>.Instance
         );
 
         var serviceProvider = services.BuildServiceProvider();
@@ -119,7 +128,10 @@ public class ApiServiceHotReloadIntegrationTests
         var equalityConstraintValidator = new EqualityConstraintValidator();
         var decimalValidator = new DecimalValidator();
         var authorizationServiceFactory = new NamedAuthorizationServiceFactory(serviceProvider);
-        var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>());
+        var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator(
+            [],
+            A.Fake<IResourceDependencyGraphFactory>()
+        );
 
         var apiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
 
@@ -413,7 +425,8 @@ public class ApiServiceHotReloadIntegrationTests
             Body: body,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("test-trace-id")
+            TraceId: new TraceId("test-trace-id"),
+            RouteQualifiers: []
         );
     }
 

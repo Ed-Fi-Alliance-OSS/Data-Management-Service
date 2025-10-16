@@ -40,7 +40,8 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -73,7 +74,8 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "badpath",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -106,7 +108,8 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -143,7 +146,8 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: $"/ed-fi/endpointName/{documentUuid}",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.PUT);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -180,7 +184,8 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName/invalidId",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -223,7 +228,8 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: $"/ed-fi/endpointName/{Guid.NewGuid()}",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.POST);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -264,7 +270,8 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.PUT);
             await Middleware().Execute(_requestInfo, NullNext);
@@ -305,7 +312,8 @@ public class ParsePathMiddlewareTests
                 Headers: [],
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],
-                TraceId: new TraceId("")
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
             );
             _requestInfo = new(frontendRequest, RequestMethod.DELETE);
             await Middleware().Execute(_requestInfo, NullNext);

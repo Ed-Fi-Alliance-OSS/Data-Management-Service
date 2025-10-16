@@ -83,6 +83,37 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
+    /// Extracts route qualifiers from the HttpRequest based on configured segments.
+    /// Returns empty dictionary if no route qualifiers are configured.
+    /// </summary>
+    private static Dictionary<RouteQualifierName, RouteQualifierValue> ExtractRouteQualifiersFrom(
+        HttpRequest request,
+        IOptions<AppSettings> options
+    )
+    {
+        string[] routeQualifierSegments = options.Value.GetRouteQualifierSegmentsArray();
+
+        if (routeQualifierSegments.Length == 0)
+        {
+            return [];
+        }
+
+        Dictionary<RouteQualifierName, RouteQualifierValue> routeQualifiers = [];
+
+        foreach (string segmentName in routeQualifierSegments)
+        {
+            if (
+                request.RouteValues.TryGetValue(segmentName, out object? value) && value is string stringValue
+            )
+            {
+                routeQualifiers[new RouteQualifierName(segmentName)] = new RouteQualifierValue(stringValue);
+            }
+        }
+
+        return routeQualifiers;
+    }
+
+    /// <summary>
     /// Converts an AspNetCore HttpRequest to a DMS FrontendRequest
     /// </summary>
     private static async Task<FrontendRequest> FromRequest(
@@ -96,7 +127,8 @@ public static class AspNetCoreFrontend
             Headers: ExtractHeadersFrom(HttpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
-            TraceId: ExtractTraceIdFrom(HttpRequest, options)
+            TraceId: ExtractTraceIdFrom(HttpRequest, options),
+            RouteQualifiers: ExtractRouteQualifiersFrom(HttpRequest, options)
         );
     }
 
