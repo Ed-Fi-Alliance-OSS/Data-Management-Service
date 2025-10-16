@@ -84,10 +84,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             // Assert
             sql.Should().Contain("CREATE OR REPLACE VIEW dms.EducationOrganizationReference AS");
-            // Union views use unquoted identifiers for consistency with table DDL
-            sql.Should().Contain("SELECT EducationOrganizationId, 'School' AS Discriminator FROM dms.School");
+            // Union views now include ALL columns per dbGeneration.md specification
+            sql.Should().Contain("SELECT Id, EducationOrganizationId, SchoolName, 'School' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.School");
             sql.Should().Contain("UNION ALL");
-            sql.Should().Contain("SELECT EducationOrganizationId, 'LocalEducationAgency' AS Discriminator FROM dms.LocalEducationAgency");
+            sql.Should().Contain("SELECT Id, EducationOrganizationId, LeaName, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.LocalEducationAgency");
         }
 
         [Test]
@@ -124,7 +124,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         }
 
         [Test]
-        public void UnionViewIncludesOnlyNaturalKeyColumns()
+        public void UnionViewIncludesAllColumnsPerSpecification()
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
@@ -134,9 +134,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            // Union views use unquoted identifiers for consistency with table DDL
-            sql.Should().Contain("SELECT EducationOrganizationId, 'School' AS Discriminator FROM dms.School");
-            sql.Should().NotContain("SELECT EducationOrganizationId, SchoolName"); // Should not include non-key columns
+            // Union views should include ALL columns per dbGeneration.md specification
+            sql.Should().Contain("SELECT Id, EducationOrganizationId, SchoolName, 'School' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.School");
+            sql.Should().Contain("SELECT Id, EducationOrganizationId, LeaName, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.LocalEducationAgency");
         }
 
         [Test]

@@ -196,11 +196,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                     subclassSchema.FlatteningMetadata?.Table != null)
                                 {
                                     var table = subclassSchema.FlatteningMetadata.Table;
-                                    // Build SELECT statement for this table
-                                    var columns = table.Columns.Select(c => $"[{c.ColumnName}]").ToList();
+                                    // Build SELECT statement for this table - include ALL columns per specification
+                                    var columns = new List<string> { "[Id]" }; // Start with surrogate key
+                                    columns.AddRange(table.Columns.Select(c => $"[{c.ColumnName}]"));
+
                                     var selectCols = string.Join(", ", columns);
                                     var discriminator = table.DiscriminatorValue ?? subclassType;
-                                    selectStatements.Add($"SELECT {selectCols}, ''{discriminator}'' as Discriminator FROM [dms].[{table.BaseName}]");
+                                    selectStatements.Add($"SELECT {selectCols}, ''{discriminator}'' AS [Discriminator], [Document_Id], [Document_PartitionKey] FROM [dms].[{table.BaseName}]");
                                 }
                             }
                             var viewData = new { viewName = unionViewName, selectStatements };
@@ -235,11 +237,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
                             foreach (var childTable in table.ChildTables.Where(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue)))
                             {
-                                // Select only the natural key columns (common across all child tables)
-                                var selectCols = string.Join(", ", naturalKeyColumns.Select(c => $"[{c}]"));
+                                // Include ALL columns per specification: Id + all data columns + Document columns
+                                var columns = new List<string> { "[Id]" }; // Start with surrogate key
+                                columns.AddRange(childTable.Columns.Select(c => $"[{c.ColumnName}]"));
+
+                                var selectCols = string.Join(", ", columns);
                                 var discriminatorValue = childTable.DiscriminatorValue;
                                 var tableName = childTable.BaseName;
-                                selectStatements.Add($"SELECT {selectCols}, ''{discriminatorValue}'' AS [Discriminator] FROM [dms].[{tableName}]");
+                                selectStatements.Add($"SELECT {selectCols}, ''{discriminatorValue}'' AS [Discriminator], [Document_Id], [Document_PartitionKey] FROM [dms].[{tableName}]");
                             }
 
                             if (selectStatements.Any())
