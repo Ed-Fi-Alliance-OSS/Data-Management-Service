@@ -6,7 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using FluentAssertions;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
     /// <summary>
     /// Unit tests for API schema abstractions.
@@ -24,7 +24,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
                 ProjectVersion = "1.0.0",
                 IsExtensionProject = false,
                 Description = "Test project description",
-                ResourceSchemas = new Dictionary<string, ResourceSchema>()
+                ResourceSchemas = []
             };
 
             var apiSchema = new ApiSchema

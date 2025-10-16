@@ -5,7 +5,7 @@
 
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
     /// <summary>
     /// Shared helper methods for DDL generator tests.
@@ -142,7 +142,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
                     ProjectVersion = "1.0.0",
                     IsExtensionProject = false,
                     Description = "Empty test schema.",
-                    ResourceSchemas = new Dictionary<string, ResourceSchema>()
+                    ResourceSchemas = []
                 }
             };
         }
