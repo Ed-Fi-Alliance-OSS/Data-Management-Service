@@ -32,13 +32,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         {
             // Arrange
             var options = new CliOptions();
-            const string inputPath = "/path/to/input/schema.json";
+            const string InputPath = "/path/to/input/schema.json";
 
             // Act
-            options.Input = inputPath;
+            options.Input = InputPath;
 
             // Assert
-            options.Input.Should().Be(inputPath);
+            options.Input.Should().Be(InputPath);
         }
 
         [Test]
@@ -46,13 +46,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         {
             // Arrange
             var options = new CliOptions();
-            const string outputPath = "/path/to/output/directory";
+            const string OutputPath = "/path/to/output/directory";
 
             // Act
-            options.Output = outputPath;
+            options.Output = OutputPath;
 
             // Assert
-            options.Output.Should().Be(outputPath);
+            options.Output.Should().Be(OutputPath);
         }
 
         [Test]
@@ -60,13 +60,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         {
             // Arrange
             var options = new CliOptions();
-            const string dbProvider = "pgsql";
+            const string DbProvider = "pgsql";
 
             // Act
-            options.Db = dbProvider;
+            options.Db = DbProvider;
 
             // Assert
-            options.Db.Should().Be(dbProvider);
+            options.Db.Should().Be(DbProvider);
         }
 
         [Test]

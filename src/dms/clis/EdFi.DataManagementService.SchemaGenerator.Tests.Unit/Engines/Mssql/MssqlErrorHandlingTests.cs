@@ -5,28 +5,16 @@
 
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
-using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 {
     /// <summary>
-    /// Unit tests for error handling and edge cases.
+    /// MSSQL-specific unit tests for error handling and edge cases.
     /// </summary>
     [TestFixture]
-    public class ErrorHandlingTests
+    public class MssqlErrorHandlingTests
     {
-        [Test]
-        public void PgsqlGenerator_WithNullSchema_ThrowsNullReferenceException()
-        {
-            // Arrange
-            var generator = new PgsqlDdlGeneratorStrategy();
-
-            // Act & Assert
-            Action act = () => generator.GenerateDdlString(null!, includeExtensions: false);
-            act.Should().Throw<NullReferenceException>();
-        }
-
         [Test]
         public void MssqlGenerator_WithNullSchema_ThrowsNullReferenceException()
         {
@@ -36,19 +24,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Act & Assert
             Action act = () => generator.GenerateDdlString(null!, includeExtensions: false);
             act.Should().Throw<NullReferenceException>();
-        }
-
-        [Test]
-        public void PgsqlGenerator_WithNullProjectSchema_HandlesGracefully()
-        {
-            // Arrange
-            var schema = new ApiSchema { ProjectSchema = null! };
-            var generator = new PgsqlDdlGeneratorStrategy();
-
-            // Act & Assert
-            Action act = () => generator.GenerateDdlString(schema, includeExtensions: false);
-            act.Should().Throw<InvalidDataException>()
-                .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
         [Test]
@@ -62,23 +37,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             Action act = () => generator.GenerateDdlString(schema, includeExtensions: false);
             act.Should().Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
-        }
-
-        [Test]
-        public void PgsqlGenerator_WithTableHavingNoColumns_GeneratesEmptyTable()
-        {
-            // Arrange
-            var schema = GetSchemaWithEmptyTable();
-            var generator = new PgsqlDdlGeneratorStrategy();
-
-            // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
-
-            // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.EmptyTable");
-            sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
-            sql.Should().Contain("Document_Id BIGINT NOT NULL");
-            sql.Should().Contain("Document_PartitionKey SMALLINT NOT NULL");
         }
 
         [Test]
@@ -99,20 +57,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         }
 
         [Test]
-        public void PgsqlGenerator_WithSpecialCharactersInTableName_HandlesCorrectly()
-        {
-            // Arrange
-            var schema = GetSchemaWithSpecialCharacters();
-            var generator = new PgsqlDdlGeneratorStrategy();
-
-            // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
-
-            // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.Table-With-Dashes");
-        }
-
-        [Test]
         public void MssqlGenerator_WithSpecialCharactersInTableName_HandlesCorrectly()
         {
             // Arrange
@@ -124,21 +68,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 
             // Assert
             sql.Should().Contain("CREATE TABLE [dms].[Table-With-Dashes]");
-        }
-
-        [Test]
-        public void PgsqlGenerator_WithVeryLongColumnNames_TruncatesAppropriately()
-        {
-            // Arrange
-            var schema = GetSchemaWithLongColumnNames();
-            var generator = new PgsqlDdlGeneratorStrategy();
-
-            // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
-
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("VeryLongColumnNameThatExceedsTypicalLimits");
         }
 
         [Test]
