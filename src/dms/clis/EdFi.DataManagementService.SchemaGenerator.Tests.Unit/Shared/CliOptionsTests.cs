@@ -6,7 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Cli.Options;
 using FluentAssertions;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
     /// <summary>
     /// Unit tests for CliOptions class.
@@ -73,10 +73,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         public void CliOptions_SetExtensions_ShouldReturnCorrectValue()
         {
             // Arrange
-            var options = new CliOptions();
-
-            // Act
-            options.Extensions = true;
+            var options = new CliOptions
+            {
+                // Act
+                Extensions = true
+            };
 
             // Assert
             options.Extensions.Should().BeTrue();

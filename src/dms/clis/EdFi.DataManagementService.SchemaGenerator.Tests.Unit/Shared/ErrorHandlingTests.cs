@@ -8,7 +8,7 @@ using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
     /// <summary>
     /// Unit tests for error handling and edge cases.

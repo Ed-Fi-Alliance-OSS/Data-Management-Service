@@ -3,14 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.SchemaGenerator.Abstractions;
+using EdFi.DataManagementService.SchemaGenerator.Mssql;
+using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using EdFi.DataManagementService.SchemaGenerator.Abstractions;
-using EdFi.DataManagementService.SchemaGenerator.Pgsql;
-using EdFi.DataManagementService.SchemaGenerator.Mssql;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
     /// <summary>
     /// Simplified unit tests for service configuration.
@@ -76,7 +76,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             services.AddScoped<IDdlGeneratorStrategy, PgsqlDdlGeneratorStrategy>();
             services.AddScoped<IDdlGeneratorStrategy, MssqlDdlGeneratorStrategy>();
             services.AddLogging();
-            services.AddScoped<IServiceProvider>(provider => provider);
+            services.AddScoped(provider => provider);
 
             var serviceProvider = services.BuildServiceProvider();
 
@@ -100,11 +100,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             services.AddLogging();
 
             // Act & Assert
-            using (var serviceProvider = services.BuildServiceProvider())
-            {
-                var ddlGenerator = serviceProvider.GetService<IDdlGeneratorStrategy>();
-                ddlGenerator.Should().NotBeNull();
-            }
+            using var serviceProvider = services.BuildServiceProvider();
+            var ddlGenerator = serviceProvider.GetService<IDdlGeneratorStrategy>();
+            ddlGenerator.Should().NotBeNull();
             // Should not throw when disposed
         }
     }

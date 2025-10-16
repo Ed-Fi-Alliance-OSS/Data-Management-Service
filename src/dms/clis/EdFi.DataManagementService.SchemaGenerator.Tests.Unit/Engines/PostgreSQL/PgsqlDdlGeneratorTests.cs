@@ -4,37 +4,38 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
-using EdFi.DataManagementService.SchemaGenerator.Mssql;
+using EdFi.DataManagementService.SchemaGenerator.Pgsql;
+using EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared;
 using FluentAssertions;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
     /// <summary>
-    /// Unit tests for SQL Server DDL generation.
+    /// Unit tests for PostgreSQL DDL generation.
     /// </summary>
     [TestFixture]
-    public class MssqlDdlGeneratorTests
+    public class PgsqlDdlGeneratorTests
     {
         [Test]
         public void GeneratesIdempotentCreateTable()
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TestTable' AND SCHEMA_NAME(schema_id) = 'dms')");
-            sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
-            sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
-            sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
-            sql.Should().Contain("[Name] NVARCHAR(100) NOT NULL");
-            sql.Should().Contain("[IsActive] BIT");
-            sql.Should().Contain("CONSTRAINT [FK_TestTable_Document]");
-            sql.Should().Contain("REFERENCES [dms].[Document]([(Id, DocumentPartitionKey)]) ON DELETE CASCADE");
-            sql.Should().Contain("CONSTRAINT [UQ_TestTable_NaturalKey]");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.TestTable");
+            sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
+            sql.Should().Contain("Document_Id BIGINT NOT NULL");
+            sql.Should().Contain("Document_PartitionKey SMALLINT NOT NULL");
+            sql.Should().Contain("Name VARCHAR(100) NOT NULL");
+            sql.Should().Contain("IsActive BOOLEAN");
+            sql.Should().Contain("CONSTRAINT FK_TestTable_Document");
+            sql.Should().Contain("REFERENCES dms.Document((Id, DocumentPartitionKey)) ON DELETE CASCADE");
+            sql.Should().Contain("CONSTRAINT UQ_TestTable_NaturalKey");
         }
 
         [Test]
@@ -42,14 +43,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
-            sql.Should().NotContain("CONSTRAINT [PK_TestTable]");
+            sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
+            sql.Should().NotContain("CONSTRAINT PK_");
         }
 
         [Test]
@@ -57,18 +58,18 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
-            sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
-            sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
-            sql.Should().Contain("[Name] NVARCHAR(100) NOT NULL");
-            sql.Should().Contain("[IsActive] BIT");
-            sql.Should().NotContain("[IsActive] BIT NOT NULL");
+            sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
+            sql.Should().Contain("Document_Id BIGINT NOT NULL");
+            sql.Should().Contain("Document_PartitionKey SMALLINT NOT NULL");
+            sql.Should().Contain("Name VARCHAR(100) NOT NULL");
+            sql.Should().Contain("IsActive BOOLEAN");
+            sql.Should().NotContain("IsActive BOOLEAN NOT NULL");
         }
 
         [Test]
@@ -76,16 +77,17 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE VIEW [dms].[EducationOrganizationReference] AS");
-            sql.Should().Contain("SELECT [EducationOrganizationId], ''School'' AS [Discriminator] FROM [dms].[School]");
+            sql.Should().Contain("CREATE OR REPLACE VIEW dms.EducationOrganizationReference AS");
+            // Union views use unquoted identifiers for consistency with table DDL
+            sql.Should().Contain("SELECT EducationOrganizationId, 'School' AS Discriminator FROM dms.School");
             sql.Should().Contain("UNION ALL");
-            sql.Should().Contain("SELECT [EducationOrganizationId], ''LocalEducationAgency'' AS [Discriminator] FROM [dms].[LocalEducationAgency]");
+            sql.Should().Contain("SELECT EducationOrganizationId, 'LocalEducationAgency' AS Discriminator FROM dms.LocalEducationAgency");
         }
 
         [Test]
@@ -93,13 +95,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
 
             // Assert
-            sql.Should().NotContain("CREATE OR ALTER VIEW");
+            sql.Should().NotContain("CREATE OR REPLACE VIEW");
             sql.Should().NotContain("UNION ALL");
         }
 
@@ -108,17 +110,17 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("[dms].[School]");
-            sql.Should().Contain("[dms].[LocalEducationAgency]");
-            sql.Should().Contain("[EducationOrganizationReference_Id] BIGINT NOT NULL");
-            sql.Should().Contain("CONSTRAINT [FK_School_EducationOrganizationReference]");
-            sql.Should().Contain("REFERENCES [dms].[EducationOrganizationReference]([Id]) ON DELETE CASCADE");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.School");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.LocalEducationAgency");
+            sql.Should().Contain("EducationOrganizationReference_Id BIGINT NOT NULL");
+            sql.Should().Contain("CONSTRAINT FK_School_EducationOrganizationReference");
+            sql.Should().Contain("REFERENCES dms.EducationOrganizationReference(Id) ON DELETE CASCADE");
         }
 
         [Test]
@@ -126,31 +128,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("SELECT [EducationOrganizationId], ''School'' AS [Discriminator] FROM [dms].[School]");
-            sql.Should().NotContain("SELECT [EducationOrganizationId], [SchoolName]"); // Should not include non-key columns
-        }
-
-        [Test]
-        public void UsesBracketedIdentifiersForTableAndColumnNames()
-        {
-            // Arrange
-            var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
-
-            // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
-
-            // Assert
-            sql.Should().Contain("[TestTable]");
-            sql.Should().Contain("[Id]");
-            sql.Should().Contain("[Name]");
-            sql.Should().Contain("[IsActive]");
+            // Union views use unquoted identifiers for consistency with table DDL
+            sql.Should().Contain("SELECT EducationOrganizationId, 'School' AS Discriminator FROM dms.School");
+            sql.Should().NotContain("SELECT EducationOrganizationId, SchoolName"); // Should not include non-key columns
         }
 
         [Test]
@@ -158,14 +144,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE [dms].[TestTable]");
-            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'TestTable'");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.TestTable");
         }
 
         [Test]
@@ -173,22 +158,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE NONCLUSTERED INDEX [IX_TestTable_Document]");
-            sql.Should().Contain("ON [dms].[TestTable]([Document_Id], [Document_PartitionKey])");
+            sql.Should().Contain("CREATE INDEX IF NOT EXISTS IX_TestTable_Document");
+            sql.Should().Contain("ON dms.TestTable(Document_Id, Document_PartitionKey)");
         }
 
-                [Test]
+        [Test]
         public void HandlesEmptySchema()
         {
             // Arrange
             var schema = TestHelpers.GetEmptySchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
@@ -202,14 +187,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = GetSchemaWithExtensionTable();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: true);
 
             // Assert
-            sql.Should().Contain("[extensions].[TestExtension]");
-            sql.Should().Contain("CREATE TABLE [extensions].[TestExtension]");
+            sql.Should().Contain("extensions.TestExtension");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS extensions.TestExtension");
         }
 
         [Test]
@@ -217,7 +202,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = GetSchemaWithExtensionTable();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
@@ -231,14 +216,31 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         {
             // Arrange
             var schema = GetSchemaWithComplexConstraints();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CONSTRAINT [UQ_ComplexTable_NaturalKey]");
-            sql.Should().Contain("UNIQUE ([FirstKey], [SecondKey])");
+            sql.Should().Contain("CONSTRAINT UQ_ComplexTable_NaturalKey");
+            sql.Should().Contain("UNIQUE (FirstKey, SecondKey)");
+        }
+
+        [Test]
+        public void GeneratesCorrectDataTypes()
+        {
+            // Arrange
+            var schema = GetSchemaWithVariousDataTypes();
+            var generator = new PgsqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert
+            sql.Should().Contain("INTEGER NOT NULL");
+            sql.Should().Contain("VARCHAR(100) NOT NULL");
+            sql.Should().Contain("BOOLEAN");
+            sql.Should().Contain("DECIMAL(10, 2)");
         }
 
         private static ApiSchema GetSchemaWithExtensionTable()
@@ -303,6 +305,43 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
                                         new ColumnMetadata { ColumnName = "FirstKey", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
                                         new ColumnMetadata { ColumnName = "SecondKey", ColumnType = "string", MaxLength = "50", IsNaturalKey = true, IsRequired = true },
                                         new ColumnMetadata { ColumnName = "Value", ColumnType = "string", MaxLength = "100", IsRequired = false }
+                                    ],
+                                    ChildTables = []
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        private static ApiSchema GetSchemaWithVariousDataTypes()
+        {
+            return new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "DataTypesProject",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    Description = "Data types test schema.",
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["DataTypesTable"] = new ResourceSchema
+                        {
+                            ResourceName = "DataTypesTable",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "DataTypesTable",
+                                    JsonPath = "$.DataTypesTable",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata { ColumnName = "IntField", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "StringField", ColumnType = "string", MaxLength = "100", IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "BoolField", ColumnType = "bool", IsRequired = false },
+                                        new ColumnMetadata { ColumnName = "DecimalField", ColumnType = "decimal", Precision = "10", Scale = "2", IsRequired = false }
                                     ],
                                     ChildTables = []
                                 }

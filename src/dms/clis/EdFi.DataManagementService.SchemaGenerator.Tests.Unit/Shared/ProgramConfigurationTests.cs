@@ -6,7 +6,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
     /// <summary>
     /// Simplified unit tests for configuration scenarios.

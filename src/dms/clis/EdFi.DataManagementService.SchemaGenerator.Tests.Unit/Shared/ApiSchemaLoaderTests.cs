@@ -3,12 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Cli.Services;
 using FluentAssertions;
-using System.Text.Json;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
     /// <summary>
     /// Unit tests for ApiSchemaLoader service.
@@ -60,8 +60,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
                                 {
                                     BaseName = "TestTable",
                                     JsonPath = "$.test",
-                                    Columns = new List<ColumnMetadata>
-                                    {
+                                    Columns =
+                                    [
                                         new ColumnMetadata
                                         {
                                             JsonPath = "$.id",
@@ -70,8 +70,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
                                             IsRequired = true,
                                             IsNaturalKey = true
                                         }
-                                    },
-                                    ChildTables = new List<TableMetadata>()
+                                    ],
+                                    ChildTables = []
                                 }
                             }
                         }

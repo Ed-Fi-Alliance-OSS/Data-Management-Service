@@ -6,7 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using FluentAssertions;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
     /// <summary>
     /// Unit tests for DdlGenerationOptions to increase branch coverage.
@@ -144,10 +144,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         public void DescriptorSchema_CanBeModified()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
-
-            // Act
-            options.DescriptorSchema = "custom_descriptors";
+            var options = new DdlGenerationOptions
+            {
+                // Act
+                DescriptorSchema = "custom_descriptors"
+            };
 
             // Assert
             options.DescriptorSchema.Should().Be("custom_descriptors");
@@ -183,8 +184,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
         public void ResolveSchemaName_DefaultSchemaOverride_UsesCustomDefault()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
-            options.DefaultSchema = "custom_default";
+            var options = new DdlGenerationOptions
+            {
+                DefaultSchema = "custom_default"
+            };
 
             // Act
             var result = options.ResolveSchemaName("UnknownProject");

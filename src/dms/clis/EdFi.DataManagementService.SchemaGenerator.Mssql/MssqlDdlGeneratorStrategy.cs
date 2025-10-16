@@ -104,7 +104,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
             // Generate schema creation statements for all unique schemas
             var usedSchemas = new HashSet<string>();
-            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? new Dictionary<string, ResourceSchema>())
+            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? [])
             {
                 var resourceSchema = kvp.Value;
                 if (resourceSchema.FlatteningMetadata?.Table != null)
@@ -135,7 +135,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             }
 
             // Process each resource schema
-            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? new Dictionary<string, ResourceSchema>())
+            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? [])
             {
                 var resourceName = kvp.Key;
                 var resourceSchema = kvp.Value;
@@ -210,7 +210,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 }
 
                 // Approach 2: Detect polymorphic references from child tables with discriminatorValue
-                foreach (var resourceSchema in (apiSchema.ProjectSchema.ResourceSchemas ?? new Dictionary<string, ResourceSchema>()).Values)
+                foreach (var resourceSchema in (apiSchema.ProjectSchema.ResourceSchemas ?? []).Values)
                 {
                     if (resourceSchema.FlatteningMetadata?.Table != null)
                     {
@@ -434,8 +434,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 documentId = "Document_Id",
                 documentPartitionKey = "Document_PartitionKey",
                 columns = allColumns,
-                fkColumns = options.GenerateForeignKeyConstraints ? fkColumns : new List<object>(),
-                uniqueConstraints = options.GenerateNaturalKeyConstraints ? uniqueConstraints : new List<object>(),
+                fkColumns = options.GenerateForeignKeyConstraints ? fkColumns : [],
+                uniqueConstraints = options.GenerateNaturalKeyConstraints ? uniqueConstraints : [],
                 indexes
             };
 
@@ -453,6 +453,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
         /// </summary>
         private string MapColumnType(ColumnMetadata column)
         {
+            if (string.IsNullOrEmpty(column.ColumnType))
+            {
+                return "NVARCHAR(MAX)";
+            }
+
             var baseType = column.ColumnType.ToLower() switch
             {
                 // Numeric types
