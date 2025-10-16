@@ -154,7 +154,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
             Console.WriteLine("OPTIONS:");
             Console.WriteLine("  --input, -i <path>           (Required) Path to the input API schema JSON file");
             Console.WriteLine("  --output, -o <directory>     (Required) Directory where DDL scripts will be generated");
-            Console.WriteLine("  --provider, -p <provider>    Database provider: 'pgsql', 'mssql', or 'all' (default: all)");
+            Console.WriteLine("  --provider, --database, -p <provider>  Database provider: 'pgsql', 'mssql', or 'all' (default: all)");
             Console.WriteLine("  --extensions, -e             Include extension tables in the generated DDL");
             Console.WriteLine("  --skip-union-views, -s       Skip generation of union views for polymorphic references");
             Console.WriteLine("  --help, -h, /h, /?           Display this help information");
