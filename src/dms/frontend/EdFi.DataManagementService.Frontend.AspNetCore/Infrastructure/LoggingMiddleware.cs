@@ -20,7 +20,7 @@ public class LoggingMiddleware(RequestDelegate next)
             "Request started: {Method} {Path} - TraceId: {TraceId}",
             LoggingSanitizer.SanitizeForLogging(context.Request.Method),
             LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value),
-            LoggingSanitizer.SanitizeForLogging(context.TraceIdentifier)
+            context.TraceIdentifier
         );
 
         try
@@ -34,7 +34,7 @@ public class LoggingMiddleware(RequestDelegate next)
                 LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value),
                 context.Response.StatusCode,
                 stopwatch.ElapsedMilliseconds,
-                LoggingSanitizer.SanitizeForLogging(context.TraceIdentifier)
+                context.TraceIdentifier
             );
         }
         catch (Exception ex)
@@ -46,7 +46,7 @@ public class LoggingMiddleware(RequestDelegate next)
                 LoggingSanitizer.SanitizeForLogging(context.Request.Method),
                 LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value),
                 stopwatch.ElapsedMilliseconds,
-                LoggingSanitizer.SanitizeForLogging(context.TraceIdentifier)
+                context.TraceIdentifier
             );
 
             var response = context.Response;
@@ -61,7 +61,7 @@ public class LoggingMiddleware(RequestDelegate next)
                             new
                             {
                                 message = "The server encountered an unexpected condition that prevented it from fulfilling the request.",
-                                traceId = LoggingSanitizer.SanitizeForLogging(context.TraceIdentifier),
+                                traceId = context.TraceIdentifier,
                             }
                         )
                     );
@@ -71,14 +71,14 @@ public class LoggingMiddleware(RequestDelegate next)
                     logger.LogError(
                         responseEx,
                         "Failed to write error response for TraceId: {TraceId}",
-                        LoggingSanitizer.SanitizeForLogging(context.TraceIdentifier)
+                        context.TraceIdentifier
                     );
                 }
             }
 
             // Re-throw with contextual information for the middleware pipeline
             throw new InvalidOperationException(
-                $"Request processing failed for {LoggingSanitizer.SanitizeForLogging(context.Request.Method)} {LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)} - TraceId: {LoggingSanitizer.SanitizeForLogging(context.TraceIdentifier)}",
+                $"Request processing failed for {LoggingSanitizer.SanitizeForLogging(context.Request.Method)} {LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)} - TraceId: {context.TraceIdentifier}",
                 ex
             );
         }

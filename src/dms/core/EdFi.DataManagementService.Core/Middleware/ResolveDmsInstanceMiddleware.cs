@@ -34,7 +34,7 @@ internal class ResolveDmsInstanceMiddleware(
         {
             logger.LogError(
                 "No DMS instances authorized for client - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
             requestInfo.FrontendResponse = CreateErrorResponse(
@@ -63,7 +63,7 @@ internal class ResolveDmsInstanceMiddleware(
         {
             logger.LogInformation(
                 "No matching DMS instance found in cache, attempting reload from CMS - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
             try
@@ -82,7 +82,7 @@ internal class ResolveDmsInstanceMiddleware(
                 logger.LogError(
                     ex,
                     "Failed to reload DMS instances from CMS - TraceId: {TraceId}",
-                    LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
             }
         }
@@ -115,7 +115,7 @@ internal class ResolveDmsInstanceMiddleware(
                 "No DMS instance matches route qualifiers [{QualifierDetails}] from authorized instances [{InstanceIds}] - TraceId: {TraceId}",
                 qualifierDetails,
                 LoggingSanitizer.SanitizeForLogging(string.Join(", ", checkedInstanceIds)),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
             requestInfo.FrontendResponse = CreateErrorResponse(
@@ -133,7 +133,7 @@ internal class ResolveDmsInstanceMiddleware(
             logger.LogError(
                 "DMS instance {DmsInstanceId} has no connection string configured - TraceId: {TraceId}",
                 LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                requestInfo.FrontendRequest.TraceId.Value
             );
 
             requestInfo.FrontendResponse = CreateErrorResponse(
@@ -152,7 +152,7 @@ internal class ResolveDmsInstanceMiddleware(
             "Selected DMS instance {DmsInstanceId} ('{InstanceName}') - TraceId: {TraceId}",
             LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
             LoggingSanitizer.SanitizeForLogging(matchedInstance.InstanceName),
-            LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+            requestInfo.FrontendRequest.TraceId.Value
         );
 
         // Continue to next middleware
@@ -185,7 +185,7 @@ internal class ResolveDmsInstanceMiddleware(
                 logger.LogWarning(
                     logMessage,
                     LoggingSanitizer.SanitizeForLogging(dmsInstanceId.Value.ToString()),
-                    LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                    requestInfo.FrontendRequest.TraceId.Value
                 );
                 continue;
             }
@@ -202,7 +202,7 @@ internal class ResolveDmsInstanceMiddleware(
                         "Multiple DMS instances match route qualifiers (instances {FirstId} and {SecondId}) - TraceId: {TraceId}",
                         LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
                         LoggingSanitizer.SanitizeForLogging(dmsInstance.Id.ToString()),
-                        LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.TraceId.Value)
+                        requestInfo.FrontendRequest.TraceId.Value
                     );
 
                     requestInfo.FrontendResponse = CreateErrorResponse(
