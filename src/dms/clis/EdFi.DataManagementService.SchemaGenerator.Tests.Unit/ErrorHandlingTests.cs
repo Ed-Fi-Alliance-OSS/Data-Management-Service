@@ -244,13 +244,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
                                     JsonPath = "$.LongNamesTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "VeryLongColumnNameThatExceedsTypicalLimitsAndShouldBeHandledGracefully", 
-                                            ColumnType = "string", 
-                                            MaxLength = "100", 
-                                            IsNaturalKey = true, 
-                                            IsRequired = true 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "VeryLongColumnNameThatExceedsTypicalLimitsAndShouldBeHandledGracefully",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsNaturalKey = true,
+                                            IsRequired = true
                                         }
                                     ],
                                     ChildTables = []

@@ -1,5 +1,5 @@
 
-CREATE TABLE IF NOT EXISTS dms.{{tableName}} (
+CREATE TABLE IF NOT EXISTS {{schemaName}}.{{tableName}} (
     {{#if hasId}}{{id}} BIGSERIAL PRIMARY KEY,{{/if}}
 {{#if hasDocumentColumns}}    {{documentId}} BIGINT NOT NULL,
     {{documentPartitionKey}} SMALLINT NOT NULL,
@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS dms.{{tableName}} (
 {{/each}}{{#if fkColumns}},
 {{/if}}{{#each fkColumns}}    CONSTRAINT {{constraintName}}
         FOREIGN KEY ({{column}})
-        REFERENCES dms.{{parentTable}}({{parentColumn}}){{#if cascade}} ON DELETE CASCADE{{/if}}{{#unless @last}},{{/unless}}
+        REFERENCES {{parentTable}}({{parentColumn}}){{#if cascade}} ON DELETE CASCADE{{/if}}{{#unless @last}},{{/unless}}
 {{/each}}{{#if uniqueConstraints}},
 {{/if}}{{#each uniqueConstraints}}    CONSTRAINT {{constraintName}}
         UNIQUE ({{#each columns}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}){{#unless @last}},{{/unless}}
@@ -17,6 +17,6 @@ CREATE TABLE IF NOT EXISTS dms.{{tableName}} (
 {{#if indexes}}
 {{#each indexes}}
 CREATE INDEX IF NOT EXISTS {{indexName}}
-    ON dms.{{tableName}}({{#each columns}}{{this}}{{#unless @last}}, {{/unless}}{{/each}});
+    ON {{../schemaName}}.{{tableName}}({{#each columns}}{{this}}{{#unless @last}}, {{/unless}}{{/each}});
 {{/each}}
 {{/if}}

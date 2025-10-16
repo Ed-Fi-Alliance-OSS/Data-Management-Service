@@ -192,8 +192,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit
             var sql = generator.GenerateDdlString(schema, includeExtensions: true);
 
             // Assert
-            sql.Should().Contain("dms.TestExtension");
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.TestExtension");
+            sql.Should().Contain("extensions.TestExtension");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS extensions.TestExtension");
         }
 
         [Test]
