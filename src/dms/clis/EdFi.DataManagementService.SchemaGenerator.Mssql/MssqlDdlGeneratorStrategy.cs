@@ -30,7 +30,38 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
         }
 
         /// <summary>
-        /// Generates SQL Server DDL scripts as a string (useful for testing).
+        /// Generates SQL Server DDL scripts with advanced options.
+        /// </summary>
+        /// <param name="apiSchema">The deserialized ApiSchema metadata object.</param>
+        /// <param name="outputDirectory">The directory to write output scripts to.</param>
+        /// <param name="options">DDL generation options including schema mappings and feature flags.</param>
+        public void GenerateDdl(ApiSchema apiSchema, string outputDirectory, DdlGenerationOptions options)
+        {
+            Directory.CreateDirectory(outputDirectory);
+
+            var ddl = GenerateDdlString(apiSchema, options);
+
+            File.WriteAllText(Path.Combine(outputDirectory, "schema-mssql.sql"), ddl);
+        }
+
+        /// <summary>
+        /// Generates SQL Server DDL scripts as a string with advanced options.
+        /// </summary>
+        /// <param name="apiSchema">The deserialized ApiSchema metadata object.</param>
+        /// <param name="options">DDL generation options including schema mappings and feature flags.</param>
+        /// <returns>The DDL script.</returns>
+        public string GenerateDdlString(ApiSchema apiSchema, DdlGenerationOptions options)
+        {
+            if (apiSchema.ProjectSchema == null || apiSchema.ProjectSchema.ResourceSchemas == null)
+            {
+                throw new InvalidDataException("ApiSchema does not contain valid projectSchema.");
+            }
+
+            return GenerateDdlStringInternal(apiSchema, options);
+        }
+
+        /// <summary>
+        /// Generates SQL Server DDL scripts as a string (useful for testing - legacy method).
         /// </summary>
         /// <param name="apiSchema">The deserialized ApiSchema metadata object.</param>
         /// <param name="includeExtensions">Whether to include extensions in the DDL.</param>
@@ -38,7 +69,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
         /// <returns>The DDL script.</returns>
         public string GenerateDdlString(ApiSchema apiSchema, bool includeExtensions, bool skipUnionViews = false)
         {
+            if (apiSchema.ProjectSchema == null || apiSchema.ProjectSchema.ResourceSchemas == null)
+            {
+                throw new InvalidDataException("ApiSchema does not contain valid projectSchema.");
+            }
 
+            var options = new DdlGenerationOptions
+            {
+                IncludeExtensions = includeExtensions,
+                SkipUnionViews = skipUnionViews
+            };
+
+            return GenerateDdlStringInternal(apiSchema, options);
+        }
+
+        private string GenerateDdlStringInternal(ApiSchema apiSchema, DdlGenerationOptions options)
+        {
             if (apiSchema.ProjectSchema == null || apiSchema.ProjectSchema.ResourceSchemas == null)
             {
                 throw new InvalidDataException("ApiSchema does not contain valid projectSchema.");
@@ -56,8 +102,40 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
             var sb = new StringBuilder();
 
+            // Generate schema creation statements for all unique schemas
+            var usedSchemas = new HashSet<string>();
+            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? new Dictionary<string, ResourceSchema>())
+            {
+                var resourceSchema = kvp.Value;
+                if (resourceSchema.FlatteningMetadata?.Table != null)
+                {
+                    // Skip extensions if not requested
+                    if (!options.IncludeExtensions && resourceSchema.FlatteningMetadata.Table.IsExtensionTable)
+                    {
+                        continue;
+                    }
+
+                    var schemaName = DetermineSchemaName(apiSchema.ProjectSchema, resourceSchema, options);
+                    usedSchemas.Add(schemaName);
+                }
+            }
+
+            // Generate CREATE SCHEMA statements
+            foreach (var schema in usedSchemas.OrderBy(s => s))
+            {
+                sb.AppendLine($"IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = '{schema}')");
+                sb.AppendLine("BEGIN");
+                sb.AppendLine($"    CREATE SCHEMA [{schema}];");
+                sb.AppendLine($"    PRINT 'Schema {schema} created.';");
+                sb.AppendLine("END");
+                sb.AppendLine("ELSE");
+                sb.AppendLine($"    PRINT 'Schema {schema} already exists, skipped.';");
+                sb.AppendLine("GO");
+                sb.AppendLine();
+            }
+
             // Process each resource schema
-            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas)
+            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? new Dictionary<string, ResourceSchema>())
             {
                 var resourceName = kvp.Key;
                 var resourceSchema = kvp.Value;
@@ -68,17 +146,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 }
 
                 // Skip extensions if not requested
-                if (!includeExtensions && resourceSchema.FlatteningMetadata.Table.IsExtensionTable)
+                if (!options.IncludeExtensions && resourceSchema.FlatteningMetadata.Table.IsExtensionTable)
                 {
                     continue;
                 }
 
+                var schemaName = DetermineSchemaName(apiSchema.ProjectSchema, resourceSchema, options);
+
                 // Recursively generate DDL for root table and all child tables
-                GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, null, null);
+                GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, null, null, schemaName, options);
             }
 
             // Generate union views for abstract resources unless skipped
-            if (!skipUnionViews && apiSchema.ProjectSchema != null)
+            if (!options.SkipUnionViews && apiSchema.ProjectSchema != null)
             {
                 var unionViewTemplatePath = Path.Combine(AppContext.BaseDirectory, "Templates", "mssql-union-view.hbs");
                 if (!File.Exists(unionViewTemplatePath))
@@ -112,7 +192,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                             foreach (var subclassType in subclassTypes)
                             {
                                 // Find the resource schema for this subclass
-                                if (apiSchema.ProjectSchema.ResourceSchemas.TryGetValue(subclassType.ToLowerInvariant() + "s", out var subclassSchema) &&
+                                if (apiSchema.ProjectSchema.ResourceSchemas?.TryGetValue(subclassType.ToLowerInvariant() + "s", out var subclassSchema) == true &&
                                     subclassSchema.FlatteningMetadata?.Table != null)
                                 {
                                     var table = subclassSchema.FlatteningMetadata.Table;
@@ -130,7 +210,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 }
 
                 // Approach 2: Detect polymorphic references from child tables with discriminatorValue
-                foreach (var resourceSchema in apiSchema.ProjectSchema.ResourceSchemas.Values)
+                foreach (var resourceSchema in (apiSchema.ProjectSchema.ResourceSchemas ?? new Dictionary<string, ResourceSchema>()).Values)
                 {
                     if (resourceSchema.FlatteningMetadata?.Table != null)
                     {
@@ -180,7 +260,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             HandlebarsTemplate<object, object> template,
             StringBuilder sb,
             string? parentTableName,
-            List<string>? parentPkColumns)
+            List<string>? parentPkColumns,
+            string schemaName,
+            DdlGenerationOptions options)
         {
             var tableName = table.BaseName;
             var isRootTable = parentTableName == null;
@@ -194,7 +276,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 .Select(c =>
                 {
                     // Track cross-resource references
-                    if (!string.IsNullOrEmpty(c.FromReferencePath) && c.ColumnName.EndsWith("_Id"))
+                    if (!string.IsNullOrEmpty(c.FromReferencePath) && c.ColumnName.EndsWith("Id"))
                     {
                         var referencedResource = ResolveResourceNameFromPath(c.FromReferencePath);
                         if (!string.IsNullOrEmpty(referencedResource))
@@ -236,8 +318,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 {
                     constraintName = $"FK_{table.BaseName}_{parentTableName}",
                     column = parentFkColumn,
-                    parentTable = parentTableName,
-                    parentColumn = "Id", // Always reference surrogate key
+                    parentTable = $"[{schemaName}].[{parentTableName}]",
+                    parentColumn = "[Id]", // Always reference surrogate key
                     cascade = true
                 });
             }
@@ -249,8 +331,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 {
                     constraintName = $"FK_{table.BaseName}_{referencedResource}",
                     column = columnName,
-                    parentTable = referencedResource,
-                    parentColumn = "Id",
+                    parentTable = $"[{schemaName}].[{referencedResource}]",
+                    parentColumn = "[Id]",
                     cascade = false // Use RESTRICT for cross-resource FKs to prevent accidental data loss
                 });
             }
@@ -259,9 +341,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             fkColumns.Add(new
             {
                 constraintName = $"FK_{table.BaseName}_Document",
-                column = "(Document_Id, Document_PartitionKey)",
-                parentTable = "Document",
-                parentColumn = "(Id, DocumentPartitionKey)",
+                column = "Document_Id, Document_PartitionKey",
+                parentTable = $"[{schemaName}].[Document]",
+                parentColumn = "[(Id, DocumentPartitionKey)]",
                 cascade = true
             });
 
@@ -330,17 +412,30 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 columns = new[] { "Document_Id", "Document_PartitionKey" }
             });
 
+            // Add audit columns if requested
+            var allColumns = new List<object>(columns);
+            if (options.IncludeAuditColumns)
+            {
+                allColumns.AddRange(new[]
+                {
+                    new { name = "CreateDate", type = "DATETIME2(7)", isRequired = true },
+                    new { name = "LastModifiedDate", type = "DATETIME2(7)", isRequired = true },
+                    new { name = "ChangeVersion", type = "BIGINT", isRequired = true }
+                });
+            }
+
             var data = new
             {
+                schemaName,
                 tableName,
                 hasId = true,
                 id = "Id",
                 hasDocumentColumns = true,
                 documentId = "Document_Id",
                 documentPartitionKey = "Document_PartitionKey",
-                columns,
-                fkColumns,
-                uniqueConstraints,
+                columns = allColumns,
+                fkColumns = options.GenerateForeignKeyConstraints ? fkColumns : new List<object>(),
+                uniqueConstraints = options.GenerateNaturalKeyConstraints ? uniqueConstraints : new List<object>(),
                 indexes
             };
 
@@ -349,32 +444,53 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             // Recursively process child tables
             foreach (var childTable in table.ChildTables)
             {
-                GenerateTableDdl(childTable, template, sb, table.BaseName, null);
+                GenerateTableDdl(childTable, template, sb, table.BaseName, null, schemaName, options);
             }
         }
 
+        /// <summary>
+        /// Maps column metadata to SQL Server data types according to the specification.
+        /// </summary>
         private string MapColumnType(ColumnMetadata column)
         {
             var baseType = column.ColumnType.ToLower() switch
             {
+                // Numeric types
                 "int64" or "bigint" => "BIGINT",
                 "int32" or "integer" or "int" => "INT",
                 "int16" or "short" => "SMALLINT",
+
+                // String types - use NVARCHAR with length or NVARCHAR(MAX) for unlimited
                 "string" => column.MaxLength != null
                     ? (int.Parse(column.MaxLength) > 4000 ? "NVARCHAR(MAX)" : $"NVARCHAR({column.MaxLength})")
                     : "NVARCHAR(MAX)",
+
+                // Boolean type
                 "boolean" or "bool" => "BIT",
+
+                // Date/time types
                 "date" => "DATE",
-                "datetime" => "DATETIME2(7)",
+                "datetime" => "DATETIME2(7)", // High precision as per spec
                 "time" => "TIME",
+
+                // Decimal types with precision/scale support
                 "decimal" => column.Precision != null && column.Scale != null
                     ? $"DECIMAL({column.Precision}, {column.Scale})"
                     : "DECIMAL",
+
+                // Special Ed-Fi types
                 "currency" => "MONEY",
                 "percent" => "DECIMAL(5, 4)",
                 "year" => "SMALLINT",
                 "duration" => "NVARCHAR(30)",
-                "descriptor" => "BIGINT", // FK to descriptor table
+
+                // Descriptor type - FK to unified descriptor table
+                "descriptor" => "BIGINT", // FK to dms.Descriptor table
+
+                // GUID type
+                "guid" or "uuid" => "UNIQUEIDENTIFIER",
+
+                // Default fallback
                 _ => "NVARCHAR(MAX)",
             };
 
@@ -400,6 +516,76 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
             // Otherwise, assume the path itself is the resource name
             return referencePath;
+        }
+
+        /// <summary>
+        /// Determines the appropriate database schema name for a resource.
+        /// </summary>
+        /// <param name="projectSchema">The project schema containing the resource.</param>
+        /// <param name="resourceSchema">The resource schema being processed.</param>
+        /// <param name="options">DDL generation options containing schema mappings.</param>
+        /// <returns>The database schema name to use.</returns>
+        private string DetermineSchemaName(ProjectSchema projectSchema, ResourceSchema resourceSchema, DdlGenerationOptions options)
+        {
+            // Handle descriptor resources - they go to descriptor schema
+            if (IsDescriptorResource(resourceSchema))
+            {
+                return options.DescriptorSchema;
+            }
+
+            // Handle extension resources - they use extension schema mapping
+            if (resourceSchema.FlatteningMetadata?.Table?.IsExtensionTable == true)
+            {
+                // Try to extract the extension project name from resource
+                var extensionProject = ExtractExtensionProjectName(resourceSchema.ResourceName);
+                if (!string.IsNullOrEmpty(extensionProject))
+                {
+                    return options.ResolveSchemaName(extensionProject);
+                }
+                return options.ResolveSchemaName("Extensions");
+            }
+
+            // Use project name to determine schema
+            return options.ResolveSchemaName(projectSchema.ProjectName);
+        }
+
+        /// <summary>
+        /// Determines if a resource schema represents a descriptor resource.
+        /// </summary>
+        private bool IsDescriptorResource(ResourceSchema resourceSchema)
+        {
+            // Check if resource name ends with "Descriptor" or has descriptor-like patterns
+            return resourceSchema.ResourceName.EndsWith("Descriptor", StringComparison.OrdinalIgnoreCase) ||
+                   resourceSchema.ResourceName.EndsWith("Type", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Extracts the extension project name from a resource name.
+        /// For example: "TPDMStudentExtension" -> "TPDM"
+        /// </summary>
+        private string ExtractExtensionProjectName(string resourceName)
+        {
+            if (resourceName.EndsWith("Extension", StringComparison.OrdinalIgnoreCase))
+            {
+                var baseName = resourceName.Substring(0, resourceName.Length - "Extension".Length);
+
+                // Look for common patterns like "TPDMStudent" -> "TPDM"
+                // Match 2-5 uppercase letters at start followed by a capital letter (indicating next word)
+                var match = System.Text.RegularExpressions.Regex.Match(baseName, @"^([A-Z]{2,5})(?=[A-Z][a-z])");
+                if (match.Success)
+                {
+                    return match.Groups[1].Value;
+                }
+
+                // Fallback: just match 2-4 uppercase letters at the start
+                match = System.Text.RegularExpressions.Regex.Match(baseName, @"^([A-Z]{2,4})");
+                if (match.Success)
+                {
+                    return match.Groups[1].Value;
+                }
+            }
+
+            return string.Empty;
         }
     }
 }
