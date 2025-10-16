@@ -193,11 +193,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                     subclassSchema.FlatteningMetadata?.Table != null)
                                 {
                                     var table = subclassSchema.FlatteningMetadata.Table;
-                                    // Build SELECT statement for this table
-                                    var columns = table.Columns.Select(c => $"{PgsqlNamingHelper.MakePgsqlIdentifier(c.ColumnName)}").ToList();
-                                    var selectCols = string.Join(", ", columns);
+                                    // Build SELECT statement for this table - include ALL columns per specification
+                                    var columns = new List<string> { "Id" }; // Start with surrogate key
+                                    columns.AddRange(table.Columns.Select(c => PgsqlNamingHelper.MakePgsqlIdentifier(c.ColumnName)));
+
                                     var discriminator = table.DiscriminatorValue ?? subclassType;
-                                    selectStatements.Add($"SELECT {selectCols}, '{discriminator}' as Discriminator FROM dms.{PgsqlNamingHelper.MakePgsqlIdentifier(table.BaseName)}");
+                                    var selectCols = string.Join(", ", columns);
+                                    selectStatements.Add($"SELECT {selectCols}, '{discriminator}' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.{PgsqlNamingHelper.MakePgsqlIdentifier(table.BaseName)}");
                                 }
                             }
                             var viewData = new { viewName = unionViewName, selectStatements };
@@ -232,11 +234,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
                             foreach (var childTable in table.ChildTables.Where(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue)))
                             {
-                                // Select only the natural key columns (common across all child tables)
-                                var selectCols = string.Join(", ", naturalKeyColumns.Select(c => $"{c}"));
+                                // Include ALL columns per specification: Id + all data columns + Document columns
+                                var columns = new List<string> { "Id" }; // Start with surrogate key
+                                columns.AddRange(childTable.Columns.Select(c => PgsqlNamingHelper.MakePgsqlIdentifier(c.ColumnName)));
+
+                                var selectCols = string.Join(", ", columns);
                                 var discriminatorValue = childTable.DiscriminatorValue;
                                 var tableName = PgsqlNamingHelper.MakePgsqlIdentifier(childTable.BaseName);
-                                selectStatements.Add($"SELECT {selectCols}, '{discriminatorValue}' AS Discriminator FROM dms.{tableName}");
+                                selectStatements.Add($"SELECT {selectCols}, '{discriminatorValue}' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.{tableName}");
                             }
 
                             if (selectStatements.Any())
