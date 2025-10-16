@@ -14,7 +14,7 @@ public class CoreEndpointModule(IOptions<AppSettings> options) : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         // Build the route pattern based on configured route qualifier segments
-        string routePattern = BuildRoutePattern(options.Value.RouteQualifierSegments);
+        string routePattern = BuildRoutePattern(options.Value.GetRouteQualifierSegmentsArray());
 
         endpoints.MapPost(routePattern, Upsert);
         endpoints.MapGet(routePattern, Get);

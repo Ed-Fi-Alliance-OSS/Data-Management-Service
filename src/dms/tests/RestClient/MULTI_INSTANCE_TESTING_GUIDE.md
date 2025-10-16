@@ -17,20 +17,20 @@ cd eng/docker-compose
 # Copy the environment template if you haven't already
 cp .env.example .env
 
-# Edit .env and uncomment the ROUTE_QUALIFIER_SEGMENTS line:
+# Edit .env and set the ROUTE_QUALIFIER_SEGMENTS line:
 # Find this section in .env:
 #   # Multi-Instance Route Qualifiers (Optional)
-#   #ROUTE_QUALIFIER_SEGMENTS=["districtId","schoolYear"]
+#   #ROUTE_QUALIFIER_SEGMENTS=districtId,schoolYear
 #
 # Change to (uncomment the line):
-#   ROUTE_QUALIFIER_SEGMENTS=["districtId","schoolYear"]
+#   ROUTE_QUALIFIER_SEGMENTS=districtId,schoolYear
 ```
 
 ## Step 2: Deploy DMS with Multi-Instance Configuration
 
 ```powershell
 # Deploy with multi-instance configuration enabled
-./start-local-dms.ps1 -EnableConfig -EnableKafkaUI -EnableSwaggerUI -r
+./start-local-dms.ps1 -EnableConfig -r
 ```
 
 Wait for all services to start (check with `docker ps`).
@@ -63,7 +63,25 @@ Get-Content $env:TEMP\dms_schema.sql | docker exec -i dms-postgresql psql -U pos
 docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'dms';"
 ```
 
-## Step 5: Run the REST Client Tests
+## Step 5: Restart DMS to Load Instance Configuration
+
+**IMPORTANT**: The DMS loads instance configuration only at startup. After creating the instances and route contexts in the Configuration Service, you must restart the DMS container:
+
+```powershell
+# Restart DMS to load the new instances
+docker restart docker-compose-dms-1
+
+# Wait for it to start up (about 10-15 seconds)
+# You can monitor the logs to confirm it loaded all instances:
+docker logs docker-compose-dms-1 --tail 50
+
+# Look for these log messages confirming successful load:
+# "Successfully fetched 4 DMS instances"
+# "Loaded DMS instance: ID=2, Name='District 255901 - School Year 2024'"
+# etc.
+```
+
+## Step 6: Run the REST Client Tests
 
 1. Open `src/dms/tests/RestClient/multi-instance-route-qualifiers.http` in VS Code
 2. Execute the requests in order (they build on each other)
@@ -81,7 +99,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d25590
 5. **Test Routing** - Creates descriptors via different routes and verifies
    they go to the correct database
 
-## Step 6: Verify Data Routing
+## Step 7: Verify Data Routing
 
 You can verify that data is going to the correct database by checking the descriptors created:
 
@@ -111,10 +129,18 @@ When you make requests to:
 
 ### Route qualifiers not being parsed
 
-- Check that `RouteQualifierSegments` is set in appsettings.json or via environment variable
-- Verify the DMS logs: `docker logs dms-local`
+- Check that `ROUTE_QUALIFIER_SEGMENTS` is set correctly in the `.env` file (comma-separated format)
+- Verify the environment variable in the container: `docker exec docker-compose-dms-1 printenv | grep ROUTE`
+- Verify the DMS logs: `docker logs docker-compose-dms-1`
 
-### 404 - No database instance found
+### 404 - No database instance found or "No candidates found for the request path"
+
+- **Most common cause**: DMS container needs to be restarted after creating instances in the Configuration Service (see Step 5)
+- Verify DMS loaded all instances by checking the logs:
+  ```powershell
+  docker logs docker-compose-dms-1 | grep "Successfully fetched"
+  # Should show: "Successfully fetched 4 DMS instances" (or your expected count)
+  ```
 
 - Verify route contexts are created correctly in the Configuration Service
 - Check that the application is associated with the instances
@@ -129,7 +155,7 @@ When you make requests to:
 ### Check DMS logs
 
 ```powershell
-docker logs dms-local --follow
+docker logs docker-compose-dms-1 --follow
 ```
 
 ### Check Config Service logs

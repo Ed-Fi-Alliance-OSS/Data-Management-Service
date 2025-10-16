@@ -40,21 +40,24 @@ public partial class MetadataEndpointModule : IEndpointModule
     {
         endpoints.MapGet("/metadata", GetMetadata);
         // Combine the conflicting routes into a single MapGet
-        endpoints.MapGet("/metadata/dependencies", async (HttpContext httpContext, IApiService apiService) =>
-        {
-            var acceptHeader = httpContext.Request.Headers["Accept"].ToString();
+        endpoints.MapGet(
+            "/metadata/dependencies",
+            async (HttpContext httpContext, IApiService apiService) =>
+            {
+                var acceptHeader = httpContext.Request.Headers["Accept"].ToString();
 
-            if (acceptHeader.Contains("application/graphml", StringComparison.OrdinalIgnoreCase))
-            {
-                // Respond using GraphML-specific logic
-                await GetDependenciesGraphML(httpContext, apiService);
+                if (acceptHeader.Contains("application/graphml", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Respond using GraphML-specific logic
+                    await GetDependenciesGraphML(httpContext, apiService);
+                }
+                else
+                {
+                    // Default behavior
+                    await GetDependencies(httpContext, apiService);
+                }
             }
-            else
-            {
-                // Default behavior
-                await GetDependencies(httpContext, apiService);
-            }
-        });
+        );
         endpoints.MapGet("/metadata/specifications", GetSections);
         endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
@@ -97,7 +100,8 @@ public partial class MetadataEndpointModule : IEndpointModule
             sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
 
             sb.AppendLine(
-                "<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd\">");
+                "<graphml xmlns=\"http://graphml.graphdrawing.org/xmlns\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd\">"
+            );
 
             sb.AppendLine($"<graph id=\"{graphML.Id}\" edgedefault=\"directed\">");
 

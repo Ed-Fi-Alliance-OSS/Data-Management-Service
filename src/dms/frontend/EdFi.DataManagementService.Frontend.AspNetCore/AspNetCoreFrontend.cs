@@ -91,7 +91,7 @@ public static class AspNetCoreFrontend
         IOptions<AppSettings> options
     )
     {
-        string[] routeQualifierSegments = options.Value.RouteQualifierSegments;
+        string[] routeQualifierSegments = options.Value.GetRouteQualifierSegmentsArray();
 
         if (routeQualifierSegments.Length == 0)
         {

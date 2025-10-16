@@ -45,7 +45,7 @@ services:
       AppSettings__EnableManagementEndpoints: ${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}
       AppSettings__EnableClaimsetReload: ${DMS_ENABLE_CLAIMSET_RELOAD:-false}
       AppSettings__DomainsExcludedFromOpenApi: ${DOMAINS_EXCLUDED_FROM_OPEN_API:-}
-      AppSettings__RouteQualifierSegments: ${ROUTE_QUALIFIER_SEGMENTS:-[]}
+      AppSettings__RouteQualifierSegments: ${ROUTE_QUALIFIER_SEGMENTS:-}
       SCHEMA_PACKAGES: ${SCHEMA_PACKAGES}
       # JWT Authentication
       JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-http://dms-keycloak:8080/realms/edfi}
