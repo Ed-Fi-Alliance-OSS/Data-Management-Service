@@ -8,21 +8,36 @@ This guide will help you set up and test the multi-instance DMS with route quali
 - PowerShell 7+ installed
 - VS Code with REST Client extension (or similar HTTP client)
 
-## Step 1: Deploy DMS with Multi-Instance Configuration
+## Step 1: Configure Environment for Multi-Instance
 
 ```powershell
 # Navigate to docker-compose directory
 cd eng/docker-compose
 
-# Deploy using the multi-instance environment
-./start-local-dms.ps1 -EnvironmentFile ".\.env.multi-instance" -EnableConfig -EnableKafkaUI -EnableSwaggerUI -r
+# Copy the environment template if you haven't already
+cp .env.example .env
+
+# Edit .env and uncomment the ROUTE_QUALIFIER_SEGMENTS line:
+# Find this section in .env:
+#   # Multi-Instance Route Qualifiers (Optional)
+#   #ROUTE_QUALIFIER_SEGMENTS=["districtId","schoolYear"]
+#
+# Change to (uncomment the line):
+#   ROUTE_QUALIFIER_SEGMENTS=["districtId","schoolYear"]
+```
+
+## Step 2: Deploy DMS with Multi-Instance Configuration
+
+```powershell
+# Deploy with multi-instance configuration enabled
+./start-local-dms.ps1 -EnableConfig -EnableKafkaUI -EnableSwaggerUI -r
 ```
 
 Wait for all services to start (check with `docker ps`).
 
-## Step 2: Create Additional Databases
+## Step 3: Create Additional Databases
 
-The multi-instance.env file creates the main database, but you need to create the additional databases for each instance:
+The main `.env` file creates the main database, but you need to create the additional databases for each instance:
 
 ```powershell
 # Create databases
@@ -31,7 +46,7 @@ docker exec -it dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_dataman
 docker exec -it dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255902_sy2024;"
 ```
 
-## Step 3: Deploy Schema to Each Database
+## Step 4: Deploy Schema to Each Database
 
 You need to copy the DMS schema from the main database to each test database:
 
@@ -48,7 +63,7 @@ Get-Content $env:TEMP\dms_schema.sql | docker exec -i dms-postgresql psql -U pos
 docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'dms';"
 ```
 
-## Step 4: Run the REST Client Tests
+## Step 5: Run the REST Client Tests
 
 1. Open `src/dms/tests/RestClient/multi-instance-route-qualifiers.http` in VS Code
 2. Execute the requests in order (they build on each other)
@@ -66,7 +81,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d25590
 5. **Test Routing** - Creates descriptors via different routes and verifies
    they go to the correct database
 
-## Step 5: Verify Data Routing
+## Step 6: Verify Data Routing
 
 You can verify that data is going to the correct database by checking the descriptors created:
 
