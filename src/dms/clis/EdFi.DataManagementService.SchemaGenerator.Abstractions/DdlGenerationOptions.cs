@@ -65,18 +65,24 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
         public string ResolveSchemaName(string? projectName)
         {
             if (string.IsNullOrEmpty(projectName))
+            {
                 return DefaultSchema;
+            }
 
             // Try exact match first
             if (SchemaMapping.TryGetValue(projectName, out var schema))
+            {
                 return schema;
+            }
 
             // Try case-insensitive match
             var key = SchemaMapping.Keys.FirstOrDefault(k =>
                 string.Equals(k, projectName, StringComparison.OrdinalIgnoreCase));
 
             if (key != null)
+            {
                 return SchemaMapping[key];
+            }
 
             // Check if it's an extension project (contains "Extension" or ends with "Ext")
             if (projectName.Contains("Extension", StringComparison.OrdinalIgnoreCase) ||
