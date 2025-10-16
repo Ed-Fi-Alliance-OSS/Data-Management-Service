@@ -61,7 +61,7 @@ public class Given_NpgsqlDataSourceProvider
     }
 
     [Test]
-    public void It_should_cache_data_source_for_same_provider_instance()
+    public void It_should_cache_data_source_for_same_dms_instance()
     {
         // Arrange
         const string ConnectionString = "Host=localhost;Database=test;Username=user;Password=pass";
@@ -78,9 +78,10 @@ public class Given_NpgsqlDataSourceProvider
         var dataSource1 = _provider.DataSource;
         var dataSource2 = _provider.DataSource;
 
-        // Assert
+        // Assert - data source should be cached and reused
         dataSource1.Should().BeSameAs(dataSource2);
-        A.CallTo(() => _dmsInstanceSelection.GetSelectedDmsInstance()).MustHaveHappenedOnceExactly();
+        // GetSelectedDmsInstance is called each time to ensure correct instance is used
+        A.CallTo(() => _dmsInstanceSelection.GetSelectedDmsInstance()).MustHaveHappenedTwiceExactly();
     }
 
     [Test]
