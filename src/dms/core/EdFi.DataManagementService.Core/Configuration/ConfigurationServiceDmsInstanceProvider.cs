@@ -178,6 +178,7 @@ public class ConfigurationServiceDmsInstanceProvider(
         Dictionary<long, Dictionary<RouteQualifierName, RouteQualifierValue>>
     > FetchRouteContexts()
     {
+        // TODO: As part of DMS-851 this round trip can be eliminated. Contexts will be  included in the instance response.
         const string RouteContextsEndpoint = "v2/dmsinstanceroutecontexts/";
 
         logger.LogDebug("Sending GET request to {Endpoint}", RouteContextsEndpoint);

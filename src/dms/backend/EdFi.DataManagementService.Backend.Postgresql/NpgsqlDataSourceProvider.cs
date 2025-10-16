@@ -19,13 +19,12 @@ public sealed class NpgsqlDataSourceProvider(
     ILogger<NpgsqlDataSourceProvider> logger
 )
 {
-    private NpgsqlDataSource? _cachedDataSource;
-    private long? _cachedInstanceId;
+    private readonly Dictionary<long, NpgsqlDataSource> _cachedDataSources = new();
 
     /// <summary>
-    /// Gets the NpgsqlDataSource for the current request's DMS instance connection string.
-    /// Caches the result for the lifetime of this provider instance (scoped to the request).
-    /// Cache is invalidated if the selected instance changes.
+    /// Gets the NpgsqlDataSource for the current request's DMS instance.
+    /// Caches data sources by instance ID to avoid repeated creation.
+    /// Cache persists for the lifetime of this provider instance.
     /// </summary>
     public NpgsqlDataSource DataSource
     {
@@ -33,20 +32,24 @@ public sealed class NpgsqlDataSourceProvider(
         {
             var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
 
-            // If we have a cached data source and it's for the same instance, return it
-            if (_cachedDataSource != null && _cachedInstanceId == selectedInstance.Id)
+            // Check if we've already cached this instance's data source
+            if (_cachedDataSources.TryGetValue(selectedInstance.Id, out var cachedDataSource))
             {
-                return _cachedDataSource;
+                return cachedDataSource;
             }
 
-            // Selected instance changed or no cache yet - get/create the data source
+            // Cache miss - create and cache the data source
             string connectionString = selectedInstance.ConnectionString!;
 
-            logger.LogDebug("NpgsqlDataSourceProvider using instance {InstanceId}", selectedInstance.Id);
+            logger.LogDebug(
+                "NpgsqlDataSourceProvider caching data source for instance {InstanceId}",
+                selectedInstance.Id
+            );
 
-            _cachedDataSource = dataSourceCache.GetOrCreate(connectionString);
-            _cachedInstanceId = selectedInstance.Id;
-            return _cachedDataSource;
+            var dataSource = dataSourceCache.GetOrCreate(connectionString);
+            _cachedDataSources[selectedInstance.Id] = dataSource;
+
+            return dataSource;
         }
     }
 }

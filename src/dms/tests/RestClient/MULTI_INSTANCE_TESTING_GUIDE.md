@@ -63,25 +63,7 @@ Get-Content $env:TEMP\dms_schema.sql | docker exec -i dms-postgresql psql -U pos
 docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'dms';"
 ```
 
-## Step 5: Restart DMS to Load Instance Configuration
-
-**IMPORTANT**: The DMS loads instance configuration only at startup. After creating the instances and route contexts in the Configuration Service, you must restart the DMS container:
-
-```powershell
-# Restart DMS to load the new instances
-docker restart docker-compose-dms-1
-
-# Wait for it to start up (about 10-15 seconds)
-# You can monitor the logs to confirm it loaded all instances:
-docker logs docker-compose-dms-1 --tail 50
-
-# Look for these log messages confirming successful load:
-# "Successfully fetched 4 DMS instances"
-# "Loaded DMS instance: ID=2, Name='District 255901 - School Year 2024'"
-# etc.
-```
-
-## Step 6: Run the REST Client Tests
+## Step 5: Run the REST Client Tests
 
 1. Open `src/dms/tests/RestClient/multi-instance-route-qualifiers.http` in VS Code
 2. Execute the requests in order (they build on each other)
