@@ -234,5 +234,223 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Assert
             result.Should().Be("sample");
         }
+
+        // ResolveTablePrefix tests
+        [Test]
+        public void ResolveTablePrefix_WithPrefixedDisabled_ReturnsEmpty()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
+
+            // Act
+            var result = options.ResolveTablePrefix("EdFi");
+
+            // Assert
+            result.Should().BeEmpty();
+        }
+
+        [Test]
+        public void ResolveTablePrefix_WithNullProjectName_ReturnsEmpty()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveTablePrefix(null);
+
+            // Assert
+            result.Should().BeEmpty();
+        }
+
+        [Test]
+        public void ResolveTablePrefix_WithEmptyProjectName_ReturnsEmpty()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveTablePrefix("");
+
+            // Assert
+            result.Should().BeEmpty();
+        }
+
+        [Test]
+        public void ResolveTablePrefix_WithMappedProject_ReturnsPrefixWithUnderscore()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveTablePrefix("EdFi");
+
+            // Assert
+            result.Should().Be("edfi_");
+        }
+
+        [Test]
+        public void ResolveTablePrefix_WithCaseInsensitiveMatch_ReturnsPrefix()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveTablePrefix("edfi");
+
+            // Assert
+            result.Should().Be("edfi_");
+        }
+
+        [Test]
+        public void ResolveTablePrefix_WithExtensionProject_ReturnsExtensionsPrefix()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveTablePrefix("MyExtension");
+
+            // Assert
+            result.Should().Be("extensions_");
+        }
+
+        [Test]
+        public void ResolveTablePrefix_WithExtSuffix_ReturnsExtensionsPrefix()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveTablePrefix("SomeExt");
+
+            // Assert
+            result.Should().Be("extensions_");
+        }
+
+        [Test]
+        public void ResolveTablePrefix_WithUnmappedProject_ReturnsLowercaseProjectName()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveTablePrefix("CustomProject");
+
+            // Assert
+            result.Should().Be("customproject_");
+        }
+
+        [Test]
+        public void ResolveTablePrefix_WithTPDM_ReturnsTPDMPrefix()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveTablePrefix("TPDM");
+
+            // Assert
+            result.Should().Be("tpdm_");
+        }
+
+        [Test]
+        public void ResolveTablePrefix_WithSample_ReturnsSamplePrefix()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveTablePrefix("Sample");
+
+            // Assert
+            result.Should().Be("sample_");
+        }
+
+        // Additional property tests for full coverage
+        [Test]
+        public void GenerateNaturalKeyConstraints_DefaultValue_ShouldBeTrue()
+        {
+            // Arrange & Act
+            var options = new DdlGenerationOptions();
+
+            // Assert
+            options.GenerateNaturalKeyConstraints.Should().BeTrue();
+        }
+
+        [Test]
+        public void GenerateForeignKeyConstraints_DefaultValue_ShouldBeTrue()
+        {
+            // Arrange & Act
+            var options = new DdlGenerationOptions();
+
+            // Assert
+            options.GenerateForeignKeyConstraints.Should().BeTrue();
+        }
+
+        [Test]
+        public void IncludeAuditColumns_DefaultValue_ShouldBeTrue()
+        {
+            // Arrange & Act
+            var options = new DdlGenerationOptions();
+
+            // Assert
+            options.IncludeAuditColumns.Should().BeTrue();
+        }
+
+        [Test]
+        public void UsePrefixedTableNames_DefaultValue_ShouldBeTrue()
+        {
+            // Arrange & Act
+            var options = new DdlGenerationOptions();
+
+            // Assert
+            options.UsePrefixedTableNames.Should().BeTrue();
+        }
+
+        [Test]
+        public void IncludeExtensions_DefaultValue_ShouldBeFalse()
+        {
+            // Arrange & Act
+            var options = new DdlGenerationOptions();
+
+            // Assert
+            options.IncludeExtensions.Should().BeFalse();
+        }
+
+        [Test]
+        public void SkipUnionViews_DefaultValue_ShouldBeFalse()
+        {
+            // Arrange & Act
+            var options = new DdlGenerationOptions();
+
+            // Assert
+            options.SkipUnionViews.Should().BeFalse();
+        }
+
+        [Test]
+        public void ResolveSchemaName_WithPrefixedTableNames_ReturnsDefaultSchema()
+        {
+            // Arrange
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
+
+            // Act
+            var result = options.ResolveSchemaName("EdFi");
+
+            // Assert
+            result.Should().Be("dms"); // When prefixed, always returns default schema
+        }
+
+        [Test]
+        public void SchemaMapping_ContainsEdFiVariations()
+        {
+            // Arrange & Act
+            var options = new DdlGenerationOptions();
+
+            // Assert
+            options.SchemaMapping.Should().ContainKey("EdFi");
+            options.SchemaMapping.Should().ContainKey("ed-fi");
+            options.SchemaMapping["EdFi"].Should().Be("edfi");
+            options.SchemaMapping["ed-fi"].Should().Be("edfi");
+        }
     }
 }
