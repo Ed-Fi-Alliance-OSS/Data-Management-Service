@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+FROM mcr.microsoft.com/dotnet/sdk:8.0.401-alpine3.20@sha256:658c93223111638f9bb54746679e554b2cf0453d8fb7b9fed32c3c0726c210fe AS build
+
+WORKDIR /source
+
+# Named context support https://github.com/hadolint/hadolint/issues/830
+# hadolint ignore=DL3022
+COPY --from=parentdir .editorconfig Directory.Packages.props nuget.config ./
+
+# Copy project files for restore
+COPY *.sln ./
+COPY EdFi.DataManagementService.SchemaGenerator.Abstractions/*.csproj ./EdFi.DataManagementService.SchemaGenerator.Abstractions/
+COPY EdFi.DataManagementService.SchemaGenerator.Cli/*.csproj ./EdFi.DataManagementService.SchemaGenerator.Cli/
+COPY EdFi.DataManagementService.SchemaGenerator.Mssql/*.csproj ./EdFi.DataManagementService.SchemaGenerator.Mssql/
+COPY EdFi.DataManagementService.SchemaGenerator.Pgsql/*.csproj ./EdFi.DataManagementService.SchemaGenerator.Pgsql/
+
+# Restore dependencies
+RUN dotnet nuget locals all --clear && \
+    export NUGET_FALLBACK_PACKAGES="" && \
+    dotnet restore EdFi.DataManagementService.SchemaGenerator.Cli/EdFi.DataManagementService.SchemaGenerator.Cli.csproj --disable-parallel --verbosity normal
+
+# Copy source code
+COPY EdFi.DataManagementService.SchemaGenerator.Abstractions/ ./EdFi.DataManagementService.SchemaGenerator.Abstractions/
+COPY EdFi.DataManagementService.SchemaGenerator.Cli/ ./EdFi.DataManagementService.SchemaGenerator.Cli/
+COPY EdFi.DataManagementService.SchemaGenerator.Mssql/ ./EdFi.DataManagementService.SchemaGenerator.Mssql/
+COPY EdFi.DataManagementService.SchemaGenerator.Pgsql/ ./EdFi.DataManagementService.SchemaGenerator.Pgsql/
+
+# Publish the CLI application (with restore to bypass cache issues)
+RUN export NUGET_FALLBACK_PACKAGES="" && \
+    dotnet publish EdFi.DataManagementService.SchemaGenerator.Cli/EdFi.DataManagementService.SchemaGenerator.Cli.csproj \
+    -c Release --self-contained false -o /app/cli --disable-parallel --verbosity normal
+
+FROM mcr.microsoft.com/dotnet/runtime:8.0.12-alpine3.21 AS runtime
+
+WORKDIR /app
+
+# Copy the published application
+COPY --from=build /app/cli ./
+
+# Create data directory for output
+RUN mkdir -p /app/data
+
+ENTRYPOINT ["dotnet", "EdFi.DataManagementService.SchemaGenerator.Cli.dll"]
