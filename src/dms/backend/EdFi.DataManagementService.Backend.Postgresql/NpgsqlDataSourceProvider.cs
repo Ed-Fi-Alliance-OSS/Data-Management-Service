@@ -12,6 +12,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 /// <summary>
 /// Scoped service that provides the appropriate NpgsqlDataSource for the current request
 /// by retrieving the selected DMS instance and using the singleton cache.
+/// Uses a Dictionary cache to handle potential scope issues where the provider may be
+/// used across different instance contexts.
 /// </summary>
 public sealed class NpgsqlDataSourceProvider(
     IDmsInstanceSelection dmsInstanceSelection,
@@ -19,24 +21,27 @@ public sealed class NpgsqlDataSourceProvider(
     ILogger<NpgsqlDataSourceProvider> logger
 )
 {
-    private NpgsqlDataSource? _cachedDataSource;
+    private readonly Dictionary<long, NpgsqlDataSource> _cachedDataSources = new();
 
     /// <summary>
     /// Gets the NpgsqlDataSource for the current request's DMS instance.
-    /// Caches the data source for the lifetime of this scoped provider instance.
-    /// Since the provider is truly scoped, the selected instance won't change during the request.
+    /// Validates the current instance on each access to handle cases where instance
+    /// selection may occur in a different scope context.
     /// </summary>
     public NpgsqlDataSource DataSource
     {
         get
         {
-            // Service is truly scoped, so selectedInstance won't change during request
-            if (_cachedDataSource != null)
+            // Always check current instance to handle potential scope issues
+            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
+
+            // Check if we've already cached this instance's data source
+            if (_cachedDataSources.TryGetValue(selectedInstance.Id, out var cachedDataSource))
             {
-                return _cachedDataSource;
+                return cachedDataSource;
             }
 
-            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
+            // Cache miss - create and cache the data source
             string connectionString = selectedInstance.ConnectionString!;
 
             logger.LogDebug(
@@ -44,8 +49,10 @@ public sealed class NpgsqlDataSourceProvider(
                 selectedInstance.Id
             );
 
-            _cachedDataSource = dataSourceCache.GetOrCreate(connectionString);
-            return _cachedDataSource;
+            var dataSource = dataSourceCache.GetOrCreate(connectionString);
+            _cachedDataSources[selectedInstance.Id] = dataSource;
+
+            return dataSource;
         }
     }
 }
