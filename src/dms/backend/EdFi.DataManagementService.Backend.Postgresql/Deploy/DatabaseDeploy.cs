@@ -22,8 +22,8 @@ public class DatabaseDeploy : IDatabaseDeploy
             return new DatabaseDeployResult.DatabaseDeployFailure(e);
         }
 
-        var upgrader = DeployChanges.To
-            .PostgresqlDatabase(connectionString)
+        var upgrader = DeployChanges
+            .To.PostgresqlDatabase(connectionString)
             .WithScriptsEmbeddedInAssembly(Assembly.GetExecutingAssembly())
             .JournalToPostgresqlTable("public", "dms_SchemaVersions")
             .WithVariablesDisabled()

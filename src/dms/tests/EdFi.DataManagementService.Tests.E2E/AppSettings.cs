@@ -12,7 +12,8 @@ namespace EdFi.DataManagementService.Tests.E2E
         private static readonly IConfiguration _configuration =
             new ConfigurationBuilder()
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .Build() ?? throw new InvalidOperationException("Unable to read appsettings.json");
+                .Build()
+            ?? throw new InvalidOperationException("Unable to read appsettings.json");
 
         public static string DmsPort = "8080"; //5198 for local
         public static string ConfigServicePort = "8081"; //5126 for local

@@ -1,5 +1,4 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
     <PropertyGroup>
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -8,7 +7,6 @@
         <IsTestProject>true</IsTestProject>
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
-
     <ItemGroup>
         <PackageReference Include="FakeItEasy" />
         <PackageReference Include="FluentAssertions" />
@@ -25,17 +23,13 @@
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
     </ItemGroup>
-
     <ItemGroup>
         <Using Include="NUnit.Framework" />
     </ItemGroup>
-
     <ItemGroup>
         <AssemblyAttribute Include="System.Diagnostics.CodeAnalysis.ExcludeFromCodeCoverageAttribute" />
     </ItemGroup>
-
     <ItemGroup>
-      <ProjectReference Include="..\EdFi.DataManagementService.ApiSchemaDownloader\EdFi.DataManagementService.ApiSchemaDownloader.csproj" />
+        <ProjectReference Include="..\EdFi.DataManagementService.ApiSchemaDownloader\EdFi.DataManagementService.ApiSchemaDownloader.csproj" />
     </ItemGroup>
-
 </Project>

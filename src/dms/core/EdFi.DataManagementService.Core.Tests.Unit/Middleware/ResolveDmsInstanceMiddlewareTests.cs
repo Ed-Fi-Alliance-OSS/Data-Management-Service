@@ -30,7 +30,12 @@ public class ResolveDmsInstanceMiddlewareTests
         var dmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
         var logger = A.Fake<ILogger<ResolveDmsInstanceMiddleware>>();
 
-        var middleware = new ResolveDmsInstanceMiddleware(dmsInstanceProvider, dmsInstanceSelection, logger);
+        // Create a service provider that resolves IDmsInstanceSelection
+        var serviceProvider = A.Fake<IServiceProvider>();
+        A.CallTo(() => serviceProvider.GetService(typeof(IDmsInstanceSelection)))
+            .Returns(dmsInstanceSelection);
+
+        var middleware = new ResolveDmsInstanceMiddleware(dmsInstanceProvider, serviceProvider, logger);
 
         return (middleware, dmsInstanceProvider, dmsInstanceSelection);
     }

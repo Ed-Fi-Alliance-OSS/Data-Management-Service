@@ -19,26 +19,24 @@ public sealed class NpgsqlDataSourceProvider(
     ILogger<NpgsqlDataSourceProvider> logger
 )
 {
-    private readonly Dictionary<long, NpgsqlDataSource> _cachedDataSources = new();
+    private NpgsqlDataSource? _cachedDataSource;
 
     /// <summary>
     /// Gets the NpgsqlDataSource for the current request's DMS instance.
-    /// Caches data sources by instance ID to avoid repeated creation.
-    /// Cache persists for the lifetime of this provider instance.
+    /// Caches the data source for the lifetime of this scoped provider instance.
+    /// Since the provider is truly scoped, the selected instance won't change during the request.
     /// </summary>
     public NpgsqlDataSource DataSource
     {
         get
         {
-            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
-
-            // Check if we've already cached this instance's data source
-            if (_cachedDataSources.TryGetValue(selectedInstance.Id, out var cachedDataSource))
+            // Service is truly scoped, so selectedInstance won't change during request
+            if (_cachedDataSource != null)
             {
-                return cachedDataSource;
+                return _cachedDataSource;
             }
 
-            // Cache miss - create and cache the data source
+            var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
             string connectionString = selectedInstance.ConnectionString!;
 
             logger.LogDebug(
@@ -46,10 +44,8 @@ public sealed class NpgsqlDataSourceProvider(
                 selectedInstance.Id
             );
 
-            var dataSource = dataSourceCache.GetOrCreate(connectionString);
-            _cachedDataSources[selectedInstance.Id] = dataSource;
-
-            return dataSource;
+            _cachedDataSource = dataSourceCache.GetOrCreate(connectionString);
+            return _cachedDataSource;
         }
     }
 }

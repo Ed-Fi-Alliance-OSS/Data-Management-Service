@@ -97,31 +97,44 @@ public class ResourceDependencyGraphFactoryTests
             {
                 graph.VertexCount.Should().Be(2);
 
-                graph.Vertices.Should()
-                    .Contain(v => v.FullResourceName.ProjectName.Value == "Ed-Fi" && v.FullResourceName.ResourceName.Value == "one");
+                graph
+                    .Vertices.Should()
+                    .Contain(v =>
+                        v.FullResourceName.ProjectName.Value == "Ed-Fi"
+                        && v.FullResourceName.ResourceName.Value == "one"
+                    );
 
-                graph.Vertices.Should()
-                    .Contain(v => v.FullResourceName.ProjectName.Value == "Ed-Fi" && v.FullResourceName.ResourceName.Value == "two");
+                graph
+                    .Vertices.Should()
+                    .Contain(v =>
+                        v.FullResourceName.ProjectName.Value == "Ed-Fi"
+                        && v.FullResourceName.ResourceName.Value == "two"
+                    );
 
                 graph.EdgeCount.Should().Be(1);
 
-                graph.Edges.Should()
+                graph
+                    .Edges.Should()
                     .Contain(e =>
                         e.Source.FullResourceName.ProjectName.Value == "Ed-Fi"
                         && e.Source.FullResourceName.ResourceName.Value == "one"
                         && e.Target.FullResourceName.ProjectName.Value == "Ed-Fi"
-                        && e.Target.FullResourceName.ResourceName.Value == "two");
+                        && e.Target.FullResourceName.ResourceName.Value == "two"
+                    );
             }
         }
     }
 
-    private static ResourceDependencyGraphFactory CreateGraphFactory(IApiSchemaProvider apiSchemaProvider,
-        IEnumerable<IResourceDependencyGraphTransformer>? graphTransformers = null)
+    private static ResourceDependencyGraphFactory CreateGraphFactory(
+        IApiSchemaProvider apiSchemaProvider,
+        IEnumerable<IResourceDependencyGraphTransformer>? graphTransformers = null
+    )
     {
         var graphFactory = new ResourceDependencyGraphFactory(
             apiSchemaProvider,
             graphTransformers ?? [],
-            NullLogger<ResourceLoadOrderCalculator>.Instance);
+            NullLogger<ResourceLoadOrderCalculator>.Instance
+        );
 
         return graphFactory;
     }

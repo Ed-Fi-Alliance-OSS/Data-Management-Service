@@ -7,9 +7,7 @@ using QuickGraph;
 
 namespace EdFi.DataManagementService.Core.External.Model;
 
-public sealed class GraphMLEdge
-    : IEquatable<GraphMLEdge>,
-        IEdge<GraphMLNode>
+public sealed class GraphMLEdge : IEquatable<GraphMLEdge>, IEdge<GraphMLNode>
 {
     public GraphMLEdge() { }
 

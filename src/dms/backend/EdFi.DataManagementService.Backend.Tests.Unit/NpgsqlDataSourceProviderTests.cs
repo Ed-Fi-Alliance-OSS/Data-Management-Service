@@ -80,8 +80,8 @@ public class Given_NpgsqlDataSourceProvider
 
         // Assert - data source should be cached and reused
         dataSource1.Should().BeSameAs(dataSource2);
-        // GetSelectedDmsInstance is called each time to ensure correct instance is used
-        A.CallTo(() => _dmsInstanceSelection.GetSelectedDmsInstance()).MustHaveHappenedTwiceExactly();
+        // With true scoping, GetSelectedDmsInstance is called once and then cached
+        A.CallTo(() => _dmsInstanceSelection.GetSelectedDmsInstance()).MustHaveHappenedOnceExactly();
     }
 
     [Test]

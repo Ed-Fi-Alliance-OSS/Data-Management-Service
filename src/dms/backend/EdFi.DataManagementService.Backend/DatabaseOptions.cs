@@ -12,7 +12,6 @@ namespace EdFi.DataManagementService.Backend
     /// </summary>
     public class DatabaseOptions
     {
-
         /// <summary>
         /// IsolationLevel to use for all database transactions.
         /// </summary>

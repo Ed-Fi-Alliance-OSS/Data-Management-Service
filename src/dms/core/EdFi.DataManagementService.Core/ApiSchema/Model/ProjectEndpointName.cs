@@ -7,6 +7,6 @@ namespace EdFi.DataManagementService.Core.ApiSchema.Model;
 
 /// <summary>
 /// A string type branded as a ProjectEndpointName, which is the URI path component referring to a ProjectSchema
-/// e.g. "ed-fi" for an Ed-Fi data standard version. It is always lower kebab-case. 
+/// e.g. "ed-fi" for an Ed-Fi data standard version. It is always lower kebab-case.
 /// </summary>
 internal record struct ProjectEndpointName(string Value);
