@@ -26,7 +26,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
             var ddl = GenerateDdlString(apiSchema, includeExtensions, skipUnionViews);
 
-            File.WriteAllText(Path.Combine(outputDirectory, "schema-mssql.sql"), ddl);
+            File.WriteAllText(Path.Combine(outputDirectory, "EdFi-DMS-Database-Schema-SQLServer.sql"), ddl);
         }
 
         /// <summary>
@@ -41,7 +41,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
             var ddl = GenerateDdlString(apiSchema, options);
 
-            File.WriteAllText(Path.Combine(outputDirectory, "schema-mssql.sql"), ddl);
+            File.WriteAllText(Path.Combine(outputDirectory, "EdFi-DMS-Database-Schema-SQLServer.sql"), ddl);
         }
 
         /// <summary>
@@ -272,12 +272,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             ResourceSchema? resourceSchema = null)
         {
             var tableName = DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options);
-            
+
             // For extension resources and descriptor resources using separate schemas, use the original schema as final schema
-            var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema) 
-                ? originalSchemaName 
+            var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema)
+                ? originalSchemaName
                 : options.ResolveSchemaName(null);
-                
+
             var isRootTable = parentTableName == null;
 
             // Track cross-resource references for FK and index generation
@@ -479,9 +479,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 "int16" or "short" => "SMALLINT",
 
                 // String types - use NVARCHAR with length or NVARCHAR(MAX) for unlimited
-                "string" => column.MaxLength != null
-                    ? (int.Parse(column.MaxLength) > 4000 ? "NVARCHAR(MAX)" : $"NVARCHAR({column.MaxLength})")
-                    : "NVARCHAR(MAX)",
+                "string" => MapStringType(column),
 
                 // Boolean type
                 "boolean" or "bool" => "BIT",
@@ -492,9 +490,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 "time" => "TIME",
 
                 // Decimal types with precision/scale support
-                "decimal" => column.Precision != null && column.Scale != null
-                    ? $"DECIMAL({column.Precision}, {column.Scale})"
-                    : "DECIMAL",
+                "decimal" => MapDecimalType(column),
 
                 // Special Ed-Fi types
                 "currency" => "MONEY",
@@ -513,6 +509,45 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             };
 
             return baseType;
+        }
+
+        /// <summary>
+        /// Maps string column metadata to SQL Server NVARCHAR or NVARCHAR(MAX) types with proper length constraints.
+        /// </summary>
+        private static string MapStringType(ColumnMetadata column)
+        {
+            if (!string.IsNullOrEmpty(column.MaxLength))
+            {
+                var maxLength = int.Parse(column.MaxLength);
+                // SQL Server NVARCHAR has a limit of 4000 characters; use NVARCHAR(MAX) for larger values
+                return maxLength > 4000 ? "NVARCHAR(MAX)" : $"NVARCHAR({column.MaxLength})";
+            }
+
+            return "NVARCHAR(MAX)"; // Fallback for unlimited length
+        }
+
+        /// <summary>
+        /// Maps decimal column metadata to SQL Server DECIMAL types with precision and scale from MetaEd metadata.
+        /// </summary>
+        private static string MapDecimalType(ColumnMetadata column)
+        {
+            // Use precision and scale from MetaEd metadata if available
+            if (!string.IsNullOrEmpty(column.Precision))
+            {
+                var precision = column.Precision;
+                var scale = !string.IsNullOrEmpty(column.Scale) ? column.Scale : "0";
+                return $"DECIMAL({precision}, {scale})";
+            }
+
+            // If only scale is provided (edge case), use a reasonable default precision
+            if (!string.IsNullOrEmpty(column.Scale))
+            {
+                var scale = column.Scale;
+                var precision = int.Parse(scale) + 10; // Default: scale + 10 for precision
+                return $"DECIMAL({precision}, {scale})";
+            }
+
+            return "DECIMAL"; // Fallback to generic decimal without constraints
         }
 
         /// <summary>
@@ -571,7 +606,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         return schema;
                     }
                     // Try case-insensitive match
-                    var match = options.SchemaMapping.FirstOrDefault(kvp => 
+                    var match = options.SchemaMapping.FirstOrDefault(kvp =>
                         string.Equals(kvp.Key, extensionProject, StringComparison.OrdinalIgnoreCase));
                     if (!match.Equals(default(KeyValuePair<string, string>)))
                     {
@@ -589,7 +624,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 return projectSchemaMapping;
             }
             // Try case-insensitive match
-            var projectMatch = options.SchemaMapping.FirstOrDefault(kvp => 
+            var projectMatch = options.SchemaMapping.FirstOrDefault(kvp =>
                 string.Equals(kvp.Key, projectSchema.ProjectName, StringComparison.OrdinalIgnoreCase));
             if (!projectMatch.Equals(default(KeyValuePair<string, string>)))
             {
@@ -632,7 +667,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         return schema;
                     }
                     // Try case-insensitive match
-                    var match = options.SchemaMapping.FirstOrDefault(kvp => 
+                    var match = options.SchemaMapping.FirstOrDefault(kvp =>
                         string.Equals(kvp.Key, extensionProject, StringComparison.OrdinalIgnoreCase));
                     if (!match.Equals(default(KeyValuePair<string, string>)))
                     {
@@ -653,7 +688,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     return mappedSchema;
                 }
                 // Try case-insensitive match
-                var projectMatch = options.SchemaMapping.FirstOrDefault(kvp => 
+                var projectMatch = options.SchemaMapping.FirstOrDefault(kvp =>
                     string.Equals(kvp.Key, projectSchema.ProjectName, StringComparison.OrdinalIgnoreCase));
                 if (!projectMatch.Equals(default(KeyValuePair<string, string>)))
                 {
@@ -788,10 +823,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             }
 
             var tableName = DetermineTableName(baseName, schemaName, resourceSchema, options);
-            
+
             // For extension resources and descriptor resources using separate schemas, use the original schema as final schema
-            var finalSchemaName = ShouldUseSeparateSchema(schemaName, options) 
-                ? schemaName 
+            var finalSchemaName = ShouldUseSeparateSchema(schemaName, options)
+                ? schemaName
                 : options.ResolveSchemaName(null);
 
             return $"[{finalSchemaName}].[{tableName}]";
