@@ -442,7 +442,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var result = generator.GenerateDdlString(schema, false, false);
 
                 // Assert - Should contain foreign key reference to Student table
-                result.Should().Contain("REFERENCES [dms].[Student]");
+                result.Should().Contain("REFERENCES [dms].[testproject_Student]");
             }
 
             [Test]

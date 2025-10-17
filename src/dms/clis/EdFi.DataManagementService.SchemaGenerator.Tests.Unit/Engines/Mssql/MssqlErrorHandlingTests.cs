@@ -50,7 +50,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE [dms].[EmptyTable]");
+            sql.Should().Contain("CREATE TABLE [dms].[emptytableproject_EmptyTable]");
             sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
             sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
             sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
@@ -67,7 +67,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE [dms].[Table-With-Dashes]");
+            sql.Should().Contain("CREATE TABLE [dms].[specialcharsproject_Table-With-Dashes]");
         }
 
         [Test]
