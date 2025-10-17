@@ -46,7 +46,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         [TestCase("--help")]
         [TestCase("-h")]
         [TestCase("/?")]
-        public void Main_WithHelpFlag_ShouldDisplayHelpAndReturnZero(string helpFlag)
+        public async Task Main_WithHelpFlag_ShouldDisplayHelpAndReturnZero(string helpFlag)
         {
             // Arrange
             var args = new[] { helpFlag };
@@ -58,15 +58,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 Console.SetOut(stringWriter);
 
                 // Act
-                var result = Program.Main(args);
+                var result = await Program.Main(args);
 
                 // Assert
                 result.Should().Be(0);
                 var output = stringWriter.ToString();
                 output.Should().Contain("Ed-Fi Data Management Service - Schema Generator CLI");
-                output.Should().Contain("USAGE:");
-                output.Should().Contain("OPTIONS:");
-                output.Should().Contain("EXAMPLES:");
+                output.Should().Contain("Usage:");
+                output.Should().Contain("--input");
+                output.Should().Contain("--output");
             }
             finally
             {
@@ -75,7 +75,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         }
 
         [Test]
-        public void Main_WithMissingRequiredParameters_ShouldReturnOne()
+        public async Task Main_WithMissingRequiredParameters_ShouldReturnOne()
         {
             // Arrange
             var args = Array.Empty<string>();
@@ -87,7 +87,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 Console.SetError(stringWriter);
 
                 // Act
-                var result = Program.Main(args);
+                var result = await Program.Main(args);
 
                 // Assert
                 result.Should().Be(1);
@@ -101,7 +101,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         }
 
         [Test]
-        public void Main_WithInvalidInputFile_ShouldReturnTwo()
+        public async Task Main_WithInvalidInputFile_ShouldReturnTwo()
         {
             // Arrange
             var args = new[]
@@ -111,14 +111,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             };
 
             // Act
-            var result = Program.Main(args);
+            var result = await Program.Main(args);
 
             // Assert
             result.Should().Be(2);
         }
 
         [Test]
-        public void Main_WithValidParametersAllDatabases_ShouldReturnZero()
+        public async Task Main_WithValidParametersAllDatabases_ShouldReturnZero()
         {
             // Arrange
             var apiSchema = CreateValidApiSchema();
@@ -139,14 +139,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             };
 
             // Act
-            var result = Program.Main(args);
+            var result = await Program.Main(args);
 
             // Assert
             result.Should().Be(0);
         }
 
         [Test]
-        public void Main_WithValidParametersPostgreSQLOnly_ShouldReturnZero()
+        public async Task Main_WithValidParametersPostgreSQLOnly_ShouldReturnZero()
         {
             // Arrange
             var apiSchema = CreateValidApiSchema();
@@ -168,14 +168,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             };
 
             // Act
-            var result = Program.Main(args);
+            var result = await Program.Main(args);
 
             // Assert
             result.Should().Be(0);
         }
 
         [Test]
-        public void Main_WithValidParametersSqlServerOnly_ShouldReturnZero()
+        public async Task Main_WithValidParametersSqlServerOnly_ShouldReturnZero()
         {
             // Arrange
             var apiSchema = CreateValidApiSchema();
@@ -197,14 +197,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             };
 
             // Act
-            var result = Program.Main(args);
+            var result = await Program.Main(args);
 
             // Assert
             result.Should().Be(0);
         }
 
         [Test]
-        public void Main_WithExtensionsFlag_ShouldReturnZero()
+        public async Task Main_WithExtensionsFlag_ShouldReturnZero()
         {
             // Arrange
             var apiSchema = CreateValidApiSchema();
@@ -226,14 +226,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             };
 
             // Act
-            var result = Program.Main(args);
+            var result = await Program.Main(args);
 
             // Assert
             result.Should().Be(0);
         }
 
         [Test]
-        public void Main_WithSkipUnionViewsFlag_ShouldReturnZero()
+        public async Task Main_WithSkipUnionViewsFlag_ShouldReturnZero()
         {
             // Arrange
             var apiSchema = CreateValidApiSchema();
@@ -255,14 +255,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             };
 
             // Act
-            var result = Program.Main(args);
+            var result = await Program.Main(args);
 
             // Assert
             result.Should().Be(0);
         }
 
         [Test]
-        public void Main_WithAllShortFlags_ShouldReturnZero()
+        public async Task Main_WithAllShortFlags_ShouldReturnZero()
         {
             // Arrange
             var apiSchema = CreateValidApiSchema();
@@ -286,14 +286,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             };
 
             // Act
-            var result = Program.Main(args);
+            var result = await Program.Main(args);
 
             // Assert
             result.Should().Be(0);
         }
 
         [Test]
-        public void Main_WithDatabaseFlag_ShouldReturnZero()
+        public async Task Main_WithDatabaseFlag_ShouldReturnZero()
         {
             // Arrange
             var apiSchema = CreateValidApiSchema();
@@ -315,14 +315,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             };
 
             // Act
-            var result = Program.Main(args);
+            var result = await Program.Main(args);
 
             // Assert
             result.Should().Be(0);
         }
 
         [Test]
-        public void Main_WithIncompleteArguments_ShouldIgnoreIncompleteArguments()
+        public async Task Main_WithIncompleteArguments_ShouldIgnoreIncompleteArguments()
         {
             // Arrange
             var args = new[]
@@ -338,7 +338,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 Console.SetError(stringWriter);
 
                 // Act
-                var result = Program.Main(args);
+                var result = await Program.Main(args);
 
                 // Assert
                 result.Should().Be(1);
@@ -352,7 +352,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         }
 
         [Test]
-        public void Main_WithWhitespaceOnlyInputPath_ShouldReturnOne()
+        public async Task Main_WithWhitespaceOnlyInputPath_ShouldReturnOne()
         {
             // Arrange
             var args = new[]
@@ -369,7 +369,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 Console.SetError(stringWriter);
 
                 // Act
-                var result = Program.Main(args);
+                var result = await Program.Main(args);
 
                 // Assert
                 result.Should().Be(1);
@@ -383,7 +383,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         }
 
         [Test]
-        public void Main_WithWhitespaceOnlyOutputPath_ShouldReturnOne()
+        public async Task Main_WithWhitespaceOnlyOutputPath_ShouldReturnOne()
         {
             // Arrange
             var apiSchema = CreateValidApiSchema();
@@ -408,7 +408,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 Console.SetError(stringWriter);
 
                 // Act
-                var result = Program.Main(args);
+                var result = await Program.Main(args);
 
                 // Assert
                 result.Should().Be(1);
@@ -422,7 +422,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         }
 
         [Test]
-        public void Main_WithInvalidJson_ShouldReturnTwo()
+        public async Task Main_WithInvalidJson_ShouldReturnTwo()
         {
             // Arrange
             var inputFile = Path.Combine(_tempDirectory, "invalid-schema.json");
@@ -438,7 +438,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             };
 
             // Act
-            var result = Program.Main(args);
+            var result = await Program.Main(args);
 
             // Assert
             result.Should().Be(2);

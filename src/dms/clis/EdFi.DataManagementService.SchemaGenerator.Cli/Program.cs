@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Cli.Services;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
@@ -66,14 +67,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     case "-i":
                         if (i + 1 < args.Length)
                         {
-                            inputFilePath = args[++i];
+                            inputFilePath = args[++i]?.Trim();
+                            if (string.IsNullOrWhiteSpace(inputFilePath))
+                            {
+                                inputFilePath = null; // Treat whitespace-only as null
+                            }
                         }
                         break;
                     case "--output":
                     case "-o":
                         if (i + 1 < args.Length)
                         {
-                            outputDirectory = args[++i];
+                            outputDirectory = args[++i]?.Trim();
+                            if (string.IsNullOrWhiteSpace(outputDirectory))
+                            {
+                                outputDirectory = null; // Treat whitespace-only as null
+                            }
                         }
                         break;
                     case "--provider":
@@ -117,15 +126,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                 return 1;
             }
 
-            if (string.IsNullOrWhiteSpace(inputFilePath) && string.IsNullOrWhiteSpace(schemaUrl))
+            // Early validation: check if both input sources and output directory are provided
+            if ((string.IsNullOrWhiteSpace(inputFilePath) && string.IsNullOrWhiteSpace(schemaUrl)) || string.IsNullOrWhiteSpace(outputDirectory))
             {
-                // Set default InputFilePath to a temporary file in the executable's directory
-                string executableDirectory = AppContext.BaseDirectory;
-                string tempFileName = $"{DateTime.Now:yyyyMMdd_HHmmss}_apischema.json";
-                inputFilePath = Path.Combine(executableDirectory, tempFileName);
-                logger.LogInformation("Defaulting InputFilePath to temporary file: {TempFile}", inputFilePath);
+                logger.LogError("InputFilePath and OutputDirectory are required. Use --help for usage information.");
+                Console.Error.WriteLine("\nError: InputFilePath and OutputDirectory are required.");
+                Console.Error.WriteLine("Use --help or /h for usage information.");
+                return 1;
             }
-            else if (string.IsNullOrWhiteSpace(inputFilePath) && !string.IsNullOrWhiteSpace(schemaUrl))
+
+            if (!string.IsNullOrWhiteSpace(inputFilePath) && !string.IsNullOrWhiteSpace(schemaUrl))
+            {
+                logger.LogError("Both --input and --url cannot be specified. Use one or the other.");
+                Console.Error.WriteLine("Error: Both --input and --url cannot be specified. Use one or the other.");
+                return 1;
+            }
+
+            if (string.IsNullOrWhiteSpace(inputFilePath) && !string.IsNullOrWhiteSpace(schemaUrl))
             {
                 // Create a temporary file path for URL downloads
                 string executableDirectory = AppContext.BaseDirectory;
@@ -165,20 +182,43 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     }
                 }
 
-                if (string.IsNullOrWhiteSpace(inputFilePath) || string.IsNullOrWhiteSpace(outputDirectory))
-                {
-                    logger.LogError("InputFilePath and OutputDirectory are required. Use --help for usage information.");
-                    Console.Error.WriteLine("\nError: InputFilePath and OutputDirectory are required.");
-                    Console.Error.WriteLine("Use --help or /h for usage information.");
-                    return 1;
-                }
-
                 logger.LogInformation("Starting DDL generation. Input: {Input}, Output: {Output}, Provider: {Provider}, Extensions: {Extensions}, SkipUnionViews: {SkipUnionViews}, UsePrefixedTableNames: {UsePrefixedTableNames}",
                     inputFilePath, outputDirectory, databaseProvider, includeExtensions, skipUnionViews, usePrefixedTableNames);
 
                 var loader = serviceProvider.GetRequiredService<ApiSchemaLoader>();
                 var strategies = serviceProvider.GetServices<IDdlGeneratorStrategy>().ToList();
-                var apiSchema = loader.Load(inputFilePath);
+
+                ApiSchema apiSchema;
+                try
+                {
+                    // At this point inputFilePath should not be null due to earlier validation, but add safety check
+                    if (string.IsNullOrWhiteSpace(inputFilePath))
+                    {
+                        logger.LogError("Input file path is null or empty");
+                        Console.Error.WriteLine("Error: Input file path is required");
+                        return 1;
+                    }
+
+                    apiSchema = loader.Load(inputFilePath!);
+                }
+                catch (FileNotFoundException)
+                {
+                    logger.LogError("ApiSchema file not found: {InputFile}", inputFilePath);
+                    Console.Error.WriteLine("Error: Input file not found: {0}", inputFilePath);
+                    return 2;
+                }
+                catch (JsonException ex)
+                {
+                    logger.LogError(ex, "Invalid JSON in ApiSchema file: {InputFile}", inputFilePath);
+                    Console.Error.WriteLine("Error: Invalid JSON in input file: {0}", ex.Message);
+                    return 2;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to load ApiSchema file: {InputFile}", inputFilePath);
+                    Console.Error.WriteLine("Error: Failed to load input file: {0}", ex.Message);
+                    return 2;
+                }
 
                 var options = new DdlGenerationOptions
                 {
