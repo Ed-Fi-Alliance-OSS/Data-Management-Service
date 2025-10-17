@@ -104,7 +104,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Assert
             options.DescriptorSchema.Should().Be("dms");
             options.SchemaMapping.Should().NotBeNull();
-            options.SchemaMapping.Should().HaveCount(4); // EdFi, Sample, TPDM, Extensions
+            options.SchemaMapping.Should().HaveCount(5); // EdFi, Sample, TPDM, Extensions
             options.DefaultSchema.Should().Be("dms");
         }
 
