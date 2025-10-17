@@ -51,7 +51,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.EmptyTable");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.emptytableproject_EmptyTable");
             sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
             sql.Should().Contain("Document_Id BIGINT NOT NULL");
             sql.Should().Contain("Document_PartitionKey SMALLINT NOT NULL");
@@ -68,7 +68,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.Table-With-Dashes");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.specialcharsproject_Table-With-Dashes");
         }
 
         [Test]
