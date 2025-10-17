@@ -21,6 +21,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
         public bool SkipUnionViews { get; set; } = false;
 
         /// <summary>
+        /// Whether to use prefixed table names instead of separate schemas.
+        /// When true, generates tables as dms.{schema}_{table} instead of {schema}.{table}.
+        /// </summary>
+        public bool UsePrefixedTableNames { get; set; } = true;
+
+        /// <summary>
         /// Whether to generate natural key unique constraints.
         /// </summary>
         public bool GenerateNaturalKeyConstraints { get; set; } = true;
@@ -64,6 +70,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
         /// <returns>The database schema name to use.</returns>
         public string ResolveSchemaName(string? projectName)
         {
+            if (UsePrefixedTableNames)
+            {
+                // When using prefixed table names, always use the default schema (dms)
+                return DefaultSchema;
+            }
+
             if (string.IsNullOrEmpty(projectName))
             {
                 return DefaultSchema;
@@ -92,6 +104,51 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
             }
 
             return DefaultSchema;
+        }
+
+        /// <summary>
+        /// Resolves the table name prefix for a given project name.
+        /// Used when UsePrefixedTableNames is true.
+        /// </summary>
+        /// <param name="projectName">The project name from ApiSchema.</param>
+        /// <returns>The prefix to use for table names.</returns>
+        public string ResolveTablePrefix(string? projectName)
+        {
+            if (!UsePrefixedTableNames)
+            {
+                return string.Empty;
+            }
+
+            if (string.IsNullOrEmpty(projectName))
+            {
+                return string.Empty;
+            }
+
+            // Try exact match first
+            if (SchemaMapping.TryGetValue(projectName, out var schema))
+            {
+                return schema + "_";
+            }
+
+            // Try case-insensitive match
+            var key = SchemaMapping.Keys.FirstOrDefault(k =>
+                string.Equals(k, projectName, StringComparison.OrdinalIgnoreCase));
+
+            if (key != null)
+            {
+                return SchemaMapping[key] + "_";
+            }
+
+            // Check if it's an extension project (contains "Extension" or ends with "Ext")
+            if (projectName.Contains("Extension", StringComparison.OrdinalIgnoreCase) ||
+                projectName.EndsWith("Ext", StringComparison.OrdinalIgnoreCase))
+            {
+                var extensionSchema = SchemaMapping.GetValueOrDefault("Extensions", "extensions");
+                return extensionSchema + "_";
+            }
+
+            // Use lowercase project name as prefix
+            return projectName.ToLowerInvariant() + "_";
         }
     }
 }

@@ -27,7 +27,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.TestTable");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.testproject_TestTable");
             sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
             sql.Should().Contain("Document_Id BIGINT NOT NULL");
             sql.Should().Contain("Document_PartitionKey SMALLINT NOT NULL");
@@ -116,11 +116,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.School");
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.LocalEducationAgency");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.testproject_School");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.testproject_LocalEducationAgency");
             sql.Should().Contain("EducationOrganizationReference_Id BIGINT NOT NULL");
             sql.Should().Contain("CONSTRAINT FK_School_EducationOrganizationReference");
-            sql.Should().Contain("REFERENCES dms.EducationOrganizationReference(Id) ON DELETE CASCADE");
+            sql.Should().Contain("REFERENCES dms.testproject_EducationOrganizationReference(Id) ON DELETE CASCADE");
         }
 
         [Test]
@@ -150,7 +150,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.TestTable");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.testproject_TestTable");
         }
 
         [Test]
@@ -165,7 +165,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             // Assert
             sql.Should().Contain("CREATE INDEX IF NOT EXISTS IX_TestTable_Document");
-            sql.Should().Contain("ON dms.TestTable(Document_Id, Document_PartitionKey)");
+            sql.Should().Contain("ON dms.testproject_TestTable(Document_Id, Document_PartitionKey)");
         }
 
         [Test]
@@ -342,6 +342,80 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                         new ColumnMetadata { ColumnName = "StringField", ColumnType = "string", MaxLength = "100", IsRequired = true },
                                         new ColumnMetadata { ColumnName = "BoolField", ColumnType = "bool", IsRequired = false },
                                         new ColumnMetadata { ColumnName = "DecimalField", ColumnType = "decimal", Precision = "10", Scale = "2", IsRequired = false }
+                                    ],
+                                    ChildTables = []
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        [Test]
+        public void UsesPrefixedTableNamesByDefault()
+        {
+            // Arrange
+            var schema = GetEdFiSchema();
+            var generator = new PgsqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions
+            {
+                UsePrefixedTableNames = true // Default behavior
+            };
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, options);
+
+            // Assert
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_School");
+            sql.Should().NotContain("CREATE SCHEMA IF NOT EXISTS edfi");
+        }
+
+        [Test]
+        public void UsesSeparateSchemasWhenPrefixedDisabled()
+        {
+            // Arrange
+            var schema = GetEdFiSchema();
+            var generator = new PgsqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions
+            {
+                UsePrefixedTableNames = false
+            };
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, options);
+
+            // Assert
+            sql.Should().Contain("CREATE SCHEMA IF NOT EXISTS edfi");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS edfi.School");
+            sql.Should().NotContain("edfi_School");
+        }
+
+        private static ApiSchema GetEdFiSchema()
+        {
+            return new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "5.0.0",
+                    IsExtensionProject = false,
+                    Description = "Ed-Fi core schema.",
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["School"] = new ResourceSchema
+                        {
+                            ResourceName = "School",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "School",
+                                    JsonPath = "$.School",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
                                     ],
                                     ChildTables = []
                                 }

@@ -148,10 +148,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     continue;
                 }
 
-                var schemaName = DetermineSchemaName(apiSchema.ProjectSchema, resourceSchema, options);
+            {
+                var originalSchemaName = GetOriginalSchemaName(apiSchema.ProjectSchema, resourceSchema, options);
 
                 // Recursively generate DDL for root table and all child tables
-                GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, null, null, schemaName, options);
+                GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, null, null, originalSchemaName, options, resourceSchema);
+            }
             }
 
             // Generate union views for abstract resources unless skipped
@@ -199,7 +201,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
                                     var discriminator = table.DiscriminatorValue ?? subclassType;
                                     var selectCols = string.Join(", ", columns);
-                                    selectStatements.Add($"SELECT {selectCols}, '{discriminator}' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.{PgsqlNamingHelper.MakePgsqlIdentifier(table.BaseName)}");
+                                    var tableRef = BuildTableReference(table.BaseName, apiSchema.ProjectSchema, subclassSchema, options);
+                                    selectStatements.Add($"SELECT {selectCols}, '{discriminator}' AS Discriminator, Document_Id, Document_PartitionKey FROM {tableRef}");
                                 }
                             }
                             var viewData = new { viewName = unionViewName, selectStatements };
@@ -240,8 +243,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
                                 var selectCols = string.Join(", ", columns);
                                 var discriminatorValue = childTable.DiscriminatorValue;
-                                var tableName = PgsqlNamingHelper.MakePgsqlIdentifier(childTable.BaseName);
-                                selectStatements.Add($"SELECT {selectCols}, '{discriminatorValue}' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.{tableName}");
+                                var tableRef = BuildTableReference(childTable.BaseName, apiSchema.ProjectSchema, resourceSchema, options);
+                                selectStatements.Add($"SELECT {selectCols}, '{discriminatorValue}' AS Discriminator, Document_Id, Document_PartitionKey FROM {tableRef}");
                             }
 
                             if (selectStatements.Any())
@@ -263,10 +266,17 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             StringBuilder sb,
             string? parentTableName,
             List<string>? parentPkColumns,
-            string schemaName,
-            DdlGenerationOptions options)
+            string originalSchemaName,
+            DdlGenerationOptions options,
+            ResourceSchema? resourceSchema = null)
         {
-            var tableName = PgsqlNamingHelper.MakePgsqlIdentifier(table.BaseName);
+            var tableName = DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options);
+            
+            // For extension resources and descriptor resources using separate schemas, use the original schema as final schema
+            var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema) 
+                ? originalSchemaName 
+                : options.ResolveSchemaName(null);
+                
             var isRootTable = parentTableName == null;
 
             // Track cross-resource references for FK and index generation
@@ -320,7 +330,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 {
                     constraintName = $"FK_{table.BaseName}_{parentTableName}",
                     column = parentFkColumn,
-                    parentTable = $"{schemaName}.{PgsqlNamingHelper.MakePgsqlIdentifier(parentTableName)}",
+                    parentTable = $"{finalSchemaName}.{DetermineTableName(parentTableName, originalSchemaName, resourceSchema, options)}",
                     parentColumn = "Id", // Always reference surrogate key
                     cascade = true
                 });
@@ -333,7 +343,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 {
                     constraintName = $"FK_{table.BaseName}_{referencedResource}",
                     column = PgsqlNamingHelper.MakePgsqlIdentifier(columnName),
-                    parentTable = $"{schemaName}.{PgsqlNamingHelper.MakePgsqlIdentifier(referencedResource)}",
+                    parentTable = $"{finalSchemaName}.{DetermineTableName(referencedResource, originalSchemaName, null, options)}",
                     parentColumn = "Id",
                     cascade = false // Use RESTRICT for cross-resource FKs to prevent accidental data loss
                 });
@@ -344,7 +354,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             {
                 constraintName = $"FK_{table.BaseName}_Document",
                 column = "(Document_Id, Document_PartitionKey)",
-                parentTable = $"{schemaName}.Document",
+                parentTable = $"{finalSchemaName}.Document",
                 parentColumn = "(Id, DocumentPartitionKey)",
                 cascade = true
             });
@@ -428,7 +438,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
             var data = new
             {
-                schemaName,
+                schemaName = finalSchemaName,
                 tableName,
                 hasId = true,
                 id = "Id",
@@ -446,7 +456,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             // Recursively process child tables
             foreach (var childTable in table.ChildTables)
             {
-                GenerateTableDdl(childTable, template, sb, table.BaseName, null, schemaName, options);
+                GenerateTableDdl(childTable, template, sb, table.BaseName, null, originalSchemaName, options, resourceSchema);
             }
         }
 
@@ -524,7 +534,69 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
         }
 
         /// <summary>
-        /// Determines the appropriate database schema name for a resource.
+        /// Determines the original schema name for a resource without "dms" resolution.
+        /// This is used for table name prefixing when UsePrefixedTableNames is true.
+        /// </summary>
+        /// <param name="projectSchema">The project schema containing the resource.</param>
+        /// <param name="resourceSchema">The resource schema being processed.</param>
+        /// <param name="options">DDL generation options containing schema mappings.</param>
+        /// <returns>The original database schema name (before dms resolution).</returns>
+        private string GetOriginalSchemaName(ProjectSchema projectSchema, ResourceSchema resourceSchema, DdlGenerationOptions options)
+        {
+            // Handle descriptor resources
+            if (IsDescriptorResource(resourceSchema))
+            {
+                // If descriptor schema is different from default schema, don't use prefixed table names
+                if (options.DescriptorSchema != options.DefaultSchema)
+                {
+                    // Return a special marker that will be handled in DetermineTableName
+                    return options.DescriptorSchema;
+                }
+                return "descriptors";
+            }
+
+            // Handle extension resources - they use extension schema mapping
+            if (resourceSchema.FlatteningMetadata?.Table?.IsExtensionTable == true)
+            {
+                // Try to extract the extension project name from resource
+                var extensionProject = ExtractExtensionProjectName(resourceSchema.ResourceName);
+                if (!string.IsNullOrEmpty(extensionProject))
+                {
+                    // Get the raw schema mapping without dms resolution
+                    if (options.SchemaMapping.TryGetValue(extensionProject, out var schema))
+                    {
+                        return schema;
+                    }
+                    // Try case-insensitive match
+                    var match = options.SchemaMapping.FirstOrDefault(kvp => 
+                        string.Equals(kvp.Key, extensionProject, StringComparison.OrdinalIgnoreCase));
+                    if (!match.Equals(default(KeyValuePair<string, string>)))
+                    {
+                        return match.Value;
+                    }
+                    return extensionProject.ToLowerInvariant();
+                }
+                // Return mapped Extensions schema or default "extensions"
+                return options.SchemaMapping.ContainsKey("Extensions") ? options.SchemaMapping["Extensions"] : "extensions";
+            }
+
+            // Use project name to determine original schema
+            if (options.SchemaMapping.TryGetValue(projectSchema.ProjectName, out var projectSchema1))
+            {
+                return projectSchema1;
+            }
+            // Try case-insensitive match
+            var projectMatch = options.SchemaMapping.FirstOrDefault(kvp => 
+                string.Equals(kvp.Key, projectSchema.ProjectName, StringComparison.OrdinalIgnoreCase));
+            if (!projectMatch.Equals(default(KeyValuePair<string, string>)))
+            {
+                return projectMatch.Value;
+            }
+            return projectSchema.ProjectName.ToLowerInvariant();
+        }
+
+        /// <summary>
+        /// Determines the database schema name for a resource.
         /// </summary>
         /// <param name="projectSchema">The project schema containing the resource.</param>
         /// <param name="resourceSchema">The resource schema being processed.</param>
@@ -535,22 +607,59 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             // Handle descriptor resources - they go to descriptor schema
             if (IsDescriptorResource(resourceSchema))
             {
-                return options.DescriptorSchema;
+                // If descriptor schema is different from default schema, use separate schema
+                if (options.DescriptorSchema != options.DefaultSchema)
+                {
+                    return options.DescriptorSchema;
+                }
+                // Otherwise use prefixed table naming with default schema
+                return options.ResolveSchemaName(options.DescriptorSchema);
             }
 
-            // Handle extension resources - they use extension schema mapping
+            // Handle extension resources - they always use separate schemas (no prefixed table names)
             if (resourceSchema.FlatteningMetadata?.Table?.IsExtensionTable == true)
             {
                 // Try to extract the extension project name from resource
                 var extensionProject = ExtractExtensionProjectName(resourceSchema.ResourceName);
                 if (!string.IsNullOrEmpty(extensionProject))
                 {
-                    return options.ResolveSchemaName(extensionProject);
+                    // Get the raw schema mapping without dms resolution
+                    if (options.SchemaMapping.TryGetValue(extensionProject, out var schema))
+                    {
+                        return schema;
+                    }
+                    // Try case-insensitive match
+                    var match = options.SchemaMapping.FirstOrDefault(kvp => 
+                        string.Equals(kvp.Key, extensionProject, StringComparison.OrdinalIgnoreCase));
+                    if (!match.Equals(default(KeyValuePair<string, string>)))
+                    {
+                        return match.Value;
+                    }
+                    return extensionProject.ToLowerInvariant();
                 }
-                return options.ResolveSchemaName("Extensions");
+                // Fall back to extensions schema
+                return options.SchemaMapping.ContainsKey("Extensions") ? options.SchemaMapping["Extensions"] : "extensions";
             }
 
-            // Use project name to determine schema
+            // Use project name to determine schema - apply prefixed table logic based on options
+            if (!options.UsePrefixedTableNames)
+            {
+                // When not using prefixed table names, use the original schema mapping
+                if (options.SchemaMapping.TryGetValue(projectSchema.ProjectName, out var mappedSchema))
+                {
+                    return mappedSchema;
+                }
+                // Try case-insensitive match
+                var projectMatch = options.SchemaMapping.FirstOrDefault(kvp => 
+                    string.Equals(kvp.Key, projectSchema.ProjectName, StringComparison.OrdinalIgnoreCase));
+                if (!projectMatch.Equals(default(KeyValuePair<string, string>)))
+                {
+                    return projectMatch.Value;
+                }
+                return projectSchema.ProjectName.ToLowerInvariant();
+            }
+
+            // Use dms schema for prefixed table names
             return options.ResolveSchemaName(projectSchema.ProjectName);
         }
 
@@ -562,6 +671,36 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             // Check if resource name ends with "Descriptor" or has descriptor-like patterns
             return resourceSchema.ResourceName.EndsWith("Descriptor", StringComparison.OrdinalIgnoreCase) ||
                    resourceSchema.ResourceName.EndsWith("Type", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Determines if a schema should use separate schemas instead of prefixed table names.
+        /// </summary>
+        /// <param name="originalSchemaName">The original schema name.</param>
+        /// <param name="options">DDL generation options.</param>
+        /// <param name="resourceSchema">The resource schema (optional, for extension detection).</param>
+        /// <returns>True if should use separate schema; otherwise, false.</returns>
+        private bool ShouldUseSeparateSchema(string originalSchemaName, DdlGenerationOptions options, ResourceSchema? resourceSchema = null)
+        {
+            // Extension resources always use separate schemas (if we have resource schema info)
+            if (resourceSchema?.FlatteningMetadata?.Table?.IsExtensionTable == true)
+            {
+                return true;
+            }
+
+            // Descriptor resources using separate schemas
+            if (originalSchemaName == options.DescriptorSchema && originalSchemaName != options.DefaultSchema)
+            {
+                return true;
+            }
+
+            // When not using prefixed table names, use separate schemas for all non-default schemas
+            if (!options.UsePrefixedTableNames && originalSchemaName != options.DefaultSchema)
+            {
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -591,6 +730,64 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             }
 
             return string.Empty;
+        }
+
+        /// <summary>
+        /// Determines the final table name including any necessary prefixes.
+        /// </summary>
+        /// <param name="baseName">The base table name from metadata.</param>
+        /// <param name="originalSchemaName">The original schema name before prefix resolution.</param>
+        /// <param name="resourceSchema">The resource schema context (for extension detection).</param>
+        /// <param name="options">DDL generation options.</param>
+        /// <returns>The final table name to use in DDL.</returns>
+        private string DetermineTableName(string baseName, string originalSchemaName, ResourceSchema? resourceSchema, DdlGenerationOptions options)
+        {
+            // Special case: if originalSchemaName equals DescriptorSchema and it's different from DefaultSchema,
+            // don't use prefixed table names (descriptor resources use separate schemas)
+            if (originalSchemaName == options.DescriptorSchema && originalSchemaName != options.DefaultSchema)
+            {
+                return PgsqlNamingHelper.MakePgsqlIdentifier(baseName);
+            }
+
+            // Extension resources that use separate schemas should use original table name
+            if (resourceSchema?.FlatteningMetadata?.Table?.IsExtensionTable == true)
+            {
+                return PgsqlNamingHelper.MakePgsqlIdentifier(baseName);
+            }
+
+            if (options.UsePrefixedTableNames && originalSchemaName != options.DefaultSchema)
+            {
+                // Use original schema name as prefix: edfi_School, tpdm_Student, etc.
+                return PgsqlNamingHelper.MakePgsqlIdentifier($"{originalSchemaName}_{baseName}");
+            }
+
+            return PgsqlNamingHelper.MakePgsqlIdentifier(baseName);
+        }
+
+        /// <summary>
+        /// Builds a full table reference including schema and proper table name.
+        /// </summary>
+        /// <param name="baseName">The base table name from metadata.</param>
+        /// <param name="projectSchema">The project schema context.</param>
+        /// <param name="resourceSchema">The resource schema context.</param>
+        /// <param name="options">DDL generation options.</param>
+        /// <returns>The full table reference (schema.tablename).</returns>
+        private string BuildTableReference(string baseName, ProjectSchema projectSchema, ResourceSchema? resourceSchema, DdlGenerationOptions options)
+        {
+            string schemaName;
+            if (resourceSchema != null)
+            {
+                schemaName = DetermineSchemaName(projectSchema, resourceSchema, options);
+            }
+            else
+            {
+                schemaName = options.ResolveSchemaName(projectSchema.ProjectName);
+            }
+
+            var tableName = DetermineTableName(baseName, schemaName, resourceSchema, options);
+            var finalSchemaName = options.ResolveSchemaName(null); // Always use the resolved schema (dms when prefixed)
+
+            return $"{finalSchemaName}.{tableName}";
         }
     }
 }

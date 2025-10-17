@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveSchemaName_WithMappingExists_ReturnsMapping()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
             options.SchemaMapping["TestProject"] = "test_schema";
 
             // Act
@@ -71,7 +71,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveSchemaName_WithMixedCaseMapping_ReturnsExactMapping()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
             options.SchemaMapping["TestProject"] = "Custom_Schema_Name";
 
             // Act
@@ -85,14 +85,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveSchemaName_CaseInsensitiveMapping_ReturnsMappingWhenCaseMatches()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
             options.SchemaMapping["testproject"] = "lowercase_schema";
 
             // Act
             var result = options.ResolveSchemaName("TestProject");
 
             // Assert
-            result.Should().Be("lowercase_schema"); // Case insensitive match
+            result.Should().Be("lowercase_schema");
         }
 
         [Test]
@@ -112,7 +112,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void SchemaMapping_CanAddMultipleMappings()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
             options.SchemaMapping["Project1"] = "schema1";
@@ -130,7 +130,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void SchemaMapping_CanOverrideExistingMapping()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
             options.SchemaMapping["TestProject"] = "original_schema";
 
             // Act
@@ -158,26 +158,26 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveSchemaName_ExtensionProject_ReturnsExtensionsSchema()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
-            var result = options.ResolveSchemaName("TestExtension");
+            var result = options.ResolveSchemaName("MyExtension");
 
             // Assert
-            result.Should().Be("extensions"); // From default SchemaMapping
+            result.Should().Be("extensions");
         }
 
         [Test]
         public void ResolveSchemaName_ExtProjectEnding_ReturnsExtensionsSchema()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
-            var result = options.ResolveSchemaName("TestExt");
+            var result = options.ResolveSchemaName("SomeExt");
 
             // Assert
-            result.Should().Be("extensions"); // From default SchemaMapping
+            result.Should().Be("extensions");
         }
 
         [Test]
@@ -200,7 +200,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveSchemaName_EdFiProject_ReturnsEdFiSchema()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
             var result = options.ResolveSchemaName("EdFi");
@@ -213,7 +213,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveSchemaName_TPDMProject_ReturnsTPDMSchema()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
             var result = options.ResolveSchemaName("TPDM");
@@ -226,7 +226,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveSchemaName_SampleProject_ReturnsSampleSchema()
         {
             // Arrange
-            var options = new DdlGenerationOptions();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
             var result = options.ResolveSchemaName("Sample");
