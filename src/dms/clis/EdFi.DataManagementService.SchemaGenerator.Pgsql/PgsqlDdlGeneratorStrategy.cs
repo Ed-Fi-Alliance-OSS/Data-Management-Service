@@ -148,12 +148,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     continue;
                 }
 
-            {
-                var originalSchemaName = GetOriginalSchemaName(apiSchema.ProjectSchema, resourceSchema, options);
+                {
+                    var originalSchemaName = GetOriginalSchemaName(apiSchema.ProjectSchema, resourceSchema, options);
 
-                // Recursively generate DDL for root table and all child tables
-                GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, null, null, originalSchemaName, options, resourceSchema);
-            }
+                    // Recursively generate DDL for root table and all child tables
+                    GenerateTableDdl(resourceSchema.FlatteningMetadata.Table, template, sb, null, null, originalSchemaName, options, resourceSchema);
+                }
             }
 
             // Generate union views for abstract resources unless skipped

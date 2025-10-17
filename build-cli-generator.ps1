@@ -20,6 +20,8 @@
         * Run: runs the Schema Generator CLI with provided arguments
         * Package: builds pre-release and release NuGet packages for the Schema Generator CLI.
         * Push: uploads a NuGet package to the NuGet feed.
+        * DockerBuild: builds a Docker image from source code
+        * DockerRun: runs the Docker image that was built from source code
 
     .EXAMPLE
         .\build-cli-generator.ps1 build -Configuration Release -Version "2.0"
@@ -41,12 +43,27 @@
         .\build-cli-generator.ps1 package -Version "1.0.0"
 
         Creates a NuGet package for the Schema Generator CLI.
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 dockerbuild
+
+        Builds a Docker image for the Schema Generator CLI.
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 dockerrun -InputFile "C:\temp\schema.json" -OutputFolder "C:\temp\output"
+
+        Runs the Schema Generator CLI Docker image with an input file and output folder.
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 dockerrun -SchemaUrl "https://example.com/schema.json" -OutputFolder "C:\temp\output"
+
+        Runs the Schema Generator CLI Docker image with a schema URL and output folder.
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Restore", "Build", "UnitTest", "Coverage", "Run", "Package", "Push")]
+    [ValidateSet("Clean", "Restore", "Build", "UnitTest", "Coverage", "Run", "Package", "Push", "DockerBuild", "DockerRun")]
     $Command = "Build",
 
     # Assembly and package version number for the Schema Generator CLI. The
@@ -83,7 +100,19 @@ param(
 
     # Arguments to pass to the Schema Generator CLI when using the Run command
     [string[]]
-    $CliArguments = @()
+    $CliArguments = @(),
+
+    # Path to the input file for DockerRun command
+    [string]
+    $InputFile,
+
+    # Path to the output folder for DockerRun command
+    [string]
+    $OutputFolder,
+
+    # URL to fetch the schema JSON for DockerRun command
+    [string]
+    $SchemaUrl
 )
 
 $solutionRoot = "$PSScriptRoot/src/dms/clis"
@@ -360,6 +389,57 @@ function Invoke-Run {
     Invoke-Step { RunSchemaGenerator -Arguments $CliArguments }
 }
 
+$dockerTagBase = "local"
+$dockerTagCLI = "$($dockerTagBase)/cli-generator"
+
+function DockerBuild {
+    Invoke-Execute {
+        Push-Location eng/docker-compose/
+        try {
+            Write-Info "Building Docker image for Schema Generator CLI..."
+            docker-compose -f cli-generator.yml build
+            Write-Info "Docker image built successfully: $dockerTagCLI"
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
+function DockerRun {
+    Invoke-Execute {
+        Push-Location eng/docker-compose/
+        try {
+            Write-Info "Running Schema Generator CLI using docker-compose script..."
+            
+            # Build parameters hashtable for the run-cli-generator.ps1 script
+            $scriptParams = @{}
+            
+            if (-not [string]::IsNullOrWhiteSpace($InputFile)) {
+                $scriptParams['InputFile'] = $InputFile
+            }
+            
+            if (-not [string]::IsNullOrWhiteSpace($SchemaUrl)) {
+                $scriptParams['SchemaUrl'] = $SchemaUrl
+            }
+            
+            if (-not [string]::IsNullOrWhiteSpace($OutputFolder)) {
+                $scriptParams['OutputFolder'] = $OutputFolder
+            }
+            
+            if ($CliArguments.Count -gt 0) {
+                $scriptParams['CliArguments'] = $CliArguments
+            }
+            
+            # Call the existing run-cli-generator.ps1 script with the parameters
+            & .\run-cli-generator.ps1 @scriptParams
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
 Invoke-Main {
     if ($IsLocalBuild) {
         $nugetExePath = Install-NugetCli
@@ -382,6 +462,8 @@ Invoke-Main {
             Invoke-BuildPackage
         }
         Push { Invoke-PushPackage }
+        DockerBuild { Invoke-Step { DockerBuild } }
+        DockerRun { Invoke-Step { DockerRun } }
         default { throw "Command '$Command' is not recognized" }
     }
 }
