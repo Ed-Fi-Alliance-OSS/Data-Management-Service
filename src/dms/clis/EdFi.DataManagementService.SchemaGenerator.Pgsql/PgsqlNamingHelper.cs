@@ -24,6 +24,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
         /// <returns>A valid PostgreSQL identifier, truncated and suffixed with a hash if necessary.</returns>
         public static string MakePgsqlIdentifier(string name, int maxLength = 63, int hashLength = 8)
         {
+            // Sanitize PostgreSQL identifiers by removing hyphens (which require quoting)
+            name = name.Replace("-", "");
+
             if (name.Length <= maxLength)
             {
                 return name;

@@ -48,6 +48,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
         public Dictionary<string, string> SchemaMapping { get; set; } = new()
         {
             ["EdFi"] = "edfi",
+            ["ed-fi"] = "edfi",  // Handle both variations of Ed-Fi naming
             ["Sample"] = "sample",
             ["TPDM"] = "tpdm",
             ["Extensions"] = "extensions"
