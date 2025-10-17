@@ -26,7 +26,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
             var ddl = GenerateDdlString(apiSchema, includeExtensions, skipUnionViews);
 
-            File.WriteAllText(Path.Combine(outputDirectory, "schema-pgsql.sql"), ddl);
+            File.WriteAllText(Path.Combine(outputDirectory, "EdFi-DMS-Database-Schema-PostgreSQL.sql"), ddl);
         }
 
         /// <summary>
@@ -41,7 +41,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
             var ddl = GenerateDdlString(apiSchema, options);
 
-            File.WriteAllText(Path.Combine(outputDirectory, "schema-pgsql.sql"), ddl);
+            File.WriteAllText(Path.Combine(outputDirectory, "EdFi-DMS-Database-Schema-PostgreSQL.sql"), ddl);
         }
 
         /// <summary>
@@ -271,12 +271,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             ResourceSchema? resourceSchema = null)
         {
             var tableName = DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options);
-            
+
             // For extension resources and descriptor resources using separate schemas, use the original schema as final schema
-            var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema) 
-                ? originalSchemaName 
+            var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema)
+                ? originalSchemaName
                 : options.ResolveSchemaName(null);
-                
+
             var isRootTable = parentTableName == null;
 
             // Track cross-resource references for FK and index generation
@@ -478,7 +478,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 "int16" or "short" => "SMALLINT",
 
                 // String types - use VARCHAR with length or TEXT for unlimited
-                "string" => column.MaxLength != null ? $"VARCHAR({column.MaxLength})" : "TEXT",
+                "string" => MapStringType(column),
 
                 // Boolean type
                 "boolean" or "bool" => "BOOLEAN",
@@ -489,9 +489,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 "time" => "TIME",
 
                 // Decimal types with precision/scale support
-                "decimal" => column.Precision != null && column.Scale != null
-                    ? $"DECIMAL({column.Precision}, {column.Scale})"
-                    : "DECIMAL",
+                "decimal" => MapDecimalType(column),
 
                 // Special Ed-Fi types
                 "currency" => "MONEY",
@@ -510,6 +508,43 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             };
 
             return baseType;
+        }
+
+        /// <summary>
+        /// Maps string column metadata to PostgreSQL VARCHAR or TEXT types with proper length constraints.
+        /// </summary>
+        private static string MapStringType(ColumnMetadata column)
+        {
+            if (!string.IsNullOrEmpty(column.MaxLength))
+            {
+                return $"VARCHAR({column.MaxLength})";
+            }
+
+            return "TEXT"; // Fallback for unlimited length
+        }
+
+        /// <summary>
+        /// Maps decimal column metadata to PostgreSQL DECIMAL types with precision and scale from MetaEd metadata.
+        /// </summary>
+        private static string MapDecimalType(ColumnMetadata column)
+        {
+            // Use precision and scale from MetaEd metadata if available
+            if (!string.IsNullOrEmpty(column.Precision))
+            {
+                var precision = column.Precision;
+                var scale = !string.IsNullOrEmpty(column.Scale) ? column.Scale : "0";
+                return $"DECIMAL({precision}, {scale})";
+            }
+
+            // If only scale is provided (edge case), use a reasonable default precision
+            if (!string.IsNullOrEmpty(column.Scale))
+            {
+                var scale = column.Scale;
+                var precision = int.Parse(scale) + 10; // Default: scale + 10 for precision
+                return $"DECIMAL({precision}, {scale})";
+            }
+
+            return "DECIMAL"; // Fallback to generic decimal without constraints
         }
 
         /// <summary>
@@ -568,7 +603,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         return schema;
                     }
                     // Try case-insensitive match
-                    var match = options.SchemaMapping.FirstOrDefault(kvp => 
+                    var match = options.SchemaMapping.FirstOrDefault(kvp =>
                         string.Equals(kvp.Key, extensionProject, StringComparison.OrdinalIgnoreCase));
                     if (!match.Equals(default(KeyValuePair<string, string>)))
                     {
@@ -586,7 +621,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 return projectSchema1;
             }
             // Try case-insensitive match
-            var projectMatch = options.SchemaMapping.FirstOrDefault(kvp => 
+            var projectMatch = options.SchemaMapping.FirstOrDefault(kvp =>
                 string.Equals(kvp.Key, projectSchema.ProjectName, StringComparison.OrdinalIgnoreCase));
             if (!projectMatch.Equals(default(KeyValuePair<string, string>)))
             {
@@ -629,7 +664,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         return schema;
                     }
                     // Try case-insensitive match
-                    var match = options.SchemaMapping.FirstOrDefault(kvp => 
+                    var match = options.SchemaMapping.FirstOrDefault(kvp =>
                         string.Equals(kvp.Key, extensionProject, StringComparison.OrdinalIgnoreCase));
                     if (!match.Equals(default(KeyValuePair<string, string>)))
                     {
@@ -650,7 +685,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     return mappedSchema;
                 }
                 // Try case-insensitive match
-                var projectMatch = options.SchemaMapping.FirstOrDefault(kvp => 
+                var projectMatch = options.SchemaMapping.FirstOrDefault(kvp =>
                     string.Equals(kvp.Key, projectSchema.ProjectName, StringComparison.OrdinalIgnoreCase));
                 if (!projectMatch.Equals(default(KeyValuePair<string, string>)))
                 {

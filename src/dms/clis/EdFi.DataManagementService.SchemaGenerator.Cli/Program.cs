@@ -125,7 +125,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     UsePrefixedTableNames = usePrefixedTableNames
                 };
 
-                if (databaseProvider == "pgsql" || databaseProvider == "all")
+                if (databaseProvider == "pgsql" || databaseProvider == "postgresql" || databaseProvider == "all")
                 {
                     logger.LogInformation("Generating PostgreSQL DDL...");
                     var pgsql = strategies.FirstOrDefault(s => s.GetType().Name.Contains("Pgsql"));
@@ -170,7 +170,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
             Console.WriteLine("OPTIONS:");
             Console.WriteLine("  --input, -i <path>           (Required) Path to the input API schema JSON file");
             Console.WriteLine("  --output, -o <directory>     (Required) Directory where DDL scripts will be generated");
-            Console.WriteLine("  --provider, --database, -p <provider>  Database provider: 'pgsql', 'mssql', or 'all' (default: all)");
+            Console.WriteLine("  --provider, --database, -p <provider>  Database provider: 'pgsql'/'postgresql', 'mssql', or 'all' (default: all)");
             Console.WriteLine("  --extensions, -e             Include extension tables in the generated DDL");
             Console.WriteLine("  --skip-union-views, -s       Skip generation of union views for polymorphic references");
             Console.WriteLine("  --use-schemas, --separate-schemas       Generate separate database schemas (edfi, tpdm, etc.)");
@@ -203,14 +203,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
             Console.WriteLine("    EdFi.DataManagementService.SchemaGenerator.Cli --input schema.json --output ./ddl");
             Console.WriteLine();
             Console.WriteLine("  Generate PostgreSQL DDL with separate schemas:");
-            Console.WriteLine("    EdFi.DataManagementService.SchemaGenerator.Cli -i schema.json -o ./ddl -p pgsql --use-schemas");
+            Console.WriteLine("    EdFi.DataManagementService.SchemaGenerator.Cli -i schema.json -o ./ddl -p postgresql --use-schemas");
             Console.WriteLine();
             Console.WriteLine("  Generate SQL Server DDL with extensions and prefixed names:");
             Console.WriteLine("    EdFi.DataManagementService.SchemaGenerator.Cli -i schema.json -o ./ddl -p mssql -e --prefixed-tables");
             Console.WriteLine();
             Console.WriteLine("OUTPUT:");
-            Console.WriteLine("  PostgreSQL: schema-pgsql.sql");
-            Console.WriteLine("  SQL Server: schema-mssql.sql");
+            Console.WriteLine("  PostgreSQL: EdFi-DMS-Database-Schema-PostgreSQL.sql");
+            Console.WriteLine("  SQL Server: EdFi-DMS-Database-Schema-SQLServer.sql");
             Console.WriteLine("  Log file:   logs/SchemaGenerator.log (configurable)");
             Console.WriteLine();
         }
