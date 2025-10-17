@@ -101,6 +101,7 @@ You can also build and run the CLI using Docker through the build script:
 ```
 
 **Docker Integration Features:**
+
 - **Automatic Volume Mounting**: Input files and output folders are automatically mounted as Docker volumes
 - **URL Support**: Fetch schemas directly from URLs without requiring local files
 - **Host File Access**: Generated DDL files are written to your host machine's file system
