@@ -716,5 +716,118 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
         }
+
+        /// <summary>
+        /// Creates an API schema with abstract resources and subclasses for testing union view generation.
+        /// </summary>
+        public static ApiSchema CreateApiSchemaWithAbstractResource()
+        {
+            return new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    Description = "Test schema with abstract resources.",
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["EducationOrganization"] = new ResourceSchema
+                        {
+                            ResourceName = "EducationOrganization",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "EducationOrganization",
+                                    JsonPath = "$.EducationOrganization",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata { ColumnName = "EducationOrganizationId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "Discriminator", ColumnType = "string", MaxLength = "50", IsRequired = true }
+                                    ],
+                                    ChildTables = [
+                                        new TableMetadata
+                                        {
+                                            BaseName = "School",
+                                            JsonPath = "$.EducationOrganization.School",
+                                            DiscriminatorValue = "School",
+                                            Columns =
+                                            [
+                                                new ColumnMetadata { ColumnName = "EducationOrganizationId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
+                                                new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                            ],
+                                            ChildTables = []
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        /// <summary>
+        /// Gets a schema with a descriptor resource.
+        /// </summary>
+        public static ApiSchema GetSchemaWithDescriptor() => CreateApiSchemaWithDescriptorResource();
+
+        /// <summary>
+        /// Gets a schema with an extension resource.
+        /// </summary>
+        public static ApiSchema GetSchemaWithExtension() => CreateApiSchemaWithTPDMExtension();
+
+        /// <summary>
+        /// Gets a schema with child tables.
+        /// </summary>
+        public static ApiSchema GetSchemaWithChildTables() => CreateApiSchemaWithChildTable();
+
+        /// <summary>
+        /// Gets a schema with cross-resource references.
+        /// </summary>
+        public static ApiSchema GetSchemaWithCrossResourceReferences() => CreateApiSchemaWithReferenceColumn();
+
+        /// <summary>
+        /// Gets a schema with natural key columns.
+        /// </summary>
+        public static ApiSchema GetSchemaWithNaturalKey() => GetBasicSchema();
+
+        /// <summary>
+        /// Gets a schema with multiple identity columns.
+        /// </summary>
+        public static ApiSchema GetSchemaWithMultipleIdentityColumns()
+        {
+            return new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "TestProject",
+                    ProjectVersion = "1.0.0",
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["TestTable"] = new ResourceSchema
+                        {
+                            ResourceName = "TestTable",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "TestTable",
+                                    JsonPath = "$.TestTable",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata { ColumnName = "Id1", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "Id2", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "Id3", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true }
+                                    ],
+                                    ChildTables = []
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
     }
 }
