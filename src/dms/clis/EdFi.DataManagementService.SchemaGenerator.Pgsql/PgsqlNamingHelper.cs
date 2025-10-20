@@ -3,8 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
-using System.Text;
+using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 {
@@ -15,30 +14,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
     public static class PgsqlNamingHelper
     {
         /// <summary>
-        /// Generates a PostgreSQL-compliant identifier. If the name exceeds the specified maximum length,
+        /// PostgreSQL identifier maximum length.
+        /// </summary>
+        private const int PostgreSqlMaxLength = 63;
+
+        /// <summary>
+        /// Generates a PostgreSQL-compliant identifier. If the name exceeds the PostgreSQL maximum length (63 characters),
         /// it is truncated and a hash suffix is appended to ensure uniqueness.
         /// </summary>
         /// <param name="name">The original identifier name.</param>
         /// <param name="maxLength">The maximum allowed length for the identifier (default: 63).</param>
         /// <param name="hashLength">The length of the hash suffix to append (default: 8).</param>
         /// <returns>A valid PostgreSQL identifier, truncated and suffixed with a hash if necessary.</returns>
-        public static string MakePgsqlIdentifier(string name, int maxLength = 63, int hashLength = 8)
+        public static string MakePgsqlIdentifier(string name, int maxLength = PostgreSqlMaxLength, int hashLength = 8)
         {
-            // Sanitize PostgreSQL identifiers by removing hyphens (which require quoting)
-            name = name.Replace("-", "");
-
-            if (name.Length <= maxLength)
-            {
-                return name;
-            }
-
-            using var sha1 = SHA1.Create();
-            var hash = BitConverter.ToString(sha1.ComputeHash(Encoding.UTF8.GetBytes(name)))
-                .Replace("-", "")
-                .ToLowerInvariant()
-                .Substring(0, hashLength);
-            int baseLen = maxLength - hashLength - 1;
-            return name.Substring(0, baseLen) + "_" + hash;
+            return DatabaseIdentifierHelper.MakeIdentifier(name, maxLength, hashLength);
         }
     }
 }
