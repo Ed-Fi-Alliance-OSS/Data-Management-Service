@@ -68,7 +68,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.specialcharsproject_TableWithDashes");
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.specialcharsproject_Table_With_Dashes");
         }
 
         [Test]

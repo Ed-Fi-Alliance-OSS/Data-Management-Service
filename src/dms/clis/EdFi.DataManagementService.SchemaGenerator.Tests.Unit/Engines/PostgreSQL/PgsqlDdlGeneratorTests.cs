@@ -34,7 +34,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             sql.Should().Contain("Name VARCHAR(100) NOT NULL");
             sql.Should().Contain("IsActive BOOLEAN");
             sql.Should().Contain("CONSTRAINT FK_TestTable_Document");
-            sql.Should().Contain("REFERENCES dms.Document((Id, DocumentPartitionKey)) ON DELETE CASCADE");
+            sql.Should().Contain("REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE");
             sql.Should().Contain("CONSTRAINT UQ_TestTable_NaturalKey");
         }
 

@@ -414,26 +414,26 @@ function DockerRun {
         Push-Location eng/docker-compose/
         try {
             Write-Info "Running Schema Generator CLI using docker-compose script..."
-            
+
             # Build parameters hashtable for the run-cli-generator.ps1 script
             $scriptParams = @{}
-            
+
             if (-not [string]::IsNullOrWhiteSpace($InputFile)) {
                 $scriptParams['InputFile'] = $InputFile
             }
-            
+
             if (-not [string]::IsNullOrWhiteSpace($SchemaUrl)) {
                 $scriptParams['SchemaUrl'] = $SchemaUrl
             }
-            
+
             if (-not [string]::IsNullOrWhiteSpace($OutputFolder)) {
                 $scriptParams['OutputFolder'] = $OutputFolder
             }
-            
+
             if ($CliArguments.Count -gt 0) {
                 $scriptParams['CliArguments'] = $CliArguments
             }
-            
+
             # Call the existing run-cli-generator.ps1 script with the parameters
             & .\run-cli-generator.ps1 @scriptParams
         }
