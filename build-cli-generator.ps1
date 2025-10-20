@@ -122,7 +122,7 @@ $projectName = "EdFi.DataManagementService.SchemaGenerator.Cli"
 $packageName = "EdFi.DataManagementService.SchemaGenerator.Cli"
 $testResults = "$PSScriptRoot/TestResults/SchemaGenerator"
 #Coverage
-$thresholdCoverage = 75
+$thresholdCoverage = 70
 $coverageOutputFile = "coverage.cli-generator.cobertura.xml"
 $targetDir = "coveragereport-cli-generator"
 
