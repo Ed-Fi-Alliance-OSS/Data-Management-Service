@@ -239,42 +239,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         }
 
         [Test]
-        public void GenerateDdlString_WithTemplateFallbackPath_UsesCurrentDirectory()
+        public void GenerateDdlString_WithBasicSchema_UsesEmbeddedTemplates()
         {
-            // Arrange - Create a schema that will trigger template loading
+            // Arrange - Create a schema that will use embedded template resources
             var schema = TestHelpers.GetBasicSchema();
 
-            // Save the current directory and change to a location where AppContext.BaseDirectory won't have Templates
-            var originalDir = Directory.GetCurrentDirectory();
-            var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-            Directory.CreateDirectory(tempDir);
-            Directory.CreateDirectory(Path.Combine(tempDir, "Templates"));
+            // Act - This uses the embedded templates from resources
+            var result = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
-            // Create a minimal template file in the temp directory
-            var templateFile = Path.Combine(tempDir, "Templates", "pgsql-table-idempotent.hbs");
-            File.WriteAllText(templateFile, "-- PostgreSQL fallback template test\nCREATE TABLE {{schemaName}}.{{tableName}} (id integer);");
-
-            try
-            {
-                Directory.SetCurrentDirectory(tempDir);
-
-                // Act - This should trigger the fallback path
-                var result = _strategy.GenerateDdlString(schema, includeExtensions: false);
-
-                // Assert
-                result.Should().NotBeNull();
-                result.Should().NotBeEmpty();
-                result.Should().Contain("PostgreSQL fallback template test");
-            }
-            finally
-            {
-                // Cleanup
-                Directory.SetCurrentDirectory(originalDir);
-                if (Directory.Exists(tempDir))
-                {
-                    Directory.Delete(tempDir, recursive: true);
-                }
-            }
+            // Assert - Verify the DDL was generated successfully using embedded templates
+            result.Should().NotBeNull();
+            result.Should().NotBeEmpty();
+            result.Should().Contain("CREATE TABLE");
+            result.Should().Contain("TestTable");
         }
 
         [Test]
