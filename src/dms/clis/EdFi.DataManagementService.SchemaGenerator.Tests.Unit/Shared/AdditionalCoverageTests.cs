@@ -39,16 +39,16 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                 {
                                     BaseName = "EmptyResource",
                                     JsonPath = "$.test",
-                                    Columns = new List<ColumnMetadata>
-                                    {
+                                    Columns =
+                                    [
                                         new ColumnMetadata
                                         {
                                             ColumnName = "Id",
                                             ColumnType = "int",
                                             IsRequired = true
                                         }
-                                    },
-                                    ChildTables = new List<TableMetadata>()
+                                    ],
+                                    ChildTables = []
                                 }
                             }
                         }
@@ -86,16 +86,16 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                 {
                                     BaseName = "EmptyResource",
                                     JsonPath = "$.test",
-                                    Columns = new List<ColumnMetadata>
-                                    {
+                                    Columns =
+                                    [
                                         new ColumnMetadata
                                         {
                                             ColumnName = "Id",
                                             ColumnType = "int",
                                             IsRequired = true
                                         }
-                                    },
-                                    ChildTables = new List<TableMetadata>()
+                                    ],
+                                    ChildTables = []
                                 }
                             }
                         }
@@ -146,8 +146,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                 {
                                     BaseName = "Parent",
                                     JsonPath = "$.parent",
-                                    Columns = new List<ColumnMetadata>
-                                    {
+                                    Columns =
+                                    [
                                         new ColumnMetadata
                                         {
                                             ColumnName = "ParentId",
@@ -155,40 +155,40 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             IsRequired = true,
                                             IsNaturalKey = true
                                         }
-                                    },
-                                    ChildTables = new List<TableMetadata>
-                                    {
+                                    ],
+                                    ChildTables =
+                                    [
                                         new TableMetadata
                                         {
                                             BaseName = "Child1",
                                             JsonPath = "$.children1",
-                                            Columns = new List<ColumnMetadata>
-                                            {
+                                            Columns =
+                                            [
                                                 new ColumnMetadata
                                                 {
                                                     ColumnName = "Child1Id",
                                                     ColumnType = "int",
                                                     IsRequired = true
                                                 }
-                                            },
-                                            ChildTables = new List<TableMetadata>()
+                                            ],
+                                            ChildTables = []
                                         },
                                         new TableMetadata
                                         {
                                             BaseName = "Child2",
                                             JsonPath = "$.children2",
-                                            Columns = new List<ColumnMetadata>
-                                            {
+                                            Columns =
+                                            [
                                                 new ColumnMetadata
                                                 {
                                                     ColumnName = "Child2Id",
                                                     ColumnType = "int",
                                                     IsRequired = true
                                                 }
-                                            },
-                                            ChildTables = new List<TableMetadata>()
+                                            ],
+                                            ChildTables = []
                                         }
-                                    }
+                                    ]
                                 }
                             }
                         }
@@ -227,8 +227,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                 {
                                     BaseName = "Parent",
                                     JsonPath = "$.parent",
-                                    Columns = new List<ColumnMetadata>
-                                    {
+                                    Columns =
+                                    [
                                         new ColumnMetadata
                                         {
                                             ColumnName = "ParentId",
@@ -236,40 +236,40 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             IsRequired = true,
                                             IsNaturalKey = true
                                         }
-                                    },
-                                    ChildTables = new List<TableMetadata>
-                                    {
+                                    ],
+                                    ChildTables =
+                                    [
                                         new TableMetadata
                                         {
                                             BaseName = "Child1",
                                             JsonPath = "$.children1",
-                                            Columns = new List<ColumnMetadata>
-                                            {
+                                            Columns =
+                                            [
                                                 new ColumnMetadata
                                                 {
                                                     ColumnName = "Child1Id",
                                                     ColumnType = "int",
                                                     IsRequired = true
                                                 }
-                                            },
-                                            ChildTables = new List<TableMetadata>()
+                                            ],
+                                            ChildTables = []
                                         },
                                         new TableMetadata
                                         {
                                             BaseName = "Child2",
                                             JsonPath = "$.children2",
-                                            Columns = new List<ColumnMetadata>
-                                            {
+                                            Columns =
+                                            [
                                                 new ColumnMetadata
                                                 {
                                                     ColumnName = "Child2Id",
                                                     ColumnType = "int",
                                                     IsRequired = true
                                                 }
-                                            },
-                                            ChildTables = new List<TableMetadata>()
+                                            ],
+                                            ChildTables = []
                                         }
-                                    }
+                                    ]
                                 }
                             }
                         }
@@ -308,8 +308,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                 {
                                     BaseName = "Test",
                                     JsonPath = "$.test",
-                                    Columns = new List<ColumnMetadata>
-                                    {
+                                    Columns =
+                                    [
                                         new ColumnMetadata
                                         {
                                             ColumnName = "Description",
@@ -317,8 +317,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             MaxLength = null,
                                             IsRequired = false
                                         }
-                                    },
-                                    ChildTables = new List<TableMetadata>()
+                                    ],
+                                    ChildTables = []
                                 }
                             }
                         }
@@ -356,8 +356,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                 {
                                     BaseName = "Test",
                                     JsonPath = "$.test",
-                                    Columns = new List<ColumnMetadata>
-                                    {
+                                    Columns =
+                                    [
                                         new ColumnMetadata
                                         {
                                             ColumnName = "Description",
@@ -365,8 +365,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             MaxLength = null,
                                             IsRequired = false
                                         }
-                                    },
-                                    ChildTables = new List<TableMetadata>()
+                                    ],
+                                    ChildTables = []
                                 }
                             }
                         }

@@ -34,7 +34,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             sql.Should().Contain("[Name] NVARCHAR(100) NOT NULL");
             sql.Should().Contain("[IsActive] BIT");
             sql.Should().Contain("CONSTRAINT [FK_TestTable_Document]");
-            sql.Should().Contain("REFERENCES [dms].[Document]([(Id, DocumentPartitionKey)]) ON DELETE CASCADE");
+            sql.Should().Contain("REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE");
             sql.Should().Contain("CONSTRAINT [UQ_TestTable_NaturalKey]");
         }
 
@@ -332,7 +332,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             // Assert
             sql.Should().Contain("CREATE TABLE [dms].[edfi_School]");
-            sql.Should().NotContain("CREATE SCHEMA [edfi]");
+            sql.Should().NotContain("EXEC('CREATE SCHEMA [edfi]')");
         }
 
         [Test]
@@ -350,7 +350,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, options);
 
             // Assert
-            sql.Should().Contain("CREATE SCHEMA [edfi]");
+            sql.Should().Contain("EXEC('CREATE SCHEMA [edfi]')");
             sql.Should().Contain("CREATE TABLE [edfi].[School]");
             sql.Should().NotContain("edfi_School");
         }
@@ -380,6 +380,145 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     [
                                         new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
                                         new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                    ],
+                                    ChildTables = []
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        [Test]
+        public void GeneratesSchemaCreationWithExecSyntax()
+        {
+            // Arrange
+            var schema = GetEdFiSchema();
+            var generator = new MssqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions
+            {
+                UsePrefixedTableNames = false
+            };
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, options);
+
+            // Assert
+            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'edfi')");
+            sql.Should().Contain("EXEC('CREATE SCHEMA [edfi]')");
+            sql.Should().Contain("PRINT 'Schema edfi created.'");
+            sql.Should().Contain("PRINT 'Schema edfi already exists, skipped.'");
+            sql.Should().Contain("GO");
+        }
+
+        [Test]
+        public void GeneratesIdempotentSchemaCreation()
+        {
+            // Arrange  
+            var schema = GetEdFiSchema();
+            var generator = new MssqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions
+            {
+                UsePrefixedTableNames = false
+            };
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, options);
+
+            // Assert
+            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'edfi')");
+            sql.Should().Contain("BEGIN");
+            sql.Should().Contain("EXEC('CREATE SCHEMA [edfi]')");
+            sql.Should().Contain("END");
+            sql.Should().Contain("ELSE");
+        }
+
+        [Test]
+        public void GeneratesSchemaCreationForMultipleSchemas()
+        {
+            // Arrange
+            var schema = GetMultiSchemaApiSchema();
+            var generator = new MssqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions
+            {
+                UsePrefixedTableNames = false,
+                DescriptorSchema = "descriptors"
+            };
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, options);
+
+            // Assert
+            sql.Should().Contain("EXEC('CREATE SCHEMA [edfi]')");
+            sql.Should().Contain("EXEC('CREATE SCHEMA [descriptors]')");
+            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'edfi')");
+            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'descriptors')");
+        }
+
+        [Test]
+        public void DoesNotGenerateSchemaCreationWhenUsingPrefixedNames()
+        {
+            // Arrange
+            var schema = GetEdFiSchema();
+            var generator = new MssqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions
+            {
+                UsePrefixedTableNames = true
+            };
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, options);
+
+            // Assert
+            sql.Should().NotContain("EXEC('CREATE SCHEMA");
+            sql.Should().NotContain("CREATE SCHEMA");
+            sql.Should().Contain("CREATE TABLE [dms].[edfi_School]");
+        }
+
+        private static ApiSchema GetMultiSchemaApiSchema()
+        {
+            return new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "5.0.0",
+                    IsExtensionProject = false,
+                    Description = "Ed-Fi core schema with multiple namespaces.",
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["School"] = new ResourceSchema
+                        {
+                            ResourceName = "School",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "School",
+                                    JsonPath = "$.School",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                    ],
+                                    ChildTables = []
+                                }
+                            }
+                        },
+                        ["Descriptor"] = new ResourceSchema
+                        {
+                            ResourceName = "Descriptor",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Descriptor",
+                                    JsonPath = "$.Descriptor",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata { ColumnName = "DescriptorId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
+                                        new ColumnMetadata { ColumnName = "CodeValue", ColumnType = "string", MaxLength = "50", IsRequired = true }
                                     ],
                                     ChildTables = []
                                 }
