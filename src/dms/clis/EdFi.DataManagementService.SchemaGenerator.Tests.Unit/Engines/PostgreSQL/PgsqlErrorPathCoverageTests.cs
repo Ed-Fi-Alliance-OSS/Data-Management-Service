@@ -28,9 +28,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var options = new DdlGenerationOptions();
 
             // Act & Assert
-            var exception = Assert.Throws<InvalidDataException>(() => 
+            var exception = Assert.Throws<InvalidDataException>(() =>
                 _strategy.GenerateDdlString(apiSchema, options));
-            
+
             exception.Message.Should().Be("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -38,8 +38,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         public void GenerateDdlString_WithNullResourceSchemas_ThrowsInvalidDataException()
         {
             // Arrange
-            var apiSchema = new ApiSchema 
-            { 
+            var apiSchema = new ApiSchema
+            {
                 ProjectSchema = new ProjectSchema
                 {
                     ProjectName = "EdFi",
@@ -49,9 +49,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var options = new DdlGenerationOptions();
 
             // Act & Assert
-            var exception = Assert.Throws<InvalidDataException>(() => 
+            var exception = Assert.Throws<InvalidDataException>(() =>
                 _strategy.GenerateDdlString(apiSchema, options));
-            
+
             exception.Message.Should().Be("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -62,9 +62,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var apiSchema = new ApiSchema { ProjectSchema = null };
 
             // Act & Assert
-            var exception = Assert.Throws<InvalidDataException>(() => 
+            var exception = Assert.Throws<InvalidDataException>(() =>
                 _strategy.GenerateDdlString(apiSchema, true, false));
-            
+
             exception.Message.Should().Be("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -72,8 +72,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         public void GenerateDdlString_LegacyMethod_WithNullResourceSchemas_ThrowsInvalidDataException()
         {
             // Arrange
-            var apiSchema = new ApiSchema 
-            { 
+            var apiSchema = new ApiSchema
+            {
                 ProjectSchema = new ProjectSchema
                 {
                     ProjectName = "EdFi",
@@ -82,9 +82,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             };
 
             // Act & Assert
-            var exception = Assert.Throws<InvalidDataException>(() => 
+            var exception = Assert.Throws<InvalidDataException>(() =>
                 _strategy.GenerateDdlString(apiSchema, true, false));
-            
+
             exception.Message.Should().Be("ApiSchema does not contain valid projectSchema.");
         }
 
