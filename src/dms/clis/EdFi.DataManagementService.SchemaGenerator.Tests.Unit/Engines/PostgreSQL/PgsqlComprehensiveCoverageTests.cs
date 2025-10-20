@@ -50,6 +50,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var schema = TestHelpers.GetSchemaWithExtension();
             var options = new DdlGenerationOptions
             {
+                IncludeExtensions = true,
                 SchemaMapping = new Dictionary<string, string>
                 {
                     ["TPDM"] = "tpdm"
