@@ -105,7 +105,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var nonExistentFile = Path.Combine(tempDir, "nonexistent.json");
-            
+
             string[] args = ["--input", nonExistentFile, "--output", tempDir];
 
             try
@@ -133,10 +133,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var invalidJsonFile = Path.Combine(tempDir, "invalid.json");
-            
+
             // Write invalid JSON
             await File.WriteAllTextAsync(invalidJsonFile, "{ invalid json content }");
-            
+
             string[] args = ["--input", invalidJsonFile, "--output", tempDir];
 
             try
@@ -163,7 +163,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
-            
+
             // Use a URL that will fail (to test error handling)
             string[] args = ["--url", "http://nonexistent.example.com/schema.json", "--output", tempDir];
 
@@ -192,7 +192,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -204,7 +204,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir];
 
             try
@@ -214,7 +214,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 
                 // Assert
                 exitCode.Should().Be(0); // Success
-                
+
                 // Verify output files were created
                 File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeTrue();
                 File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql")).Should().BeTrue();
@@ -236,7 +236,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -248,7 +248,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir, "--provider", "pgsql"];
 
             try
@@ -258,7 +258,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 
                 // Assert
                 exitCode.Should().Be(0); // Success
-                
+
                 // Verify only PostgreSQL file was created
                 File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeTrue();
                 File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql")).Should().BeFalse();
@@ -280,7 +280,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -292,7 +292,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir, "--provider", "postgresql"];
 
             try
@@ -302,7 +302,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 
                 // Assert
                 exitCode.Should().Be(0); // Success
-                
+
                 // Verify only PostgreSQL file was created
                 File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeTrue();
                 File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql")).Should().BeFalse();
@@ -324,7 +324,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -336,7 +336,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir, "--provider", "mssql"];
 
             try
@@ -346,7 +346,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 
                 // Assert
                 exitCode.Should().Be(0); // Success
-                
+
                 // Verify only SQL Server file was created
                 File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeFalse();
                 File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql")).Should().BeTrue();
@@ -368,7 +368,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -380,7 +380,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir, "--extensions"];
 
             try
@@ -408,7 +408,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -420,7 +420,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir, "--skip-union-views"];
 
             try
@@ -448,7 +448,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -460,7 +460,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir, "--use-schemas"];
 
             try
@@ -488,7 +488,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -500,7 +500,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir, "--separate-schemas"];
 
             try
@@ -528,7 +528,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -540,7 +540,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir, "--use-prefixed-names"];
 
             try
@@ -568,7 +568,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
             var validJsonFile = Path.Combine(tempDir, "valid.json");
-            
+
             // Write minimal valid JSON schema
             var minimalSchema = new
             {
@@ -580,7 +580,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 }
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
-            
+
             string[] args = ["--input", validJsonFile, "--output", tempDir, "--prefixed-tables"];
 
             try

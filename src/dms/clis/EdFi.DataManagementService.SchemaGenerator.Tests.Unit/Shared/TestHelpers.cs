@@ -665,19 +665,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.EducationOrganization",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "EducationOrganizationId", 
-                                            ColumnType = "int32", 
-                                            IsNaturalKey = true, 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "EducationOrganizationId",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
                                             IsRequired = true,
                                             IsPolymorphicReference = true
                                         },
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "Discriminator", 
-                                            ColumnType = "string", 
-                                            MaxLength = "50", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Discriminator",
+                                            ColumnType = "string",
+                                            MaxLength = "50",
                                             IsRequired = true,
                                             IsDiscriminator = true
                                         }

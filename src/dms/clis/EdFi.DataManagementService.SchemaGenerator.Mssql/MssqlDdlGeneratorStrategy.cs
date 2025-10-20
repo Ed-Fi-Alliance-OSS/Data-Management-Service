@@ -116,7 +116,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     }
 
                     var schemaName = DetermineSchemaName(apiSchema.ProjectSchema, resourceSchema, options);
-                    
+
                     // Only add schema to usedSchemas if we're going to use separate schemas
                     if (ShouldUseSeparateSchema(schemaName, options, resourceSchema))
                     {
@@ -353,7 +353,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 // Store FK constraint for later generation
                 fkConstraintsToAdd.Add((tableName, finalSchemaName, new
                 {
-                    constraintName = $"FK_{table.BaseName}_{parentTableName}",
+                    constraintName = MssqlNamingHelper.MakeMssqlIdentifier($"FK_{table.BaseName}_{parentTableName}"),
                     column = parentFkColumn,
                     parentTable = $"[{finalSchemaName}].[{DetermineTableName(parentTableName, originalSchemaName, resourceSchema, options)}]",
                     parentColumn = "Id",
@@ -366,7 +366,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             {
                 fkConstraintsToAdd.Add((tableName, finalSchemaName, new
                 {
-                    constraintName = $"FK_{table.BaseName}_{referencedResource}",
+                    constraintName = MssqlNamingHelper.MakeMssqlIdentifier($"FK_{table.BaseName}_{referencedResource}"),
                     column = columnName,
                     parentTable = $"[{finalSchemaName}].[{DetermineTableName(referencedResource, originalSchemaName, null, options)}]",
                     parentColumn = "Id",
@@ -377,7 +377,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             // Store Document FK constraint for later generation (FIXED: no double parentheses)
             fkConstraintsToAdd.Add((tableName, finalSchemaName, new
             {
-                constraintName = $"FK_{table.BaseName}_Document",
+                constraintName = MssqlNamingHelper.MakeMssqlIdentifier($"FK_{table.BaseName}_Document"),
                 column = "Document_Id, Document_PartitionKey",
                 parentTable = $"[{finalSchemaName}].[Document]",
                 parentColumn = "Id, DocumentPartitionKey",
@@ -392,7 +392,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             {
                 uniqueConstraints.Add(new
                 {
-                    constraintName = $"UQ_{table.BaseName}_NaturalKey",
+                    constraintName = MssqlNamingHelper.MakeMssqlIdentifier($"UQ_{table.BaseName}_NaturalKey"),
                     columns = naturalKeyColumns
                 });
             }
@@ -410,7 +410,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 {
                     uniqueConstraints.Add(new
                     {
-                        constraintName = $"UQ_{table.BaseName}_Identity",
+                        constraintName = MssqlNamingHelper.MakeMssqlIdentifier($"UQ_{table.BaseName}_Identity"),
                         columns = identityColumns
                     });
                 }
