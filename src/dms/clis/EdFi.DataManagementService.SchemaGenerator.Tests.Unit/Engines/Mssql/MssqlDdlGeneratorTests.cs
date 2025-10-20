@@ -415,7 +415,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         [Test]
         public void GeneratesIdempotentSchemaCreation()
         {
-            // Arrange  
+            // Arrange
             var schema = GetEdFiSchema();
             var generator = new MssqlDdlGeneratorStrategy();
             var options = new DdlGenerationOptions

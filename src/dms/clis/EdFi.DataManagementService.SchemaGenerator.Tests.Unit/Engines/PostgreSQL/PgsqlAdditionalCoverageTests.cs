@@ -38,12 +38,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "StringColumnNoMaxLength", 
-                                            ColumnType = "string", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StringColumnNoMaxLength",
+                                            ColumnType = "string",
                                             MaxLength = null, // No max length specified
-                                            IsRequired = false 
+                                            IsRequired = false
                                         }
                                     ],
                                     ChildTables = []
@@ -83,13 +83,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "DecimalColumn", 
-                                            ColumnType = "decimal", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DecimalColumn",
+                                            ColumnType = "decimal",
                                             Precision = "10",
                                             Scale = "2",
-                                            IsRequired = true 
+                                            IsRequired = true
                                         }
                                     ],
                                     ChildTables = []
@@ -131,13 +131,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "DecimalColumn", 
-                                            ColumnType = "decimal", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DecimalColumn",
+                                            ColumnType = "decimal",
                                             Precision = null,
                                             Scale = null,
-                                            IsRequired = false 
+                                            IsRequired = false
                                         }
                                     ],
                                     ChildTables = []
@@ -181,12 +181,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     IsExtensionTable = true,
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "ExtensionId", 
-                                            ColumnType = "int32", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ExtensionId",
+                                            ColumnType = "int32",
                                             IsNaturalKey = true,
-                                            IsRequired = true 
+                                            IsRequired = true
                                         }
                                     ],
                                     ChildTables = []
@@ -238,19 +238,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.TestDescriptor",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "DescriptorId", 
-                                            ColumnType = "int32", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DescriptorId",
+                                            ColumnType = "int32",
                                             IsNaturalKey = true,
-                                            IsRequired = true 
+                                            IsRequired = true
                                         },
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "CodeValue", 
-                                            ColumnType = "string", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "CodeValue",
+                                            ColumnType = "string",
                                             MaxLength = "50",
-                                            IsRequired = true 
+                                            IsRequired = true
                                         }
                                     ],
                                     ChildTables = []
@@ -299,12 +299,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.ParentTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "ParentId", 
-                                            ColumnType = "int32", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ParentId",
+                                            ColumnType = "int32",
                                             IsNaturalKey = true,
-                                            IsRequired = true 
+                                            IsRequired = true
                                         }
                                     ],
                                     ChildTables =
@@ -315,19 +315,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             JsonPath = "$.ParentTable.ChildCollection",
                                             Columns =
                                             [
-                                                new ColumnMetadata 
-                                                { 
-                                                    ColumnName = "ChildId", 
-                                                    ColumnType = "int32", 
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "ChildId",
+                                                    ColumnType = "int32",
                                                     IsNaturalKey = true,
-                                                    IsRequired = true 
+                                                    IsRequired = true
                                                 },
-                                                new ColumnMetadata 
-                                                { 
-                                                    ColumnName = "ParentTable_Id", 
-                                                    ColumnType = "bigint", 
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "ParentTable_Id",
+                                                    ColumnType = "bigint",
                                                     IsParentReference = true,
-                                                    IsRequired = true 
+                                                    IsRequired = true
                                                 }
                                             ],
                                             ChildTables = []
@@ -372,11 +372,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "UnsupportedColumn", 
-                                            ColumnType = "unsupported_type", 
-                                            IsRequired = false 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "UnsupportedColumn",
+                                            ColumnType = "unsupported_type",
+                                            IsRequired = false
                                         }
                                     ],
                                     ChildTables = []
@@ -418,11 +418,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "BigIntColumn", 
-                                            ColumnType = "int64", 
-                                            IsRequired = true 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "BigIntColumn",
+                                            ColumnType = "int64",
+                                            IsRequired = true
                                         }
                                     ],
                                     ChildTables = []
@@ -464,11 +464,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "DateColumn", 
-                                            ColumnType = "date", 
-                                            IsRequired = false 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DateColumn",
+                                            ColumnType = "date",
+                                            IsRequired = false
                                         }
                                     ],
                                     ChildTables = []

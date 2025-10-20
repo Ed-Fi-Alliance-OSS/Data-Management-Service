@@ -25,9 +25,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var apiSchema = TestHelpers.CreateBasicApiSchema();
-            var options = new DdlGenerationOptions 
-            { 
-                GenerateForeignKeyConstraints = false 
+            var options = new DdlGenerationOptions
+            {
+                GenerateForeignKeyConstraints = false
             };
 
             // Act
@@ -44,9 +44,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var apiSchema = TestHelpers.CreateBasicApiSchema();
-            var options = new DdlGenerationOptions 
-            { 
-                GenerateNaturalKeyConstraints = false 
+            var options = new DdlGenerationOptions
+            {
+                GenerateNaturalKeyConstraints = false
             };
 
             // Act
@@ -80,9 +80,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var apiSchema = TestHelpers.CreateBasicApiSchema();
-            var options = new DdlGenerationOptions 
-            { 
-                IncludeAuditColumns = false 
+            var options = new DdlGenerationOptions
+            {
+                IncludeAuditColumns = false
             };
 
             // Act
@@ -175,9 +175,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var apiSchema = TestHelpers.CreateApiSchemaWithReferenceColumn();
-            var options = new DdlGenerationOptions 
-            { 
-                GenerateForeignKeyConstraints = true 
+            var options = new DdlGenerationOptions
+            {
+                GenerateForeignKeyConstraints = true
             };
 
             // Act
@@ -211,9 +211,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var apiSchema = TestHelpers.CreateApiSchemaWithPolymorphicReference();
-            var options = new DdlGenerationOptions 
-            { 
-                SkipUnionViews = false 
+            var options = new DdlGenerationOptions
+            {
+                SkipUnionViews = false
             };
 
             // Act
@@ -231,9 +231,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var apiSchema = TestHelpers.CreateApiSchemaWithPolymorphicReference();
-            var options = new DdlGenerationOptions 
-            { 
-                SkipUnionViews = true 
+            var options = new DdlGenerationOptions
+            {
+                SkipUnionViews = true
             };
 
             // Act
@@ -250,11 +250,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var apiSchema = TestHelpers.CreateApiSchemaWithDescriptorResource();
-            var options = new DdlGenerationOptions 
-            { 
+            var options = new DdlGenerationOptions
+            {
                 DescriptorSchema = "descriptors",
                 DefaultSchema = "dms",
-                UsePrefixedTableNames = false 
+                UsePrefixedTableNames = false
             };
 
             // Act
@@ -271,10 +271,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var apiSchema = TestHelpers.CreateApiSchemaWithTPDMExtension();
-            var options = new DdlGenerationOptions 
-            { 
+            var options = new DdlGenerationOptions
+            {
                 IncludeExtensions = true,
-                UsePrefixedTableNames = false 
+                UsePrefixedTableNames = false
             };
 
             // Act
@@ -290,8 +290,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var apiSchema = TestHelpers.CreateApiSchemaWithSampleExtension();
-            var options = new DdlGenerationOptions 
-            { 
+            var options = new DdlGenerationOptions
+            {
                 IncludeExtensions = true,
                 UsePrefixedTableNames = false  // Use separate schemas to trigger schema mapping
             };
@@ -320,8 +320,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     }
                 }
             };
-            var options = new DdlGenerationOptions 
-            { 
+            var options = new DdlGenerationOptions
+            {
                 SchemaMapping = new Dictionary<string, string>
                 {
                     ["EdFi"] = "custom_edfi_schema" // Mixed case key
