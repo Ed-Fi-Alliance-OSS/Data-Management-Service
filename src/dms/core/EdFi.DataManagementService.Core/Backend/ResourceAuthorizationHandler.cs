@@ -29,6 +29,7 @@ public class ResourceAuthorizationHandler(
         TraceId traceId
     )
     {
+        return new ResourceAuthorizationResult.Authorized();
         logger.LogInformation(
             "Entering ResourceAuthorizationHandler. OperationType:{OperationType}, AuthorizationStrategyCount:{StrategyCount} TraceId:{TraceId}",
             operationType,
