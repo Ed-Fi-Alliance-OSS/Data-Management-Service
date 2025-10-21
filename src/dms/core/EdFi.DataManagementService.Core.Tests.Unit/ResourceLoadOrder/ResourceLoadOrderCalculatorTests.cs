@@ -188,9 +188,10 @@ public class ResourceLoadOrderCalculatorTests
             var coreProjectNameProvider = A.Fake<ICoreProjectNameProvider>();
             A.CallTo(() => coreProjectNameProvider.GetCoreProjectName()).Returns(new ProjectName("Ed-Fi"));
 
-            var graphFactory = CreateGraphFactory(apiSchemaProvider, [
-                new PersonAuthorizationDependencyGraphTransformer(coreProjectNameProvider),
-            ]);
+            var graphFactory = CreateGraphFactory(
+                apiSchemaProvider,
+                [new PersonAuthorizationDependencyGraphTransformer(coreProjectNameProvider)]
+            );
 
             _resourceLoadCalculator = new ResourceLoadOrderCalculator(
                 [
@@ -198,7 +199,9 @@ public class ResourceLoadOrderCalculatorTests
                         apiSchemaProvider,
                         NullLogger<PersonAuthorizationLoadOrderTransformer>.Instance
                     ),
-                ], graphFactory);
+                ],
+                graphFactory
+            );
         }
 
         [Test]
@@ -368,13 +371,16 @@ public class ResourceLoadOrderCalculatorTests
         }
     }
 
-    private static ResourceDependencyGraphFactory CreateGraphFactory(IApiSchemaProvider apiSchemaProvider,
-        IEnumerable<IResourceDependencyGraphTransformer>? graphTransformers = null)
+    private static ResourceDependencyGraphFactory CreateGraphFactory(
+        IApiSchemaProvider apiSchemaProvider,
+        IEnumerable<IResourceDependencyGraphTransformer>? graphTransformers = null
+    )
     {
         var graphFactory = new ResourceDependencyGraphFactory(
             apiSchemaProvider,
             graphTransformers ?? [],
-            NullLogger<ResourceLoadOrderCalculator>.Instance);
+            NullLogger<ResourceLoadOrderCalculator>.Instance
+        );
 
         return graphFactory;
     }

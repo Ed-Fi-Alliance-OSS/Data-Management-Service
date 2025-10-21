@@ -20,12 +20,10 @@ internal record ResourceDependencyGraphVertex(
     bool IsResourceExtension,
     bool IsSubclass,
     ResourceName SuperclassResourceName,
-    bool IsSchoolYearEnumeration)
-    : IComparable<ResourceDependencyGraphVertex>
+    bool IsSchoolYearEnumeration
+) : IComparable<ResourceDependencyGraphVertex>
 {
-    public FullResourceName FullResourceName { get; } = new(
-        ProjectName,
-        ResourceName);
+    public FullResourceName FullResourceName { get; } = new(ProjectName, ResourceName);
 
     public int CompareTo(ResourceDependencyGraphVertex? other)
     {

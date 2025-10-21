@@ -8,7 +8,11 @@
         <AssemblyVersion>0.6.0</AssemblyVersion>
     </PropertyGroup>
     <ItemGroup>
-        <Content Include="EdFi.DataManagementService.Frontend.AspNetCore.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
+        <Content
+            Include="EdFi.DataManagementService.Frontend.AspNetCore.nuspec"
+            CopyToPublishDirectory="Always"
+            CopyToOutputDirectory="Never"
+        />
         <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
         <PackageReference Include="EdFi.DataStandard52.ApiSchema" />
         <PackageReference Include="EdFi.TPDM.ApiSchema" />

@@ -16,7 +16,8 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader
         public string? PackageVersion { get; set; }
 
         [Option('f', "feedUrl", Required = false, HelpText = "feed Url")]
-        public string FeedUrl { get; set; } = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
+        public string FeedUrl { get; set; } =
+            "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json";
 
         [Option(
             'd',
@@ -27,4 +28,3 @@ namespace EdFi.DataManagementService.ApiSchemaDownloader
         public required string ApiSchemaFolder { get; set; }
     }
 }
-

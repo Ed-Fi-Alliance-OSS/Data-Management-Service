@@ -40,11 +40,26 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
         _staffFullName = new(edFiProjectName, new ResourceName("Staff"));
         _parentFullName = new(edFiProjectName, new ResourceName("Parent"));
         _contactFullName = new(edFiProjectName, new ResourceName("Contact"));
-        _studentSchoolAssociationFullName = new(edFiProjectName, new ResourceName("StudentSchoolAssociation"));
-        _staffEdOrgAssignmentAssociationFullName = new(edFiProjectName, new ResourceName("StaffEducationOrganizationAssignmentAssociation"));
-        _staffEdOrgEmploymentAssociationFullName = new(edFiProjectName, new ResourceName("StaffEducationOrganizationEmploymentAssociation"));
-        _studentParentAssociationFullName = new(edFiProjectName, new ResourceName("StudentParentAssociation"));
-        _studentContactAssociationFullName = new(edFiProjectName, new ResourceName("StudentContactAssociation"));
+        _studentSchoolAssociationFullName = new(
+            edFiProjectName,
+            new ResourceName("StudentSchoolAssociation")
+        );
+        _staffEdOrgAssignmentAssociationFullName = new(
+            edFiProjectName,
+            new ResourceName("StaffEducationOrganizationAssignmentAssociation")
+        );
+        _staffEdOrgEmploymentAssociationFullName = new(
+            edFiProjectName,
+            new ResourceName("StaffEducationOrganizationEmploymentAssociation")
+        );
+        _studentParentAssociationFullName = new(
+            edFiProjectName,
+            new ResourceName("StudentParentAssociation")
+        );
+        _studentContactAssociationFullName = new(
+            edFiProjectName,
+            new ResourceName("StudentContactAssociation")
+        );
     }
 
     public GraphML CreateGraphML()
@@ -52,17 +67,23 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
         var resourceGraph = _resourceDependencyGraphFactory.Create();
 
         // Begin authorization transformations for GraphML output
-        var vertices = resourceGraph.Vertices
-            .SelectMany(ApplyStandardSecurityVertexExpansions)
+        var vertices = resourceGraph
+            .Vertices.SelectMany(ApplyStandardSecurityVertexExpansions)
             .OrderBy(n => n.Id)
             .ToList();
 
         var retryNodeIdByPrimaryAssociationNodeId = new Dictionary<string, string>();
 
-        var edges =
-            resourceGraph.Edges.SelectMany(ApplyUpstreamPrimaryAssociationEdgeExpansions)
+        var edges = resourceGraph
+            .Edges.SelectMany(ApplyUpstreamPrimaryAssociationEdgeExpansions)
             .Concat(resourceGraph.Edges.SelectMany(ApplyDownstreamPrimaryAssociationEdgeExpansions))
-            .Concat(resourceGraph.Edges.Where(e => !IsUpstreamPrimaryAssociationEdge(e) && !IsDownstreamPrimaryAssociationEdge(e)).Select(ProjectNonPrimaryAssociationEdge))
+            .Concat(
+                resourceGraph
+                    .Edges.Where(e =>
+                        !IsUpstreamPrimaryAssociationEdge(e) && !IsDownstreamPrimaryAssociationEdge(e)
+                    )
+                    .Select(ProjectNonPrimaryAssociationEdge)
+            )
             .Distinct()
             // Group and sort edges by source vertex
             .GroupBy(x => x.Source.Id)
@@ -74,7 +95,7 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
             {
                 Source = vertices.Single(v => v.Id == e.Source.Id),
                 Target = vertices.Single(v => v.Id == e.Target.Id),
-                IsReferenceRequired = e.IsReferenceRequired
+                IsReferenceRequired = e.IsReferenceRequired,
             })
             .ToList();
 
@@ -102,16 +123,20 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
             yield return new GraphMLNode { Id = vertex.GetEndpointName() };
 
             // Yield "retry" nodes for person types
-            if (vertex.FullResourceName == _studentFullName
+            if (
+                vertex.FullResourceName == _studentFullName
                 || vertex.FullResourceName == _staffFullName
                 || vertex.FullResourceName == _parentFullName
-                || vertex.FullResourceName == _contactFullName)
+                || vertex.FullResourceName == _contactFullName
+            )
             {
                 yield return new GraphMLNode() { Id = $"{vertex.GetEndpointName()}{RetrySuffix}" };
             }
         }
 
-        IEnumerable<GraphMLEdge> ApplyUpstreamPrimaryAssociationEdgeExpansions(ResourceDependencyGraphEdge edge)
+        IEnumerable<GraphMLEdge> ApplyUpstreamPrimaryAssociationEdgeExpansions(
+            ResourceDependencyGraphEdge edge
+        )
         {
             // Add a dependency for the #Retry node of edges with person types as the source
             if (IsUpstreamPrimaryAssociationEdge(edge))
@@ -127,7 +152,7 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
                 {
                     Source = new GraphMLNode { Id = primaryAssociationNodeId },
                     Target = new GraphMLNode { Id = retryNodeId },
-                    IsReferenceRequired = true // Upstream "retry" edges are always required
+                    IsReferenceRequired = true, // Upstream "retry" edges are always required
                 };
 
                 // Yield the standard association edge
@@ -135,12 +160,14 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
                 {
                     Source = new GraphMLNode { Id = GetNodeId(edge.Source) },
                     Target = new GraphMLNode { Id = GetNodeId(edge.Target) },
-                    IsReferenceRequired = edge.IsRequired
+                    IsReferenceRequired = edge.IsRequired,
                 };
             }
         }
 
-        IEnumerable<GraphMLEdge> ApplyDownstreamPrimaryAssociationEdgeExpansions(ResourceDependencyGraphEdge edge)
+        IEnumerable<GraphMLEdge> ApplyDownstreamPrimaryAssociationEdgeExpansions(
+            ResourceDependencyGraphEdge edge
+        )
         {
             // Add copies of the downstream dependencies of the primary associations with the #Retry node
             if (IsDownstreamPrimaryAssociationEdge(edge))
@@ -148,9 +175,12 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
                 // Yield an association edge relocated to the retry node *instead* of the standard association edge
                 yield return new GraphMLEdge
                 {
-                    Source = new GraphMLNode { Id = retryNodeIdByPrimaryAssociationNodeId[GetNodeId(edge.Source)] },
+                    Source = new GraphMLNode
+                    {
+                        Id = retryNodeIdByPrimaryAssociationNodeId[GetNodeId(edge.Source)],
+                    },
                     Target = new GraphMLNode { Id = GetNodeId(edge.Target) },
-                    IsReferenceRequired = edge.IsRequired
+                    IsReferenceRequired = edge.IsRequired,
                 };
             }
         }
@@ -162,17 +192,32 @@ internal class ResourceDependencyGraphMLFactory : IResourceDependencyGraphMLFact
             {
                 Source = new GraphMLNode { Id = GetNodeId(edge.Source) },
                 Target = new GraphMLNode { Id = GetNodeId(edge.Target) },
-                IsReferenceRequired = edge.IsRequired
+                IsReferenceRequired = edge.IsRequired,
             };
         }
     }
 
     private bool IsUpstreamPrimaryAssociationEdge(ResourceDependencyGraphEdge edge)
     {
-        return (edge.Source.FullResourceName == _studentFullName && edge.Target.FullResourceName == _studentSchoolAssociationFullName)
-            || (edge.Source.FullResourceName == _staffFullName && (edge.Target.FullResourceName == _staffEdOrgAssignmentAssociationFullName || edge.Target.FullResourceName == _staffEdOrgEmploymentAssociationFullName))
-            || (edge.Source.FullResourceName == _parentFullName && edge.Target.FullResourceName == _studentParentAssociationFullName)
-            || (edge.Source.FullResourceName == _contactFullName && edge.Target.FullResourceName == _studentContactAssociationFullName);
+        return (
+                edge.Source.FullResourceName == _studentFullName
+                && edge.Target.FullResourceName == _studentSchoolAssociationFullName
+            )
+            || (
+                edge.Source.FullResourceName == _staffFullName
+                && (
+                    edge.Target.FullResourceName == _staffEdOrgAssignmentAssociationFullName
+                    || edge.Target.FullResourceName == _staffEdOrgEmploymentAssociationFullName
+                )
+            )
+            || (
+                edge.Source.FullResourceName == _parentFullName
+                && edge.Target.FullResourceName == _studentParentAssociationFullName
+            )
+            || (
+                edge.Source.FullResourceName == _contactFullName
+                && edge.Target.FullResourceName == _studentContactAssociationFullName
+            );
     }
 
     private bool IsDownstreamPrimaryAssociationEdge(ResourceDependencyGraphEdge edge)

@@ -33,27 +33,31 @@ internal class ResourceDependencyGraphFactory(
         ProjectSchema[] projectSchemas = apiSchemaDocuments.GetAllProjectSchemas();
         ProjectName coreProjectName = apiSchemaDocuments.GetCoreProjectSchema().ProjectName;
 
-        List<(ProjectSchema projectSchema, ResourceSchema resourceSchema)> allResourceSchemaNodeInfos = projectSchemas
-            .SelectMany(projectSchema => projectSchema.GetAllResourceSchemaNodes().Select(jn => (projectSchema, resourceSchema: new ResourceSchema(jn))))
-            .ToList();
+        List<(ProjectSchema projectSchema, ResourceSchema resourceSchema)> allResourceSchemaNodeInfos =
+            projectSchemas
+                .SelectMany(projectSchema =>
+                    projectSchema
+                        .GetAllResourceSchemaNodes()
+                        .Select(jn => (projectSchema, resourceSchema: new ResourceSchema(jn)))
+                )
+                .ToList();
 
         List<ResourceDependencyGraphVertex> allResourceVertices = allResourceSchemaNodeInfos
-                    .Select(t =>
-                    {
-
-                        return new ResourceDependencyGraphVertex(
-                            t.projectSchema.ProjectName,
-                            t.projectSchema.ProjectEndpointName,
-                            t.resourceSchema.ResourceName,
-                            t.resourceSchema.IsResourceExtension
-                                ? default
-                                : t.projectSchema.GetEndpointNameFromResourceName(
-                                    t.resourceSchema.ResourceName),
-                            t.resourceSchema.IsResourceExtension,
-                            t.resourceSchema.IsSubclass,
-                            t.resourceSchema.IsSubclass ? t.resourceSchema.SuperclassResourceName : default,
-                            t.resourceSchema.IsSchoolYearEnumeration);
-                    })
+            .Select(t =>
+            {
+                return new ResourceDependencyGraphVertex(
+                    t.projectSchema.ProjectName,
+                    t.projectSchema.ProjectEndpointName,
+                    t.resourceSchema.ResourceName,
+                    t.resourceSchema.IsResourceExtension
+                        ? default
+                        : t.projectSchema.GetEndpointNameFromResourceName(t.resourceSchema.ResourceName),
+                    t.resourceSchema.IsResourceExtension,
+                    t.resourceSchema.IsSubclass,
+                    t.resourceSchema.IsSubclass ? t.resourceSchema.SuperclassResourceName : default,
+                    t.resourceSchema.IsSchoolYearEnumeration
+                );
+            })
             .ToList();
 
         List<ResourceDependencyGraphVertex> nonExtensionResourceVertices = allResourceVertices
@@ -75,34 +79,35 @@ internal class ResourceDependencyGraphFactory(
                 .Where(vertex => vertex.IsSubclass)
                 .ToLookup(vertex => vertex.SuperclassResourceName);
 
-        IEnumerable<ResourceDependencyGraphEdge> edges =
-            allResourceSchemaNodeInfos.SelectMany(t =>
+        IEnumerable<ResourceDependencyGraphEdge> edges = allResourceSchemaNodeInfos
+            .SelectMany(t =>
             {
-                var vertex = vertexByFullResourceName[new FullResourceName(
-                    t.projectSchema.ProjectName,
-                    t.resourceSchema.ResourceName)];
+                var vertex = vertexByFullResourceName[
+                    new FullResourceName(t.projectSchema.ProjectName, t.resourceSchema.ResourceName)
+                ];
 
-                return t.resourceSchema.DocumentPaths.Where(documentPath => documentPath.IsReference)
-                    .SelectMany(reference => BuildVertexEdges(
-                        vertex,
-                        reference.ProjectName,
-                        reference.ResourceName,
-                        reference.IsRequired,
-                        coreProjectName,
-                        projectByName,
-                        vertexByFullResourceName,
-                        extensionVertexBySuperclassName));
-            }).Distinct();
+                return t
+                    .resourceSchema.DocumentPaths.Where(documentPath => documentPath.IsReference)
+                    .SelectMany(reference =>
+                        BuildVertexEdges(
+                            vertex,
+                            reference.ProjectName,
+                            reference.ResourceName,
+                            reference.IsRequired,
+                            coreProjectName,
+                            projectByName,
+                            vertexByFullResourceName,
+                            extensionVertexBySuperclassName
+                        )
+                    );
+            })
+            .Distinct();
 
         var graph = new BidirectionalGraph<ResourceDependencyGraphVertex, ResourceDependencyGraphEdge>();
         graph.AddVertexRange(nonExtensionResourceVertices);
         graph.AddEdgeRange(edges);
 
-        foreach (
-            var schoolYearVertex in graph.Vertices.Where(vertex =>
-                vertex.IsSchoolYearEnumeration
-            )
-        )
+        foreach (var schoolYearVertex in graph.Vertices.Where(vertex => vertex.IsSchoolYearEnumeration))
         {
             graph.RemoveVertex(schoolYearVertex);
         }

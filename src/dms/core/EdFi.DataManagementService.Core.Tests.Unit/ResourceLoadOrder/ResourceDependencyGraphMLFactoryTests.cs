@@ -76,17 +76,21 @@ public class ResourceDependencyGraphMLFactoryTests
         // Assert
         var nodeIds = graphML.Nodes.Select(n => n.Id).ToArray();
 
-        nodeIds.Should().Contain([
-            "/ed-fi/students",
-            "/ed-fi/students#Retry",
-            "/ed-fi/staffs",
-            "/ed-fi/staffs#Retry",
-            "/ed-fi/parents",
-            "/ed-fi/parents#Retry",
-            "/ed-fi/contacts",
-            "/ed-fi/contacts#Retry",
-            "/ed-fi/schools"
-        ]);
+        nodeIds
+            .Should()
+            .Contain(
+                [
+                    "/ed-fi/students",
+                    "/ed-fi/students#Retry",
+                    "/ed-fi/staffs",
+                    "/ed-fi/staffs#Retry",
+                    "/ed-fi/parents",
+                    "/ed-fi/parents#Retry",
+                    "/ed-fi/contacts",
+                    "/ed-fi/contacts#Retry",
+                    "/ed-fi/schools",
+                ]
+            );
 
         // Only person types have retry nodes
         nodeIds.Count(id => id.EndsWith("#Retry", StringComparison.Ordinal)).Should().Be(4);
@@ -114,26 +118,34 @@ public class ResourceDependencyGraphMLFactoryTests
         // Assert
         var ids = graphML.Nodes.Select(n => n.Id).ToArray();
 
-        ids.Should().Contain([
-            "/ed-fi/students",
-            "/ed-fi/students#Retry",
-            "/ed-fi/studentSchoolAssociations"
-        ]);
+        ids.Should()
+            .Contain(["/ed-fi/students", "/ed-fi/students#Retry", "/ed-fi/studentSchoolAssociations"]);
 
-        var edges = graphML.Edges
-            .Select(x => (Source: x.Source.Id, Target: x.Target.Id, x.IsReferenceRequired))
+        var edges = graphML
+            .Edges.Select(x => (Source: x.Source.Id, Target: x.Target.Id, x.IsReferenceRequired))
             .ToArray();
 
-        edges.Should()
+        edges
+            .Should()
             .Contain(
-                (Source: "/ed-fi/studentSchoolAssociations", Target: "/ed-fi/students#Retry",
-                    IsReferenceRequired: true),
-                "primary association must point to #Retry as required");
+                (
+                    Source: "/ed-fi/studentSchoolAssociations",
+                    Target: "/ed-fi/students#Retry",
+                    IsReferenceRequired: true
+                ),
+                "primary association must point to #Retry as required"
+            );
 
-        edges.Should()
+        edges
+            .Should()
             .Contain(
-                (Source: "/ed-fi/students", Target: "/ed-fi/studentSchoolAssociations", IsReferenceRequired: true),
-                "original association edge is kept");
+                (
+                    Source: "/ed-fi/students",
+                    Target: "/ed-fi/studentSchoolAssociations",
+                    IsReferenceRequired: true
+                ),
+                "original association edge is kept"
+            );
     }
 
     [Test]
@@ -160,19 +172,29 @@ public class ResourceDependencyGraphMLFactoryTests
 
         // Assert
         // Expect edge from students#Retry -> studentSectionAssociations (not from ssa)
-        var tupleEdges = graphML.Edges
-            .Select(x => (Source: x.Source.Id, Target: x.Target.Id, x.IsReferenceRequired))
+        var tupleEdges = graphML
+            .Edges.Select(x => (Source: x.Source.Id, Target: x.Target.Id, x.IsReferenceRequired))
             .ToArray();
 
-        tupleEdges.Should()
+        tupleEdges
+            .Should()
             .Contain(
-                (Source: "/ed-fi/students#Retry", Target: "/ed-fi/studentSectionAssociations",
-                    IsReferenceRequired: false));
+                (
+                    Source: "/ed-fi/students#Retry",
+                    Target: "/ed-fi/studentSectionAssociations",
+                    IsReferenceRequired: false
+                )
+            );
 
-        tupleEdges.Should()
+        tupleEdges
+            .Should()
             .NotContain(
-                (Source: "/ed-fi/studentSchoolAssociations", Target: "/ed-fi/studentSectionAssociations",
-                    IsReferenceRequired: false));
+                (
+                    Source: "/ed-fi/studentSchoolAssociations",
+                    Target: "/ed-fi/studentSectionAssociations",
+                    IsReferenceRequired: false
+                )
+            );
     }
 
     [Test]
@@ -193,11 +215,13 @@ public class ResourceDependencyGraphMLFactoryTests
         GraphML graphML = _graphMLFactory.CreateGraphML();
 
         // Assert
-        var edges = graphML.Edges
-            .Select(e => (Source: e.Source.Id, Target: e.Target.Id, e.IsReferenceRequired))
+        var edges = graphML
+            .Edges.Select(e => (Source: e.Source.Id, Target: e.Target.Id, e.IsReferenceRequired))
             .ToArray();
 
-        edges.Should().Contain((Source: "/ed-fi/schools", Target: "/ed-fi/calendarDates", IsReferenceRequired: false));
+        edges
+            .Should()
+            .Contain((Source: "/ed-fi/schools", Target: "/ed-fi/calendarDates", IsReferenceRequired: false));
     }
 
     [Test]
@@ -221,18 +245,24 @@ public class ResourceDependencyGraphMLFactoryTests
         GraphML graphML = _graphMLFactory.CreateGraphML();
 
         // Assert
-        var edges = graphML.Edges
-            .Select(e => (Source: e.Source.Id, Target: e.Target.Id, e.IsReferenceRequired))
+        var edges = graphML
+            .Edges.Select(e => (Source: e.Source.Id, Target: e.Target.Id, e.IsReferenceRequired))
             .ToArray();
 
         // upstream adds required=true edge: primary -> staffs#Retry (always required)
-        edges.Should()
+        edges
+            .Should()
             .Contain(
-                (Source: "/ed-fi/staffEducationOrganizationEmploymentAssociations", Target: "/ed-fi/staffs#Retry",
-                    IsReferenceRequired: true));
+                (
+                    Source: "/ed-fi/staffEducationOrganizationEmploymentAssociations",
+                    Target: "/ed-fi/staffs#Retry",
+                    IsReferenceRequired: true
+                )
+            );
 
         // redirected downstream keeps its original required flag (true)
-        edges.Should()
+        edges
+            .Should()
             .Contain((Source: "/ed-fi/staffs#Retry", Target: "/ed-fi/contacts", IsReferenceRequired: true));
     }
 
@@ -264,17 +294,26 @@ public class ResourceDependencyGraphMLFactoryTests
         // Assert
         var edges = graphML.Edges.Select(e => (e.Source.Id, e.Target.Id)).ToArray();
 
-        edges.Should().Contain(("/ed-fi/staffEducationOrganizationAssignmentAssociations", "/ed-fi/staffs#Retry"));
-        edges.Should().Contain(("/ed-fi/staffEducationOrganizationEmploymentAssociations", "/ed-fi/staffs#Retry"));
+        edges
+            .Should()
+            .Contain(("/ed-fi/staffEducationOrganizationAssignmentAssociations", "/ed-fi/staffs#Retry"));
+        edges
+            .Should()
+            .Contain(("/ed-fi/staffEducationOrganizationEmploymentAssociations", "/ed-fi/staffs#Retry"));
 
         edges.Should().Contain(("/ed-fi/staffs#Retry", "/ed-fi/sections"));
         edges.Should().Contain(("/ed-fi/staffs#Retry", "/ed-fi/educationOrganizations"));
 
         // No edges from the primary association nodes to their downstream targets anymore
-        edges.Should().NotContain(("/ed-fi/staffEducationOrganizationAssignmentAssociations", "/ed-fi/sections"));
+        edges
+            .Should()
+            .NotContain(("/ed-fi/staffEducationOrganizationAssignmentAssociations", "/ed-fi/sections"));
 
-        edges.Should()
-            .NotContain(("/ed-fi/staffEducationOrganizationEmploymentAssociations", "/ed-fi/educationOrganizations"));
+        edges
+            .Should()
+            .NotContain(
+                ("/ed-fi/staffEducationOrganizationEmploymentAssociations", "/ed-fi/educationOrganizations")
+            );
     }
 
     [Test]
@@ -311,15 +350,18 @@ public class ResourceDependencyGraphMLFactoryTests
         var edges = graphML.Edges.Select(e => (e.Source.Id, e.Target.Id)).ToArray();
 
         // Verify the edges are sorted by source and then target
-        edges.Should()
+        edges
+            .Should()
             .Equal(
                 ("/ed-fi/assessments", "/ed-fi/assessmentItems"),
                 ("/ed-fi/schools", "/ed-fi/calendarDates"),
-                ("/ed-fi/schools", "/ed-fi/studentSchoolAttendanceEvents"));
+                ("/ed-fi/schools", "/ed-fi/studentSchoolAttendanceEvents")
+            );
 
         // Verify the duplicate edges are made distinct
-        var schoolCalendarDateEdges = graphML.Edges.Where(e =>
-            e.Source.Id == "/ed-fi/schools" && e.Target.Id == "/ed-fi/calendarDates").ToList();
+        var schoolCalendarDateEdges = graphML
+            .Edges.Where(e => e.Source.Id == "/ed-fi/schools" && e.Target.Id == "/ed-fi/calendarDates")
+            .ToList();
         schoolCalendarDateEdges.Count.Should().Be(1);
 
         // Verify the edges use actual vertex instances in the graph
@@ -350,7 +392,8 @@ public class ResourceDependencyGraphMLFactoryTests
             isExtension,
             isSubclass,
             superclass,
-            isSchoolYearEnum);
+            isSchoolYearEnum
+        );
     }
 
     private static string ToPluralLowerKebab(string singularPascal)
@@ -382,6 +425,6 @@ public class ResourceDependencyGraphMLFactoryTests
     private static ResourceDependencyGraphEdge Edge(
         ResourceDependencyGraphVertex src,
         ResourceDependencyGraphVertex dst,
-        bool isRequired) =>
-        new(src, dst, isRequired);
+        bool isRequired
+    ) => new(src, dst, isRequired);
 }

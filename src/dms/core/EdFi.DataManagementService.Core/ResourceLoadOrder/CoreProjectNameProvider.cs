@@ -11,12 +11,13 @@ namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
 
 internal class CoreProjectNameProvider(
     IApiSchemaProvider _apiSchemaProvider,
-    ILogger<CoreProjectNameProvider> _logger) : ICoreProjectNameProvider
+    ILogger<CoreProjectNameProvider> _logger
+) : ICoreProjectNameProvider
 {
     private readonly ProjectName _coreProjectName = new ApiSchemaDocuments(
-            _apiSchemaProvider.GetApiSchemaNodes(),
-            _logger
-        )
+        _apiSchemaProvider.GetApiSchemaNodes(),
+        _logger
+    )
         .GetCoreProjectSchema()
         .ProjectName;
 

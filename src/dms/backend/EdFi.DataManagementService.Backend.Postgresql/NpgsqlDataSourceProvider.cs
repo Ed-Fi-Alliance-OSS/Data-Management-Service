@@ -12,6 +12,8 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 /// <summary>
 /// Scoped service that provides the appropriate NpgsqlDataSource for the current request
 /// by retrieving the selected DMS instance and using the singleton cache.
+/// Uses a Dictionary cache to handle potential scope issues where the provider may be
+/// used across different instance contexts.
 /// </summary>
 public sealed class NpgsqlDataSourceProvider(
     IDmsInstanceSelection dmsInstanceSelection,
@@ -23,13 +25,14 @@ public sealed class NpgsqlDataSourceProvider(
 
     /// <summary>
     /// Gets the NpgsqlDataSource for the current request's DMS instance.
-    /// Caches data sources by instance ID to avoid repeated creation.
-    /// Cache persists for the lifetime of this provider instance.
+    /// Validates the current instance on each access to handle cases where instance
+    /// selection may occur in a different scope context.
     /// </summary>
     public NpgsqlDataSource DataSource
     {
         get
         {
+            // Always check current instance to handle potential scope issues
             var selectedInstance = dmsInstanceSelection.GetSelectedDmsInstance();
 
             // Check if we've already cached this instance's data source

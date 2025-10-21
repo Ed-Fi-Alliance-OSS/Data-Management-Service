@@ -9,7 +9,6 @@ internal static class ResourceDependencyGraphVertexExtensions
 {
     internal static string GetEndpointName(this ResourceDependencyGraphVertex vertex)
     {
-        return
-            $"/{vertex.ProjectEndpointName.Value}/{vertex.ResourceEndpointName.Value}";
+        return $"/{vertex.ProjectEndpointName.Value}/{vertex.ResourceEndpointName.Value}";
     }
 }

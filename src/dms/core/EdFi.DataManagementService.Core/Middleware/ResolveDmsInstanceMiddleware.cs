@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -20,7 +21,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// </summary>
 internal class ResolveDmsInstanceMiddleware(
     IDmsInstanceProvider dmsInstanceProvider,
-    IDmsInstanceSelection dmsInstanceSelection,
+    IServiceProvider serviceProvider,
     ILogger<ResolveDmsInstanceMiddleware> logger
 ) : IPipelineStep
 {
@@ -29,6 +30,9 @@ internal class ResolveDmsInstanceMiddleware(
     /// </summary>
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
+        // Resolve scoped service for this request
+        var dmsInstanceSelection = serviceProvider.GetRequiredService<IDmsInstanceSelection>();
+
         // Validate ClientAuthorizations.DmsInstanceIds not empty
         if (requestInfo.ClientAuthorizations.DmsInstanceIds.Count == 0)
         {
