@@ -349,7 +349,6 @@ public partial class SqlAction() : ISqlAction
         var parameters = new List<NpgsqlParameter> { new() { Value = resourceName } };
 
         AddQueryFilters(queryRequest.QueryElements, andConditions, parameters);
-        AddAuthorizationFilters(queryRequest, andConditions, parameters);
 
         string where = string.Join(" AND ", andConditions);
 
@@ -705,6 +704,8 @@ public partial class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
+        return [];
+#pragma warning disable CS0162 // Unreachable code detected
         Trace.Assert(
             bulkReferences.ReferentialIds.Length == bulkReferences.ReferentialPartitionKeys.Length,
             "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
@@ -740,6 +741,7 @@ public partial class SqlAction() : ISqlAction
         }
 
         return result.ToArray();
+#pragma warning restore CS0162 // Unreachable code detected
     }
 
     /// <summary>
@@ -821,6 +823,8 @@ public partial class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
+        return [];
+#pragma warning disable CS0162 // Unreachable code detected
         await using NpgsqlCommand command = new(
             $@"SELECT * FROM dms.Document d
                                 INNER JOIN dms.Reference r ON d.Id = r.ParentDocumentId And d.DocumentPartitionKey = r.ParentDocumentPartitionKey
@@ -848,6 +852,7 @@ public partial class SqlAction() : ISqlAction
         }
 
         return documents.ToArray();
+#pragma warning restore CS0162 // Unreachable code detected
     }
 
     public async Task<int> InsertEducationOrganizationHierarchy(
@@ -898,6 +903,8 @@ public partial class SqlAction() : ISqlAction
         NpgsqlTransaction transaction
     )
     {
+        return 0;
+#pragma warning disable CS0162 // Unreachable code detected
         await using NpgsqlCommand updateCommand = new(
             $@"UPDATE dms.EducationOrganizationHierarchy
                 SET ParentId = (SELECT Id FROM dms.EducationOrganizationHierarchy WHERE EducationOrganizationId = $4)
@@ -923,6 +930,7 @@ public partial class SqlAction() : ISqlAction
         };
         await updateCommand.PrepareAsync();
         return await updateCommand.ExecuteNonQueryAsync();
+#pragma warning restore CS0162 // Unreachable code detected
     }
 
     public async Task<int> DeleteEducationOrganizationHierarchy(

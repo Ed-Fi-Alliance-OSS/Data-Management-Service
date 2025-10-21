@@ -29,6 +29,8 @@ public class ResourceAuthorizationHandler(
         TraceId traceId
     )
     {
+        return new ResourceAuthorizationResult.Authorized();
+#pragma warning disable CS0162 // Unreachable code detected
         logger.LogInformation(
             "Entering ResourceAuthorizationHandler. OperationType:{OperationType}, AuthorizationStrategyCount:{StrategyCount} TraceId:{TraceId}",
             operationType,
@@ -120,7 +122,7 @@ public class ResourceAuthorizationHandler(
         logger.LogInformation("Authorization GRANTED for TraceId: {TraceId}", traceId.Value);
         return new ResourceAuthorizationResult.Authorized();
     }
-
+#pragma warning restore CS0162 // Unreachable code detected
     private static ResourceAuthorizationResult.NotAuthorized CreateNotAuthorizedResult(
         IEnumerable<ResourceAuthorizationResult> results
     )

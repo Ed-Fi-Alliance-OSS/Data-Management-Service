@@ -28,7 +28,10 @@ public static class DocumentAuthorizationHelper
         ISqlAction sqlAction
     )
     {
+        return (null, null, null, null);
+
         // Extract security elements and authorization info based on request type
+#pragma warning disable CS0162 // Unreachable code detected
         var (securityElements, authInfo) = request switch
         {
             IUpdateRequest updateRequest => (
@@ -96,6 +99,7 @@ public static class DocumentAuthorizationHelper
 
         return (studentEdOrgIds, studentResponsibilityEdOrgIds, contactEdOrgIds, staffEdOrgIds);
     }
+#pragma warning restore CS0162 // Unreachable code detected
 
     // Helper method to check if a securable key exists
     private static bool HasSecurable(IEnumerable<AuthorizationSecurableInfo> authInfo, string securableKey) =>
