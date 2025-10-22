@@ -1,0 +1,10 @@
+Timing is on.
+Timing is on.
+SET
+Time: 1.574 ms
+SET
+Time: 1.154 ms
+SET
+Time: 0.981 ms
+psql:../sql/current/test_current_insert_references.sql:40: error: no rows returned for \gset
+Time: 3.844 ms

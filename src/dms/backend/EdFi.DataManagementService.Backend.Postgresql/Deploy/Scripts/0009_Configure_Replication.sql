@@ -4,5 +4,5 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 -- Ensure publication is dropped before creating
-DROP PUBLICATION IF EXISTS to_debezium;
-CREATE PUBLICATION to_debezium FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup WITH (publish = 'insert, update, delete, truncate', publish_via_partition_root = true);
+-- DROP PUBLICATION IF EXISTS to_debezium;
+-- CREATE PUBLICATION to_debezium FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup WITH (publish = 'insert, update, delete, truncate', publish_via_partition_root = true);

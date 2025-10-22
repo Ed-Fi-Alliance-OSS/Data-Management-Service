@@ -57,10 +57,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
-        JsonElement? studentSchoolAuthorizationEducationOrganizationIds,
-        JsonElement? studentEdOrgResponsibilityAuthorizationIds,
-        JsonElement? contactStudentSchoolAuthorizationEducationOrganizationIds,
-        JsonElement? staffEducationOrganizationAuthorizationEdOrgIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
@@ -79,11 +75,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 IsDescriptor: upsertRequest.ResourceInfo.IsDescriptor,
                 ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
                 EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
-                SecurityElements: upsertRequest.DocumentSecurityElements.ToJsonElement(),
-                StudentSchoolAuthorizationEdOrgIds: studentSchoolAuthorizationEducationOrganizationIds,
-                StudentEdOrgResponsibilityAuthorizationIds: studentEdOrgResponsibilityAuthorizationIds,
-                ContactStudentSchoolAuthorizationEdOrgIds: contactStudentSchoolAuthorizationEducationOrganizationIds,
-                StaffEducationOrganizationAuthorizationEdOrgIds: staffEducationOrganizationAuthorizationEdOrgIds,
                 LastModifiedTraceId: traceId.Value
             ),
             PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value,
@@ -357,10 +348,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     upsertRequest,
                     documentReferenceIds,
                     descriptorReferenceIds,
-                    studentSchoolAuthorizationEdOrgIds,
-                    studentEdOrgResponsibilityAuthorizationIds,
-                    contactStudentSchoolAuthorizationEdOrgIds,
-                    staffEducationOrganizationAuthorizationEdOrgIds,
                     connection,
                     transaction,
                     upsertRequest.TraceId

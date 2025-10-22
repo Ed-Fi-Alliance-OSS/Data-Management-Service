@@ -38,21 +38,6 @@ public partial class SqlAction() : ISqlAction
             IsDescriptor: reader.GetBoolean(reader.GetOrdinal("IsDescriptor")),
             ProjectName: reader.GetString(reader.GetOrdinal("ProjectName")),
             EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-            SecurityElements: await reader.GetFieldValueAsync<JsonElement>(
-                reader.GetOrdinal("SecurityElements")
-            ),
-            StudentSchoolAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
-                reader.GetOrdinal("StudentSchoolAuthorizationEdOrgIds")
-            ),
-            StudentEdOrgResponsibilityAuthorizationIds: await reader.GetFieldValueAsync<JsonElement?>(
-                reader.GetOrdinal("StudentEdOrgResponsibilityAuthorizationIds")
-            ),
-            ContactStudentSchoolAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
-                reader.GetOrdinal("ContactStudentSchoolAuthorizationEdOrgIds")
-            ),
-            StaffEducationOrganizationAuthorizationEdOrgIds: await reader.GetFieldValueAsync<JsonElement?>(
-                reader.GetOrdinal("StaffEducationOrganizationAuthorizationEdOrgIds")
-            ),
             CreatedAt: reader.GetDateTime(reader.GetOrdinal("CreatedAt")),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
             LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId"))
@@ -68,12 +53,12 @@ public partial class SqlAction() : ISqlAction
         string resourceName,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         TraceId traceId
     )
     {
         await using NpgsqlCommand command = new(
-            $@"SELECT EdfiDoc, SecurityElements, LastModifiedAt, LastModifiedTraceId, Id  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
+            $@"SELECT EdfiDoc, LastModifiedAt, LastModifiedTraceId, Id  FROM dms.Document WHERE DocumentPartitionKey = $1 AND DocumentUuid = $2 AND ResourceName = $3 {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
@@ -86,7 +71,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -99,9 +83,6 @@ public partial class SqlAction() : ISqlAction
 
         return new DocumentSummary(
             EdfiDoc: await reader.GetFieldValueAsync<JsonElement>(reader.GetOrdinal("EdfiDoc")),
-            SecurityElements: await reader.GetFieldValueAsync<JsonElement>(
-                reader.GetOrdinal("SecurityElements")
-            ),
             LastModifiedAt: reader.GetDateTime(reader.GetOrdinal("LastModifiedAt")),
             LastModifiedTraceId: reader.GetString(reader.GetOrdinal("LastModifiedTraceId")),
             DocumentId: reader.GetInt64(reader.GetOrdinal("Id"))
@@ -135,7 +116,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -176,130 +156,6 @@ public partial class SqlAction() : ISqlAction
         }
 
         return result;
-    }
-
-    /// <summary>
-    /// Inspects the <see cref="IQueryRequest.AuthorizationSecurableInfo"/> and determines which security
-    /// elements (such as Namespace, EducationOrganization, Student, Contact, or Staff) should be enforced in the query.
-    /// It appends the appropriate SQL WHERE conditions and parameters to the provided lists.
-    /// </summary>
-    private void AddAuthorizationFilters(
-        IQueryRequest queryRequest,
-        List<string> andConditions,
-        List<NpgsqlParameter> parameters
-    )
-    {
-        // Helper to get all values from filters based on the filter type
-        List<string> GetFilterValues(
-            string filterType = SecurityElementNameConstants.EducationOrganization
-        ) =>
-            queryRequest
-                .AuthorizationStrategyEvaluators.SelectMany(evaluator =>
-                    evaluator
-                        .Filters.Where(f => f.GetType().Name == filterType)
-                        .Select(f => f.Value?.ToString())
-                        .Where(ns => !string.IsNullOrEmpty(ns))
-                        .Cast<string>()
-                )
-                .Distinct()
-                .ToList();
-
-        foreach (var authorizationSecurableInfo in queryRequest.AuthorizationSecurableInfo)
-        {
-            switch (authorizationSecurableInfo.SecurableKey)
-            {
-                case SecurityElementNameConstants.Namespace:
-                    var namespaces = GetFilterValues(SecurityElementNameConstants.Namespace);
-                    BuildNamespaceFilter(namespaces);
-                    break;
-
-                case SecurityElementNameConstants.EducationOrganization:
-                    var edOrgIds = GetFilterValues();
-                    BuildEducationOrganizationFilter(edOrgIds);
-                    break;
-
-                case SecurityElementNameConstants.StudentUniqueId:
-                    var studentEdOrgIds = GetFilterValues();
-                    BuildStudentFilter(studentEdOrgIds);
-                    break;
-
-                case SecurityElementNameConstants.ContactUniqueId:
-                    var contactEdOrgIds = GetFilterValues();
-                    BuildContactFilter(contactEdOrgIds);
-                    break;
-
-                case SecurityElementNameConstants.StaffUniqueId:
-                    var staffEdOrgIds = GetFilterValues();
-                    BuildStaffFilter(staffEdOrgIds);
-                    break;
-            }
-        }
-
-        void BuildNamespaceFilter(List<string> namespaces)
-        {
-            if (namespaces.Count == 0)
-            {
-                return;
-            }
-
-            var namespaceConditions = new List<string>();
-
-            foreach (var ns in namespaces)
-            {
-                namespaceConditions.Add($"SecurityElements->'Namespace'->>0 LIKE ${parameters.Count + 1}");
-                parameters.Add(new NpgsqlParameter { Value = $"{ns}%" });
-            }
-
-            var where = string.Join(" OR ", namespaceConditions);
-            andConditions.Add($"({where})");
-        }
-
-        void BuildEducationOrganizationFilter(List<string> edOrgIds)
-        {
-            if (edOrgIds.Count == 0)
-            {
-                return;
-            }
-
-            andConditions.Add($@"
-                SecurityElements->'EducationOrganization'->0->>'Id' = ANY(
-                    ARRAY(SELECT jsonb_array_elements_text(hierarchy) FROM dms.educationorganizationhierarchytermslookup WHERE id = ANY(${parameters.Count + 1}))::text[]
-                )");
-            parameters.Add(new NpgsqlParameter { Value = edOrgIds.Select(long.Parse).ToArray() });
-        }
-
-        void BuildStudentFilter(List<string> studentEdOrgIds)
-        {
-            if (studentEdOrgIds.Count == 0)
-            {
-                return;
-            }
-
-            andConditions.Add($"studentschoolauthorizationedorgids ?| ${parameters.Count + 1}");
-            parameters.Add(new NpgsqlParameter { Value = studentEdOrgIds });
-        }
-
-        void BuildContactFilter(List<string> contactEdOrgIds)
-        {
-            if (contactEdOrgIds.Count == 0)
-            {
-                return;
-            }
-
-            andConditions.Add($"contactstudentschoolauthorizationedorgids ?| ${parameters.Count + 1}");
-            parameters.Add(new NpgsqlParameter { Value = contactEdOrgIds });
-        }
-
-        void BuildStaffFilter(List<string> staffEdOrgIds)
-        {
-            if (staffEdOrgIds.Count == 0)
-            {
-                return;
-            }
-
-            andConditions.Add($"staffeducationorganizationauthorizationedorgids ?| ${parameters.Count + 1}");
-            parameters.Add(new NpgsqlParameter { Value = staffEdOrgIds });
-        }
     }
 
     /// <summary>
@@ -369,7 +225,6 @@ public partial class SqlAction() : ISqlAction
         );
         command.Parameters.AddRange(parameters.ToArray());
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         var documents = new List<JsonNode>();
@@ -403,7 +258,6 @@ public partial class SqlAction() : ISqlAction
         var parameters = new List<NpgsqlParameter> { new() { Value = resourceName } };
 
         AddQueryFilters(queryRequest.QueryElements, andConditions, parameters);
-        AddAuthorizationFilters(queryRequest, andConditions, parameters);
 
         string where = string.Join(" AND ", andConditions);
 
@@ -414,7 +268,6 @@ public partial class SqlAction() : ISqlAction
         );
 
         command.Parameters.AddRange(parameters.ToArray());
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -440,12 +293,12 @@ public partial class SqlAction() : ISqlAction
         await using var command = new NpgsqlCommand(
             @"
             WITH Documents AS (
-            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, StudentSchoolAuthorizationEdOrgIds, StudentEdOrgResponsibilityAuthorizationIds, ContactStudentSchoolAuthorizationEdOrgIds, StaffEducationOrganizationAuthorizationEdOrgIds, LastModifiedTraceId)
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            INSERT INTO dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, LastModifiedTraceId)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
               RETURNING Id
             )
             INSERT INTO dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
-              SELECT $14, $15, Id, $1 FROM Documents RETURNING DocumentId;
+              SELECT $9, $10, Id, $1 FROM Documents RETURNING DocumentId;
             ",
             connection,
             transaction
@@ -460,38 +313,12 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = document.IsDescriptor },
                 new() { Value = document.ProjectName },
                 new() { Value = document.EdfiDoc },
-                new() { Value = document.SecurityElements },
-                new()
-                {
-                    Value = document.StudentSchoolAuthorizationEdOrgIds.HasValue
-                        ? document.StudentSchoolAuthorizationEdOrgIds
-                        : DBNull.Value,
-                },
-                new()
-                {
-                    Value = document.StudentEdOrgResponsibilityAuthorizationIds.HasValue
-                        ? document.StudentEdOrgResponsibilityAuthorizationIds
-                        : DBNull.Value,
-                },
-                new()
-                {
-                    Value = document.ContactStudentSchoolAuthorizationEdOrgIds.HasValue
-                        ? document.ContactStudentSchoolAuthorizationEdOrgIds
-                        : DBNull.Value,
-                },
-                new()
-                {
-                    Value = document.StaffEducationOrganizationAuthorizationEdOrgIds.HasValue
-                        ? document.StaffEducationOrganizationAuthorizationEdOrgIds
-                        : DBNull.Value,
-                },
                 new() { Value = document.LastModifiedTraceId },
                 new() { Value = referentialPartitionKey },
                 new() { Value = referentialId },
             },
         };
 
-        await command.PrepareAsync();
         return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
@@ -516,12 +343,7 @@ public partial class SqlAction() : ISqlAction
             @"UPDATE dms.Document
               SET EdfiDoc = $1,
                 LastModifiedAt = clock_timestamp(),
-                LastModifiedTraceId = $4,
-                SecurityElements = $5,
-                StudentSchoolAuthorizationEdOrgIds = $6,
-                StudentEdOrgResponsibilityAuthorizationIds = $7,
-                ContactStudentSchoolAuthorizationEdOrgIds = $8,
-                StaffEducationOrganizationAuthorizationEdOrgIds = $9
+                LastModifiedTraceId = $4
               WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
               RETURNING Id;",
             connection,
@@ -534,35 +356,9 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
                 new() { Value = documentUuid },
                 new() { Value = traceId.Value },
-                new() { Value = securityElements },
-                new()
-                {
-                    Value = studentSchoolAuthorizationEdOrgIds.HasValue
-                        ? studentSchoolAuthorizationEdOrgIds
-                        : DBNull.Value,
-                },
-                new()
-                {
-                    Value = studentEdOrgResponsibilityAuthorizationIds.HasValue
-                        ? studentEdOrgResponsibilityAuthorizationIds
-                        : DBNull.Value,
-                },
-                new()
-                {
-                    Value = contactStudentSchoolAuthorizationEdOrgIds.HasValue
-                        ? contactStudentSchoolAuthorizationEdOrgIds
-                        : DBNull.Value,
-                },
-                new()
-                {
-                    Value = staffEducationOrganizationAuthorizationEdOrgIds.HasValue
-                        ? staffEducationOrganizationAuthorizationEdOrgIds
-                        : DBNull.Value,
-                },
             },
         };
 
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -604,7 +400,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -652,7 +447,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
@@ -689,7 +483,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -731,7 +524,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = bulkReferences.ReferentialPartitionKeys },
             },
         };
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         List<Guid> result = [];
@@ -769,7 +561,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -802,7 +593,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         var resourceNames = new List<string>();
@@ -841,7 +631,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         List<Document> documents = [];
@@ -888,7 +677,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -928,7 +716,6 @@ public partial class SqlAction() : ISqlAction
                 },
             },
         };
-        await updateCommand.PrepareAsync();
         return await updateCommand.ExecuteNonQueryAsync();
 #pragma warning restore CS0162 // Unreachable code detected
     }
@@ -960,14 +747,13 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
     public async Task<long[]> GetAncestorEducationOrganizationIds(
         long[] educationOrganizationIds,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -994,7 +780,6 @@ public partial class SqlAction() : ISqlAction
         {
             Parameters = { new() { Value = educationOrganizationIds } },
         };
-        await command.PrepareAsync();
 
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
@@ -1011,7 +796,7 @@ public partial class SqlAction() : ISqlAction
     public async Task<JsonElement?> GetStudentSchoolAuthorizationEducationOrganizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -1030,7 +815,6 @@ public partial class SqlAction() : ISqlAction
             Parameters = { new() { Value = studentUniqueId } },
         };
 
-        await command.PrepareAsync();
         object? result = await command.ExecuteScalarAsync();
 
         return result == DBNull.Value || result == null
@@ -1041,7 +825,7 @@ public partial class SqlAction() : ISqlAction
     public async Task<JsonElement?> GetStudentEdOrgResponsibilityAuthorizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -1060,7 +844,6 @@ public partial class SqlAction() : ISqlAction
             Parameters = { new() { Value = studentUniqueId } },
         };
 
-        await command.PrepareAsync();
         object? result = await command.ExecuteScalarAsync();
 
         return result == DBNull.Value || result == null
@@ -1071,7 +854,7 @@ public partial class SqlAction() : ISqlAction
     public async Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
         string contactUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -1090,7 +873,6 @@ public partial class SqlAction() : ISqlAction
             Parameters = { new() { Value = contactUniqueId } },
         };
 
-        await command.PrepareAsync();
         object? result = await command.ExecuteScalarAsync();
 
         return result == DBNull.Value || result == null
@@ -1101,7 +883,7 @@ public partial class SqlAction() : ISqlAction
     public async Task<JsonElement?> GetStaffEducationOrganizationAuthorizationEdOrgIds(
         string staffUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -1120,7 +902,6 @@ public partial class SqlAction() : ISqlAction
             Parameters = { new() { Value = staffUniqueId } },
         };
 
-        await command.PrepareAsync();
         object? result = await command.ExecuteScalarAsync();
 
         return result == DBNull.Value || result == null
@@ -1151,7 +932,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1178,7 +958,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1205,7 +984,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1232,7 +1010,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1259,7 +1036,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1286,7 +1062,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 }

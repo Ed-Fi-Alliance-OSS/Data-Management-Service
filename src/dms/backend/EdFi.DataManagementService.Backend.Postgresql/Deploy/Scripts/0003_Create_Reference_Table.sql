@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS dms.Reference (
   ReferentialId UUID NOT NULL,
   ReferentialPartitionKey SMALLINT NOT NULL,
   PRIMARY KEY (ParentDocumentPartitionKey, Id)
-) PARTITION BY HASH(ParentDocumentPartitionKey);
+) PARTITION BY LIST(ParentDocumentPartitionKey);
 
 -- Create partitions if not exists
 DO $$
@@ -24,7 +24,7 @@ BEGIN
     FOR i IN 0..15 LOOP
         partition_name := 'reference_' || to_char(i, 'FM00');
         EXECUTE format(
-            'CREATE TABLE IF NOT EXISTS dms.%I PARTITION OF dms.Reference FOR VALUES WITH (MODULUS 16, REMAINDER %s);',
+            'CREATE TABLE IF NOT EXISTS dms.%I PARTITION OF dms.Reference FOR VALUES IN (%s);',
             partition_name, i
         );
     END LOOP;

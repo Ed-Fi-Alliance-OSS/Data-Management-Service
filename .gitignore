@@ -454,5 +454,9 @@ AGENTS.md
 openApi-codegen-cli.jar
 /.github/copilot-instructions.md
 
-# perf-claude generated CSVs
-perf-claude/data/out/*.csv
+# perf generated data
+perf-dms-reference-table-direct-load/data/out/
+perf-dms-document-alias-only/backups/
+perf-dms-document-alias-only/data/out/
+perf-dms-reference-table-direct-load/venv/
+perf-dms-document-alias-only/venv/

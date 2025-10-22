@@ -1,0 +1,2 @@
+# Python dependencies for document alias data generation
+uuid7
