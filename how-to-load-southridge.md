@@ -139,6 +139,34 @@ Write-Host "ClaimSet: $($creds.claimSet)"  # Should be "EdfiSandbox"
 
 If the ClaimSet is not `EdfiSandbox`, you'll need to recreate the application (see Step 2).
 
+### 429 Too Many Requests Errors
+
+If you see "Too Many Requests - 429" errors during bulk loading, this indicates DMS is rate limiting the requests. The default rate limit (5,000 requests per 10 seconds) is too low for bulk data loading.
+
+**Solution:** Increase the rate limit in DMS configuration:
+
+1. Edit `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.Development.json`
+2. Add or modify the `RateLimit` section:
+
+```json
+"RateLimit": {
+    "PermitLimit": 10000000,
+    "Window": 10,
+    "QueueLimit": 0
+}
+```
+
+This configuration allows 10 million requests per 10 seconds, which is suitable for bulk loading operations.
+
+3. Restart DMS to apply the new configuration:
+
+```bash
+# Stop DMS (Ctrl+C in the DMS terminal)
+./start-dms-local.ps1
+```
+
+**Note:** The default configuration in `appsettings.json` has a `PermitLimit` of 5000, which is appropriate for normal API usage but insufficient for bulk data loading. The Development environment override eliminates rate limiting for local development and testing.
+
 ### Missing Bootstrap Directory Error
 
 The `Write-Descriptors` function expects a `Bootstrap` subdirectory, which doesn't exist in the Southridge dataset. Use `Write-Southridge` instead, which loads all XML files from the root directory.
