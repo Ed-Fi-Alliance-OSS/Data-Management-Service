@@ -83,9 +83,79 @@ try {
         }
     }
 
+    # Step 5: Create vendor for data loading
+    Write-Host "`n5. Creating data load vendor..." -ForegroundColor Yellow
+    try {
+        $vendorId = Add-Vendor `
+            -CmsUrl $cmsUrl `
+            -Company "Data Load Vendor" `
+            -ContactName "Data Loader" `
+            -ContactEmailAddress "dataload@example.com" `
+            -NamespacePrefixes "uri://ed-fi.org" `
+            -AccessToken $adminToken
+
+        Write-Host "   ✓ Vendor created with ID: $vendorId" -ForegroundColor Green
+    }
+    catch {
+        if ($_ -match "already exists" -or $_ -match "409") {
+            Write-Host "   ℹ Vendor already exists, retrieving existing vendor..." -ForegroundColor Gray
+            # If vendor exists, we need to get its ID - for now, assume ID 1
+            $vendorId = 1
+        }
+        else {
+            Write-Warning "Failed to create vendor: $_"
+            throw
+        }
+    }
+
+    # Step 6: Create data load application with EdfiSandbox ClaimSet
+    Write-Host "`n6. Creating data load application..." -ForegroundColor Yellow
+    try {
+        $dataloadCreds = Add-Application `
+            -CmsUrl $cmsUrl `
+            -VendorId $vendorId `
+            -ApplicationName "Data Load Application" `
+            -ClaimSetName "EdfiSandbox" `
+            -EducationOrganizationIds @(255901, 19255901) `
+            -AccessToken $adminToken
+
+        Write-Host "   ✓ Data load application created" -ForegroundColor Green
+        Write-Host "   Key: $($dataloadCreds.Key)" -ForegroundColor Gray
+        Write-Host "   Secret: $($dataloadCreds.Secret)" -ForegroundColor Gray
+    }
+    catch {
+        if ($_ -match "already exists" -or $_ -match "409") {
+            Write-Host "   ℹ Data load application already exists" -ForegroundColor Gray
+            Write-Warning "Please use existing credentials from dataload-creds.json"
+            $dataloadCreds = $null
+        }
+        else {
+            Write-Warning "Failed to create data load application: $_"
+            throw
+        }
+    }
+
+    # Step 7: Save credentials to dataload-creds.json
+    if ($dataloadCreds) {
+        Write-Host "`n7. Saving credentials to dataload-creds.json..." -ForegroundColor Yellow
+        $credsFilePath = Join-Path $PSScriptRoot "dataload-creds.json"
+        $credsObject = @{
+            key = $dataloadCreds.Key
+            secret = $dataloadCreds.Secret
+            claimSet = "EdfiSandbox"
+            namespacePrefixes = "uri://ed-fi.org"
+            educationOrganizationIds = @(255901, 19255901)
+        }
+        $credsObject | ConvertTo-Json -Depth 10 | Set-Content -Path $credsFilePath
+        Write-Host "   ✓ Credentials saved to dataload-creds.json" -ForegroundColor Green
+    }
+
     Write-Host "`n✅ CMS initialization complete!" -ForegroundColor Green
     Write-Host "`nYou can now start DMS using:" -ForegroundColor Cyan
     Write-Host "  ./start-dms-local.ps1" -ForegroundColor White
+    if ($dataloadCreds) {
+        Write-Host "`nData load credentials are available in dataload-creds.json" -ForegroundColor Cyan
+    }
 }
 catch {
     Write-Error "Initialization failed: $_"

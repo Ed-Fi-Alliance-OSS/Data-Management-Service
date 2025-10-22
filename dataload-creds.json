@@ -1,0 +1,10 @@
+{
+  "key": "cb3ac7a9-c57d-4b44-a98e-b584e064e7b8",
+  "secret": "4UAZ9NfduiUIz3N3Gqt5I1psLpoqGyCy",
+  "claimSet": "EdfiSandbox",
+  "namespacePrefixes": "uri://ed-fi.org",
+  "educationOrganizationIds": [
+    255901,
+    19255901
+  ]
+}
