@@ -1,0 +1,6 @@
+-- PgSQL Table Template
+CREATE TABLE {{tableName}} (
+{{#each columns}}
+    {{name}} {{type}}{{#if @last}}{{else}},{{/if}}
+{{/each}}
+);

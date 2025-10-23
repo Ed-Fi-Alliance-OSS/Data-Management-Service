@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "EdFi.DataManagementService.SchemaGenerator.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": ""
+    }
+  }
+}

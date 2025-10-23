@@ -1,0 +1,22 @@
+
+CREATE TABLE IF NOT EXISTS {{schemaName}}.{{tableName}} (
+    {{#if hasId}}{{id}} BIGSERIAL PRIMARY KEY,{{/if}}
+{{#if hasDocumentColumns}}    {{documentId}} BIGINT NOT NULL,
+    {{documentPartitionKey}} SMALLINT NOT NULL,
+{{/if}}{{#each columns}}    {{name}} {{type}}{{#if isRequired}} NOT NULL{{/if}}{{#unless @last}},{{/unless}}
+{{/each}}{{#if fkColumns}},
+{{/if}}{{#each fkColumns}}    CONSTRAINT {{constraintName}}
+        FOREIGN KEY ({{column}})
+        REFERENCES {{parentTable}}({{parentColumn}}){{#if cascade}} ON DELETE CASCADE{{/if}}{{#unless @last}},{{/unless}}
+{{/each}}{{#if uniqueConstraints}},
+{{/if}}{{#each uniqueConstraints}}    CONSTRAINT {{constraintName}}
+        UNIQUE ({{#each columns}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}){{#unless @last}},{{/unless}}
+{{/each}}
+);
+
+{{#if indexes}}
+{{#each indexes}}
+CREATE INDEX IF NOT EXISTS {{indexName}}
+    ON {{../schemaName}}.{{tableName}}({{#each columns}}{{this}}{{#unless @last}}, {{/unless}}{{/each}});
+{{/each}}
+{{/if}}
