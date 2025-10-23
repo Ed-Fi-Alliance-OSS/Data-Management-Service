@@ -261,8 +261,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
                             foreach (var subclassType in subclassTypes)
                             {
-                                // Find the resource schema for this subclass
-                                // subclassType is already the pluralized resource key (e.g., "schools", "localEducationAgencies")
                                 if (
                                     apiSchema.ProjectSchema.ResourceSchemas?.TryGetValue(
                                         subclassType,
@@ -272,16 +270,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                 )
                                 {
                                     var table = subclassSchema.FlatteningMetadata.Table;
-                                    // Build SELECT statement for this table - include ALL columns per specification
-                                    var columns = new List<string> { "Id" }; // Start with surrogate key
-                                    columns.AddRange(
-                                        table.Columns.Select(c =>
-                                            PgsqlNamingHelper.MakePgsqlIdentifier(c.ColumnName)
-                                        )
-                                    );
-
-                                    var discriminator = table.DiscriminatorValue ?? subclassType;
-                                    var selectCols = string.Join(", ", columns);
 
                                     // Get the original schema name (e.g., "edfi") to properly determine table name with prefix
                                     var originalSchemaName = GetOriginalSchemaName(
@@ -299,11 +287,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                         subclassSchema,
                                         options
                                     );
-                                    var finalSchemaName = options.ResolveSchemaName(null); // Use resolved schema (dms when prefixed)
+                                    var finalSchemaName = options.ResolveSchemaName(null);
                                     var tableRef = $"{finalSchemaName}.{tableName}";
+                                    var discriminator = table.DiscriminatorValue ?? subclassType;
 
+                                    // Union views include: Id, Discriminator, Document_Id, Document_PartitionKey, and audit columns if enabled
+                                    var selectColumns =
+                                        "Id, '{0}' AS Discriminator, Document_Id, Document_PartitionKey";
+                                    if (options.IncludeAuditColumns)
+                                    {
+                                        selectColumns += ", CreateDate, LastModifiedDate, ChangeVersion";
+                                    }
                                     selectStatements.Add(
-                                        $"SELECT {selectCols}, '{discriminator}' AS Discriminator, Document_Id, Document_PartitionKey FROM {tableRef}"
+                                        $"SELECT {string.Format(selectColumns, discriminator)} FROM {tableRef}"
                                     );
                                 }
                             }
@@ -373,8 +369,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                     resourceSchema,
                                     options
                                 );
+
+                                // Build SELECT statement with audit columns if enabled
+                                var documentColumns = "Document_Id, Document_PartitionKey";
+                                if (options.IncludeAuditColumns)
+                                {
+                                    documentColumns += ", CreateDate, LastModifiedDate, ChangeVersion";
+                                }
                                 selectStatements.Add(
-                                    $"SELECT {selectCols}, '{discriminatorValue}' AS Discriminator, Document_Id, Document_PartitionKey FROM {tableRef}"
+                                    $"SELECT {selectCols}, '{discriminatorValue}' AS Discriminator, {documentColumns} FROM {tableRef}"
                                 );
                             }
 
@@ -476,26 +479,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 );
             }
 
-            // Store cross-resource FK constraints for later generation
-            foreach (var (columnName, referencedResource) in crossResourceReferences)
-            {
-                fkConstraintsToAdd.Add(
-                    (
-                        tableName,
-                        finalSchemaName,
-                        new
-                        {
-                            constraintName = PgsqlNamingHelper.MakePgsqlIdentifier(
-                                $"FK_{table.BaseName}_{referencedResource}"
-                            ),
-                            column = PgsqlNamingHelper.MakePgsqlIdentifier(columnName),
-                            parentTable = $"{finalSchemaName}.{DetermineTableName(referencedResource, originalSchemaName, null, options)}",
-                            parentColumn = "Id",
-                            cascade = false,
-                        }
-                    )
-                );
-            }
+            // REMOVED: Cross-resource FK constraints (fromReferencePath)
+            // Design decision: Only generate FK constraints for parent-child relationships (IsParentReference)
+            // Entity-to-entity references are maintained through application logic and Document/Alias tables
+            // foreach (var (columnName, referencedResource) in crossResourceReferences)
+            // {
+            //     fkConstraintsToAdd.Add(
+            //         (
+            //             tableName,
+            //             finalSchemaName,
+            //             new
+            //             {
+            //                 constraintName = PgsqlNamingHelper.MakePgsqlIdentifier(
+            //                     $"FK_{table.BaseName}_{referencedResource}"
+            //                 ),
+            //                 column = PgsqlNamingHelper.MakePgsqlIdentifier(columnName),
+            //                 parentTable = $"{finalSchemaName}.{DetermineTableName(referencedResource, originalSchemaName, null, options)}",
+            //                 parentColumn = "Id",
+            //                 cascade = false,
+            //             }
+            //         )
+            //     );
+            // }
 
             // Store Document FK constraint for later generation (FIXED: no double parentheses)
             fkConstraintsToAdd.Add(
@@ -532,93 +537,71 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 );
             }
 
-            // For child tables: Parent FK + natural key columns
-            if (!isRootTable)
-            {
-                var identityColumns = new List<string>
-                {
-                    PgsqlNamingHelper.MakePgsqlIdentifier($"{parentTableName}_Id"),
-                };
-                identityColumns.AddRange(naturalKeyColumns);
+            // Parent FK column for child tables (if applicable)
+            var parentFk =
+                parentTableName != null
+                    ? new
+                    {
+                        column = PgsqlNamingHelper.MakePgsqlIdentifier($"{parentTableName}_Id"),
+                        parentTable = $"{finalSchemaName}.{PgsqlNamingHelper.MakePgsqlIdentifier(parentTableName)}",
+                    }
+                    : null;
 
-                if (identityColumns.Count > 1) // Only if there are identifying columns beyond parent FK
-                {
-                    uniqueConstraints.Add(
+            // Add audit columns if requested
+            var allColumns = new List<object>(columns);
+            if (options.IncludeAuditColumns)
+            {
+                allColumns.AddRange(
+                    new[]
+                    {
                         new
                         {
-                            constraintName = PgsqlNamingHelper.MakePgsqlIdentifier(
-                                $"UQ_{table.BaseName}_Identity"
-                            ),
-                            columns = identityColumns,
-                        }
-                    );
-                }
-            }
-
-            // Index generation for foreign keys (critical for performance)
-            var indexes = new List<object>();
-
-            // 1. Index on parent FK (for child tables)
-            if (parentTableName != null)
-            {
-                indexes.Add(
-                    new
-                    {
-                        indexName = PgsqlNamingHelper.MakePgsqlIdentifier(
-                            $"IX_{table.BaseName}_{parentTableName}"
-                        ),
-                        tableName,
-                        columns = new[] { PgsqlNamingHelper.MakePgsqlIdentifier($"{parentTableName}_Id") },
+                            name = "CreateDate",
+                            type = "TIMESTAMP",
+                            isRequired = true,
+                        },
+                        new
+                        {
+                            name = "LastModifiedDate",
+                            type = "TIMESTAMP",
+                            isRequired = true,
+                        },
+                        new
+                        {
+                            name = "ChangeVersion",
+                            type = "BIGINT",
+                            isRequired = true,
+                        },
                     }
                 );
             }
 
-            // 2. Indexes on cross-resource FKs
-            foreach (var (columnName, referencedResource) in crossResourceReferences)
-            {
-                indexes.Add(
-                    new
-                    {
-                        indexName = PgsqlNamingHelper.MakePgsqlIdentifier(
-                            $"IX_{table.BaseName}_{referencedResource}"
-                        ),
-                        tableName,
-                        columns = new[] { PgsqlNamingHelper.MakePgsqlIdentifier(columnName) },
-                    }
-                );
-            }
-
-            // 3. Index on Document FK
-            indexes.Add(
-                new
-                {
-                    indexName = PgsqlNamingHelper.MakePgsqlIdentifier($"IX_{table.BaseName}_Document"),
-                    tableName,
-                    columns = new[] { "Document_Id", "Document_PartitionKey" },
-                }
-            );
-
-            // Combine all columns for template
-            var allColumns = new List<object>();
-            allColumns.AddRange(columns);
-
-            // Prepare template data
-            var data = new
+            // Prepare template data - ALL tables get Id and Document columns
+            var tableData = new
             {
                 schemaName = finalSchemaName,
-                tableName,
-                hasId = true,
+                tableName = PgsqlNamingHelper.MakePgsqlIdentifier(tableName),
+                hasId = true, // All tables have Id
                 id = "Id",
-                hasDocumentColumns = true,
+                hasDocumentColumns = true, // All tables have Document columns
                 documentId = "Document_Id",
                 documentPartitionKey = "Document_PartitionKey",
                 columns = allColumns,
-                fkColumns = new List<object>(), // NO FK constraints in this pass
-                uniqueConstraints = options.GenerateNaturalKeyConstraints ? uniqueConstraints : [],
-                indexes,
+                uniqueConstraints,
+                parentFk,
+                indexes = new[]
+                {
+                    new
+                    {
+                        indexName = PgsqlNamingHelper.MakePgsqlIdentifier($"IX_{table.BaseName}_Document"),
+                        tableName = PgsqlNamingHelper.MakePgsqlIdentifier(tableName),
+                        columns = new[] { "Document_Id", "Document_PartitionKey" },
+                    },
+                },
             };
 
-            sb.AppendLine(template(data));
+            // Generate table DDL
+            sb.AppendLine(template(tableData));
 
             // Recursively process child tables
             foreach (var childTable in table.ChildTables)

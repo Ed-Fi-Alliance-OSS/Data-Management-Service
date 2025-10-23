@@ -67,12 +67,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             // Assert
             result.Should().NotBeNull();
-            Console.WriteLine("Generated DDL:");
-            Console.WriteLine(result);
-            // Test for audit column presence (branch coverage test)
-            (result.Contains("CreateDate") || options.IncludeAuditColumns)
-                .Should()
-                .BeTrue();
+            result.Should().Contain("CreateDate TIMESTAMP NOT NULL");
+            result.Should().Contain("LastModifiedDate TIMESTAMP NOT NULL");
+            result.Should().Contain("ChangeVersion BIGINT NOT NULL");
         }
 
         [Test]

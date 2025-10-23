@@ -262,13 +262,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                             var unionViewName = unionViewNameNode.GetString() ?? "";
 
                             // Build select statements for each subclass
+
                             var selectStatements = new List<string>();
                             string? viewSchemaName = null; // Track schema name for view prefixing
-
                             foreach (var subclassType in subclassTypes)
                             {
-                                // Find the resource schema for this subclass
-                                // subclassType is already the pluralized resource key (e.g., "schools", "localEducationAgencies")
                                 if (
                                     apiSchema.ProjectSchema.ResourceSchemas?.TryGetValue(
                                         subclassType,
@@ -278,34 +276,32 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                 )
                                 {
                                     var table = subclassSchema.FlatteningMetadata.Table;
-                                    // Build SELECT statement for this table - include ALL columns per specification
-                                    var columns = new List<string> { "[Id]" }; // Start with surrogate key
-                                    columns.AddRange(table.Columns.Select(c => $"[{c.ColumnName}]"));
-
-                                    var selectCols = string.Join(", ", columns);
-                                    var discriminator = table.DiscriminatorValue ?? subclassType;
-
-                                    // Get the original schema name (e.g., "edfi") to properly determine table name with prefix
                                     var originalSchemaName = GetOriginalSchemaName(
                                         apiSchema.ProjectSchema,
                                         subclassSchema,
                                         options
                                     );
-
-                                    // Use the first subclass's schema for the view prefix
                                     viewSchemaName ??= originalSchemaName;
-
                                     var tableName = DetermineTableName(
                                         table.BaseName,
                                         originalSchemaName,
                                         subclassSchema,
                                         options
                                     );
-                                    var finalSchemaName = options.ResolveSchemaName(null); // Use resolved schema (dms when prefixed)
+                                    var finalSchemaName = options.ResolveSchemaName(null);
                                     var tableRef = $"{finalSchemaName}.[{tableName}]";
+                                    var discriminator = table.DiscriminatorValue ?? subclassType;
 
+                                    // Union views include: Id, Discriminator, Document_Id, Document_PartitionKey, and audit columns if enabled
+                                    var selectColumns =
+                                        "[Id], ''{0}'' AS [Discriminator], [Document_Id], [Document_PartitionKey]";
+                                    if (options.IncludeAuditColumns)
+                                    {
+                                        selectColumns +=
+                                            ", [CreateDate], [LastModifiedDate], [ChangeVersion]";
+                                    }
                                     selectStatements.Add(
-                                        $"SELECT {selectCols}, ''{discriminator}'' AS [Discriminator], [Document_Id], [Document_PartitionKey] FROM {tableRef}"
+                                        $"SELECT {string.Format(selectColumns, discriminator)} FROM {tableRef}"
                                     );
                                 }
                             }
@@ -371,8 +367,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                     resourceSchema,
                                     options
                                 );
+
+                                // Build SELECT statement with audit columns if enabled
+                                var documentColumns = "[Document_Id], [Document_PartitionKey]";
+                                if (options.IncludeAuditColumns)
+                                {
+                                    documentColumns += ", [CreateDate], [LastModifiedDate], [ChangeVersion]";
+                                }
                                 selectStatements.Add(
-                                    $"SELECT {selectCols}, ''{discriminatorValue}'' AS [Discriminator], [Document_Id], [Document_PartitionKey] FROM {tableRef}"
+                                    $"SELECT {selectCols}, ''{discriminatorValue}'' AS [Discriminator], {documentColumns} FROM {tableRef}"
                                 );
                             }
 
@@ -476,26 +479,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 );
             }
 
-            // Store cross-resource FK constraints for later generation
-            foreach (var (columnName, referencedResource) in crossResourceReferences)
-            {
-                fkConstraintsToAdd.Add(
-                    (
-                        tableName,
-                        finalSchemaName,
-                        new
-                        {
-                            constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
-                                $"FK_{table.BaseName}_{referencedResource}"
-                            ),
-                            column = columnName,
-                            parentTable = $"[{finalSchemaName}].[{DetermineTableName(referencedResource, originalSchemaName, null, options)}]",
-                            parentColumn = "Id",
-                            cascade = false,
-                        }
-                    )
-                );
-            }
+            // REMOVED: Cross-resource FK constraints (fromReferencePath)
+            // Design decision: Only generate FK constraints for parent-child relationships (IsParentReference)
+            // Entity-to-entity references are maintained through application logic and Document/Alias tables
+            // foreach (var (columnName, referencedResource) in crossResourceReferences)
+            // {
+            //     fkConstraintsToAdd.Add(
+            //         (
+            //             tableName,
+            //             finalSchemaName,
+            //             new
+            //             {
+            //                 constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
+            //                     $"FK_{table.BaseName}_{referencedResource}"
+            //                 ),
+            //                 column = columnName,
+            //                 parentTable = $"[{finalSchemaName}].[{DetermineTableName(referencedResource, originalSchemaName, null, options)}]",
+            //                 parentColumn = "Id",
+            //                 cascade = false,
+            //             }
+            //         )
+            //     );
+            // }
 
             // Store Document FK constraint for later generation (FIXED: no double parentheses)
             fkConstraintsToAdd.Add(
@@ -599,20 +604,48 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             var allColumns = new List<object>();
             allColumns.AddRange(columns);
 
-            // Prepare template data
+            // Add audit columns if requested
+            if (options.IncludeAuditColumns)
+            {
+                allColumns.AddRange(
+                    new[]
+                    {
+                        new
+                        {
+                            name = "CreateDate",
+                            type = "DATETIME2",
+                            isRequired = true,
+                        },
+                        new
+                        {
+                            name = "LastModifiedDate",
+                            type = "DATETIME2",
+                            isRequired = true,
+                        },
+                        new
+                        {
+                            name = "ChangeVersion",
+                            type = "BIGINT",
+                            isRequired = true,
+                        },
+                    }
+                );
+            }
+
+            // Prepare template data - ALL tables get Id and Document columns
             var data = new
             {
                 schemaName = finalSchemaName,
                 tableName,
-                hasId = true,
+                hasId = true, // All tables have Id
                 id = "Id",
-                hasDocumentColumns = true,
+                hasDocumentColumns = true, // All tables have Document columns
                 documentId = "Document_Id",
                 documentPartitionKey = "Document_PartitionKey",
                 columns = allColumns,
                 fkColumns = new List<object>(), // NO FK constraints in this pass
                 uniqueConstraints = options.GenerateNaturalKeyConstraints ? uniqueConstraints : [],
-                indexes,
+                indexes, // All tables get indexes (including Document index)
             };
 
             sb.AppendLine(template(data));

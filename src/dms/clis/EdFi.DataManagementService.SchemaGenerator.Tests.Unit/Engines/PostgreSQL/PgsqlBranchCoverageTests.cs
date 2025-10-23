@@ -33,7 +33,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             [TestCase("int", "INTEGER")]
             [TestCase("int16", "SMALLINT")]
             [TestCase("short", "SMALLINT")]
-            public void MapColumnType_NumericTypes_ReturnsCorrectPostgresType(string inputType, string expectedType)
+            public void MapColumnType_NumericTypes_ReturnsCorrectPostgresType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -48,7 +51,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             [TestCase("boolean", "BOOLEAN")]
             [TestCase("bool", "BOOLEAN")]
-            public void MapColumnType_BooleanTypes_ReturnsCorrectPostgresType(string inputType, string expectedType)
+            public void MapColumnType_BooleanTypes_ReturnsCorrectPostgresType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -62,7 +68,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             }
 
             [TestCase("decimal", "DECIMAL")]
-            public void MapColumnType_DecimalTypes_ReturnsCorrectPostgresType(string inputType, string expectedType)
+            public void MapColumnType_DecimalTypes_ReturnsCorrectPostgresType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -78,10 +87,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             [TestCase("string", "50", "VARCHAR(50)")]
             [TestCase("string", "100", "VARCHAR(100)")]
             [TestCase("string", null, "TEXT")]
-            public void MapColumnType_StringTypesWithLength_ReturnsCorrectPostgresType(string inputType, string? maxLength, string expectedType)
+            public void MapColumnType_StringTypesWithLength_ReturnsCorrectPostgresType(
+                string inputType,
+                string? maxLength,
+                string expectedType
+            )
             {
                 // Arrange
-                var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType, MaxLength = maxLength };
+                var column = new ColumnMetadata
+                {
+                    ColumnName = "TestColumn",
+                    ColumnType = inputType,
+                    MaxLength = maxLength,
+                };
                 var schema = CreateTestSchema(column);
 
                 // Act
@@ -94,7 +112,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             [TestCase("date", "DATE")]
             [TestCase("time", "TIME")]
             [TestCase("datetime", "TIMESTAMP WITH TIME ZONE")]
-            public void MapColumnType_DateTimeTypes_ReturnsCorrectPostgresType(string inputType, string expectedType)
+            public void MapColumnType_DateTimeTypes_ReturnsCorrectPostgresType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -109,7 +130,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             [TestCase("guid", "UUID")]
             [TestCase("uuid", "UUID")]
-            public void MapColumnType_GuidTypes_ReturnsCorrectPostgresType(string inputType, string expectedType)
+            public void MapColumnType_GuidTypes_ReturnsCorrectPostgresType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -168,7 +192,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             public void MapColumnType_StringWithoutMaxLength_ReturnsText()
             {
                 // Arrange
-                var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = "string", MaxLength = null };
+                var column = new ColumnMetadata
+                {
+                    ColumnName = "TestColumn",
+                    ColumnType = "string",
+                    MaxLength = null,
+                };
                 var schema = CreateTestSchema(column);
 
                 // Act
@@ -182,7 +211,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             public void MapColumnType_VarcharWithInvalidMaxLength_ReturnsText()
             {
                 // Arrange
-                var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = "varchar", MaxLength = "invalid" };
+                var column = new ColumnMetadata
+                {
+                    ColumnName = "TestColumn",
+                    ColumnType = "varchar",
+                    MaxLength = "invalid",
+                };
                 var schema = CreateTestSchema(column);
 
                 // Act
@@ -213,12 +247,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                         BaseName = "TestTable",
                                         JsonPath = "$.TestTable",
                                         Columns = [column],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
         }
@@ -276,15 +310,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     {
                                         BaseName = "TestDescriptor",
                                         JsonPath = "$.TestDescriptor",
-                                        Columns = [
-                                            new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true }
+                                        Columns =
+                                        [
+                                            new ColumnMetadata
+                                            {
+                                                ColumnName = "Id",
+                                                ColumnType = "bigint",
+                                                IsNaturalKey = true,
+                                                IsRequired = true,
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
 
@@ -308,15 +349,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     {
                                         BaseName = "TestType",
                                         JsonPath = "$.TestType",
-                                        Columns = [
-                                            new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true }
+                                        Columns =
+                                        [
+                                            new ColumnMetadata
+                                            {
+                                                ColumnName = "Id",
+                                                ColumnType = "bigint",
+                                                IsNaturalKey = true,
+                                                IsRequired = true,
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
         }
@@ -379,15 +427,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                         BaseName = resourceName,
                                         JsonPath = $"$.{resourceName}",
                                         IsExtensionTable = true,
-                                        Columns = [
-                                            new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true }
+                                        Columns =
+                                        [
+                                            new ColumnMetadata
+                                            {
+                                                ColumnName = "Id",
+                                                ColumnType = "bigint",
+                                                IsNaturalKey = true,
+                                                IsRequired = true,
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
         }
@@ -405,8 +460,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 // Act
                 var result = generator.GenerateDdlString(schema, false, false);
 
-                // Assert - Should contain foreign key reference to Student table
-                result.Should().Contain("REFERENCES dms.testproject_Student");
+                // Assert - Should NOT generate FK constraint or index for entity reference
+                // Per design decision: Entity references (FromReferencePath) should NOT have FK constraints or indexes
+                // Only Document FK and indexes should exist
+                result.Should().NotContain("IX_TestTable_Student");
+                result.Should().NotContain("REFERENCES dms.testproject_Student");
+                result.Should().Contain("REFERENCES dms.Document"); // Document FK should still exist
+                result.Should().Contain("IX_TestTable_Document"); // Document index should exist
             }
 
             [Test]
@@ -443,22 +503,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     {
                                         BaseName = "TestTable",
                                         JsonPath = "$.TestTable",
-                                        Columns = [
+                                        Columns =
+                                        [
                                             new ColumnMetadata
                                             {
                                                 ColumnName = "StudentId",
                                                 ColumnType = "bigint",
                                                 IsNaturalKey = true,
                                                 IsRequired = true,
-                                                FromReferencePath = "StudentReference"
-                                            }
+                                                FromReferencePath = "StudentReference",
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
 
@@ -482,22 +543,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     {
                                         BaseName = "TestTable",
                                         JsonPath = "$.TestTable",
-                                        Columns = [
+                                        Columns =
+                                        [
                                             new ColumnMetadata
                                             {
                                                 ColumnName = "EmptyRefId",
                                                 ColumnType = "bigint",
                                                 IsNaturalKey = true,
                                                 IsRequired = true,
-                                                FromReferencePath = ""
-                                            }
+                                                FromReferencePath = "",
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
         }

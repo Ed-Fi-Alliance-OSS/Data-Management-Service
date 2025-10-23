@@ -975,6 +975,72 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         }
 
         /// <summary>
+        /// Validates DDL generation for entities with role-named descriptor properties.
+        /// Tests: Descriptor columns with role name prefix (e.g., AssessedGradeLevelDescriptorId), descriptor type mapping.
+        /// </summary>
+        [Test]
+        public void ValidateDescriptorWithRoleName_GeneratesRoleBasedDescriptorColumn()
+        {
+            // Arrange - flatteningMetadata from MetaEd test (lines 3704-3745)
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["Assessment"] = new ResourceSchema
+                        {
+                            ResourceName = "Assessment",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Assessment",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "AssessmentIdentifier",
+                                            ColumnType = "integer",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.assessmentIdentifier",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "AssessedGradeLevelDescriptorId",
+                                            ColumnType = "descriptor",
+                                            IsRequired = false,
+                                            JsonPath = "$.assessedGradeLevelDescriptor",
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert - Verify the generated DDL includes role-named descriptor column
+            sql.Should().NotBeEmpty();
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_Assessment");
+            sql.Should().Contain("AssessmentIdentifier INTEGER NOT NULL");
+            sql.Should().Contain("AssessedGradeLevelDescriptorId BIGINT");
+            sql.Should().Contain("UQ_Assessment_NaturalKey");
+            sql.Should().Contain("UNIQUE (AssessmentIdentifier)");
+        }
+
+        /// <summary>
         /// Validates union view generation for abstract resources with multiple concrete subclass implementations.
         /// Tests: CREATE VIEW with UNION ALL, discriminator column injection, schema-prefixed view names (dms.edfi_).
         /// </summary>
@@ -1751,6 +1817,132 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             sql.Should().NotContain("CREATE OR REPLACE VIEW");
             sql.Should().NotContain("UNION ALL");
             sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_School");
+        }
+
+        /// <summary>
+        /// Validates that ALL tables (root and child) have required system columns.
+        /// Tests: Id, Document_Id, Document_PartitionKey, audit columns for all tables.
+        /// </summary>
+        [Test]
+        public void ValidateAllTablesHaveRequiredColumns()
+        {
+            // Arrange - Schema with root table and child table
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["Student"] = new ResourceSchema
+                        {
+                            ResourceName = "Student",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Student",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.studentUniqueId",
+                                            MaxLength = "32",
+                                        },
+                                    ],
+                                    ChildTables =
+                                    [
+                                        new TableMetadata
+                                        {
+                                            BaseName = "StudentAddress",
+                                            JsonPath = "$.addresses[*]",
+                                            Columns =
+                                            [
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "AddressTypeDescriptorId",
+                                                    ColumnType = "integer",
+                                                    IsRequired = true,
+                                                    IsNaturalKey = true,
+                                                    JsonPath = "$.addresses[*].addressTypeDescriptor",
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "Student_Id",
+                                                    ColumnType = "integer",
+                                                    IsParentReference = true,
+                                                    IsRequired = true,
+                                                },
+                                            ],
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions { IncludeAuditColumns = true };
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, options);
+
+            // Assert - Root table (Student) has all required columns
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_Student");
+            sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
+            sql.Should().Contain("Document_Id BIGINT NOT NULL");
+            sql.Should().Contain("Document_PartitionKey SMALLINT NOT NULL");
+            sql.Should().Contain("CreateDate TIMESTAMP NOT NULL");
+            sql.Should().Contain("LastModifiedDate TIMESTAMP NOT NULL");
+            sql.Should().Contain("ChangeVersion BIGINT NOT NULL");
+
+            // Assert - Child table (StudentAddress) also has all required columns
+            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_StudentAddress");
+            // Child table should have Id, Document columns, audit columns, AND parent FK
+            var studentAddressTableMatch = System.Text.RegularExpressions.Regex.Match(
+                sql,
+                @"CREATE TABLE IF NOT EXISTS dms\.edfi_StudentAddress \((.*?)\);",
+                System.Text.RegularExpressions.RegexOptions.Singleline
+            );
+            studentAddressTableMatch.Success.Should().BeTrue("StudentAddress table should exist");
+            var studentAddressColumns = studentAddressTableMatch.Groups[1].Value;
+
+            studentAddressColumns.Should().Contain("Id BIGSERIAL PRIMARY KEY", "child table needs Id");
+            studentAddressColumns
+                .Should()
+                .Contain("Document_Id BIGINT NOT NULL", "child table needs Document_Id");
+            studentAddressColumns
+                .Should()
+                .Contain(
+                    "Document_PartitionKey SMALLINT NOT NULL",
+                    "child table needs Document_PartitionKey"
+                );
+            studentAddressColumns
+                .Should()
+                .Contain("Student_Id BIGINT NOT NULL", "child table needs parent FK");
+            studentAddressColumns
+                .Should()
+                .Contain("CreateDate TIMESTAMP NOT NULL", "child table needs CreateDate");
+            studentAddressColumns
+                .Should()
+                .Contain("LastModifiedDate TIMESTAMP NOT NULL", "child table needs LastModifiedDate");
+            studentAddressColumns
+                .Should()
+                .Contain("ChangeVersion BIGINT NOT NULL", "child table needs ChangeVersion");
+
+            // Assert - Document indexes for both tables
+            sql.Should().Contain("IX_Student_Document");
+            sql.Should().Contain("IX_StudentAddress_Document");
         }
     }
 }
