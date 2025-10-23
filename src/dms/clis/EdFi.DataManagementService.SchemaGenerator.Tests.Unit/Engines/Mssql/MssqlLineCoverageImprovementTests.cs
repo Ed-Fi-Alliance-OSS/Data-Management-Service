@@ -3,11 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared;
 using FluentAssertions;
-using System.Text.Json;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 {
@@ -29,14 +29,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         public void GenerateDdlString_WithNullProjectSchema_ThrowsInvalidDataException()
         {
             // Arrange
-            var apiSchema = new ApiSchema
-            {
-                ProjectSchema = null!
-            };
+            var apiSchema = new ApiSchema { ProjectSchema = null! };
 
             // Act & Assert
             Action act = () => _strategy.GenerateDdlString(apiSchema, includeExtensions: false);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -50,13 +48,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 {
                     ProjectName = "TestProject",
                     ProjectVersion = "1.0.0",
-                    ResourceSchemas = null!
-                }
+                    ResourceSchemas = null!,
+                },
             };
 
             // Act & Assert
             Action act = () => _strategy.GenerateDdlString(apiSchema, includeExtensions: false);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -100,7 +99,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var options = new DdlGenerationOptions
             {
                 IncludeExtensions = false,
-                GenerateForeignKeyConstraints = true
+                GenerateForeignKeyConstraints = true,
             };
 
             try
@@ -131,15 +130,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         public void GenerateDdlString_WithInvalidProjectSchemaInOptionsOverload_ThrowsInvalidDataException()
         {
             // Arrange
-            var apiSchema = new ApiSchema
-            {
-                ProjectSchema = null
-            };
+            var apiSchema = new ApiSchema { ProjectSchema = null };
             var options = new DdlGenerationOptions();
 
             // Act & Assert
             Action act = () => _strategy.GenerateDdlString(apiSchema, options);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -153,14 +150,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 {
                     ProjectName = "TestProject",
                     ProjectVersion = "1.0.0",
-                    ResourceSchemas = null!
-                }
+                    ResourceSchemas = null!,
+                },
             };
             var options = new DdlGenerationOptions();
 
             // Act & Assert
             Action act = () => _strategy.GenerateDdlString(apiSchema, options);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -173,7 +171,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             {
                 IncludeExtensions = false,
                 GenerateForeignKeyConstraints = true,
-                GenerateNaturalKeyConstraints = true
+                GenerateNaturalKeyConstraints = true,
             };
 
             // Act
@@ -191,11 +189,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange - Create a schema with abstract resources and subclasses
             var apiSchema = TestHelpers.CreateApiSchemaWithAbstractResource();
-            var options = new DdlGenerationOptions
-            {
-                IncludeExtensions = false,
-                SkipUnionViews = false
-            };
+            var options = new DdlGenerationOptions { IncludeExtensions = false, SkipUnionViews = false };
 
             // Act
             var result = _strategy.GenerateDdlString(apiSchema, options);
@@ -255,14 +249,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             File.WriteAllText(tableTemplateFile, "CREATE TABLE [{{schemaName}}].[{{tableName}}] (Id int);");
 
             var unionViewTemplateFile = Path.Combine(tempDir, "Templates", "mssql-union-view.hbs");
-            File.WriteAllText(unionViewTemplateFile, "CREATE VIEW [{{schemaName}}].[{{viewName}}] AS SELECT * FROM [{{schemaName}}].[{{tableName}}];");
+            File.WriteAllText(
+                unionViewTemplateFile,
+                "CREATE VIEW [{{schemaName}}].[{{viewName}}] AS SELECT * FROM [{{schemaName}}].[{{tableName}}];"
+            );
 
             try
             {
                 Directory.SetCurrentDirectory(tempDir);
 
                 // Act - This should trigger both template fallback AND abstract resource processing
-                var result = _strategy.GenerateDdlString(apiSchema, new DdlGenerationOptions { SkipUnionViews = false });
+                var result = _strategy.GenerateDdlString(
+                    apiSchema,
+                    new DdlGenerationOptions { SkipUnionViews = false }
+                );
 
                 // Assert
                 result.Should().NotBeNull();
@@ -287,7 +287,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             // Act & Assert - This should execute line 88 condition check and line 90 exception throw
             Action act = () => _strategy.GenerateDdlString(apiSchema, includeExtensions: false);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -301,13 +302,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 {
                     ProjectName = "Test",
                     ProjectVersion = "1.0",
-                    ResourceSchemas = null!
-                }
+                    ResourceSchemas = null!,
+                },
             };
 
             // Act & Assert - This should also hit line 90
             Action act = () => _strategy.GenerateDdlString(invalidSchema, includeExtensions: false);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -320,7 +322,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             // Find the actual embedded template file and rename it temporarily to force fallback
             var appContextDir = AppContext.BaseDirectory;
             var embeddedTemplateFile = Path.Combine(appContextDir, "Templates", "mssql-table-idempotent.hbs");
-            var backupTemplateFile = Path.Combine(appContextDir, "Templates", "mssql-table-idempotent.hbs.backup");
+            var backupTemplateFile = Path.Combine(
+                appContextDir,
+                "Templates",
+                "mssql-table-idempotent.hbs.backup"
+            );
 
             // Create a temp directory with the template for fallback
             var originalDir = Directory.GetCurrentDirectory();
@@ -329,7 +335,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             Directory.CreateDirectory(Path.Combine(tempDir, "Templates"));
 
             var fallbackTemplateFile = Path.Combine(tempDir, "Templates", "mssql-table-idempotent.hbs");
-            File.WriteAllText(fallbackTemplateFile, "-- Template fallback test\nCREATE TABLE [{{schemaName}}].[{{tableName}}] (Id int);");
+            File.WriteAllText(
+                fallbackTemplateFile,
+                "-- Template fallback test\nCREATE TABLE [{{schemaName}}].[{{tableName}}] (Id int);"
+            );
 
             try
             {
@@ -394,14 +403,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                 {
                                     BaseName = "TestTable",
                                     JsonPath = "$.testTable",
-                                    Columns = [
-                                        new ColumnMetadata { ColumnName = "Id", ColumnType = "int", IsRequired = true }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "int",
+                                            IsRequired = true,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -433,12 +448,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     {
                                         columnName = "Id",
                                         columnType = "int",
-                                        isRequired = true
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        isRequired = true,
+                                    },
+                                },
+                            },
+                        },
+                    },
                 },
                 abstractResources = new Dictionary<string, object>
                 {
@@ -447,20 +462,17 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                         flatteningMetadata = new
                         {
                             subclassTypes = new[] { "ConcreteType1", "ConcreteType2" },
-                            unionViewName = "TestUnionView"
-                        }
-                    }
-                }
+                            unionViewName = "TestUnionView",
+                        },
+                    },
+                },
             };
 
             // Serialize and deserialize to get the right structure
             var json = JsonSerializer.Serialize(projectSchemaWithAbstractResources);
             var projectSchema = JsonSerializer.Deserialize<ProjectSchema>(json);
 
-            return new ApiSchema
-            {
-                ProjectSchema = projectSchema
-            };
+            return new ApiSchema { ProjectSchema = projectSchema };
         }
     }
 }

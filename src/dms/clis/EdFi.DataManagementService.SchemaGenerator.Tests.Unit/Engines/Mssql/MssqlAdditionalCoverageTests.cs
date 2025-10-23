@@ -38,20 +38,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "StringColumnNoMaxLength", 
-                                            ColumnType = "string", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StringColumnNoMaxLength",
+                                            ColumnType = "string",
                                             MaxLength = null, // No max length specified
-                                            IsRequired = false 
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var generator = new MssqlDdlGeneratorStrategy();
 
@@ -83,21 +83,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "DecimalColumn", 
-                                            ColumnType = "decimal", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DecimalColumn",
+                                            ColumnType = "decimal",
                                             Precision = "10",
                                             Scale = "2",
-                                            IsRequired = true 
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var generator = new MssqlDdlGeneratorStrategy();
 
@@ -131,21 +131,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "DecimalColumn", 
-                                            ColumnType = "decimal", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DecimalColumn",
+                                            ColumnType = "decimal",
                                             Precision = null,
                                             Scale = null,
-                                            IsRequired = false 
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var generator = new MssqlDdlGeneratorStrategy();
 
@@ -181,20 +181,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     IsExtensionTable = true,
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "ExtensionId", 
-                                            ColumnType = "int32", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ExtensionId",
+                                            ColumnType = "int32",
                                             IsNaturalKey = true,
-                                            IsRequired = true 
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var options = new DdlGenerationOptions
             {
@@ -202,8 +202,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 UsePrefixedTableNames = false,
                 SchemaMapping = new Dictionary<string, string>
                 {
-                    ["TestExtensionProject"] = "custom_extension_schema"
-                }
+                    ["TestExtensionProject"] = "custom_extension_schema",
+                },
             };
             var generator = new MssqlDdlGeneratorStrategy();
 
@@ -238,33 +238,33 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.TestDescriptor",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "DescriptorId", 
-                                            ColumnType = "int32", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DescriptorId",
+                                            ColumnType = "int32",
                                             IsNaturalKey = true,
-                                            IsRequired = true 
+                                            IsRequired = true,
                                         },
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "CodeValue", 
-                                            ColumnType = "string", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "CodeValue",
+                                            ColumnType = "string",
                                             MaxLength = "50",
-                                            IsRequired = true 
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = false,
                 DescriptorSchema = "descriptors",
-                DefaultSchema = "dms"
+                DefaultSchema = "dms",
             };
             var generator = new MssqlDdlGeneratorStrategy();
 
@@ -299,13 +299,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.ParentTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "ParentId", 
-                                            ColumnType = "int32", 
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ParentId",
+                                            ColumnType = "int32",
                                             IsNaturalKey = true,
-                                            IsRequired = true 
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -315,29 +315,29 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                             JsonPath = "$.ParentTable.ChildCollection",
                                             Columns =
                                             [
-                                                new ColumnMetadata 
-                                                { 
-                                                    ColumnName = "ChildId", 
-                                                    ColumnType = "int32", 
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "ChildId",
+                                                    ColumnType = "int32",
                                                     IsNaturalKey = true,
-                                                    IsRequired = true 
+                                                    IsRequired = true,
                                                 },
-                                                new ColumnMetadata 
-                                                { 
-                                                    ColumnName = "ParentTable_Id", 
-                                                    ColumnType = "bigint", 
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "ParentTable_Id",
+                                                    ColumnType = "bigint",
                                                     IsParentReference = true,
-                                                    IsRequired = true 
-                                                }
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var generator = new MssqlDdlGeneratorStrategy();
 
@@ -372,19 +372,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "UnsupportedColumn", 
-                                            ColumnType = "unsupported_type", 
-                                            IsRequired = false 
-                                        }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "UnsupportedColumn",
+                                            ColumnType = "unsupported_type",
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var generator = new MssqlDdlGeneratorStrategy();
 
@@ -418,19 +418,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "BigIntColumn", 
-                                            ColumnType = "int64", 
-                                            IsRequired = true 
-                                        }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "BigIntColumn",
+                                            ColumnType = "int64",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var generator = new MssqlDdlGeneratorStrategy();
 
@@ -464,19 +464,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "DateColumn", 
-                                            ColumnType = "date", 
-                                            IsRequired = false 
-                                        }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DateColumn",
+                                            ColumnType = "date",
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var generator = new MssqlDdlGeneratorStrategy();
 
@@ -510,19 +510,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata 
-                                        { 
-                                            ColumnName = "TimeColumn", 
-                                            ColumnType = "time", 
-                                            IsRequired = false 
-                                        }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "TimeColumn",
+                                            ColumnType = "time",
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var generator = new MssqlDdlGeneratorStrategy();
 

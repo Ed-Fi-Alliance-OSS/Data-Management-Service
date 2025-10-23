@@ -7,7 +7,7 @@ using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
 
-namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Pgsql
+namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
     /// <summary>
     /// Aggressive tests targeting every possible code path to maximize line coverage to 80%+.

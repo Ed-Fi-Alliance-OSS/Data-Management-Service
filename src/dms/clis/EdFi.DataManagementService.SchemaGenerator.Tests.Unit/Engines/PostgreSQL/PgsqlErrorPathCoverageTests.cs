@@ -1,8 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared;
 using FluentAssertions;
-using NUnit.Framework;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
@@ -29,7 +33,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             // Act & Assert
             var exception = Assert.Throws<InvalidDataException>(() =>
-                _strategy.GenerateDdlString(apiSchema, options));
+                _strategy.GenerateDdlString(apiSchema, options)
+            );
 
             exception.Message.Should().Be("ApiSchema does not contain valid projectSchema.");
         }
@@ -40,17 +45,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Arrange
             var apiSchema = new ApiSchema
             {
-                ProjectSchema = new ProjectSchema
-                {
-                    ProjectName = "EdFi",
-                    ResourceSchemas = null!
-                }
+                ProjectSchema = new ProjectSchema { ProjectName = "EdFi", ResourceSchemas = null! },
             };
             var options = new DdlGenerationOptions();
 
             // Act & Assert
             var exception = Assert.Throws<InvalidDataException>(() =>
-                _strategy.GenerateDdlString(apiSchema, options));
+                _strategy.GenerateDdlString(apiSchema, options)
+            );
 
             exception.Message.Should().Be("ApiSchema does not contain valid projectSchema.");
         }
@@ -63,7 +65,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             // Act & Assert
             var exception = Assert.Throws<InvalidDataException>(() =>
-                _strategy.GenerateDdlString(apiSchema, true, false));
+                _strategy.GenerateDdlString(apiSchema, true, false)
+            );
 
             exception.Message.Should().Be("ApiSchema does not contain valid projectSchema.");
         }
@@ -74,16 +77,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Arrange
             var apiSchema = new ApiSchema
             {
-                ProjectSchema = new ProjectSchema
-                {
-                    ProjectName = "EdFi",
-                    ResourceSchemas = null!
-                }
+                ProjectSchema = new ProjectSchema { ProjectName = "EdFi", ResourceSchemas = null! },
             };
 
             // Act & Assert
             var exception = Assert.Throws<InvalidDataException>(() =>
-                _strategy.GenerateDdlString(apiSchema, true, false));
+                _strategy.GenerateDdlString(apiSchema, true, false)
+            );
 
             exception.Message.Should().Be("ApiSchema does not contain valid projectSchema.");
         }
@@ -102,7 +102,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
                 // Assert
                 Directory.Exists(tempDir).Should().BeTrue();
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeTrue();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql"))
+                    .Should()
+                    .BeTrue();
             }
             finally
             {
@@ -129,7 +131,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
                 // Assert
                 Directory.Exists(tempDir).Should().BeTrue();
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeTrue();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql"))
+                    .Should()
+                    .BeTrue();
             }
             finally
             {
@@ -150,8 +154,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 ProjectSchema = new ProjectSchema
                 {
                     ProjectName = "EdFi",
-                    ResourceSchemas = new Dictionary<string, ResourceSchema>()
-                }
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>(),
+                },
             };
             var options = new DdlGenerationOptions();
 
@@ -177,10 +181,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                         ["students"] = new ResourceSchema
                         {
                             ResourceName = "Students",
-                            FlatteningMetadata = null // No flattening metadata
-                        }
-                    }
-                }
+                            FlatteningMetadata = null, // No flattening metadata
+                        },
+                    },
+                },
             };
             var options = new DdlGenerationOptions();
 

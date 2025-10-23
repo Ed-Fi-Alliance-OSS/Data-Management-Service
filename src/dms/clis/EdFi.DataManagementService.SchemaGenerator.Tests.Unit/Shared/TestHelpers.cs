@@ -38,16 +38,33 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "Name", ColumnType = "string", MaxLength = "100", IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "IsActive", ColumnType = "bool", IsRequired = false }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Name",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "IsActive",
+                                            ColumnType = "bool",
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -83,7 +100,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             ColumnType = "int32",
                                             IsNaturalKey = true,
                                             IsRequired = true,
-                                            IsPolymorphicReference = true
+                                            IsPolymorphicReference = true,
                                         },
                                         new ColumnMetadata
                                         {
@@ -91,8 +108,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             ColumnType = "string",
                                             MaxLength = "50",
                                             IsRequired = true,
-                                            IsDiscriminator = true
-                                        }
+                                            IsDiscriminator = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -103,29 +120,54 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             DiscriminatorValue = "School",
                                             Columns =
                                             [
-                                                new ColumnMetadata { ColumnName = "EducationOrganizationId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                                new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "EducationOrganizationId",
+                                                    ColumnType = "int32",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "SchoolName",
+                                                    ColumnType = "string",
+                                                    MaxLength = "100",
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
+                                            ChildTables = [],
                                         },
                                         new TableMetadata
                                         {
                                             BaseName = "LocalEducationAgency",
-                                            JsonPath = "$.EducationOrganizationReference.LocalEducationAgency",
+                                            JsonPath =
+                                                "$.EducationOrganizationReference.LocalEducationAgency",
                                             DiscriminatorValue = "LocalEducationAgency",
                                             Columns =
                                             [
-                                                new ColumnMetadata { ColumnName = "EducationOrganizationId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                                new ColumnMetadata { ColumnName = "LeaName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "EducationOrganizationId",
+                                                    ColumnType = "int32",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "LeaName",
+                                                    ColumnType = "string",
+                                                    MaxLength = "100",
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -142,8 +184,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                     ProjectVersion = "1.0.0",
                     IsExtensionProject = false,
                     Description = "Empty test schema.",
-                    ResourceSchemas = []
-                }
+                    ResourceSchemas = [],
+                },
             };
         }
 
@@ -173,16 +215,35 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "FirstName", ColumnType = "string", MaxLength = "75", IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "LastSurname", ColumnType = "string", MaxLength = "75", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "FirstName",
+                                            ColumnType = "string",
+                                            MaxLength = "75",
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "LastSurname",
+                                            ColumnType = "string",
+                                            MaxLength = "75",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -212,11 +273,18 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
+                                    ChildTables = [],
+                                },
+                            },
                         },
                         ["tpdmstudentextensions"] = new ResourceSchema
                         {
@@ -230,15 +298,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     IsExtensionTable = true,
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "ExtensionField", ColumnType = "string", MaxLength = "100", IsRequired = false }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ExtensionField",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -268,15 +349,26 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "TestColumn", ColumnType = columnType, IsRequired = false }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "TestColumn",
+                                            ColumnType = columnType,
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -304,15 +396,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "DecimalColumn", ColumnType = "decimal", Precision = precision, Scale = scale, IsRequired = false }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DecimalColumn",
+                                            ColumnType = "decimal",
+                                            Precision = precision,
+                                            Scale = scale,
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -340,15 +445,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "StringColumn", ColumnType = "string", MaxLength = maxLength, IsRequired = false }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StringColumn",
+                                            ColumnType = "string",
+                                            MaxLength = maxLength,
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -376,15 +493,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", FromReferencePath = "SchoolReference", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "int32",
+                                            FromReferencePath = "SchoolReference",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -412,7 +542,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -422,17 +559,29 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             JsonPath = "$.Student.StudentAddress",
                                             Columns =
                                             [
-                                                new ColumnMetadata { ColumnName = "AddressTypeDescriptorId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                                new ColumnMetadata { ColumnName = "StreetNumberName", ColumnType = "string", MaxLength = "150", IsRequired = true }
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "AddressTypeDescriptorId",
+                                                    ColumnType = "int32",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "StreetNumberName",
+                                                    ColumnType = "string",
+                                                    MaxLength = "150",
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -460,15 +609,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.GradeLevelDescriptor",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "GradeLevelDescriptorId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "GradeLevel", ColumnType = "string", MaxLength = "50", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "GradeLevelDescriptorId",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "GradeLevel",
+                                            ColumnType = "string",
+                                            MaxLength = "50",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -497,15 +658,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     IsExtensionTable = true,
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "ExtensionField", ColumnType = "string", MaxLength = "100", IsRequired = false }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ExtensionField",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -534,14 +708,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     IsExtensionTable = true,
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -561,11 +742,18 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                         JsonPath = "$.Student",
                         Columns =
                         [
-                            new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                            new ColumnMetadata
+                            {
+                                ColumnName = "StudentUniqueId",
+                                ColumnType = "string",
+                                MaxLength = "32",
+                                IsNaturalKey = true,
+                                IsRequired = true,
+                            },
                         ],
-                        ChildTables = []
-                    }
-                }
+                        ChildTables = [],
+                    },
+                },
             };
         }
 
@@ -593,15 +781,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", FromReferencePath = "School", IsRequired = true } // No "Reference" suffix
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "int32",
+                                            FromReferencePath = "School",
+                                            IsRequired = true,
+                                        }, // No "Reference" suffix
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -629,15 +830,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "EmptyRefId", ColumnType = "int32", FromReferencePath = "", IsRequired = true } // Empty reference path
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "EmptyRefId",
+                                            ColumnType = "int32",
+                                            FromReferencePath = "",
+                                            IsRequired = true,
+                                        }, // Empty reference path
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -671,7 +885,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             ColumnType = "int32",
                                             IsNaturalKey = true,
                                             IsRequired = true,
-                                            IsPolymorphicReference = true
+                                            IsPolymorphicReference = true,
                                         },
                                         new ColumnMetadata
                                         {
@@ -679,8 +893,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             ColumnType = "string",
                                             MaxLength = "50",
                                             IsRequired = true,
-                                            IsDiscriminator = true
-                                        }
+                                            IsDiscriminator = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -691,10 +905,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             DiscriminatorValue = "School",
                                             Columns =
                                             [
-                                                new ColumnMetadata { ColumnName = "EducationOrganizationId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                                new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "EducationOrganizationId",
+                                                    ColumnType = "int32",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "SchoolName",
+                                                    ColumnType = "string",
+                                                    MaxLength = "100",
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
+                                            ChildTables = [],
                                         },
                                         new TableMetadata
                                         {
@@ -703,17 +929,29 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             DiscriminatorValue = "LocalEducationAgency",
                                             Columns =
                                             [
-                                                new ColumnMetadata { ColumnName = "EducationOrganizationId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                                new ColumnMetadata { ColumnName = "LeaName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "EducationOrganizationId",
+                                                    ColumnType = "int32",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "LeaName",
+                                                    ColumnType = "string",
+                                                    MaxLength = "100",
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -743,10 +981,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.EducationOrganization",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "EducationOrganizationId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "Discriminator", ColumnType = "string", MaxLength = "50", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "EducationOrganizationId",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Discriminator",
+                                            ColumnType = "string",
+                                            MaxLength = "50",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = [
+                                    ChildTables =
+                                    [
                                         new TableMetadata
                                         {
                                             BaseName = "School",
@@ -754,44 +1005,71 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             DiscriminatorValue = "School",
                                             Columns =
                                             [
-                                                new ColumnMetadata { ColumnName = "EducationOrganizationId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                                new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "EducationOrganizationId",
+                                                    ColumnType = "int32",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "SchoolName",
+                                                    ColumnType = "string",
+                                                    MaxLength = "100",
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
         /// <summary>
         /// Gets a schema with a descriptor resource.
         /// </summary>
-        public static ApiSchema GetSchemaWithDescriptor() => CreateApiSchemaWithDescriptorResource();
+        public static ApiSchema GetSchemaWithDescriptor()
+        {
+            return CreateApiSchemaWithDescriptorResource();
+        }
 
         /// <summary>
         /// Gets a schema with an extension resource.
         /// </summary>
-        public static ApiSchema GetSchemaWithExtension() => CreateApiSchemaWithTPDMExtension();
+        public static ApiSchema GetSchemaWithExtension()
+        {
+            return CreateApiSchemaWithTPDMExtension();
+        }
 
         /// <summary>
         /// Gets a schema with child tables.
         /// </summary>
-        public static ApiSchema GetSchemaWithChildTables() => CreateApiSchemaWithChildTable();
+        public static ApiSchema GetSchemaWithChildTables()
+        {
+            return CreateApiSchemaWithChildTable();
+        }
 
         /// <summary>
         /// Gets a schema with cross-resource references.
         /// </summary>
-        public static ApiSchema GetSchemaWithCrossResourceReferences() => CreateApiSchemaWithReferenceColumn();
+        public static ApiSchema GetSchemaWithCrossResourceReferences()
+        {
+            return CreateApiSchemaWithReferenceColumn();
+        }
 
         /// <summary>
         /// Gets a schema with natural key columns.
         /// </summary>
-        public static ApiSchema GetSchemaWithNaturalKey() => GetBasicSchema();
+        public static ApiSchema GetSchemaWithNaturalKey()
+        {
+            return GetBasicSchema();
+        }
 
         /// <summary>
         /// Gets a schema with multiple identity columns.
@@ -817,16 +1095,34 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                     JsonPath = "$.TestTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "Id1", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "Id2", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "Id3", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id1",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id2",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id3",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
     }

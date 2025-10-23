@@ -55,6 +55,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
         public string Description { get; set; } = string.Empty;
 
         /// <summary>
+        /// Abstract resources (polymorphic types like EducationOrganization).
+        /// </summary>
+        [JsonPropertyName("abstractResources")]
+        public Dictionary<string, System.Text.Json.JsonElement> AbstractResources { get; set; } = [];
+
+        /// <summary>
         /// Resource schemas keyed by resource name.
         /// </summary>
         [JsonPropertyName("resourceSchemas")]

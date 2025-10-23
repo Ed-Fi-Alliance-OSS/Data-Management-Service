@@ -1,6 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using FluentAssertions;
-using NUnit.Framework;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
@@ -17,7 +21,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = true,
-                DefaultSchema = "custom_dms"
+                DefaultSchema = "custom_dms",
             };
 
             // Act & Assert
@@ -34,7 +38,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = false,
-                DefaultSchema = "custom_default"
+                DefaultSchema = "custom_default",
             };
 
             // Act & Assert
@@ -53,8 +57,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 SchemaMapping = new Dictionary<string, string>
                 {
                     ["EdFi"] = "edfi_custom",
-                    ["TPDM"] = "tpdm_custom"
-                }
+                    ["TPDM"] = "tpdm_custom",
+                },
             };
 
             // Act & Assert
@@ -70,10 +74,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = false,
-                SchemaMapping = new Dictionary<string, string>
-                {
-                    ["Extensions"] = "custom_extensions"
-                }
+                SchemaMapping = new Dictionary<string, string> { ["Extensions"] = "custom_extensions" },
             };
 
             // Act & Assert
@@ -89,7 +90,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = false,
-                DefaultSchema = "fallback"
+                DefaultSchema = "fallback",
             };
             // Remove Extensions from default mapping
             options.SchemaMapping.Remove("Extensions");
@@ -103,10 +104,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveTablePrefix_WithPrefixedTableNamesDisabled_ReturnsEmptyString()
         {
             // Arrange
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = false
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act & Assert
             options.ResolveTablePrefix("EdFi").Should().Be("");
@@ -118,10 +116,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveTablePrefix_WithNullOrEmptyProjectName_ReturnsEmptyString()
         {
             // Arrange
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = true
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
 
             // Act & Assert
             options.ResolveTablePrefix(null).Should().Be("");
@@ -136,11 +131,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = true,
-                SchemaMapping = new Dictionary<string, string>
-                {
-                    ["EdFi"] = "edfi",
-                    ["TPDM"] = "tpdm"
-                }
+                SchemaMapping = new Dictionary<string, string> { ["EdFi"] = "edfi", ["TPDM"] = "tpdm" },
             };
 
             // Act & Assert
@@ -155,11 +146,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = true,
-                SchemaMapping = new Dictionary<string, string>
-                {
-                    ["EdFi"] = "edfi",
-                    ["TPDM"] = "tpdm"
-                }
+                SchemaMapping = new Dictionary<string, string> { ["EdFi"] = "edfi", ["TPDM"] = "tpdm" },
             };
 
             // Act & Assert
@@ -175,10 +162,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = true,
-                SchemaMapping = new Dictionary<string, string>
-                {
-                    ["Extensions"] = "ext"
-                }
+                SchemaMapping = new Dictionary<string, string> { ["Extensions"] = "ext" },
             };
 
             // Act & Assert
@@ -191,10 +175,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveTablePrefix_WithExtensionProjectButNoExtensionsMapping_UsesDefaultExtensions()
         {
             // Arrange
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = true
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
             // Remove Extensions from default mapping
             options.SchemaMapping.Remove("Extensions");
 
@@ -207,10 +188,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void ResolveTablePrefix_WithUnknownProject_UsesLowercaseProjectName()
         {
             // Arrange
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = true
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
 
             // Act & Assert
             options.ResolveTablePrefix("UnknownProject").Should().Be("unknownproject_");
