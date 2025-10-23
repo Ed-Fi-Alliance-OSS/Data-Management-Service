@@ -84,10 +84,16 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             // Assert
             sql.Should().Contain("CREATE OR REPLACE VIEW dms.EducationOrganizationReference AS");
-            // Union views now include ALL columns per dbGeneration.md specification
-            sql.Should().Contain("SELECT Id, EducationOrganizationId, SchoolName, 'School' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.School");
+            // Union views now include ALL columns per dbGeneration.md specification, including audit columns
+            sql.Should()
+                .Contain(
+                    "SELECT Id, EducationOrganizationId, SchoolName, 'School' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.School"
+                );
             sql.Should().Contain("UNION ALL");
-            sql.Should().Contain("SELECT Id, EducationOrganizationId, LeaName, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.LocalEducationAgency");
+            sql.Should()
+                .Contain(
+                    "SELECT Id, EducationOrganizationId, LeaName, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.LocalEducationAgency"
+                );
         }
 
         [Test]
@@ -120,7 +126,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.testproject_LocalEducationAgency");
             sql.Should().Contain("EducationOrganizationReference_Id BIGINT NOT NULL");
             sql.Should().Contain("CONSTRAINT FK_School_EducationOrganizationReference");
-            sql.Should().Contain("REFERENCES dms.testproject_EducationOrganizationReference(Id) ON DELETE CASCADE");
+            sql.Should()
+                .Contain("REFERENCES dms.testproject_EducationOrganizationReference(Id) ON DELETE CASCADE");
         }
 
         [Test]
@@ -134,9 +141,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            // Union views should include ALL columns per dbGeneration.md specification
-            sql.Should().Contain("SELECT Id, EducationOrganizationId, SchoolName, 'School' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.School");
-            sql.Should().Contain("SELECT Id, EducationOrganizationId, LeaName, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey FROM dms.LocalEducationAgency");
+            // Union views should include ALL columns per dbGeneration.md specification, including audit columns
+            sql.Should()
+                .Contain(
+                    "SELECT Id, EducationOrganizationId, SchoolName, 'School' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.School"
+                );
+            sql.Should()
+                .Contain(
+                    "SELECT Id, EducationOrganizationId, LeaName, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.LocalEducationAgency"
+                );
         }
 
         [Test]
@@ -267,15 +280,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     IsExtensionTable = true,
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "ExtensionId", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "ExtensionValue", ColumnType = "string", MaxLength = "200", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ExtensionId",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ExtensionValue",
+                                            ColumnType = "string",
+                                            MaxLength = "200",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -302,16 +327,35 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.ComplexTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "FirstKey", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "SecondKey", ColumnType = "string", MaxLength = "50", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "Value", ColumnType = "string", MaxLength = "100", IsRequired = false }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "FirstKey",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SecondKey",
+                                            ColumnType = "string",
+                                            MaxLength = "50",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Value",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -338,17 +382,41 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.DataTypesTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "IntField", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "StringField", ColumnType = "string", MaxLength = "100", IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "BoolField", ColumnType = "bool", IsRequired = false },
-                                        new ColumnMetadata { ColumnName = "DecimalField", ColumnType = "decimal", Precision = "10", Scale = "2", IsRequired = false }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "IntField",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StringField",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "BoolField",
+                                            ColumnType = "bool",
+                                            IsRequired = false,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DecimalField",
+                                            ColumnType = "decimal",
+                                            Precision = "10",
+                                            Scale = "2",
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -360,7 +428,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var generator = new PgsqlDdlGeneratorStrategy();
             var options = new DdlGenerationOptions
             {
-                UsePrefixedTableNames = true // Default behavior
+                UsePrefixedTableNames = true, // Default behavior
             };
 
             // Act
@@ -377,10 +445,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Arrange
             var schema = GetEdFiSchema();
             var generator = new PgsqlDdlGeneratorStrategy();
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = false
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
             var sql = generator.GenerateDdlString(schema, options);
@@ -414,15 +479,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.School",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolName",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
     }
