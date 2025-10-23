@@ -33,7 +33,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             [TestCase("int", "INT")]
             [TestCase("int16", "SMALLINT")]
             [TestCase("short", "SMALLINT")]
-            public void MapColumnType_NumericTypes_ReturnsCorrectSqlServerType(string inputType, string expectedType)
+            public void MapColumnType_NumericTypes_ReturnsCorrectSqlServerType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -48,7 +51,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             [TestCase("boolean", "BIT")]
             [TestCase("bool", "BIT")]
-            public void MapColumnType_BooleanTypes_ReturnsCorrectSqlServerType(string inputType, string expectedType)
+            public void MapColumnType_BooleanTypes_ReturnsCorrectSqlServerType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -63,7 +69,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             [TestCase("decimal", "DECIMAL")]
             [TestCase("currency", "MONEY")]
-            public void MapColumnType_DecimalTypes_ReturnsCorrectSqlServerType(string inputType, string expectedType)
+            public void MapColumnType_DecimalTypes_ReturnsCorrectSqlServerType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -80,10 +89,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             [TestCase("string", "200", "NVARCHAR(200)")]
             [TestCase("string", "5000", "NVARCHAR(MAX)")]
             [TestCase("string", null, "NVARCHAR(MAX)")]
-            public void MapColumnType_StringTypesWithLength_ReturnsCorrectSqlServerType(string inputType, string? maxLength, string expectedType)
+            public void MapColumnType_StringTypesWithLength_ReturnsCorrectSqlServerType(
+                string inputType,
+                string? maxLength,
+                string expectedType
+            )
             {
                 // Arrange
-                var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType, MaxLength = maxLength };
+                var column = new ColumnMetadata
+                {
+                    ColumnName = "TestColumn",
+                    ColumnType = inputType,
+                    MaxLength = maxLength,
+                };
                 var schema = CreateTestSchema(column);
 
                 // Act
@@ -96,7 +114,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             [TestCase("date", "DATE")]
             [TestCase("time", "TIME")]
             [TestCase("datetime", "DATETIME2(7)")]
-            public void MapColumnType_DateTimeTypes_ReturnsCorrectSqlServerType(string inputType, string expectedType)
+            public void MapColumnType_DateTimeTypes_ReturnsCorrectSqlServerType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -111,7 +132,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             [TestCase("guid", "UNIQUEIDENTIFIER")]
             [TestCase("uuid", "UNIQUEIDENTIFIER")]
-            public void MapColumnType_GuidTypes_ReturnsCorrectSqlServerType(string inputType, string expectedType)
+            public void MapColumnType_GuidTypes_ReturnsCorrectSqlServerType(
+                string inputType,
+                string expectedType
+            )
             {
                 // Arrange
                 var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = inputType };
@@ -170,7 +194,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             public void MapColumnType_StringWithoutMaxLength_ReturnsNVarcharMax()
             {
                 // Arrange
-                var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = "string", MaxLength = null };
+                var column = new ColumnMetadata
+                {
+                    ColumnName = "TestColumn",
+                    ColumnType = "string",
+                    MaxLength = null,
+                };
                 var schema = CreateTestSchema(column);
 
                 // Act
@@ -184,7 +213,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             public void MapColumnType_VarcharWithInvalidMaxLength_ReturnsVarcharMax()
             {
                 // Arrange
-                var column = new ColumnMetadata { ColumnName = "TestColumn", ColumnType = "varchar", MaxLength = "invalid" };
+                var column = new ColumnMetadata
+                {
+                    ColumnName = "TestColumn",
+                    ColumnType = "varchar",
+                    MaxLength = "invalid",
+                };
                 var schema = CreateTestSchema(column);
 
                 // Act
@@ -215,12 +249,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                         BaseName = "TestTable",
                                         JsonPath = "$.TestTable",
                                         Columns = [column],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
         }
@@ -278,15 +312,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     {
                                         BaseName = "TestDescriptor",
                                         JsonPath = "$.TestDescriptor",
-                                        Columns = [
-                                            new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true }
+                                        Columns =
+                                        [
+                                            new ColumnMetadata
+                                            {
+                                                ColumnName = "Id",
+                                                ColumnType = "bigint",
+                                                IsNaturalKey = true,
+                                                IsRequired = true,
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
 
@@ -310,15 +351,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     {
                                         BaseName = "TestType",
                                         JsonPath = "$.TestType",
-                                        Columns = [
-                                            new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true }
+                                        Columns =
+                                        [
+                                            new ColumnMetadata
+                                            {
+                                                ColumnName = "Id",
+                                                ColumnType = "bigint",
+                                                IsNaturalKey = true,
+                                                IsRequired = true,
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
         }
@@ -415,15 +463,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                         BaseName = resourceName,
                                         JsonPath = $"$.{resourceName}",
                                         IsExtensionTable = true,
-                                        Columns = [
-                                            new ColumnMetadata { ColumnName = "Id", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true }
+                                        Columns =
+                                        [
+                                            new ColumnMetadata
+                                            {
+                                                ColumnName = "Id",
+                                                ColumnType = "bigint",
+                                                IsNaturalKey = true,
+                                                IsRequired = true,
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
         }
@@ -441,8 +496,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 // Act
                 var result = generator.GenerateDdlString(schema, false, false);
 
-                // Assert - Should contain foreign key reference to Student table
-                result.Should().Contain("REFERENCES [dms].[testproject_Student]");
+                // Assert - Should generate index for entity reference but NOT FK constraint
+                // Per design decision: Entity references (FromReferencePath) should NOT have FK constraints
+                result.Should().Contain("IX_TestTable_Student");
+                result.Should().NotContain("REFERENCES [dms].[testproject_Student]");
+                result.Should().Contain("REFERENCES [dms].[Document]"); // Document FK should still exist
             }
 
             [Test]
@@ -479,22 +537,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     {
                                         BaseName = "TestTable",
                                         JsonPath = "$.TestTable",
-                                        Columns = [
+                                        Columns =
+                                        [
                                             new ColumnMetadata
                                             {
                                                 ColumnName = "StudentId",
                                                 ColumnType = "bigint",
                                                 IsNaturalKey = true,
                                                 IsRequired = true,
-                                                FromReferencePath = "StudentReference"
-                                            }
+                                                FromReferencePath = "StudentReference",
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
 
@@ -518,22 +577,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     {
                                         BaseName = "TestTable",
                                         JsonPath = "$.TestTable",
-                                        Columns = [
+                                        Columns =
+                                        [
                                             new ColumnMetadata
                                             {
                                                 ColumnName = "EmptyRefId",
                                                 ColumnType = "bigint",
                                                 IsNaturalKey = true,
                                                 IsRequired = true,
-                                                FromReferencePath = ""
-                                            }
+                                                FromReferencePath = "",
+                                            },
                                         ],
-                                        ChildTables = []
-                                    }
-                                }
-                            }
-                        }
-                    }
+                                        ChildTables = [],
+                                    },
+                                },
+                            },
+                        },
+                    },
                 };
             }
         }

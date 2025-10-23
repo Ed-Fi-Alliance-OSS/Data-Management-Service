@@ -27,7 +27,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'testproject_TestTable' AND SCHEMA_NAME(schema_id) = 'dms')");
+            sql.Should()
+                .Contain(
+                    "IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'testproject_TestTable' AND SCHEMA_NAME(schema_id) = 'dms')"
+                );
             sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
             sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
             sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
@@ -84,10 +87,16 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             // Assert
             sql.Should().Contain("CREATE VIEW [dms].[EducationOrganizationReference] AS");
-            // Union views now include ALL columns per dbGeneration.md specification
-            sql.Should().Contain("SELECT [Id], [EducationOrganizationId], [SchoolName], ''School'' AS [Discriminator], [Document_Id], [Document_PartitionKey] FROM [dms].[School]");
+            // Union views now include ALL columns per dbGeneration.md specification, including audit columns
+            sql.Should()
+                .Contain(
+                    "SELECT [Id], [EducationOrganizationId], [SchoolName], ''School'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM [dms].[School]"
+                );
             sql.Should().Contain("UNION ALL");
-            sql.Should().Contain("SELECT [Id], [EducationOrganizationId], [LeaName], ''LocalEducationAgency'' AS [Discriminator], [Document_Id], [Document_PartitionKey] FROM [dms].[LocalEducationAgency]");
+            sql.Should()
+                .Contain(
+                    "SELECT [Id], [EducationOrganizationId], [LeaName], ''LocalEducationAgency'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM [dms].[LocalEducationAgency]"
+                );
         }
 
         [Test]
@@ -120,7 +129,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             sql.Should().Contain("[dms].[testproject_LocalEducationAgency]");
             sql.Should().Contain("[EducationOrganizationReference_Id] BIGINT NOT NULL");
             sql.Should().Contain("CONSTRAINT [FK_School_EducationOrganizationReference]");
-            sql.Should().Contain("REFERENCES [dms].[testproject_EducationOrganizationReference]([Id]) ON DELETE CASCADE");
+            sql.Should()
+                .Contain(
+                    "REFERENCES [dms].[testproject_EducationOrganizationReference]([Id]) ON DELETE CASCADE"
+                );
         }
 
         [Test]
@@ -134,9 +146,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            // Union views should include ALL columns per dbGeneration.md specification
-            sql.Should().Contain("SELECT [Id], [EducationOrganizationId], [SchoolName], ''School'' AS [Discriminator], [Document_Id], [Document_PartitionKey] FROM [dms].[School]");
-            sql.Should().Contain("SELECT [Id], [EducationOrganizationId], [LeaName], ''LocalEducationAgency'' AS [Discriminator], [Document_Id], [Document_PartitionKey] FROM [dms].[LocalEducationAgency]");
+            // Union views should include ALL columns per dbGeneration.md specification, including audit columns
+            sql.Should()
+                .Contain(
+                    "SELECT [Id], [EducationOrganizationId], [SchoolName], ''School'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM [dms].[School]"
+                );
+            sql.Should()
+                .Contain(
+                    "SELECT [Id], [EducationOrganizationId], [LeaName], ''LocalEducationAgency'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM [dms].[LocalEducationAgency]"
+                );
         }
 
         [Test]
@@ -168,7 +186,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             // Assert
             sql.Should().Contain("CREATE TABLE [dms].[testproject_TestTable]");
-            sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'testproject_TestTable'");
+            sql.Should()
+                .Contain("IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'testproject_TestTable'");
         }
 
         [Test]
@@ -268,15 +287,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     IsExtensionTable = true,
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "ExtensionId", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "ExtensionValue", ColumnType = "string", MaxLength = "200", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ExtensionId",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ExtensionValue",
+                                            ColumnType = "string",
+                                            MaxLength = "200",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -303,16 +334,35 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.ComplexTable",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "FirstKey", ColumnType = "bigint", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "SecondKey", ColumnType = "string", MaxLength = "50", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "Value", ColumnType = "string", MaxLength = "100", IsRequired = false }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "FirstKey",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SecondKey",
+                                            ColumnType = "string",
+                                            MaxLength = "50",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Value",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -324,7 +374,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var generator = new MssqlDdlGeneratorStrategy();
             var options = new DdlGenerationOptions
             {
-                UsePrefixedTableNames = true // Default behavior
+                UsePrefixedTableNames = true, // Default behavior
             };
 
             // Act
@@ -341,10 +391,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             // Arrange
             var schema = GetEdFiSchema();
             var generator = new MssqlDdlGeneratorStrategy();
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = false
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
             var sql = generator.GenerateDdlString(schema, options);
@@ -378,15 +425,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.School",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolName",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -396,10 +455,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             // Arrange
             var schema = GetEdFiSchema();
             var generator = new MssqlDdlGeneratorStrategy();
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = false
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
             var sql = generator.GenerateDdlString(schema, options);
@@ -418,10 +474,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             // Arrange
             var schema = GetEdFiSchema();
             var generator = new MssqlDdlGeneratorStrategy();
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = false
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
             var sql = generator.GenerateDdlString(schema, options);
@@ -443,7 +496,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = false,
-                DescriptorSchema = "descriptors"
+                DescriptorSchema = "descriptors",
             };
 
             // Act
@@ -462,10 +515,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             // Arrange
             var schema = GetEdFiSchema();
             var generator = new MssqlDdlGeneratorStrategy();
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = true
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
 
             // Act
             var sql = generator.GenerateDdlString(schema, options);
@@ -499,12 +549,24 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.School",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "SchoolName", ColumnType = "string", MaxLength = "100", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolName",
+                                            ColumnType = "string",
+                                            MaxLength = "100",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
+                                    ChildTables = [],
+                                },
+                            },
                         },
                         ["Descriptor"] = new ResourceSchema
                         {
@@ -517,15 +579,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.Descriptor",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "DescriptorId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "CodeValue", ColumnType = "string", MaxLength = "50", IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "DescriptorId",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "CodeValue",
+                                            ColumnType = "string",
+                                            MaxLength = "50",
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
     }
