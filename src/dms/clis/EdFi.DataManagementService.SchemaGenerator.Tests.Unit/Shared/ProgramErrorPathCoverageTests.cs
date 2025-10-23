@@ -1,7 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json;
 using EdFi.DataManagementService.SchemaGenerator.Cli;
 using FluentAssertions;
-using NUnit.Framework;
-using System.Text.Json;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
@@ -28,7 +32,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public async Task Main_WithHelpFlagVariation_ReturnsZeroExitCode()
         {
             // Arrange & Act & Assert
-            (await Program.Main(["-h"])).Should().Be(0);
+            (await Program.Main(["-h"]))
+                .Should()
+                .Be(0);
             (await Program.Main(["/h"])).Should().Be(0);
             (await Program.Main(["/?"])).Should().Be(0);
         }
@@ -63,7 +69,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public async Task Main_WithBothInputAndUrl_ReturnsErrorExitCode()
         {
             // Arrange
-            string[] args = ["--input", "somefile.json", "--url", "http://example.com/schema.json", "--output", "somedir"];
+            string[] args =
+            [
+                "--input",
+                "somefile.json",
+                "--url",
+                "http://example.com/schema.json",
+                "--output",
+                "somedir",
+            ];
 
             // Act
             var exitCode = await Program.Main(args);
@@ -200,8 +214,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
@@ -216,8 +230,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 exitCode.Should().Be(0); // Success
 
                 // Verify output files were created
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeTrue();
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql")).Should().BeTrue();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql"))
+                    .Should()
+                    .BeTrue();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql"))
+                    .Should()
+                    .BeTrue();
             }
             finally
             {
@@ -244,8 +262,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
@@ -260,8 +278,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 exitCode.Should().Be(0); // Success
 
                 // Verify only PostgreSQL file was created
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeTrue();
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql")).Should().BeFalse();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql"))
+                    .Should()
+                    .BeTrue();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql"))
+                    .Should()
+                    .BeFalse();
             }
             finally
             {
@@ -288,8 +310,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
@@ -304,8 +326,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 exitCode.Should().Be(0); // Success
 
                 // Verify only PostgreSQL file was created
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeTrue();
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql")).Should().BeFalse();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql"))
+                    .Should()
+                    .BeTrue();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql"))
+                    .Should()
+                    .BeFalse();
             }
             finally
             {
@@ -332,8 +358,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
@@ -348,8 +374,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 exitCode.Should().Be(0); // Success
 
                 // Verify only SQL Server file was created
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql")).Should().BeFalse();
-                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql")).Should().BeTrue();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-PostgreSQL.sql"))
+                    .Should()
+                    .BeFalse();
+                File.Exists(Path.Combine(tempDir, "EdFi-DMS-Database-Schema-SQLServer.sql"))
+                    .Should()
+                    .BeTrue();
             }
             finally
             {
@@ -376,8 +406,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
@@ -416,8 +446,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
@@ -456,8 +486,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
@@ -496,8 +526,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
@@ -536,8 +566,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
@@ -576,8 +606,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                 {
                     projectName = "EdFi",
                     projectVersion = "1.0.0",
-                    resourceSchemas = new Dictionary<string, object>()
-                }
+                    resourceSchemas = new Dictionary<string, object>(),
+                },
             };
             await File.WriteAllTextAsync(validJsonFile, JsonSerializer.Serialize(minimalSchema));
 
