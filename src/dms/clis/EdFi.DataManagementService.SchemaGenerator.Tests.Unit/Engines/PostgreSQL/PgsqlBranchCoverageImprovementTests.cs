@@ -1,8 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared;
 using FluentAssertions;
-using NUnit.Framework;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
@@ -25,10 +29,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var apiSchema = TestHelpers.CreateBasicApiSchema();
-            var options = new DdlGenerationOptions
-            {
-                GenerateForeignKeyConstraints = false
-            };
+            var options = new DdlGenerationOptions { GenerateForeignKeyConstraints = false };
 
             // Act
             var result = _strategy.GenerateDdlString(apiSchema, options);
@@ -44,10 +45,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var apiSchema = TestHelpers.CreateBasicApiSchema();
-            var options = new DdlGenerationOptions
-            {
-                GenerateNaturalKeyConstraints = false
-            };
+            var options = new DdlGenerationOptions { GenerateNaturalKeyConstraints = false };
 
             // Act
             var result = _strategy.GenerateDdlString(apiSchema, options);
@@ -72,7 +70,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             Console.WriteLine("Generated DDL:");
             Console.WriteLine(result);
             // Test for audit column presence (branch coverage test)
-            (result.Contains("CreateDate") || options.IncludeAuditColumns).Should().BeTrue();
+            (result.Contains("CreateDate") || options.IncludeAuditColumns)
+                .Should()
+                .BeTrue();
         }
 
         [Test]
@@ -80,10 +80,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var apiSchema = TestHelpers.CreateBasicApiSchema();
-            var options = new DdlGenerationOptions
-            {
-                IncludeAuditColumns = false
-            };
+            var options = new DdlGenerationOptions { IncludeAuditColumns = false };
 
             // Act
             var result = _strategy.GenerateDdlString(apiSchema, options);
@@ -175,10 +172,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var apiSchema = TestHelpers.CreateApiSchemaWithReferenceColumn();
-            var options = new DdlGenerationOptions
-            {
-                GenerateForeignKeyConstraints = true
-            };
+            var options = new DdlGenerationOptions { GenerateForeignKeyConstraints = true };
 
             // Act
             var result = _strategy.GenerateDdlString(apiSchema, options);
@@ -203,7 +197,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Assert
             result.Should().NotBeNull();
             result.Should().Contain("Student_Id"); // Parent FK column
-                        result.Should().Contain("FK_StudentAddress_Student"); // Parent FK constraint
+            result.Should().Contain("FK_StudentAddress_Student"); // Parent FK constraint
         }
 
         [Test]
@@ -211,10 +205,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var apiSchema = TestHelpers.CreateApiSchemaWithPolymorphicReference();
-            var options = new DdlGenerationOptions
-            {
-                SkipUnionViews = false
-            };
+            var options = new DdlGenerationOptions { SkipUnionViews = false };
 
             // Act
             var result = _strategy.GenerateDdlString(apiSchema, options);
@@ -231,10 +222,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var apiSchema = TestHelpers.CreateApiSchemaWithPolymorphicReference();
-            var options = new DdlGenerationOptions
-            {
-                SkipUnionViews = true
-            };
+            var options = new DdlGenerationOptions { SkipUnionViews = true };
 
             // Act
             var result = _strategy.GenerateDdlString(apiSchema, options);
@@ -254,7 +242,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             {
                 DescriptorSchema = "descriptors",
                 DefaultSchema = "dms",
-                UsePrefixedTableNames = false
+                UsePrefixedTableNames = false,
             };
 
             // Act
@@ -263,7 +251,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Assert
             result.Should().NotBeNull();
             result.Should().Contain("CREATE SCHEMA IF NOT EXISTS descriptors"); // PostgreSQL schema creation
-                        result.Should().Contain("GradeLevelDescriptor"); // Descriptor table name
+            result.Should().Contain("GradeLevelDescriptor"); // Descriptor table name
         }
 
         [Test]
@@ -274,7 +262,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var options = new DdlGenerationOptions
             {
                 IncludeExtensions = true,
-                UsePrefixedTableNames = false
+                UsePrefixedTableNames = false,
             };
 
             // Act
@@ -295,8 +283,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 IncludeExtensions = true,
                 SchemaMapping = new Dictionary<string, string>
                 {
-                    ["SAMPLE"] = "custom_sample_schema" // Uppercase key
-                }
+                    ["SAMPLE"] = "custom_sample_schema", // Uppercase key
+                },
             };
 
             // Act

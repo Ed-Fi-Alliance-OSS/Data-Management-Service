@@ -13,7 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
 
-
 namespace EdFi.DataManagementService.SchemaGenerator.Cli
 {
     /// <summary>
@@ -29,7 +28,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
         public static async Task<int> Main(string[] args)
         {
             // Check for help flag first
-            if (args.Length > 0 && (args[0] == "/h" || args[0] == "--help" || args[0] == "-h" || args[0] == "/?"))
+            if (
+                args.Length > 0
+                && (args[0] == "/h" || args[0] == "--help" || args[0] == "-h" || args[0] == "/?")
+            )
             {
                 DisplayHelp();
                 return 0;
@@ -122,14 +124,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
             if (!string.IsNullOrWhiteSpace(schemaUrl) && !string.IsNullOrWhiteSpace(inputFilePath))
             {
                 logger.LogError("Both --input and --url cannot be specified. Use one or the other.");
-                Console.Error.WriteLine("Error: Both --input and --url cannot be specified. Use one or the other.");
+                Console.Error.WriteLine(
+                    "Error: Both --input and --url cannot be specified. Use one or the other."
+                );
                 return 1;
             }
 
             // Early validation: check if both input sources and output directory are provided
-            if ((string.IsNullOrWhiteSpace(inputFilePath) && string.IsNullOrWhiteSpace(schemaUrl)) || string.IsNullOrWhiteSpace(outputDirectory))
+            if (
+                (string.IsNullOrWhiteSpace(inputFilePath) && string.IsNullOrWhiteSpace(schemaUrl))
+                || string.IsNullOrWhiteSpace(outputDirectory)
+            )
             {
-                logger.LogError("InputFilePath and OutputDirectory are required. Use --help for usage information.");
+                logger.LogError(
+                    "InputFilePath and OutputDirectory are required. Use --help for usage information."
+                );
                 Console.Error.WriteLine("\nError: InputFilePath and OutputDirectory are required.");
                 Console.Error.WriteLine("Use --help or /h for usage information.");
                 return 1;
@@ -138,7 +147,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
             if (!string.IsNullOrWhiteSpace(inputFilePath) && !string.IsNullOrWhiteSpace(schemaUrl))
             {
                 logger.LogError("Both --input and --url cannot be specified. Use one or the other.");
-                Console.Error.WriteLine("Error: Both --input and --url cannot be specified. Use one or the other.");
+                Console.Error.WriteLine(
+                    "Error: Both --input and --url cannot be specified. Use one or the other."
+                );
                 return 1;
             }
 
@@ -169,10 +180,16 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                         else
                         {
                             logger.LogError("Input file path is null. Cannot write schema JSON to file.");
-                            throw new ArgumentNullException(nameof(inputFilePath), "Input file path cannot be null.");
+                            throw new ArgumentNullException(
+                                nameof(inputFilePath),
+                                "Input file path cannot be null."
+                            );
                         }
                         await File.WriteAllTextAsync(inputFilePath, schemaJson);
-                        logger.LogInformation("Schema downloaded and saved to temporary file: {TempFile}", inputFilePath);
+                        logger.LogInformation(
+                            "Schema downloaded and saved to temporary file: {TempFile}",
+                            inputFilePath
+                        );
                     }
                     catch (Exception ex)
                     {
@@ -182,8 +199,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     }
                 }
 
-                logger.LogInformation("Starting DDL generation. Input: {Input}, Output: {Output}, Provider: {Provider}, Extensions: {Extensions}, SkipUnionViews: {SkipUnionViews}, UsePrefixedTableNames: {UsePrefixedTableNames}",
-                    inputFilePath, outputDirectory, databaseProvider, includeExtensions, skipUnionViews, usePrefixedTableNames);
+                logger.LogInformation(
+                    "Starting DDL generation. Input: {Input}, Output: {Output}, Provider: {Provider}, Extensions: {Extensions}, SkipUnionViews: {SkipUnionViews}, UsePrefixedTableNames: {UsePrefixedTableNames}",
+                    inputFilePath,
+                    outputDirectory,
+                    databaseProvider,
+                    includeExtensions,
+                    skipUnionViews,
+                    usePrefixedTableNames
+                );
 
                 var loader = serviceProvider.GetRequiredService<ApiSchemaLoader>();
                 var strategies = serviceProvider.GetServices<IDdlGeneratorStrategy>().ToList();
@@ -224,10 +248,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                 {
                     IncludeExtensions = includeExtensions,
                     SkipUnionViews = skipUnionViews,
-                    UsePrefixedTableNames = usePrefixedTableNames
+                    UsePrefixedTableNames = usePrefixedTableNames,
                 };
 
-                if (databaseProvider == "pgsql" || databaseProvider == "postgresql" || databaseProvider == "all")
+                if (databaseProvider is "pgsql" or "postgresql" or "all")
                 {
                     logger.LogInformation("Generating PostgreSQL DDL...");
                     var pgsql = strategies.FirstOrDefault(s => s.GetType().Name.Contains("Pgsql"));
@@ -235,7 +259,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     logger.LogInformation("PostgreSQL DDL generation completed");
                 }
 
-                if (databaseProvider == "mssql" || databaseProvider == "all")
+                if (databaseProvider is "mssql" or "all")
                 {
                     logger.LogInformation("Generating SQL Server DDL...");
                     var mssql = strategies.FirstOrDefault(s => s.GetType().Name.Contains("Mssql"));
@@ -243,7 +267,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     logger.LogInformation("SQL Server DDL generation completed");
                 }
 
-                logger.LogInformation("DDL generation completed successfully. Output: {Output}", outputDirectory);
+                logger.LogInformation(
+                    "DDL generation completed successfully. Output: {Output}",
+                    outputDirectory
+                );
                 return 0;
             }
             finally
@@ -271,16 +298,30 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
         {
             Console.WriteLine();
             Console.WriteLine("Ed-Fi Data Management Service - Schema Generator CLI");
-            Console.WriteLine("  Generates database DDL (Data Definition Language) scripts from Ed-Fi API schema files.");
+            Console.WriteLine(
+                "  Generates database DDL (Data Definition Language) scripts from Ed-Fi API schema files."
+            );
             Console.WriteLine();
             Console.WriteLine("Usage:");
-            Console.WriteLine("  --input, -i <path>           (Required) Path to the input API schema JSON file");
-            Console.WriteLine("  --output, -o <directory>     (Required) Directory where DDL scripts will be generated");
-            Console.WriteLine("  --provider, --database, -p <provider>  Database provider: 'pgsql'/'postgresql', 'mssql', or 'all' (default: all)");
+            Console.WriteLine(
+                "  --input, -i <path>           (Required) Path to the input API schema JSON file"
+            );
+            Console.WriteLine(
+                "  --output, -o <directory>     (Required) Directory where DDL scripts will be generated"
+            );
+            Console.WriteLine(
+                "  --provider, --database, -p <provider>  Database provider: 'pgsql'/'postgresql', 'mssql', or 'all' (default: all)"
+            );
             Console.WriteLine("  --url, -u <url>              URL to fetch the API schema JSON file");
-            Console.WriteLine("  --skip-union-views, -s       Skip generation of union views for polymorphic references");
-            Console.WriteLine("  --use-schemas, --separate-schemas       Generate separate database schemas (edfi, tpdm, etc.)");
-            Console.WriteLine("  --use-prefixed-names, --prefixed-tables Use prefixed table names in dms schema (default)");
+            Console.WriteLine(
+                "  --skip-union-views, -s       Skip generation of union views for polymorphic references"
+            );
+            Console.WriteLine(
+                "  --use-schemas, --separate-schemas       Generate separate database schemas (edfi, tpdm, etc.)"
+            );
+            Console.WriteLine(
+                "  --use-prefixed-names, --prefixed-tables Use prefixed table names in dms schema (default)"
+            );
             Console.WriteLine();
         }
 
