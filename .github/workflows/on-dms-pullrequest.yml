@@ -146,6 +146,7 @@ jobs:
   run-e2e-tests:
     name: Run ${{matrix.queryhandler}} E2E Tests (IdentityProvider ${{matrix.identityprovider}})
     runs-on: ubuntu-latest
+    needs: run-instance-management-e2e-tests
     strategy:
       matrix:
         identityprovider: [keycloak, self-contained]
@@ -236,6 +237,285 @@ jobs:
         if: (success() || failure())
         with:
           name: E2E Test Results
+          path: "**/*.trx"
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+
+  run-instance-management-e2e-tests:
+    name: Run Instance Management E2E Tests (Route Qualifiers)
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@6524bf65af31da8d45b59e8c27de4bd072b392f5 # v3.8.0
+
+      - name: Cache Docker layers
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ hashFiles('src/Directory.Packages.props', 'src/dms/Dockerfile', 'src/dms/**') }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build DMS Docker image
+        uses: docker/build-push-action@b32b51a8eda65d6793cd0494a773d4f6bcef32dc # v6.11.0
+        with:
+          load: true
+          context: ./src/dms
+          file: ./src/dms/Dockerfile
+          build-contexts: |
+            parentdir=./src
+          push: false
+          tags: dms-local-dms:latest
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+      - name: Cache Nuget packages
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 #v4.2
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build
+        run: ./build-dms.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+
+      - name: Add Kafka hostname to /etc/hosts
+        run: echo "127.0.0.1 dms-kafka1" | sudo tee -a /etc/hosts
+
+      - name: Setup Instance Management Test Environment
+        if: success()
+        run: |
+          # Use the Instance Management setup script to start Docker with route qualifiers
+          ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1
+
+      - name: Wait for config service and client registration
+        if: success()
+        run: |
+          Write-Host "Waiting for config service and OpenIddict clients to be fully initialized..." -ForegroundColor Cyan
+          $maxAttempts = 60
+          $attempt = 0
+          $ready = $false
+
+          while (-not $ready -and $attempt -lt $maxAttempts) {
+            $attempt++
+            Write-Host "Checking if CMSAuthMetadataReadOnlyAccess client is registered (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
+
+            try {
+              # Try to get a token using the CMSAuthMetadataReadOnlyAccess client
+              $tokenEndpoint = "http://localhost:8081/connect/token"
+              $body = @{
+                client_id = "CMSAuthMetadataReadOnlyAccess"
+                client_secret = "s3creT@09"
+                grant_type = "client_credentials"
+                scope = "edfi_admin_api/authMetadata_readonly_access"
+              }
+
+              $response = Invoke-RestMethod -Uri $tokenEndpoint -Method Post -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop
+
+              if ($response.access_token) {
+                $ready = $true
+                Write-Host "Config service is ready and clients are registered!" -ForegroundColor Green
+              }
+            }
+            catch {
+              Write-Host "Config service or clients not ready yet. Error: $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+
+            if (-not $ready) {
+              Start-Sleep -Seconds 2
+            }
+          }
+
+          if (-not $ready) {
+            throw "Config service did not become ready with registered clients within the timeout period"
+          }
+        shell: pwsh
+
+      - name: Restart DMS to ensure it connects with registered clients
+        if: success()
+        run: |
+          Write-Host "Restarting DMS container to ensure it can authenticate properly..." -ForegroundColor Cyan
+          docker restart dms-local-dms-1
+
+          Write-Host "Waiting for DMS to be ready..." -ForegroundColor Yellow
+          Start-Sleep -Seconds 10
+
+          # Wait for DMS health check
+          $maxAttempts = 30
+          $attempt = 0
+          $ready = $false
+
+          while (-not $ready -and $attempt -lt $maxAttempts) {
+            $attempt++
+            Write-Host "Checking DMS health (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
+
+            try {
+              $response = Invoke-WebRequest -Uri "http://localhost:8080/health" -Method Get -TimeoutSec 5 -ErrorAction Stop
+              if ($response.StatusCode -eq 200) {
+                $ready = $true
+                Write-Host "DMS is ready!" -ForegroundColor Green
+              }
+            }
+            catch {
+              Write-Host "DMS not ready yet" -ForegroundColor Yellow
+            }
+
+            if (-not $ready) {
+              Start-Sleep -Seconds 2
+            }
+          }
+
+          if (-not $ready) {
+            Write-Host "DMS did not become ready, but continuing anyway..." -ForegroundColor Yellow
+          }
+        shell: pwsh
+
+      - name: Wait for PostgreSQL to be ready
+        if: success()
+        run: |
+          Write-Host "Waiting for PostgreSQL to be ready..." -ForegroundColor Cyan
+          $maxAttempts = 30
+          $attempt = 0
+          $ready = $false
+
+          while (-not $ready -and $attempt -lt $maxAttempts) {
+            $attempt++
+            Write-Host "Checking PostgreSQL readiness (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
+
+            try {
+              $result = docker exec dms-postgresql pg_isready -U postgres 2>&1
+              if ($LASTEXITCODE -eq 0) {
+                $ready = $true
+                Write-Host "PostgreSQL is ready!" -ForegroundColor Green
+              }
+            }
+            catch {
+              Write-Host "PostgreSQL not ready yet: $_" -ForegroundColor Yellow
+            }
+
+            if (-not $ready) {
+              Start-Sleep -Seconds 2
+            }
+          }
+
+          if (-not $ready) {
+            throw "PostgreSQL did not become ready within the timeout period"
+          }
+        shell: pwsh
+
+      - name: Create test databases for multi-instance routing
+        if: success()
+        run: |
+          Write-Host "Creating test databases for multi-instance routing..." -ForegroundColor Cyan
+
+          # Create the three test databases
+          docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255901_sy2024;" 2>&1
+          Write-Host "Created database: edfi_datamanagementservice_d255901_sy2024" -ForegroundColor Green
+
+          docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255901_sy2025;" 2>&1
+          Write-Host "Created database: edfi_datamanagementservice_d255901_sy2025" -ForegroundColor Green
+
+          docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255902_sy2024;" 2>&1
+          Write-Host "Created database: edfi_datamanagementservice_d255902_sy2024" -ForegroundColor Green
+        shell: pwsh
+
+      - name: Deploy schema to test databases
+        if: success()
+        run: |
+          Write-Host "Exporting schema from main database..." -ForegroundColor Cyan
+
+          # Export schema from main database to a temporary location
+          docker exec dms-postgresql pg_dump -U postgres -d edfi_datamanagementservice --schema-only > /tmp/dms_schema.sql
+          Write-Host "Schema exported successfully" -ForegroundColor Green
+
+          Write-Host "Applying schema to test databases..." -ForegroundColor Cyan
+
+          # Apply schema to each test database
+          cat /tmp/dms_schema.sql | docker exec -i dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024
+          Write-Host "Schema applied to: edfi_datamanagementservice_d255901_sy2024" -ForegroundColor Green
+
+          cat /tmp/dms_schema.sql | docker exec -i dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025
+          Write-Host "Schema applied to: edfi_datamanagementservice_d255901_sy2025" -ForegroundColor Green
+
+          cat /tmp/dms_schema.sql | docker exec -i dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024
+          Write-Host "Schema applied to: edfi_datamanagementservice_d255902_sy2024" -ForegroundColor Green
+
+          # Verify schema was applied (should show tables in dms schema)
+          Write-Host "`nVerifying schema deployment..." -ForegroundColor Cyan
+          docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'dms';"
+        shell: pwsh
+
+      - name: Run Instance Management E2E Tests
+        if: success()
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
+          DMS_API_URL: http://localhost:8080
+          CONFIG_SERVICE_URL: http://localhost:8081
+        run: |
+          # Run ONLY the Instance Management tests
+          dotnet test src/dms/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj `
+            --configuration ${{ env.CONFIGURATION }} `
+            --no-build `
+            --logger "trx;LogFileName=instance-management-e2e.trx" `
+            --logger "console" `
+            --verbosity normal
+
+      - name: Export Docker Logs
+        if: failure()
+        run: |
+          Write-Host "Capturing Docker container logs before teardown..." -ForegroundColor Cyan
+          $logDir = "${{ github.workspace }}/logs"
+          New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+
+          docker ps -a --format "{{.Names}}" | ForEach-Object {
+              $container = $_
+              Write-Host "Capturing logs for container: $container" -ForegroundColor Yellow
+              $logPath = Join-Path $logDir "$container.log"
+              docker logs $container > $logPath 2>&1
+
+              # Also display DMS logs in the workflow output for easier debugging
+              if ($container -eq "dms-local-dms") {
+                  Write-Host "`n========== DMS Container Logs ==========" -ForegroundColor Cyan
+                  docker logs $container 2>&1
+                  Write-Host "`n========================================`n" -ForegroundColor Cyan
+              }
+          }
+        shell: pwsh
+
+      - name: Teardown Instance Management Test Environment
+        if: always()
+        run: |
+          # Use the Instance Management teardown script to stop Docker
+          ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/teardown-local-dms.ps1
+
+      - name: Upload Logs
+        if: failure()
+        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
+        with:
+          name: instance-management-test-logs
+          path: |
+            ${{ github.workspace }}/logs
+          retention-days: 10
+
+      - name: Upload Test Results
+        uses: dorny/test-reporter@31a54ee7ebcacc03a09ea97a7e5465a47b84aea5 # v1.9.1
+        if: (success() || failure())
+        with:
+          name: Instance Management E2E Test Results
           path: "**/*.trx"
           path-replace-backslashes: "true"
           reporter: dotnet-trx
@@ -417,6 +697,7 @@ jobs:
       [
         run-unit-tests,
         run-e2e-tests,
+        run-instance-management-e2e-tests,
         run-integration-tests,
         validate-resources-spec,
         validate-descriptors-spec,
