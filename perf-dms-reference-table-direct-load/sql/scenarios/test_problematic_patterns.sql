@@ -325,15 +325,11 @@ BEGIN
         INSERT INTO dms.Reference (
             ParentDocumentId,
             ParentDocumentPartitionKey,
-            ReferencedDocumentId,
-            ReferencedDocumentPartitionKey,
             ReferentialId,
             ReferentialPartitionKey
         ) VALUES (
             referring_docs.Id,
             referring_docs.DocumentPartitionKey,
-            :heavydoc_heavily_ref_doc_id,
-            :heavydoc_heavily_ref_partition_key,
             :heavydoc_heavily_ref_uuid,
             :heavydoc_heavily_ref_key
         ) ON CONFLICT DO NOTHING;

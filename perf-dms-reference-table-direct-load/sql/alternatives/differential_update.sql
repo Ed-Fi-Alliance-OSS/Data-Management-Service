@@ -96,17 +96,13 @@ BEGIN
         ParentDocumentId,
         ParentDocumentPartitionKey,
         ReferentialId,
-        ReferentialPartitionKey,
-        ReferencedDocumentId,
-        ReferencedDocumentPartitionKey
+        ReferentialPartitionKey
     )
     SELECT
         s.parent_document_id,
         s.parent_document_partition_key,
         s.referential_id,
-        s.referential_partition_key,
-        a.DocumentId,
-        a.DocumentPartitionKey
+        s.referential_partition_key
     FROM staged s
     JOIN dms.Alias a ON
         s.referential_id = a.ReferentialId
@@ -119,36 +115,6 @@ BEGIN
           AND existing.ReferentialId = s.referential_id
           AND existing.ReferentialPartitionKey = s.referential_partition_key
     );
-
-    -- Refresh existing rows whose Alias mapping has changed (avoid no-op updates)
-    WITH staged AS MATERIALIZED (
-        SELECT DISTINCT
-            pd.parent_document_id,
-            pd.parent_document_partition_key,
-            rf.referential_id,
-            rf.referential_partition_key
-        FROM
-            unnest(parentDocumentIds, parentDocumentPartitionKeys)
-            WITH ORDINALITY AS pd(parent_document_id, parent_document_partition_key, ord)
-        JOIN
-            unnest(referentialIds, referentialPartitionKeys)
-            WITH ORDINALITY AS rf(referential_id, referential_partition_key, ord)
-            USING (ord)
-    )
-    UPDATE dms.Reference r
-    SET
-        ReferencedDocumentId = a.DocumentId,
-        ReferencedDocumentPartitionKey = a.DocumentPartitionKey
-    FROM staged s
-    JOIN dms.Alias a ON
-        s.referential_id = a.ReferentialId
-        AND s.referential_partition_key = a.ReferentialPartitionKey
-    WHERE r.ParentDocumentId = s.parent_document_id
-      AND r.ParentDocumentPartitionKey = s.parent_document_partition_key
-      AND r.ReferentialId = s.referential_id
-      AND r.ReferentialPartitionKey = s.referential_partition_key
-      AND (r.ReferencedDocumentId, r.ReferencedDocumentPartitionKey)
-            IS DISTINCT FROM (a.DocumentId, a.DocumentPartitionKey);
 
     RETURN;
 END;

@@ -158,8 +158,6 @@ CREATE TABLE IF NOT EXISTS dms.Reference (
   Id BIGINT GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
   ParentDocumentId BIGINT NOT NULL,
   ParentDocumentPartitionKey SMALLINT NOT NULL,
-  ReferencedDocumentId BIGINT NULL,
-  ReferencedDocumentPartitionKey SMALLINT NULL,
   ReferentialId UUID NOT NULL,
   ReferentialPartitionKey SMALLINT NOT NULL,
   PRIMARY KEY (ParentDocumentPartitionKey, Id)
@@ -182,7 +180,7 @@ END\$\$;
 
 -- Create Reference indexes
 CREATE INDEX IF NOT EXISTS UX_Reference_ParentDocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
-CREATE INDEX IF NOT EXISTS UX_Reference_ReferencedDocumentId ON dms.Reference (ReferencedDocumentPartitionKey, ReferencedDocumentId);
+CREATE INDEX IF NOT EXISTS IX_Reference_ReferentialId ON dms.Reference (ReferentialPartitionKey, ReferentialId);
 
 -- Add FK constraints for Reference
 DO \$\$
@@ -194,18 +192,6 @@ BEGIN
         ALTER TABLE dms.Reference
         ADD CONSTRAINT FK_Reference_ParentDocument FOREIGN KEY (ParentDocumentPartitionKey, ParentDocumentId)
         REFERENCES dms.Document (DocumentPartitionKey, Id) ON DELETE CASCADE;
-    END IF;
-END\$\$;
-
-DO \$\$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_schema = 'dms' AND table_name = 'reference' AND constraint_name = 'fk_reference_referenceddocument'
-    ) THEN
-        ALTER TABLE dms.Reference
-        ADD CONSTRAINT FK_Reference_ReferencedDocument FOREIGN KEY (ReferencedDocumentPartitionKey, ReferencedDocumentId)
-        REFERENCES dms.Document (DocumentPartitionKey, Id);
     END IF;
 END\$\$;
 
@@ -245,21 +231,15 @@ BEGIN
         ParentDocumentId,
         ParentDocumentPartitionKey,
         ReferentialId,
-        ReferentialPartitionKey,
-        ReferencedDocumentId,
-        ReferencedDocumentPartitionKey
+        ReferentialPartitionKey
     )
     SELECT
         ids.documentId,
         ids.documentPartitionKey,
         ids.referentialId,
-        ids.referentialPartitionKey,
-        a.documentId,
-        a.documentPartitionKey
+        ids.referentialPartitionKey
     FROM unnest(parentDocumentIds, parentDocumentPartitionKeys, referentialIds, referentialPartitionKeys) AS
-        ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey)
-    LEFT JOIN dms.Alias a ON
-        ids.referentialId = a.referentialId and ids.referentialPartitionKey = a.referentialPartitionKey;
+        ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey);
     RETURN;
 
 EXCEPTION

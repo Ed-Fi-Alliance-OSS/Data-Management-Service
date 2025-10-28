@@ -8,8 +8,6 @@ CREATE TABLE IF NOT EXISTS dms.Reference (
   Id BIGINT GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
   ParentDocumentId BIGINT NOT NULL,
   ParentDocumentPartitionKey SMALLINT NOT NULL,
-  ReferencedDocumentId BIGINT NULL,
-  ReferencedDocumentPartitionKey SMALLINT NULL,
   ReferentialId UUID NOT NULL,
   ReferentialPartitionKey SMALLINT NOT NULL,
   PRIMARY KEY (ParentDocumentPartitionKey, Id)
@@ -33,8 +31,8 @@ END$$;
 -- Lookup support for DELETE/UPDATE by id
 CREATE INDEX IF NOT EXISTS UX_Reference_ParentDocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
 
--- Lookup support for DELETE failure due to existing references - cross partition index
-CREATE INDEX IF NOT EXISTS UX_Reference_ReferencedDocumentId ON dms.Reference (ReferencedDocumentPartitionKey, ReferencedDocumentId);
+-- Lookup support for reverse reference resolution by alias
+CREATE INDEX IF NOT EXISTS IX_Reference_ReferentialId ON dms.Reference (ReferentialPartitionKey, ReferentialId);
 
 -- FK back to parent document
 DO $$
@@ -48,17 +46,3 @@ BEGIN
         REFERENCES dms.Document (DocumentPartitionKey, Id) ON DELETE CASCADE;
     END IF;
 END$$;
-
--- FK back to document being referenced - can be null if reference validation is turned off
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.table_constraints
-        WHERE table_schema = 'dms' AND table_name = 'reference' AND constraint_name = 'fk_reference_referenceddocument'
-    ) THEN
-        ALTER TABLE dms.Reference
-        ADD CONSTRAINT FK_Reference_ReferencedDocument FOREIGN KEY (ReferencedDocumentPartitionKey, ReferencedDocumentId)
-        REFERENCES dms.Document (DocumentPartitionKey, Id);
-    END IF;
-END$$;
-

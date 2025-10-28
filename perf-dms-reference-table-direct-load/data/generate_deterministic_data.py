@@ -205,8 +205,6 @@ def generate_references(
                 [
                     doc.document_id,
                     doc.partition_key,
-                    alias.document_id,
-                    alias.document_partition,
                     alias.referential_id,
                     alias.referential_partition,
                 ]
@@ -312,8 +310,6 @@ if __name__ == "__main__":
             [
                 "ParentDocumentId",
                 "ParentDocumentPartitionKey",
-                "ReferencedDocumentId",
-                "ReferencedDocumentPartitionKey",
                 "ReferentialId",
                 "ReferentialPartitionKey",
             ]

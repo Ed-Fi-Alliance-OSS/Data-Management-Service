@@ -573,15 +573,23 @@ public partial class SqlAction() : ISqlAction
     )
     {
         await using NpgsqlCommand command = new(
-            $@"SELECT d.ResourceName FROM dms.Document d
-                   INNER JOIN (
-                     SELECT ParentDocumentId, ParentDocumentPartitionKey
-                     FROM dms.Reference r
-                     INNER JOIN dms.Document d2 ON d2.Id = r.ReferencedDocumentId
-                       AND d2.DocumentPartitionKey = r.ReferencedDocumentPartitionKey
-                       WHERE d2.DocumentUuid = $1 AND d2.DocumentPartitionKey = $2) AS re
-                     ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
-                   ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
+            $@"SELECT d.ResourceName
+                FROM dms.Document d
+                INNER JOIN (
+                    SELECT r.ParentDocumentId, r.ParentDocumentPartitionKey
+                    FROM dms.Reference r
+                    INNER JOIN dms.Alias a
+                        ON a.ReferentialId = r.ReferentialId
+                        AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
+                    INNER JOIN dms.Document d2
+                        ON d2.Id = a.DocumentId
+                        AND d2.DocumentPartitionKey = a.DocumentPartitionKey
+                    WHERE d2.DocumentUuid = $1
+                      AND d2.DocumentPartitionKey = $2
+                ) AS re
+                    ON re.ParentDocumentId = d.Id
+                    AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
+                ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
@@ -616,10 +624,17 @@ public partial class SqlAction() : ISqlAction
         return [];
 #pragma warning disable CS0162 // Unreachable code detected
         await using NpgsqlCommand command = new(
-            $@"SELECT * FROM dms.Document d
-                                INNER JOIN dms.Reference r ON d.Id = r.ParentDocumentId And d.DocumentPartitionKey = r.ParentDocumentPartitionKey
-                                WHERE r.ReferencedDocumentId = $1 AND r.ReferencedDocumentPartitionKey = $2
-                                ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
+            $@"SELECT d.*
+                FROM dms.Document d
+                INNER JOIN dms.Reference r
+                    ON d.Id = r.ParentDocumentId
+                    AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+                INNER JOIN dms.Alias a
+                    ON a.ReferentialId = r.ReferentialId
+                    AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
+                WHERE a.DocumentId = $1
+                  AND a.DocumentPartitionKey = $2
+                ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )

@@ -66,7 +66,7 @@ PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
 
 log_info "Loading references..."
 PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
-    -c "COPY dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, ReferencedDocumentId, ReferencedDocumentPartitionKey, ReferentialId, ReferentialPartitionKey) FROM STDIN WITH (FORMAT csv, HEADER true);" \
+    -c "COPY dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey) FROM STDIN WITH (FORMAT csv, HEADER true);" \
     < "$REFERENCE_CSV"
 
 log_info "Re-enabling autovacuum and refreshing statistics..."

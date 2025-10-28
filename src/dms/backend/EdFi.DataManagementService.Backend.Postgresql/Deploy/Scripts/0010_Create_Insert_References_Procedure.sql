@@ -26,21 +26,15 @@ BEGIN
         ParentDocumentId,
         ParentDocumentPartitionKey,
         ReferentialId,
-        ReferentialPartitionKey,
-        ReferencedDocumentId,
-        ReferencedDocumentPartitionKey
+        ReferentialPartitionKey
     )
     SELECT
         ids.documentId,
         ids.documentPartitionKey,
         ids.referentialId,
-        ids.referentialPartitionKey,
-        a.documentId,
-        a.documentPartitionKey
+        ids.referentialPartitionKey
     FROM unnest(parentDocumentIds, parentDocumentPartitionKeys, referentialIds, referentialPartitionKeys) AS
-        ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey)
-    LEFT JOIN dms.Alias a ON
-        ids.referentialId = a.referentialId and ids.referentialPartitionKey = a.referentialPartitionKey;
+        ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey);
     RETURN;
 
 EXCEPTION

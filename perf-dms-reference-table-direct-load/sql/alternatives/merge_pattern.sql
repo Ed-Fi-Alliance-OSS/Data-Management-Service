@@ -118,27 +118,16 @@ BEGIN
         ParentDocumentId,
         ParentDocumentPartitionKey,
         ReferentialId,
-        ReferentialPartitionKey,
-        ReferencedDocumentId,
-        ReferencedDocumentPartitionKey
+        ReferentialPartitionKey
     )
     SELECT
         s.ParentDocumentId,
         s.ParentDocumentPartitionKey,
         s.ReferentialId,
-        s.ReferentialPartitionKey,
-        a.DocumentId,
-        a.DocumentPartitionKey
+        s.ReferentialPartitionKey
     FROM dms_temp_reference_staging s
-    JOIN dms.Alias a ON
-        s.ReferentialId = a.ReferentialId
-        AND s.ReferentialPartitionKey = a.ReferentialPartitionKey
     ON CONFLICT (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)
-    DO UPDATE SET
-        ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
-        ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
-    WHERE (dms.Reference.ReferencedDocumentId, dms.Reference.ReferencedDocumentPartitionKey)
-          IS DISTINCT FROM (EXCLUDED.ReferencedDocumentId, EXCLUDED.ReferencedDocumentPartitionKey);
+    DO NOTHING;
 
     TRUNCATE dms_temp_reference_staging;
     RETURN;

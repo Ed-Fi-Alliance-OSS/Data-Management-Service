@@ -432,16 +432,12 @@ resolved AS (
 INSERT INTO dms.Reference (
     ParentDocumentId,
     ParentDocumentPartitionKey,
-    ReferencedDocumentId,
-    ReferencedDocumentPartitionKey,
     ReferentialId,
     ReferentialPartitionKey
 )
 SELECT
     r.parent_document_id,
     r.parent_document_partition_key,
-    al.document_id,
-    al.document_partition_key,
     al.referential_id,
     al.referential_partition_key
 FROM resolved r

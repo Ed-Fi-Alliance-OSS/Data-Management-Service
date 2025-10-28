@@ -142,6 +142,6 @@ Analyze the delta between the before/after files to understand how many shared h
 
 Performance issues identified:
 - DELETE-then-INSERT pattern in InsertReferences causes massive overhead
-- Cross-partition lookups on ReferencedDocumentId are slow
+- Reverse lookups depend on Alias joins; monitor IX_Reference_ReferentialId and Alias latency
 - Lock contention during bulk operations
 - No differential updates for references

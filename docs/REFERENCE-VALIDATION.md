@@ -15,6 +15,6 @@ ALTER TABLE Reference  DROP CONSTRAINT FK_Reference_ReferencedAlias
 ```
 
 > [!NOTE]
-> The other foreign key constraints on the tables do not affect the
-> referential integrity checking, so there is no need to remove them for this
-> purpose.
+> `FK_Reference_ParentDocument` still enforces cascades but does not
+> participate in reference validation, and the legacy
+> `FK_Reference_ReferencedDocument` constraint has been removed from the schema.
