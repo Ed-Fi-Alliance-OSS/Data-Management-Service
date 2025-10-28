@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
+using Snapshooter.NUnit;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
@@ -81,14 +82,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert - Verify the generated DDL
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityName");
-            sql.Should().Contain("StringIdentity VARCHAR(30) NOT NULL");
-            sql.Should().Contain("RequiredIntegerProperty INTEGER NOT NULL");
-            sql.Should().Contain("SchoolYear INTEGER");
-            sql.Should().Contain("UQ_DomainEntityName_NaturalKey");
-            sql.Should().Contain("UNIQUE (StringIdentity)");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -191,13 +186,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityName");
-            sql.Should()
-                .Contain("CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityNameRequiredIntegerProperty");
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityNameSchoolYear");
-            sql.Should().Contain("DomainEntityName_Id BIGINT NOT NULL");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -284,12 +274,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityName");
-            sql.Should().Contain("SectionIdentifier VARCHAR(30) NOT NULL");
-            sql.Should().Contain("CourseOffering_Id BIGINT NOT NULL");
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityNameClassPeriod");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -351,13 +337,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityName");
-            sql.Should().Contain("SectionIdentifier VARCHAR(30) NOT NULL");
-            sql.Should().Contain("CourseOffering_Id BIGINT NOT NULL");
-            sql.Should().Contain("UQ_DomainEntityName_NaturalKey");
-            sql.Should().Contain("UNIQUE (SectionIdentifier, CourseOffering_Id)");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -492,15 +473,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_EducationContent");
-            sql.Should().Contain("ContentIdentifier VARCHAR(30) NOT NULL");
-            sql.Should()
-                .Contain(
-                    "CREATE TABLE IF NOT EXISTS dms.edfi_EducationContentDerivativeSourceEducationContent"
-                );
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_EducationContentRequiredURI");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -580,12 +554,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_EducationContent");
-            sql.Should()
-                .Contain("CREATE TABLE IF NOT EXISTS dms.edfi_EducationContentEducationContentSuffixName");
-            sql.Should().Contain("EducationContentSuffixName VARCHAR(30)");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -647,13 +617,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should()
-                .Contain("CREATE TABLE IF NOT EXISTS dms.edfi_StudentSpecialEducationProgramAssociation");
-            sql.Should().Contain("IEPBeginDate TIMESTAMP");
-            sql.Should().Contain("UQ_StudentSpecialEducationProgramAssociation_NaturalKey");
-            sql.Should().Contain("UNIQUE (ContentIdentifier, IEPBeginDate)");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -741,14 +706,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_Assessment");
-            sql.Should().Contain("AssessmentIdentifier INTEGER NOT NULL");
-            sql.Should().Contain("AssessmentAssessmentIdentificationCode");
-            sql.Should().Contain("IdentificationCode VARCHAR(30) NOT NULL");
-            sql.Should().Contain("AssessmentIdentificationSystemDescriptorId");
-            sql.Should().Contain("BIGINT NOT NULL");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -840,11 +799,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_CommunityOrganization");
-            sql.Should().Contain("CommunityOrganizationId INTEGER NOT NULL");
-            sql.Should().Contain("CommunityOrganizationEducationOrganizationIdentif");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -958,20 +914,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should()
-                .Contain("CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociation");
-            sql.Should()
-                .Contain(
-                    "CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociationAddress"
-                );
-            sql.Should()
-                .Contain(
-                    "CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociationAddressPeriod"
-                );
-            sql.Should().Contain("BeginDate INTEGER NOT NULL");
-            sql.Should().Contain("EndDate INTEGER");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1032,12 +976,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL includes role-named descriptor column
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_Assessment");
-            sql.Should().Contain("AssessmentIdentifier INTEGER NOT NULL");
-            sql.Should().Contain("AssessedGradeLevelDescriptorId BIGINT");
-            sql.Should().Contain("UQ_Assessment_NaturalKey");
-            sql.Should().Contain("UNIQUE (AssessmentIdentifier)");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1177,21 +1116,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
 
             // Assert - Verify individual subclass tables AND union view are created
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_School");
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_LocalEducationAgency");
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_StateEducationAgency");
-            sql.Should().Contain("EducationOrganizationId INTEGER NOT NULL");
-            sql.Should().Contain("NameOfInstitution VARCHAR(255) NOT NULL");
-
-            // Verify union view generation
-            sql.Should().Contain("CREATE OR REPLACE VIEW dms.edfi_EducationOrganization AS");
-            sql.Should().Contain("FROM dms.edfi_School");
-            sql.Should().Contain("FROM dms.edfi_LocalEducationAgency");
-            sql.Should().Contain("FROM dms.edfi_StateEducationAgency");
-            sql.Should().Contain("'School' AS Discriminator");
-            sql.Should().Contain("'LocalEducationAgency' AS Discriminator");
-            sql.Should().Contain("'StateEducationAgency' AS Discriminator");
-            sql.Should().Contain("UNION ALL");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1279,15 +1204,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the table is created with polymorphic reference column
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_StudentSchoolAssociation");
-            sql.Should().Contain("StudentUniqueId VARCHAR(32) NOT NULL");
-            sql.Should().Contain("SchoolId INTEGER NOT NULL");
-            sql.Should().Contain("EntryDate DATE NOT NULL");
-            sql.Should().Contain("EntryGradeLevelDescriptor BIGINT NOT NULL");
-            sql.Should().Contain("ExitWithdrawDate DATE");
-            sql.Should().Contain("UQ_StudentSchoolAssociation_NaturalKey");
-            sql.Should().Contain("UNIQUE (StudentUniqueId, SchoolId, EntryDate)");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1389,16 +1306,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_GeneralStudentProgramAssociation");
-            sql.Should().Contain("StudentUniqueId VARCHAR(32) NOT NULL");
-            sql.Should().Contain("ProgramEducationOrganizationId INTEGER NOT NULL");
-            sql.Should().Contain("ProgramName VARCHAR(60) NOT NULL");
-            sql.Should().Contain("ProgramTypeDescriptor BIGINT NOT NULL");
-            sql.Should().Contain("BeginDate DATE NOT NULL");
-            sql.Should().Contain("ServedOutsideOfRegularSession BOOLEAN");
-            sql.Should().Contain("UQ_GeneralStudentProgramAssociation_NaturalKey");
+            // Assert - Verify the generated DDL matches the snapshot
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1531,12 +1440,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify both tables are created with their discriminator values stored
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_Assessment");
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_ObjectiveAssessment");
-            sql.Should().Contain("AssessmentIdentifier VARCHAR(60) NOT NULL");
-            sql.Should().Contain("Namespace VARCHAR(255) NOT NULL");
-            sql.Should().Contain("AssessmentTitle VARCHAR(100) NOT NULL");
-            sql.Should().Contain("IdentificationCode VARCHAR(60) NOT NULL");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1631,12 +1535,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
 
             // Assert - Verify union view is created with schema prefix in the view name
-            sql.Should().Contain("CREATE OR REPLACE VIEW dms.edfi_EducationOrganization AS");
-            sql.Should().Contain("FROM dms.edfi_School");
-            sql.Should().Contain("FROM dms.edfi_LocalEducationAgency");
-            sql.Should().Contain("'School' AS Discriminator");
-            sql.Should().Contain("'LocalEducationAgency' AS Discriminator");
-            sql.Should().Contain("UNION ALL");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1746,14 +1645,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
 
             // Assert - Verify union view has schema prefix and references prefixed tables
-            sql.Should().Contain("CREATE OR REPLACE VIEW dms.edfi_GeneralStudentProgramAssociation AS");
-            sql.Should().Contain("FROM dms.edfi_StudentCTEProgramAssociation");
-            sql.Should().Contain("FROM dms.edfi_StudentHomelessProgramAssociation");
-            sql.Should().Contain("'StudentCTEProgramAssociation' AS Discriminator");
-            sql.Should().Contain("'StudentHomelessProgramAssociation' AS Discriminator");
-
-            // Verify the view name doesn't have double schema prefix (e.g., not "dms.dms.edfi_")
-            sql.Should().NotContain("dms.dms.edfi_");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1814,9 +1706,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
 
             // Assert - Verify no union view is created
-            sql.Should().NotContain("CREATE OR REPLACE VIEW");
-            sql.Should().NotContain("UNION ALL");
-            sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_School");
+            Snapshot.Match(sql);
         }
 
         /// <summary>

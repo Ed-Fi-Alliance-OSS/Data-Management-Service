@@ -1,0 +1,91 @@
+﻿-- MSSQL CREATE TABLE edfi_StudentCTEProgramAssociation
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_StudentCTEProgramAssociation' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_StudentCTEProgramAssociation] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [StudentUniqueId] NVARCHAR(32) NOT NULL,
+    [BeginDate] DATE NOT NULL,
+    [NonTraditionalGenderStatus] BIT,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_StudentCTEProgramAssociation_NaturalKey]
+        UNIQUE ([StudentUniqueId], [BeginDate])
+    );
+    PRINT 'Table edfi_StudentCTEProgramAssociation created.';
+END
+ELSE
+    PRINT 'Table edfi_StudentCTEProgramAssociation already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentCTEProgramAssociation_Document' AND object_id = OBJECT_ID('[dms].[edfi_StudentCTEProgramAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentCTEProgramAssociation_Document]
+        ON [dms].[edfi_StudentCTEProgramAssociation]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_StudentCTEProgramAssociation_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_StudentHomelessProgramAssociation
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_StudentHomelessProgramAssociation' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_StudentHomelessProgramAssociation] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [StudentUniqueId] NVARCHAR(32) NOT NULL,
+    [BeginDate] DATE NOT NULL,
+    [AwaitingFosterCare] BIT,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_StudentHomelessProgramAssociation_NaturalKey]
+        UNIQUE ([StudentUniqueId], [BeginDate])
+    );
+    PRINT 'Table edfi_StudentHomelessProgramAssociation created.';
+END
+ELSE
+    PRINT 'Table edfi_StudentHomelessProgramAssociation already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentHomelessProgramAssociation_Document' AND object_id = OBJECT_ID('[dms].[edfi_StudentHomelessProgramAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentHomelessProgramAssociation_Document]
+        ON [dms].[edfi_StudentHomelessProgramAssociation]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_StudentHomelessProgramAssociation_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+ALTER TABLE [dms].[edfi_StudentCTEProgramAssociation]
+    ADD CONSTRAINT [FK_StudentCTEProgramAssociation_Document]
+    FOREIGN KEY ([Document_Id, Document_PartitionKey])
+    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+
+ALTER TABLE [dms].[edfi_StudentHomelessProgramAssociation]
+    ADD CONSTRAINT [FK_StudentHomelessProgramAssociation_Document]
+    FOREIGN KEY ([Document_Id, Document_PartitionKey])
+    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+
+-- SQL Server Union View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'edfi_GeneralStudentProgramAssociation' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[edfi_GeneralStudentProgramAssociation] AS
+SELECT [Id], ''StudentCTEProgramAssociation'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM dms.[edfi_StudentCTEProgramAssociation]
+UNION ALL
+SELECT [Id], ''StudentHomelessProgramAssociation'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM dms.[edfi_StudentHomelessProgramAssociation]
+');
+    PRINT 'View edfi_GeneralStudentProgramAssociation created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[edfi_GeneralStudentProgramAssociation] AS
+SELECT [Id], ''StudentCTEProgramAssociation'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM dms.[edfi_StudentCTEProgramAssociation]
+UNION ALL
+SELECT [Id], ''StudentHomelessProgramAssociation'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM dms.[edfi_StudentHomelessProgramAssociation]
+');
+    PRINT 'View edfi_GeneralStudentProgramAssociation altered.';
+END
+

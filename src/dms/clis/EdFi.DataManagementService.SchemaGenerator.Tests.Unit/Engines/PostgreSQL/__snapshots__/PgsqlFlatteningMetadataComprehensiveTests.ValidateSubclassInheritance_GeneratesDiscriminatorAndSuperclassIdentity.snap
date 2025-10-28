@@ -1,0 +1,53 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_CommunityOrganization (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    CommunityOrganizationId INTEGER NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+,
+    CONSTRAINT UQ_CommunityOrganization_NaturalKey
+        UNIQUE (CommunityOrganizationId)
+);
+
+CREATE INDEX IF NOT EXISTS IX_CommunityOrganization_Document
+    ON dms.edfi_CommunityOrganization(Document_Id, Document_PartitionKey);
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7 (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    CommunityOrganization_Id BIGINT NOT NULL,
+    IdentificationCode VARCHAR(30) NOT NULL,
+    EducationOrganizationIdentificationSystemDescriptorId BIGINT NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_CommunityOrganizationEducationOrganizationIdentific_69e6f3db
+    ON dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7(Document_Id, Document_PartitionKey);
+
+
+-- Foreign Key Constraints
+
+ALTER TABLE dms.edfi_CommunityOrganization
+    ADD CONSTRAINT FK_CommunityOrganization_Document
+    FOREIGN KEY (Document_Id, Document_PartitionKey)
+    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+
+ALTER TABLE dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7
+    ADD CONSTRAINT FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization
+    FOREIGN KEY (CommunityOrganization_Id)
+    REFERENCES dms.edfi_CommunityOrganization(Id) ON DELETE CASCADE;
+
+ALTER TABLE dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7
+    ADD CONSTRAINT FK_CommunityOrganizationEducationOrganizationIdentific_accef2d7
+    FOREIGN KEY (Document_Id, Document_PartitionKey)
+    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+
