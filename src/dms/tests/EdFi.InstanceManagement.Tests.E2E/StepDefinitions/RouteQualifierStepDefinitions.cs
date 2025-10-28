@@ -65,15 +65,11 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         context.ClientKey.Should().NotBeNullOrEmpty("Application must be created first");
         context.ClientSecret.Should().NotBeNullOrEmpty("Application must be created first");
 
-        // Get token URL from discovery API
-        var discoveryClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
-        var discovery = await discoveryClient.GetDiscoveryAsync();
-
-        var tokenUrl = discovery.RootElement.GetProperty("urls").GetProperty("oauth").GetString();
-        tokenUrl.Should().NotBeNullOrEmpty();
-
-        // Replace internal Docker hostname with localhost for tests running outside Docker
-        tokenUrl = tokenUrl!.Replace("dms-config-service:8081", "localhost:8081");
+        // TODO: Update once Config Service supports route qualifiers in OAuth endpoint
+        // The discovery API returns OAuth URLs with route qualifiers (e.g., /connect/token/{districtId}/{schoolYear})
+        // but the Config Service doesn't yet support this pattern. Once it does, we should get the URL from
+        // discovery API instead of hardcoding it here.
+        var tokenUrl = "http://localhost:8081/connect/token/";
 
         context.DmsToken = await TokenHelper.GetDmsTokenAsync(
             tokenUrl,
@@ -209,5 +205,65 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         var location = context.DescriptorLocations[key];
         context.LastResponse = await _dmsClient!.GetByLocationAsync(location);
+    }
+
+    [When("a GET request is made to discovery endpoint with route {string}")]
+    public async Task WhenAGetRequestIsMadeToDiscoveryEndpointWithRoute(string route)
+    {
+        // Discovery endpoints are public and don't require authentication
+        var discoveryClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+
+        Console.WriteLine($"GET discovery endpoint with route: '{route}'");
+
+        context.LastResponse = await discoveryClient.GetDiscoveryWithRouteAsync(route);
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
+    }
+
+    [Then("the urls should be")]
+    public async Task ThenTheUrlsShouldBe(string expectedJson)
+    {
+        context.LastResponse.Should().NotBeNull();
+        context.LastResponse!.IsSuccessStatusCode.Should().BeTrue();
+
+        var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+        Console.WriteLine($"Response body: {responseBody}");
+
+        var responseDoc = JsonDocument.Parse(responseBody);
+        var actualUrls = responseDoc.RootElement.GetProperty("urls");
+
+        var expectedDoc = JsonDocument.Parse(expectedJson);
+        var expectedUrls = expectedDoc.RootElement;
+
+        // Compare each URL property
+        foreach (var expectedProperty in expectedUrls.EnumerateObject())
+        {
+            var propertyName = expectedProperty.Name;
+            var expectedValue = expectedProperty.Value.GetString();
+
+            actualUrls
+                .TryGetProperty(propertyName, out var actualProperty)
+                .Should()
+                .BeTrue($"Response should contain URL property '{propertyName}'");
+
+            var actualValue = actualProperty.GetString();
+            actualValue
+                .Should()
+                .Be(expectedValue, $"URL property '{propertyName}' should match expected value");
+        }
+
+        // Ensure no extra properties in actual response
+        var actualPropertyCount = actualUrls.EnumerateObject().Count();
+        var expectedPropertyCount = expectedUrls.EnumerateObject().Count();
+        actualPropertyCount
+            .Should()
+            .Be(expectedPropertyCount, "Response should not contain extra URL properties");
     }
 }

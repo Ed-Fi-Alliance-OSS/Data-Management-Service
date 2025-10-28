@@ -100,4 +100,14 @@ public class DmsApiClient(string baseUrl, string accessToken)
         var content = await response.Content.ReadAsStringAsync();
         return JsonDocument.Parse(content);
     }
+
+    /// <summary>
+    /// Get DMS discovery API with route qualifiers
+    /// </summary>
+    public async Task<HttpResponseMessage> GetDiscoveryWithRouteAsync(string route)
+    {
+        var url = string.IsNullOrEmpty(route) ? "/" : $"/{route}";
+        var response = await _httpClient.GetAsync(url);
+        return response;
+    }
 }
