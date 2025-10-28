@@ -16,8 +16,11 @@
           (clean, restore, inject version information).
         * UnitTest: executes NUnit tests in projects named `*.UnitTests`, which
           do not connect to a database.
-        * E2ETest: executes NUnit tests in projects named `*.E2ETests`, which
-          runs the API in an isolated Docker environment and executes API Calls .
+        * E2ETest: executes NUnit tests in EdFi.DataManagementService.Tests.E2E, which
+          runs the API in an isolated Docker environment and executes API Calls.
+        * InstanceE2ETest: executes instance management E2E tests in
+          EdFi.InstanceManagement.Tests.E2E, which require special setup with route
+          qualifiers and multiple databases.
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
@@ -39,13 +42,19 @@
         Output: test results displayed in the console and saved to XML files.
 
     .EXAMPLE
+        .\build-dms.ps1 InstanceE2ETest -Configuration Release
+
+        Starts Docker environment with route qualifiers, configures test databases,
+        and runs instance management E2E tests.
+
+    .EXAMPLE
         .\build-dms.ps1 push -NuGetApiKey $env:nuget_key
 #>
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
 param(
     # Command to execute, defaults to "Build".
     [string]
-    [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run", "StartEnvironment")]
+    [ValidateSet("Clean", "Restore", "Build", "BuildAndPublish", "UnitTest", "E2ETest", "InstanceE2ETest", "IntegrationTest", "Coverage", "Package", "Push", "DockerBuild", "DockerRun", "Run", "StartEnvironment")]
     $Command = "Build",
 
     # Assembly and package version number for the Data Management Service. The
@@ -351,6 +360,207 @@ function E2ETests {
     Invoke-Step { RunE2E }
 }
 
+function Wait-ForConfigServiceAndClients {
+    Write-Host "Waiting for config service and OpenIddict clients to be fully initialized..." -ForegroundColor Cyan
+    $maxAttempts = 60
+    $attempt = 0
+    $ready = $false
+
+    while (-not $ready -and $attempt -lt $maxAttempts) {
+        $attempt++
+        Write-Host "Checking if CMSAuthMetadataReadOnlyAccess client is registered (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
+
+        try {
+            # Try to get a token using the CMSAuthMetadataReadOnlyAccess client
+            $tokenEndpoint = "http://localhost:8081/connect/token"
+            $body = @{
+                client_id = "CMSAuthMetadataReadOnlyAccess"
+                client_secret = "s3creT@09"
+                grant_type = "client_credentials"
+                scope = "edfi_admin_api/authMetadata_readonly_access"
+            }
+
+            $response = Invoke-RestMethod -Uri $tokenEndpoint -Method Post -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop
+
+            if ($response.access_token) {
+                $ready = $true
+                Write-Host "Config service is ready and clients are registered!" -ForegroundColor Green
+            }
+        }
+        catch {
+            Write-Host "Config service or clients not ready yet. Error: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+
+        if (-not $ready) {
+            Start-Sleep -Seconds 2
+        }
+    }
+
+    if (-not $ready) {
+        throw "Config service did not become ready with registered clients within the timeout period"
+    }
+}
+
+function Restart-DmsContainer {
+    Write-Host "Restarting DMS container to ensure it can authenticate properly..." -ForegroundColor Cyan
+
+    # Determine the container name based on docker compose project
+    $containerName = "dms-local-dms-1"
+
+    docker restart $containerName
+
+    Write-Host "Waiting for DMS to be ready..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 10
+
+    # Wait for DMS health check
+    $maxAttempts = 30
+    $attempt = 0
+    $ready = $false
+
+    while (-not $ready -and $attempt -lt $maxAttempts) {
+        $attempt++
+        Write-Host "Checking DMS health (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
+
+        try {
+            $response = Invoke-WebRequest -Uri "http://localhost:8080/health" -Method Get -TimeoutSec 5 -ErrorAction Stop
+            if ($response.StatusCode -eq 200) {
+                $ready = $true
+                Write-Host "DMS is ready!" -ForegroundColor Green
+            }
+        }
+        catch {
+            Write-Host "DMS not ready yet" -ForegroundColor Yellow
+        }
+
+        if (-not $ready) {
+            Start-Sleep -Seconds 2
+        }
+    }
+
+    if (-not $ready) {
+        Write-Host "DMS did not become ready, but continuing anyway..." -ForegroundColor Yellow
+    }
+}
+
+function Wait-ForPostgreSQL {
+    Write-Host "Waiting for PostgreSQL to be ready..." -ForegroundColor Cyan
+    $maxAttempts = 30
+    $attempt = 0
+    $ready = $false
+
+    while (-not $ready -and $attempt -lt $maxAttempts) {
+        $attempt++
+        Write-Host "Checking PostgreSQL readiness (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
+
+        try {
+            $result = docker exec dms-postgresql pg_isready -U postgres 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $ready = $true
+                Write-Host "PostgreSQL is ready!" -ForegroundColor Green
+            }
+        }
+        catch {
+            Write-Host "PostgreSQL not ready yet: $_" -ForegroundColor Yellow
+        }
+
+        if (-not $ready) {
+            Start-Sleep -Seconds 2
+        }
+    }
+
+    if (-not $ready) {
+        throw "PostgreSQL did not become ready within the timeout period"
+    }
+}
+
+function Setup-InstanceManagementDatabases {
+    Write-Host "Creating test databases for multi-instance routing..." -ForegroundColor Cyan
+
+    # Create the three test databases
+    docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255901_sy2024;" 2>&1
+    Write-Host "Created database: edfi_datamanagementservice_d255901_sy2024" -ForegroundColor Green
+
+    docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255901_sy2025;" 2>&1
+    Write-Host "Created database: edfi_datamanagementservice_d255901_sy2025" -ForegroundColor Green
+
+    docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255902_sy2024;" 2>&1
+    Write-Host "Created database: edfi_datamanagementservice_d255902_sy2024" -ForegroundColor Green
+
+    Write-Host "Exporting schema from main database..." -ForegroundColor Cyan
+
+    # Export schema from main database to a temporary location
+    $tempSchemaFile = [System.IO.Path]::GetTempFileName()
+    docker exec dms-postgresql pg_dump -U postgres -d edfi_datamanagementservice --schema-only > $tempSchemaFile
+    Write-Host "Schema exported successfully" -ForegroundColor Green
+
+    Write-Host "Applying schema to test databases..." -ForegroundColor Cyan
+
+    # Apply schema to each test database
+    Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024
+    Write-Host "Schema applied to: edfi_datamanagementservice_d255901_sy2024" -ForegroundColor Green
+
+    Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025
+    Write-Host "Schema applied to: edfi_datamanagementservice_d255901_sy2025" -ForegroundColor Green
+
+    Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024
+    Write-Host "Schema applied to: edfi_datamanagementservice_d255902_sy2024" -ForegroundColor Green
+
+    # Clean up temp file
+    Remove-Item $tempSchemaFile -ErrorAction SilentlyContinue
+
+    # Verify schema was applied (should show tables in dms schema)
+    Write-Host "`nVerifying schema deployment..." -ForegroundColor Cyan
+    docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'dms';"
+}
+
+function RunInstanceE2E {
+    # Run only the instance management E2E tests
+    $testProject = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/EdFi.InstanceManagement.Tests.E2E.csproj"
+    $trxFile = "$testResults/EdFi.InstanceManagement.Tests.E2E.trx"
+
+    Invoke-Execute {
+        dotnet test $testProject `
+            --configuration $Configuration `
+            --logger "trx;LogFileName=$trxFile" `
+            --logger "console" `
+            --verbosity normal `
+            --nologo
+    }
+}
+
+function InstanceE2ETests {
+    # Instance management tests require the DMS environment to be started with route qualifiers
+    Write-Host "Setting up instance management E2E tests..." -ForegroundColor Cyan
+
+    # Start the Docker environment with route qualifiers using the instance management setup script
+    $instanceSetupScript = "$solutionRoot/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1"
+
+    if (Test-Path $instanceSetupScript) {
+        Write-Host "Starting Docker environment with route qualifiers..." -ForegroundColor Cyan
+        Invoke-Execute {
+            & $instanceSetupScript
+        }
+    }
+    else {
+        throw "Instance Management setup script not found at: $instanceSetupScript"
+    }
+
+    # Wait for config service to have all clients registered
+    Invoke-Step { Wait-ForConfigServiceAndClients }
+
+    # Restart DMS so it can authenticate with the registered clients
+    Invoke-Step { Restart-DmsContainer }
+
+    # Wait for PostgreSQL to be ready
+    Invoke-Step { Wait-ForPostgreSQL }
+
+    # Create and configure test databases
+    Invoke-Step { Setup-InstanceManagementDatabases }
+
+    # Run the instance management E2E tests
+    Invoke-Step { RunInstanceE2E }
+}
+
 function RunNuGetPack {
     param (
         [string]
@@ -514,6 +724,7 @@ Invoke-Main {
         }
         UnitTest { Invoke-TestExecution UnitTests }
         E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider }
+        InstanceE2ETest { Invoke-Step { InstanceE2ETests } }
         IntegrationTest { Invoke-TestExecution IntegrationTests }
         Coverage { Invoke-Coverage }
         Package { Invoke-BuildPackage }
