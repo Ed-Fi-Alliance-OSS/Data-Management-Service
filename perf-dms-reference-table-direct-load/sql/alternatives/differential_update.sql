@@ -85,23 +85,26 @@ BEGIN
           AND NOT EXISTS (
               SELECT 1
               FROM staged s
+              JOIN dms.Alias a
+                ON a.ReferentialId = s.referential_id
+               AND a.ReferentialPartitionKey = s.referential_partition_key
               WHERE s.parent_document_id = r.ParentDocumentId
                 AND s.parent_document_partition_key = r.ParentDocumentPartitionKey
-                AND s.referential_id = r.ReferentialId
-                AND s.referential_partition_key = r.ReferentialPartitionKey
+                AND a.Id = r.AliasId
+                AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
           )
         RETURNING 1
     )
     INSERT INTO dms.Reference (
         ParentDocumentId,
         ParentDocumentPartitionKey,
-        ReferentialId,
+        AliasId,
         ReferentialPartitionKey
     )
     SELECT
         s.parent_document_id,
         s.parent_document_partition_key,
-        s.referential_id,
+        a.Id AS alias_id,
         s.referential_partition_key
     FROM staged s
     JOIN dms.Alias a ON
@@ -112,7 +115,7 @@ BEGIN
         FROM dms.Reference existing
         WHERE existing.ParentDocumentId = s.parent_document_id
           AND existing.ParentDocumentPartitionKey = s.parent_document_partition_key
-          AND existing.ReferentialId = s.referential_id
+          AND existing.AliasId = a.Id
           AND existing.ReferentialPartitionKey = s.referential_partition_key
     );
 

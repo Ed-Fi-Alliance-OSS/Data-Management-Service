@@ -325,14 +325,18 @@ BEGIN
         INSERT INTO dms.Reference (
             ParentDocumentId,
             ParentDocumentPartitionKey,
-            ReferentialId,
+            AliasId,
             ReferentialPartitionKey
-        ) VALUES (
+        )
+        SELECT
             referring_docs.Id,
             referring_docs.DocumentPartitionKey,
-            :heavydoc_heavily_ref_uuid,
-            :heavydoc_heavily_ref_key
-        ) ON CONFLICT DO NOTHING;
+            a.Id,
+            a.ReferentialPartitionKey
+        FROM dms.Alias a
+        WHERE a.ReferentialId = :heavydoc_heavily_ref_uuid
+          AND a.ReferentialPartitionKey = :heavydoc_heavily_ref_key
+        ON CONFLICT DO NOTHING;
 
         count := count + 1;
     END LOOP;

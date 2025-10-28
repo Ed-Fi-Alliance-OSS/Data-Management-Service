@@ -124,8 +124,8 @@ MONITOR=true ./test-single-scenario.sh batch_operations.sql
 ### Short-term
 1. **Add Alias-Focused Indexes**
    ```sql
-   CREATE INDEX IX_Reference_ReferentialId
-   ON dms.Reference (ReferentialPartitionKey, ReferentialId);
+   CREATE INDEX IX_Reference_AliasId
+   ON dms.Reference (ReferentialPartitionKey, AliasId);
    ```
 
 2. **Optimize FK Validation**

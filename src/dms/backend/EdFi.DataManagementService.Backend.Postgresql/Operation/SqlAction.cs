@@ -579,7 +579,7 @@ public partial class SqlAction() : ISqlAction
                     SELECT r.ParentDocumentId, r.ParentDocumentPartitionKey
                     FROM dms.Reference r
                     INNER JOIN dms.Alias a
-                        ON a.ReferentialId = r.ReferentialId
+                        ON a.Id = r.AliasId
                         AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
                     INNER JOIN dms.Document d2
                         ON d2.Id = a.DocumentId
@@ -630,7 +630,7 @@ public partial class SqlAction() : ISqlAction
                     ON d.Id = r.ParentDocumentId
                     AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
                 INNER JOIN dms.Alias a
-                    ON a.ReferentialId = r.ReferentialId
+                    ON a.Id = r.AliasId
                     AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
                 WHERE a.DocumentId = $1
                   AND a.DocumentPartitionKey = $2

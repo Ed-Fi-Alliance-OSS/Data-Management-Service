@@ -202,6 +202,7 @@ EOF
     psql_exec <<'EOF'
 CREATE TABLE IF NOT EXISTS dms.alias_lookup (
     alias_row_number INT PRIMARY KEY,
+    alias_id BIGINT NOT NULL,
     document_id BIGINT NOT NULL,
     document_partition_key SMALLINT NOT NULL,
     referential_id UUID NOT NULL,
@@ -210,6 +211,7 @@ CREATE TABLE IF NOT EXISTS dms.alias_lookup (
 
 INSERT INTO dms.alias_lookup (
     alias_row_number,
+    alias_id,
     document_id,
     document_partition_key,
     referential_id,
@@ -219,6 +221,7 @@ SELECT *
 FROM (
     SELECT
         row_number() OVER (ORDER BY Id) - 1 AS alias_row_number,
+        Id,
         DocumentId,
         DocumentPartitionKey,
         ReferentialId,
@@ -227,6 +230,7 @@ FROM (
 ) ordered
 ON CONFLICT (alias_row_number) DO UPDATE
 SET
+    alias_id = EXCLUDED.alias_id,
     document_id = EXCLUDED.document_id,
     document_partition_key = EXCLUDED.document_partition_key,
     referential_id = EXCLUDED.referential_id,
@@ -432,13 +436,13 @@ resolved AS (
 INSERT INTO dms.Reference (
     ParentDocumentId,
     ParentDocumentPartitionKey,
-    ReferentialId,
+    AliasId,
     ReferentialPartitionKey
 )
 SELECT
     r.parent_document_id,
     r.parent_document_partition_key,
-    al.referential_id,
+    al.alias_id,
     al.referential_partition_key
 FROM resolved r
 JOIN dms.alias_lookup al ON al.alias_row_number = r.alias_row_number;

@@ -3,8 +3,10 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
--- Attempts to insert references into Reference table
--- If any referentialId is invalid, rolls back and returns an array of invalid referentialIds
+-- Attempts to insert references into Reference table.
+-- If any referentialId is invalid, those rows are omitted and the function
+-- returns the invalid referentialIds; the caller is responsible for transaction
+-- semantics (e.g., rolling back the broader operation if desired).
 CREATE OR REPLACE FUNCTION dms.InsertReferences(
     parentDocumentIds BIGINT[],
     parentDocumentPartitionKeys SMALLINT[],
@@ -13,8 +15,6 @@ CREATE OR REPLACE FUNCTION dms.InsertReferences(
 ) RETURNS TABLE (ReferentialId UUID)
 LANGUAGE plpgsql AS
 $$
-DECLARE
-    constraintErrorName text;
 BEGIN
 
     -- First clear out all the existing references, as they may have changed
@@ -22,39 +22,38 @@ BEGIN
     USING unnest(parentDocumentIds, parentDocumentPartitionKeys) as d (Id, DocumentPartitionKey)
     WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey;
 
-    INSERT INTO dms.Reference (
-        ParentDocumentId,
-        ParentDocumentPartitionKey,
-        ReferentialId,
-        ReferentialPartitionKey
+    WITH payload AS (
+        SELECT
+            ids.documentId,
+            ids.documentPartitionKey,
+            ids.referentialId,
+            ids.referentialPartitionKey,
+            a.Id AS aliasId
+        FROM unnest(parentDocumentIds, parentDocumentPartitionKeys, referentialIds, referentialPartitionKeys) AS
+            ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey)
+        LEFT JOIN dms.Alias a ON
+            a.ReferentialId = ids.referentialId
+            AND a.ReferentialPartitionKey = ids.referentialPartitionKey
+    ),
+    inserted AS (
+        INSERT INTO dms.Reference (
+            ParentDocumentId,
+            ParentDocumentPartitionKey,
+            AliasId,
+            ReferentialPartitionKey
+        )
+        SELECT
+            documentId,
+            documentPartitionKey,
+            aliasId,
+            referentialPartitionKey
+        FROM payload
+        WHERE aliasId IS NOT NULL
+        RETURNING 1
     )
-    SELECT
-        ids.documentId,
-        ids.documentPartitionKey,
-        ids.referentialId,
-        ids.referentialPartitionKey
-    FROM unnest(parentDocumentIds, parentDocumentPartitionKeys, referentialIds, referentialPartitionKeys) AS
-        ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey);
+    SELECT payload.referentialId
+    FROM payload
+    WHERE payload.aliasId IS NULL;
     RETURN;
-
-EXCEPTION
-    -- Check if there were bad referentialIds: FK violation involving referentialIds
-    WHEN foreign_key_violation then
-    	GET STACKED DIAGNOSTICS constraintErrorName = CONSTRAINT_NAME;
-    	IF constraintErrorName = 'fk_reference_referencedalias' THEN
-	        RETURN QUERY SELECT r.ReferentialId
-	            FROM ROWS FROM
-	                (unnest(referentialIds), unnest(referentialPartitionKeys))
-	                AS r (ReferentialId, ReferentialPartitionKey)
-	            WHERE NOT EXISTS (
-	                SELECT 1
-	                FROM dms.Alias a
-	                WHERE r.ReferentialId = a.ReferentialId
-	                AND r.ReferentialPartitionKey = a.ReferentialPartitionKey);
-        -- Some other foreign key violation
-        ELSE RAISE;
-        END IF;
-    -- Some other exception
-    WHEN OTHERS THEN RAISE;
-end;
+END;
 $$;

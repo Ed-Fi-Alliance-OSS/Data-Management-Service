@@ -8,8 +8,8 @@ CREATE TABLE IF NOT EXISTS dms.Reference (
   Id BIGINT GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
   ParentDocumentId BIGINT NOT NULL,
   ParentDocumentPartitionKey SMALLINT NOT NULL,
-  ReferentialId UUID NOT NULL,
   ReferentialPartitionKey SMALLINT NOT NULL,
+  AliasId BIGINT NOT NULL,
   PRIMARY KEY (ParentDocumentPartitionKey, Id)
 ) PARTITION BY LIST(ParentDocumentPartitionKey);
 
@@ -32,7 +32,7 @@ END$$;
 CREATE INDEX IF NOT EXISTS UX_Reference_ParentDocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
 
 -- Lookup support for reverse reference resolution by alias
-CREATE INDEX IF NOT EXISTS IX_Reference_ReferentialId ON dms.Reference (ReferentialPartitionKey, ReferentialId);
+CREATE INDEX IF NOT EXISTS IX_Reference_AliasId ON dms.Reference (ReferentialPartitionKey, AliasId);
 
 -- FK back to parent document
 DO $$

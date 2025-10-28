@@ -158,8 +158,8 @@ CREATE TABLE IF NOT EXISTS dms.Reference (
   Id BIGINT GENERATED ALWAYS AS IDENTITY(START WITH 1 INCREMENT BY 1),
   ParentDocumentId BIGINT NOT NULL,
   ParentDocumentPartitionKey SMALLINT NOT NULL,
-  ReferentialId UUID NOT NULL,
   ReferentialPartitionKey SMALLINT NOT NULL,
+  AliasId BIGINT NOT NULL,
   PRIMARY KEY (ParentDocumentPartitionKey, Id)
 ) PARTITION BY HASH(ParentDocumentPartitionKey);
 
@@ -180,7 +180,7 @@ END\$\$;
 
 -- Create Reference indexes
 CREATE INDEX IF NOT EXISTS UX_Reference_ParentDocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
-CREATE INDEX IF NOT EXISTS IX_Reference_ReferentialId ON dms.Reference (ReferentialPartitionKey, ReferentialId);
+CREATE INDEX IF NOT EXISTS IX_Reference_AliasId ON dms.Reference (ReferentialPartitionKey, AliasId);
 
 -- Add FK constraints for Reference
 DO \$\$
@@ -203,10 +203,10 @@ BEGIN
         WHERE table_schema = 'dms' AND table_name = 'reference' AND constraint_name = 'fk_reference_referencedalias'
     ) THEN
         ALTER TABLE dms.Reference
-        ADD CONSTRAINT FK_Reference_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, ReferentialId)
-        REFERENCES dms.Alias (ReferentialPartitionKey, ReferentialId) ON DELETE RESTRICT ON UPDATE CASCADE;
+        ADD CONSTRAINT FK_Reference_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, AliasId)
+        REFERENCES dms.Alias (ReferentialPartitionKey, Id) ON DELETE RESTRICT ON UPDATE CASCADE;
 
-        CREATE INDEX IF NOT EXISTS IX_FK_Reference_ReferencedAlias ON dms.Reference (ReferentialPartitionKey, ReferentialId);
+        CREATE INDEX IF NOT EXISTS IX_FK_Reference_ReferencedAlias ON dms.Reference (ReferentialPartitionKey, AliasId);
     END IF;
 END\$\$;
 
@@ -219,46 +219,46 @@ CREATE OR REPLACE FUNCTION dms.InsertReferences(
 ) RETURNS TABLE (ReferentialId UUID)
 LANGUAGE plpgsql AS
 \$\$
-DECLARE
-    constraintErrorName text;
 BEGIN
     -- First clear out all the existing references, as they may have changed
     DELETE from dms.Reference r
     USING unnest(parentDocumentIds, parentDocumentPartitionKeys) as d (Id, DocumentPartitionKey)
     WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey;
 
-    INSERT INTO dms.Reference (
-        ParentDocumentId,
-        ParentDocumentPartitionKey,
-        ReferentialId,
-        ReferentialPartitionKey
+    WITH payload AS (
+        SELECT
+            ids.documentId,
+            ids.documentPartitionKey,
+            ids.referentialId,
+            ids.referentialPartitionKey,
+            a.Id AS aliasId
+        FROM unnest(parentDocumentIds, parentDocumentPartitionKeys, referentialIds, referentialPartitionKeys) AS
+            ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey)
+        LEFT JOIN dms.Alias a ON
+            a.ReferentialId = ids.referentialId
+            AND a.ReferentialPartitionKey = ids.referentialPartitionKey
+    ),
+    inserted AS (
+        INSERT INTO dms.Reference (
+            ParentDocumentId,
+            ParentDocumentPartitionKey,
+            AliasId,
+            ReferentialPartitionKey
+        )
+        SELECT
+            documentId,
+            documentPartitionKey,
+            aliasId,
+            referentialPartitionKey
+        FROM payload
+        WHERE aliasId IS NOT NULL
+        RETURNING 1
     )
-    SELECT
-        ids.documentId,
-        ids.documentPartitionKey,
-        ids.referentialId,
-        ids.referentialPartitionKey
-    FROM unnest(parentDocumentIds, parentDocumentPartitionKeys, referentialIds, referentialPartitionKeys) AS
-        ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey);
+    SELECT payload.referentialId
+    FROM payload
+    WHERE payload.aliasId IS NULL;
     RETURN;
-
-EXCEPTION
-    WHEN foreign_key_violation then
-    	GET STACKED DIAGNOSTICS constraintErrorName = CONSTRAINT_NAME;
-    	IF constraintErrorName = 'fk_reference_referencedalias' THEN
-	        RETURN QUERY SELECT r.ReferentialId
-	            FROM ROWS FROM
-	                (unnest(referentialIds), unnest(referentialPartitionKeys))
-	                AS r (ReferentialId, ReferentialPartitionKey)
-	            WHERE NOT EXISTS (
-	                SELECT 1
-	                FROM dms.Alias a
-	                WHERE r.ReferentialId = a.ReferentialId
-	                AND r.ReferentialPartitionKey = a.ReferentialPartitionKey);
-        ELSE RAISE;
-        END IF;
-    WHEN OTHERS THEN RAISE;
-end;
+END;
 \$\$;
 
 -- Create performance tracking table

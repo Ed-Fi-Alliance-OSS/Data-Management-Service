@@ -265,7 +265,7 @@ cat > "$RESULTS_DIR/performance_report.html" <<EOF
     <h2>Key Findings</h2>
     <ul>
         <li class="bad">The DELETE-then-INSERT pattern causes significant dead tuple accumulation</li>
-        <li class="warning">Reverse lookups now rely on Alias joins; keep IX_Reference_ReferentialId healthy</li>
+        <li class="warning">Reverse lookups rely on Alias joins; keep IX_Reference_AliasId healthy</li>
         <li class="good">Alternative implementations show 30-50% performance improvement potential</li>
     </ul>
 

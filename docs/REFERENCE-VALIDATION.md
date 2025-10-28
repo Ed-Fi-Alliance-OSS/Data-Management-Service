@@ -18,3 +18,6 @@ ALTER TABLE Reference  DROP CONSTRAINT FK_Reference_ReferencedAlias
 > `FK_Reference_ParentDocument` still enforces cascades but does not
 > participate in reference validation, and the legacy
 > `FK_Reference_ReferencedDocument` constraint has been removed from the schema.
+> Current reference validation binds `(ReferentialPartitionKey, AliasId)` on `Reference`
+> to the `Alias` primary key, so invalid referential GUIDs are detected via the
+> alias lookup rather than a referenced-document FK.

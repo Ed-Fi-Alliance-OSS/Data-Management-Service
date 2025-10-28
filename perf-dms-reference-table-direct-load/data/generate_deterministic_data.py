@@ -72,6 +72,7 @@ class DocumentInfo:
 
 @dataclass
 class AliasInfo:
+    alias_id: int
     document_id: int
     document_partition: int
     referential_id: str
@@ -91,7 +92,7 @@ def generate_documents(
     for index in range(1, num_documents + 1):
         doc_uuid = str(uuid7.uuid7())
         doc_partition = partition_key(doc_uuid, num_partitions)
-        alias_uuid = deterministic_uuid("alias", doc_index)
+        alias_uuid = deterministic_uuid("alias", index)
         alias_partition = partition_key(alias_uuid, num_partitions)
 
         weight = (
@@ -113,6 +114,7 @@ def generate_documents(
         )
         aliases.append(
             AliasInfo(
+                alias_id=index,
                 document_id=index,
                 document_partition=doc_partition,
                 referential_id=alias_uuid,
@@ -161,6 +163,7 @@ def generate_aliases(writer: csv.writer, alias_infos: Sequence[AliasInfo]) -> No
     for info in alias_infos:
         writer.writerow(
             [
+                info.alias_id,
                 info.referential_partition,
                 info.referential_id,
                 info.document_id,
@@ -205,7 +208,7 @@ def generate_references(
                 [
                     doc.document_id,
                     doc.partition_key,
-                    alias.referential_id,
+                    alias.alias_id,
                     alias.referential_partition,
                 ]
             )
@@ -295,6 +298,7 @@ if __name__ == "__main__":
         alias_writer = csv.writer(alias_file)
         alias_writer.writerow(
             [
+                "Id",
                 "ReferentialPartitionKey",
                 "ReferentialId",
                 "DocumentId",
@@ -310,7 +314,7 @@ if __name__ == "__main__":
             [
                 "ParentDocumentId",
                 "ParentDocumentPartitionKey",
-                "ReferentialId",
+                "AliasId",
                 "ReferentialPartitionKey",
             ]
         )

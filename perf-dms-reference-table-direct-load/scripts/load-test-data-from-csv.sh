@@ -59,15 +59,49 @@ PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
     -c "COPY dms.Document (DocumentPartitionKey, DocumentUuid, ResourceName, ResourceVersion, IsDescriptor, ProjectName, EdfiDoc, SecurityElements, LastModifiedTraceId) FROM STDIN WITH (FORMAT csv, HEADER true);" \
     < "$DOCUMENT_CSV"
 
+log_info "Preparing alias staging table..."
+psql_exec <<'EOF'
+DROP TABLE IF EXISTS dms.alias_stage;
+CREATE TABLE dms.alias_stage (
+    Id BIGINT,
+    ReferentialPartitionKey SMALLINT,
+    ReferentialId UUID,
+    DocumentId BIGINT,
+    DocumentPartitionKey SMALLINT
+);
+EOF
+
 log_info "Loading aliases..."
 PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
-    -c "COPY dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey) FROM STDIN WITH (FORMAT csv, HEADER true);" \
+    -c "COPY dms.alias_stage (Id, ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey) FROM STDIN WITH (FORMAT csv, HEADER true);" \
     < "$ALIAS_CSV"
+
+psql_exec <<'EOF'
+INSERT INTO dms.Alias (Id, ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey)
+OVERRIDING SYSTEM VALUE
+SELECT Id, ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey
+FROM dms.alias_stage
+ORDER BY Id;
+
+DROP TABLE dms.alias_stage;
+
+SELECT setval(
+    pg_get_serial_sequence('dms.Alias', 'Id'),
+    COALESCE((SELECT MAX(Id) FROM dms.Alias), 0)
+);
+EOF
 
 log_info "Loading references..."
 PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME \
-    -c "COPY dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey) FROM STDIN WITH (FORMAT csv, HEADER true);" \
+    -c "COPY dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey) FROM STDIN WITH (FORMAT csv, HEADER true);" \
     < "$REFERENCE_CSV"
+
+psql_exec <<'EOF'
+SELECT setval(
+    pg_get_serial_sequence('dms.Reference', 'Id'),
+    COALESCE((SELECT MAX(Id) FROM dms.Reference), 0)
+);
+EOF
 
 log_info "Re-enabling autovacuum and refreshing statistics..."
 psql_exec <<'EOF'

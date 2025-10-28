@@ -11,11 +11,11 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'uk_reference_parent_referential'
+        WHERE conname = 'uk_reference_parent_alias'
     ) THEN
         ALTER TABLE dms.Reference
-        ADD CONSTRAINT uk_reference_parent_referential
-        UNIQUE (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey);
+        ADD CONSTRAINT uk_reference_parent_alias
+        UNIQUE (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey);
     END IF;
 END$$;
 
@@ -108,25 +108,31 @@ BEGIN
       AND NOT EXISTS (
           SELECT 1
           FROM dms_temp_reference_staging s
+          JOIN dms.Alias a
+            ON a.ReferentialId = s.ReferentialId
+           AND a.ReferentialPartitionKey = s.ReferentialPartitionKey
           WHERE s.ParentDocumentId = r.ParentDocumentId
             AND s.ParentDocumentPartitionKey = r.ParentDocumentPartitionKey
-            AND s.ReferentialId = r.ReferentialId
-            AND s.ReferentialPartitionKey = r.ReferentialPartitionKey
+            AND a.Id = r.AliasId
+            AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
       );
 
     INSERT INTO dms.Reference (
         ParentDocumentId,
         ParentDocumentPartitionKey,
-        ReferentialId,
+        AliasId,
         ReferentialPartitionKey
     )
     SELECT
         s.ParentDocumentId,
         s.ParentDocumentPartitionKey,
-        s.ReferentialId,
+        a.Id AS AliasId,
         s.ReferentialPartitionKey
     FROM dms_temp_reference_staging s
-    ON CONFLICT (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)
+    JOIN dms.Alias a
+      ON a.ReferentialId = s.ReferentialId
+     AND a.ReferentialPartitionKey = s.ReferentialPartitionKey
+    ON CONFLICT (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey)
     DO NOTHING;
 
     TRUNCATE dms_temp_reference_staging;
