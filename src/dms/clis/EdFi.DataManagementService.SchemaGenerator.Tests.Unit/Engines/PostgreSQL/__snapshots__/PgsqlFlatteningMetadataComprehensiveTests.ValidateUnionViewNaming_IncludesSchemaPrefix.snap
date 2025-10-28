@@ -1,0 +1,58 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_School (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    SchoolId INTEGER NOT NULL,
+    NameOfInstitution VARCHAR(255) NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+,
+    CONSTRAINT UQ_School_NaturalKey
+        UNIQUE (SchoolId)
+);
+
+CREATE INDEX IF NOT EXISTS IX_School_Document
+    ON dms.edfi_School(Document_Id, Document_PartitionKey);
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_LocalEducationAgency (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    LocalEducationAgencyId INTEGER NOT NULL,
+    NameOfInstitution VARCHAR(255) NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+,
+    CONSTRAINT UQ_LocalEducationAgency_NaturalKey
+        UNIQUE (LocalEducationAgencyId)
+);
+
+CREATE INDEX IF NOT EXISTS IX_LocalEducationAgency_Document
+    ON dms.edfi_LocalEducationAgency(Document_Id, Document_PartitionKey);
+
+
+-- Foreign Key Constraints
+
+ALTER TABLE dms.edfi_School
+    ADD CONSTRAINT FK_School_Document
+    FOREIGN KEY (Document_Id, Document_PartitionKey)
+    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+
+ALTER TABLE dms.edfi_LocalEducationAgency
+    ADD CONSTRAINT FK_LocalEducationAgency_Document
+    FOREIGN KEY (Document_Id, Document_PartitionKey)
+    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+
+-- PostgreSQL Union View
+CREATE OR REPLACE VIEW dms.edfi_EducationOrganization AS
+SELECT Id, 'School' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_School
+UNION ALL
+SELECT Id, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_LocalEducationAgency
+;
+

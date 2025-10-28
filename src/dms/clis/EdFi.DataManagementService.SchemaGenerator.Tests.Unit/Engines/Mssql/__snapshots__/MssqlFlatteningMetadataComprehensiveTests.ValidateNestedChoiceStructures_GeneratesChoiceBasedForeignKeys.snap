@@ -1,0 +1,127 @@
+﻿-- MSSQL CREATE TABLE edfi_EducationContent
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_EducationContent' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_EducationContent] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [ContentIdentifier] NVARCHAR(30) NOT NULL,
+    [LearningResourceMetadataURI] NVARCHAR(30),
+    [Description] NVARCHAR(30),
+    [ShortDescription] NVARCHAR(30),
+    [ContentClassDescriptorId] BIGINT,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_EducationContent_NaturalKey]
+        UNIQUE ([ContentIdentifier])
+    );
+    PRINT 'Table edfi_EducationContent created.';
+END
+ELSE
+    PRINT 'Table edfi_EducationContent already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EducationContent_Document' AND object_id = OBJECT_ID('[dms].[edfi_EducationContent]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_EducationContent_Document]
+        ON [dms].[edfi_EducationContent]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_EducationContent_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_EducationContentDerivativeSourceEducationContent
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_EducationContentDerivativeSourceEducationContent' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_EducationContentDerivativeSourceEducationContent] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [EducationContent_Id] BIGINT NOT NULL,
+    [DerivativeSource_EducationContent_Id] BIGINT,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+    );
+    PRINT 'Table edfi_EducationContentDerivativeSourceEducationContent created.';
+END
+ELSE
+    PRINT 'Table edfi_EducationContentDerivativeSourceEducationContent already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EducationContentDerivativeSourceEducationContent_EducationContent' AND object_id = OBJECT_ID('[dms].[edfi_EducationContentDerivativeSourceEducationContent]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_EducationContentDerivativeSourceEducationContent_EducationContent]
+        ON [dms].[edfi_EducationContentDerivativeSourceEducationContent]([EducationContent_Id]);
+    PRINT 'Index IX_EducationContentDerivativeSourceEducationContent_EducationContent created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EducationContentDerivativeSourceEducationContent_LearningResourceChoice_LearningResource_DerivativeSourceEducationCo_72c05e26' AND object_id = OBJECT_ID('[dms].[edfi_EducationContentDerivativeSourceEducationContent]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_EducationContentDerivativeSourceEducationContent_LearningResourceChoice_LearningResource_DerivativeSourceEducationCo_72c05e26]
+        ON [dms].[edfi_EducationContentDerivativeSourceEducationContent]([DerivativeSource_EducationContent_Id]);
+    PRINT 'Index IX_EducationContentDerivativeSourceEducationContent_LearningResourceChoice_LearningResource_DerivativeSourceEducationCo_72c05e26 created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EducationContentDerivativeSourceEducationContent_Document' AND object_id = OBJECT_ID('[dms].[edfi_EducationContentDerivativeSourceEducationContent]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_EducationContentDerivativeSourceEducationContent_Document]
+        ON [dms].[edfi_EducationContentDerivativeSourceEducationContent]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_EducationContentDerivativeSourceEducationContent_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_EducationContentRequiredURI
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_EducationContentRequiredURI' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_EducationContentRequiredURI] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [EducationContent_Id] BIGINT NOT NULL,
+    [RequiredURI] NVARCHAR(30),
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+    );
+    PRINT 'Table edfi_EducationContentRequiredURI created.';
+END
+ELSE
+    PRINT 'Table edfi_EducationContentRequiredURI already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EducationContentRequiredURI_EducationContent' AND object_id = OBJECT_ID('[dms].[edfi_EducationContentRequiredURI]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_EducationContentRequiredURI_EducationContent]
+        ON [dms].[edfi_EducationContentRequiredURI]([EducationContent_Id]);
+    PRINT 'Index IX_EducationContentRequiredURI_EducationContent created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EducationContentRequiredURI_Document' AND object_id = OBJECT_ID('[dms].[edfi_EducationContentRequiredURI]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_EducationContentRequiredURI_Document]
+        ON [dms].[edfi_EducationContentRequiredURI]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_EducationContentRequiredURI_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+ALTER TABLE [dms].[edfi_EducationContent]
+    ADD CONSTRAINT [FK_EducationContent_Document]
+    FOREIGN KEY ([Document_Id, Document_PartitionKey])
+    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+
+ALTER TABLE [dms].[edfi_EducationContentDerivativeSourceEducationContent]
+    ADD CONSTRAINT [FK_EducationContentDerivativeSourceEducationContent_EducationContent]
+    FOREIGN KEY ([EducationContent_Id])
+    REFERENCES [dms].[edfi_EducationContent]([Id]) ON DELETE CASCADE;
+
+ALTER TABLE [dms].[edfi_EducationContentDerivativeSourceEducationContent]
+    ADD CONSTRAINT [FK_EducationContentDerivativeSourceEducationContent_Document]
+    FOREIGN KEY ([Document_Id, Document_PartitionKey])
+    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+
+ALTER TABLE [dms].[edfi_EducationContentRequiredURI]
+    ADD CONSTRAINT [FK_EducationContentRequiredURI_EducationContent]
+    FOREIGN KEY ([EducationContent_Id])
+    REFERENCES [dms].[edfi_EducationContent]([Id]) ON DELETE CASCADE;
+
+ALTER TABLE [dms].[edfi_EducationContentRequiredURI]
+    ADD CONSTRAINT [FK_EducationContentRequiredURI_Document]
+    FOREIGN KEY ([Document_Id, Document_PartitionKey])
+    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+

@@ -1,0 +1,80 @@
+﻿-- MSSQL CREATE TABLE edfi_CommunityOrganization
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_CommunityOrganization' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_CommunityOrganization] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [CommunityOrganizationId] INT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_CommunityOrganization_NaturalKey]
+        UNIQUE ([CommunityOrganizationId])
+    );
+    PRINT 'Table edfi_CommunityOrganization created.';
+END
+ELSE
+    PRINT 'Table edfi_CommunityOrganization already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_CommunityOrganization_Document' AND object_id = OBJECT_ID('[dms].[edfi_CommunityOrganization]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_CommunityOrganization_Document]
+        ON [dms].[edfi_CommunityOrganization]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_CommunityOrganization_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_CommunityOrganizationEducationOrganizationIdentificationCode
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_CommunityOrganizationEducationOrganizationIdentificationCode' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [CommunityOrganization_Id] BIGINT NOT NULL,
+    [IdentificationCode] NVARCHAR(30) NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptorId] BIGINT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_CommunityOrganizationEducationOrganizationIdentificationCode_Identity]
+        UNIQUE ([CommunityOrganization_Id], [EducationOrganizationIdentificationSystemDescriptorId])
+    );
+    PRINT 'Table edfi_CommunityOrganizationEducationOrganizationIdentificationCode created.';
+END
+ELSE
+    PRINT 'Table edfi_CommunityOrganizationEducationOrganizationIdentificationCode already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization' AND object_id = OBJECT_ID('[dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization]
+        ON [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]([CommunityOrganization_Id]);
+    PRINT 'Index IX_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_CommunityOrganizationEducationOrganizationIdentificationCode_Document' AND object_id = OBJECT_ID('[dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_CommunityOrganizationEducationOrganizationIdentificationCode_Document]
+        ON [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_CommunityOrganizationEducationOrganizationIdentificationCode_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+ALTER TABLE [dms].[edfi_CommunityOrganization]
+    ADD CONSTRAINT [FK_CommunityOrganization_Document]
+    FOREIGN KEY ([Document_Id, Document_PartitionKey])
+    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+
+ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]
+    ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization]
+    FOREIGN KEY ([CommunityOrganization_Id])
+    REFERENCES [dms].[edfi_CommunityOrganization]([Id]) ON DELETE CASCADE;
+
+ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]
+    ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document]
+    FOREIGN KEY ([Document_Id, Document_PartitionKey])
+    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+

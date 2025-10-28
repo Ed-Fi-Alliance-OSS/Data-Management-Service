@@ -1,0 +1,55 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_Assessment (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    AssessmentIdentifier VARCHAR(60) NOT NULL,
+    Namespace VARCHAR(255) NOT NULL,
+    AssessmentTitle VARCHAR(100) NOT NULL,
+    AssessmentCategoryDescriptor BIGINT NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+,
+    CONSTRAINT UQ_Assessment_NaturalKey
+        UNIQUE (AssessmentIdentifier, Namespace)
+);
+
+CREATE INDEX IF NOT EXISTS IX_Assessment_Document
+    ON dms.edfi_Assessment(Document_Id, Document_PartitionKey);
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_ObjectiveAssessment (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    AssessmentIdentifier VARCHAR(60) NOT NULL,
+    IdentificationCode VARCHAR(60) NOT NULL,
+    Namespace VARCHAR(255) NOT NULL,
+    Description VARCHAR(1024),
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+,
+    CONSTRAINT UQ_ObjectiveAssessment_NaturalKey
+        UNIQUE (AssessmentIdentifier, IdentificationCode, Namespace)
+);
+
+CREATE INDEX IF NOT EXISTS IX_ObjectiveAssessment_Document
+    ON dms.edfi_ObjectiveAssessment(Document_Id, Document_PartitionKey);
+
+
+-- Foreign Key Constraints
+
+ALTER TABLE dms.edfi_Assessment
+    ADD CONSTRAINT FK_Assessment_Document
+    FOREIGN KEY (Document_Id, Document_PartitionKey)
+    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+
+ALTER TABLE dms.edfi_ObjectiveAssessment
+    ADD CONSTRAINT FK_ObjectiveAssessment_Document
+    FOREIGN KEY (Document_Id, Document_PartitionKey)
+    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+

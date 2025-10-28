@@ -1,0 +1,42 @@
+﻿-- MSSQL CREATE TABLE edfi_DomainEntityName
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_DomainEntityName' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_DomainEntityName] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [SectionIdentifier] NVARCHAR(30) NOT NULL,
+    [CourseOffering_Id] BIGINT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_DomainEntityName_NaturalKey]
+        UNIQUE ([SectionIdentifier], [CourseOffering_Id])
+    );
+    PRINT 'Table edfi_DomainEntityName created.';
+END
+ELSE
+    PRINT 'Table edfi_DomainEntityName already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_DomainEntityName_CourseOffering' AND object_id = OBJECT_ID('[dms].[edfi_DomainEntityName]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_DomainEntityName_CourseOffering]
+        ON [dms].[edfi_DomainEntityName]([CourseOffering_Id]);
+    PRINT 'Index IX_DomainEntityName_CourseOffering created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_DomainEntityName_Document' AND object_id = OBJECT_ID('[dms].[edfi_DomainEntityName]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_DomainEntityName_Document]
+        ON [dms].[edfi_DomainEntityName]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_DomainEntityName_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+ALTER TABLE [dms].[edfi_DomainEntityName]
+    ADD CONSTRAINT [FK_DomainEntityName_Document]
+    FOREIGN KEY ([Document_Id, Document_PartitionKey])
+    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+
