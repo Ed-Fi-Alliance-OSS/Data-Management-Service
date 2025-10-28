@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql
             return lockOption switch
             {
                 LockOption.None => "",
-                LockOption.BlockUpdateDelete => "",
+                LockOption.BlockUpdateDelete => "FOR NO KEY UPDATE",
                 _ => throw new InvalidOperationException("Unknown lock option type"),
             };
         }
