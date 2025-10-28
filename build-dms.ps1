@@ -284,7 +284,10 @@ function IntegrationTests {
 }
 
 function RunE2E {
-    Invoke-Execute { RunTests -Filter "*.Tests.E2E" }
+    # Run only the standard E2E tests, excluding instance management tests
+    # Instance management tests require special setup (route qualifiers, additional databases)
+    # and should be run separately using the instance management test scripts
+    Invoke-Execute { RunTests -Filter "EdFi.DataManagementService.Tests.E2E" }
 }
 
 function Start-DockerEnvironment {
