@@ -5,10 +5,10 @@ SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Database Configuration
 export DB_HOST="${DB_HOST:-localhost}"
-export DB_PORT="${DB_PORT:-5435}"
-export DB_NAME="${DB_NAME:-dms_perf_test}"
+export DB_PORT="${DB_PORT:-5432}"
+export DB_NAME="${DB_NAME:-edfi_datamanagementservice}"
 export DB_USER="${DB_USER:-postgres}"
-export DB_PASSWORD="${DB_PASSWORD:-abcdefgh1!}"
+export DB_PASSWORD="${DB_PASSWORD:-${PGPASSWORD:-abcdefgh!}}"
 
 # Connection string
 export PGCONNSTRING="postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
