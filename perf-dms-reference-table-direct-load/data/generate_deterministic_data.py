@@ -616,8 +616,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--documents",
         type=int,
-        default=_int_from_env("NUM_DOCUMENTS", 1000),
-        help="Number of document rows to generate",
+        default=_int_from_env("NUM_DOCUMENTS", 3_500_000),
+        help="Number of document rows to generate (default: 3500000)",
     )
     parser.add_argument(
         "--aliases",
@@ -628,7 +628,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--references",
         type=int,
-        default=_int_from_env("NUM_REFERENCES", 20000000),
+        default=_int_from_env("NUM_REFERENCES", 20_000_000),
         help="Total number of reference rows to generate",
     )
     parser.add_argument(
