@@ -56,6 +56,11 @@ public class InstanceManagementContext
     public HttpResponseMessage? LastResponse { get; set; }
 
     /// <summary>
+    /// DMS API client instance (managed for proper disposal)
+    /// </summary>
+    public DmsApiClient? DmsClient { get; set; }
+
+    /// <summary>
     /// Reset context for new scenario
     /// </summary>
     public void Reset()
@@ -69,5 +74,7 @@ public class InstanceManagementContext
         DmsToken = null;
         DescriptorLocations.Clear();
         LastResponse = null;
+        DmsClient?.Dispose();
+        DmsClient = null;
     }
 }

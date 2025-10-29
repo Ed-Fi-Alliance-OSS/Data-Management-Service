@@ -14,8 +14,6 @@ namespace EdFi.InstanceManagement.Tests.E2E.StepDefinitions;
 [Binding]
 public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 {
-    private DmsApiClient? _dmsClient;
-
     [Given("the system is configured with route qualifiers")]
     public void GivenTheSystemIsConfiguredWithRouteQualifiers()
     {
@@ -77,7 +75,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
             context.ClientSecret!
         );
 
-        _dmsClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken);
+        context.DmsClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken);
     }
 
     [When("a POST request is made to instance {string} and resource {string} with body:")]
@@ -87,7 +85,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         string jsonBody
     )
     {
-        _dmsClient.Should().NotBeNull("Must be authenticated to DMS first");
+        context.DmsClient.Should().NotBeNull("Must be authenticated to DMS first");
 
         var parts = instanceRoute.Split('/');
         parts.Should().HaveCount(2, "Instance route must be in format districtId/schoolYear");
@@ -101,7 +99,12 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         // Parse JSON body to JsonElement which preserves the structure
         var body = JsonSerializer.Deserialize<JsonElement>(jsonBody);
 
-        context.LastResponse = await _dmsClient!.PostResourceAsync(districtId, schoolYear, resource, body);
+        context.LastResponse = await context.DmsClient!.PostResourceAsync(
+            districtId,
+            schoolYear,
+            resource,
+            body
+        );
 
         Console.WriteLine(
             $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
@@ -155,7 +158,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
     [When("a GET request is made to instance {string} and resource {string}")]
     public async Task WhenAGetRequestIsMadeToInstanceAndResource(string instanceRoute, string resource)
     {
-        _dmsClient.Should().NotBeNull("Must be authenticated to DMS first");
+        context.DmsClient.Should().NotBeNull("Must be authenticated to DMS first");
 
         var parts = instanceRoute.Split('/');
         parts.Should().HaveCount(2, "Instance route must be in format districtId/schoolYear");
@@ -165,7 +168,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         Console.WriteLine($"GET from instance route: {instanceRoute}, resource: {resource}");
 
-        context.LastResponse = await _dmsClient!.GetResourceAsync(districtId, schoolYear, resource);
+        context.LastResponse = await context.DmsClient!.GetResourceAsync(districtId, schoolYear, resource);
 
         Console.WriteLine(
             $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
@@ -200,17 +203,18 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
     [When("I GET resource {string} by location")]
     public async Task WhenIGetResourceByLocation(string key)
     {
-        _dmsClient.Should().NotBeNull("Must be authenticated to DMS first");
+        context.DmsClient.Should().NotBeNull("Must be authenticated to DMS first");
         context.DescriptorLocations.Should().ContainKey(key);
 
         var location = context.DescriptorLocations[key];
-        context.LastResponse = await _dmsClient!.GetByLocationAsync(location);
+        context.LastResponse = await context.DmsClient!.GetByLocationAsync(location);
     }
 
     [When("a GET request is made to discovery endpoint with route {string}")]
     public async Task WhenAGetRequestIsMadeToDiscoveryEndpointWithRoute(string route)
     {
         // Discovery endpoints are public and don't require authentication
+        // Uses shared HttpClient internally to avoid connection exhaustion
         var discoveryClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
 
         Console.WriteLine($"GET discovery endpoint with route: '{route}'");
@@ -225,6 +229,9 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
             var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
             Console.WriteLine($"Response body: {responseBody}");
         }
+
+        // Dispose the wrapper (but shared HttpClient remains)
+        discoveryClient.Dispose();
     }
 
     [Then("the urls should be")]

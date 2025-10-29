@@ -12,23 +12,21 @@ namespace EdFi.InstanceManagement.Tests.E2E.StepDefinitions;
 [Binding]
 public class ErrorHandlingStepDefinitions(InstanceManagementContext context)
 {
-    private DmsApiClient? _dmsClient;
-
     [BeforeScenario(Order = 100)]
     public void EnsureDmsClientIsAvailable()
     {
-        if (context.DmsToken != null)
+        if (context.DmsToken != null && context.DmsClient == null)
         {
-            _dmsClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken);
+            context.DmsClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken);
         }
     }
 
     [When("a GET request is made without route qualifiers to resource {string}")]
     public async Task WhenAGetRequestIsMadeWithoutRouteQualifiersToResource(string resource)
     {
-        _dmsClient ??= new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken ?? "");
+        context.DmsClient ??= new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken ?? "");
 
-        context.LastResponse = await _dmsClient.GetResourceWithoutQualifiersAsync(resource);
+        context.LastResponse = await context.DmsClient.GetResourceWithoutQualifiersAsync(resource);
     }
 
     [Then("it should respond with {int} or {int}")]

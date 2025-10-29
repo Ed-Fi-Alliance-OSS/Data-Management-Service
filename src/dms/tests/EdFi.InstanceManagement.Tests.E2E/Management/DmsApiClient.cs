@@ -12,10 +12,33 @@ namespace EdFi.InstanceManagement.Tests.E2E.Management;
 /// <summary>
 /// Client for interacting with the DMS API with route qualifiers
 /// </summary>
-public class DmsApiClient(string baseUrl, string accessToken)
+public class DmsApiClient(string baseUrl, string accessToken) : IDisposable
 {
-    private readonly HttpClient _httpClient = new() { BaseAddress = new Uri(baseUrl) };
+    // Shared HttpClient for unauthenticated requests (e.g., discovery endpoints)
+    // HttpClient is thread-safe and designed to be reused
+    private static readonly HttpClient SharedHttpClient = new();
+
+    private readonly HttpClient _httpClient = CreateHttpClient(baseUrl, accessToken);
+    private readonly string _baseUrl = baseUrl;
     private readonly string _accessToken = accessToken;
+    private bool _disposed;
+
+    /// <summary>
+    /// Creates and configures an HttpClient with base URL and authorization header
+    /// </summary>
+    private static HttpClient CreateHttpClient(string baseUrl, string accessToken)
+    {
+        var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+
+        // Set authorization header once during client creation (not on every request)
+        // This is the recommended pattern for HttpClient to avoid threading issues
+        if (!string.IsNullOrEmpty(accessToken))
+        {
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        }
+
+        return client;
+    }
 
     /// <summary>
     /// POST a resource to DMS with route qualifiers
@@ -27,11 +50,6 @@ public class DmsApiClient(string baseUrl, string accessToken)
         object body
     )
     {
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            _accessToken
-        );
-
         var url = $"/{districtId}/{schoolYear}/data/ed-fi/{resource}";
         var response = await _httpClient.PostAsJsonAsync(url, body);
 
@@ -47,11 +65,6 @@ public class DmsApiClient(string baseUrl, string accessToken)
         string resource
     )
     {
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            _accessToken
-        );
-
         var url = $"/{districtId}/{schoolYear}/data/ed-fi/{resource}";
         var response = await _httpClient.GetAsync(url);
 
@@ -63,11 +76,6 @@ public class DmsApiClient(string baseUrl, string accessToken)
     /// </summary>
     public async Task<HttpResponseMessage> GetByLocationAsync(string location)
     {
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            _accessToken
-        );
-
         var response = await _httpClient.GetAsync(location);
 
         return response;
@@ -78,11 +86,6 @@ public class DmsApiClient(string baseUrl, string accessToken)
     /// </summary>
     public async Task<HttpResponseMessage> GetResourceWithoutQualifiersAsync(string resource)
     {
-        _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-            "Bearer",
-            _accessToken
-        );
-
         var url = $"/data/ed-fi/{resource}";
         var response = await _httpClient.GetAsync(url);
 
@@ -94,11 +97,22 @@ public class DmsApiClient(string baseUrl, string accessToken)
     /// </summary>
     public async Task<JsonDocument> GetDiscoveryAsync()
     {
-        var response = await _httpClient.GetAsync("/");
-        response.EnsureSuccessStatusCode();
+        // Use shared HttpClient for unauthenticated discovery requests
+        if (string.IsNullOrEmpty(_accessToken))
+        {
+            var fullUrl = $"{_baseUrl}/";
+            var response = await SharedHttpClient.GetAsync(fullUrl);
+            response.EnsureSuccessStatusCode();
 
-        var content = await response.Content.ReadAsStringAsync();
-        return JsonDocument.Parse(content);
+            var content = await response.Content.ReadAsStringAsync();
+            return JsonDocument.Parse(content);
+        }
+
+        var authenticatedResponse = await _httpClient.GetAsync("/");
+        authenticatedResponse.EnsureSuccessStatusCode();
+
+        var authenticatedContent = await authenticatedResponse.Content.ReadAsStringAsync();
+        return JsonDocument.Parse(authenticatedContent);
     }
 
     /// <summary>
@@ -107,7 +121,37 @@ public class DmsApiClient(string baseUrl, string accessToken)
     public async Task<HttpResponseMessage> GetDiscoveryWithRouteAsync(string route)
     {
         var url = string.IsNullOrEmpty(route) ? "/" : $"/{route}";
-        var response = await _httpClient.GetAsync(url);
-        return response;
+
+        // Use shared HttpClient for unauthenticated requests to avoid connection exhaustion
+        if (string.IsNullOrEmpty(_accessToken))
+        {
+            var fullUrl = $"{_baseUrl}{url}";
+            var response = await SharedHttpClient.GetAsync(fullUrl);
+            return response;
+        }
+
+        var authenticatedResponse = await _httpClient.GetAsync(url);
+        return authenticatedResponse;
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (disposing)
+        {
+            _httpClient.Dispose();
+        }
+
+        _disposed = true;
+    }
+
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
     }
 }
