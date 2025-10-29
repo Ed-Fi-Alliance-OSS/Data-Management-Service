@@ -8,57 +8,399 @@
 """
 Generate deterministic CSV files for the DMS performance harness.
 
-This replicates the logic used in perf-claude/scripts/generate-test-data.sh but streams the data
-to CSV so it can be loaded quickly with COPY.  The output matches the production schema:
-
-* document.csv  -> dms.Document (excluding the identity column)
-* alias.csv     -> dms.Alias
-* reference.csv -> dms.Reference
-
-Example:
-    python generate_deterministic_data.py --output ./out --documents 100000 --references 20000000
+Document and Alias generation mirrors the perf-dms-document-alias-only generator so the
+produced CSVs are interchangeable. Reference rows are additionally emitted to exercise
+the dms.Reference table.
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import hashlib
 import json
 import math
 import os
+import random
+import uuid
 from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import List, Sequence
-from uuid import UUID
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Sequence, Tuple
+
 from uuid_extensions import uuid7
 
 
-def deterministic_uuid(prefix: str, value: int) -> str:
-    """Return a stable UUID computed from the md5 hash of prefix:value."""
-    digest = hashlib.md5(f"{prefix}:{value}".encode("utf-8")).hexdigest()
-    return f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:]}"
+def _compute_default_openapi_path() -> Path:
+    script_path = Path(__file__).resolve()
+    local_candidate = script_path.parent.parent / "swagger.json"
+    if local_candidate.exists():
+        return local_candidate
+    fallback = script_path.parents[2] / "perf-dms-document-alias-only" / "swagger.json"
+    return fallback
 
 
-def partition_key(uuid_str: str, num_partitions: int) -> int:
-    """Partition key based on the last byte of the UUID, mirroring PartitionUtility."""
-    return UUID(uuid_str).bytes[-1] % num_partitions
+DEFAULT_RESOURCE_VERSION = "7.3.0"
+DEFAULT_OPENAPI_PATH = _compute_default_openapi_path()
+SCHEMA_BY_RESOURCE: Dict[str, str] = {
+    "sections": "edFi_section",
+    "assessments": "edFi_assessment",
+    "studentAcademicRecords": "edFi_studentAcademicRecord",
+}
 
 
-def resource_name_for(index: int) -> str:
-    resources = (
-        "students",
-        "studentSchoolAssociations",
-        "schools",
-        "courses",
-        "sections",
-        "studentSectionAssociations",
-        "staff",
-        "staffSchoolAssociations",
-        "grades",
-        "assessments",
-    )
-    return resources[index % len(resources)]
+@dataclass(frozen=True)
+class ResourceConfig:
+    resource_name: str
+    schema_name: str
+    resource_version: str
+
+
+@dataclass
+class _BuilderContext:
+    rng: random.Random
+    doc_index: int
+
+
+class OpenApiExampleBuilder:
+    """Materialize complete sample payloads from OpenAPI component schemas."""
+
+    def __init__(self, spec: Mapping[str, Any], *, base_seed: int = 12345) -> None:
+        components = spec.get("components")
+        if not isinstance(components, Mapping):
+            raise ValueError("OpenAPI spec is missing components block")
+        schemas = components.get("schemas")
+        if not isinstance(schemas, MutableMapping) or not schemas:
+            raise ValueError("OpenAPI spec does not provide component schemas")
+
+        self._schemas: MutableMapping[str, Any] = schemas
+        self._base_seed = base_seed
+        self._max_depth = 7
+        self._max_ref_visits = 2
+        self._uuid_namespace = uuid.UUID("c783fc5e-8511-4bb8-8b7f-736cafe9fae0")
+
+    def build(self, schema_name: str, *, doc_index: int) -> Any:
+        if schema_name not in self._schemas:
+            raise KeyError(f"Schema '{schema_name}' not found in OpenAPI components")
+
+        rng_seed = self._base_seed + doc_index * 7919
+        context = _BuilderContext(rng=random.Random(rng_seed), doc_index=doc_index)
+        visit_counts: Dict[str, int] = {}
+
+        return self._generate(
+            {"$ref": f"#/components/schemas/{schema_name}"},
+            path=(schema_name,),
+            depth=0,
+            context=context,
+            visit_counts=visit_counts,
+        )
+
+    def _resolve_ref(self, ref: str) -> Mapping[str, Any]:
+        if not ref.startswith("#/components/schemas/"):
+            raise KeyError(f"Unsupported $ref target: {ref}")
+        key = ref.split("/")[-1]
+        try:
+            return self._schemas[key]
+        except KeyError as exc:  # pragma: no cover - defensive
+            raise KeyError(f"Schema '{key}' not found for ref '{ref}'") from exc
+
+    def _generate(
+        self,
+        schema: Mapping[str, Any],
+        *,
+        path: Tuple[str, ...],
+        depth: int,
+        context: _BuilderContext,
+        visit_counts: Dict[str, int],
+    ) -> Any:
+        if depth > self._max_depth:
+            return self._depth_placeholder(path, context)
+
+        if schema is None:
+            return None
+
+        if "$ref" in schema:
+            ref = schema["$ref"]
+            ref_name = ref.split("/")[-1]
+            visits = visit_counts.get(ref_name, 0)
+            if visits >= self._max_ref_visits:
+                return self._ref_placeholder(ref_name, path, context)
+
+            visit_counts[ref_name] = visits + 1
+            resolved = self._resolve_ref(ref)
+            result = self._generate(
+                resolved,
+                path=path + (ref_name,),
+                depth=depth + 1,
+                context=context,
+                visit_counts=visit_counts,
+            )
+            if visit_counts[ref_name] <= 1:
+                visit_counts.pop(ref_name, None)
+            else:
+                visit_counts[ref_name] -= 1
+            return result
+
+        if "allOf" in schema:
+            aggregate: Dict[str, Any] = {}
+            fallback: Any = None
+            for item in schema["allOf"]:
+                value = self._generate(
+                    item,
+                    path=path,
+                    depth=depth + 1,
+                    context=context,
+                    visit_counts=visit_counts,
+                )
+                if isinstance(value, dict):
+                    aggregate.update(value)
+                else:
+                    fallback = value
+            return aggregate if aggregate else fallback
+
+        if "oneOf" in schema:
+            return self._generate(
+                schema["oneOf"][0],
+                path=path,
+                depth=depth + 1,
+                context=context,
+                visit_counts=visit_counts,
+            )
+
+        if "anyOf" in schema:
+            return self._generate(
+                schema["anyOf"][0],
+                path=path,
+                depth=depth + 1,
+                context=context,
+                visit_counts=visit_counts,
+            )
+
+        schema_type = schema.get("type")
+        if schema_type is None:
+            if "properties" in schema or "additionalProperties" in schema:
+                schema_type = "object"
+            elif "items" in schema:
+                schema_type = "array"
+
+        if schema_type == "object":
+            result: Dict[str, Any] = {}
+            properties = schema.get("properties") or {}
+            for key, subschema in properties.items():
+                result[key] = self._generate(
+                    subschema,
+                    path=path + (key,),
+                    depth=depth + 1,
+                    context=context,
+                    visit_counts=visit_counts,
+                )
+
+            additional = schema.get("additionalProperties")
+            if isinstance(additional, Mapping):
+                result["additionalPropertyExample"] = self._generate(
+                    additional,
+                    path=path + ("additionalPropertyExample",),
+                    depth=depth + 1,
+                    context=context,
+                    visit_counts=visit_counts,
+                )
+            elif additional is True:
+                result["additionalPropertyExample"] = self._hash_string(
+                    path,
+                    context=context,
+                    suffix="extra",
+                )
+
+            return result
+
+        if schema_type == "array":
+            items_schema = schema.get("items") or {}
+            count = max(1, min(2, int(schema.get("minItems", 1) or 1)))
+            values: List[Any] = []
+            for index in range(count):
+                element_path = path + (f"item{index}",)
+                values.append(
+                    self._generate(
+                        items_schema,
+                        path=element_path,
+                        depth=depth + 1,
+                        context=context,
+                        visit_counts=visit_counts,
+                    )
+                )
+            return values
+
+        if schema_type == "string":
+            return self._sample_string(schema, path=path, context=context)
+
+        if schema_type == "integer":
+            return self._sample_integer(schema, path=path, context=context)
+
+        if schema_type == "number":
+            return self._sample_number(schema, path=path, context=context)
+
+        if schema_type == "boolean":
+            return context.rng.choice([True, False])
+
+        return self._hash_string(path, context=context, suffix="value")
+
+    def _depth_placeholder(self, path: Tuple[str, ...], context: _BuilderContext) -> str:
+        return self._hash_string(path, context=context, suffix="depth_limit")
+
+    def _ref_placeholder(
+        self, ref_name: str, path: Tuple[str, ...], context: _BuilderContext
+    ) -> str:
+        combined = path + (ref_name, "ref")
+        return self._hash_string(combined, context=context, suffix="ref")
+
+    def _hash_string(
+        self, path: Tuple[str, ...], *, context: _BuilderContext, suffix: str = ""
+    ) -> str:
+        label = ".".join(path)
+        digest = hashlib.sha1(
+            f"{label}:{context.doc_index}:{self._base_seed}:{suffix}".encode("utf-8")
+        ).hexdigest()
+        key = path[-1] if path else "value"
+        return f"{key}_{digest[:20]}"
+
+    def _apply_length_constraints(
+        self,
+        value: str,
+        *,
+        min_length: Optional[int],
+        max_length: Optional[int],
+    ) -> str:
+        if max_length is not None and len(value) > max_length:
+            value = value[:max_length]
+        if min_length:
+            if len(value) < min_length:
+                padding = (min_length - len(value)) * "x"
+                value = (value + padding)[:max_length] if max_length else value + padding
+        return value
+
+    def _sample_string(
+        self, schema: Mapping[str, Any], *, path: Tuple[str, ...], context: _BuilderContext
+    ) -> str:
+        enum_values = schema.get("enum")
+        if enum_values:
+            return enum_values[0]
+
+        fmt = schema.get("format")
+        min_length = schema.get("minLength")
+        max_length = schema.get("maxLength")
+
+        if fmt == "uuid":
+            label = f"{context.doc_index}:{'.'.join(path)}"
+            value = str(uuid.uuid5(self._uuid_namespace, label))
+            return self._apply_length_constraints(value, min_length=min_length, max_length=max_length)
+
+        if fmt == "date":
+            base_days = context.doc_index * 7 + len(path) * 3
+            computed_date = date(2000, 1, 1) + timedelta(days=base_days % 3650)
+            return computed_date.isoformat()
+
+        if fmt == "date-time":
+            base_seconds = context.doc_index * 863 + len(path) * 97
+            computed_datetime = datetime(2000, 1, 1, tzinfo=timezone.utc) + timedelta(
+                seconds=base_seconds % (3650 * 24 * 3600)
+            )
+            return computed_datetime.isoformat().replace("+00:00", "Z")
+
+        if fmt in {"uri", "url"}:
+            digest = hashlib.sha1(
+                f"{context.doc_index}:{'.'.join(path)}".encode("utf-8")
+            ).hexdigest()
+            value = f"https://example.org/{path[-1]}/{digest[:12]}"
+            return self._apply_length_constraints(value, min_length=min_length, max_length=max_length)
+
+        if fmt == "byte":
+            digest = hashlib.sha1(
+                f"{context.doc_index}:{'.'.join(path)}".encode("utf-8")
+            ).digest()
+            value = base64.b64encode(digest).decode("ascii")
+            return self._apply_length_constraints(value, min_length=min_length, max_length=max_length)
+
+        value = self._hash_string(path, context=context)
+        return self._apply_length_constraints(value, min_length=min_length, max_length=max_length)
+
+    def _sample_integer(
+        self, schema: Mapping[str, Any], *, path: Tuple[str, ...], context: _BuilderContext
+    ) -> int:
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        exclusive_min = schema.get("exclusiveMinimum")
+        exclusive_max = schema.get("exclusiveMaximum")
+
+        min_value = int(minimum) if minimum is not None else 0
+        max_value = int(maximum) if maximum is not None else min_value + 1000
+
+        if exclusive_min is True:
+            min_value += 1
+        elif isinstance(exclusive_min, (int, float)):
+            min_value = int(math.floor(exclusive_min)) + 1
+
+        if exclusive_max is True:
+            max_value -= 1
+        elif isinstance(exclusive_max, (int, float)):
+            max_value = int(math.floor(exclusive_max)) - 1
+
+        if max_value < min_value:
+            max_value = min_value
+
+        span = max_value - min_value
+        if span <= 0:
+            value = min_value
+        else:
+            offset = (context.doc_index * 37 + len(path) * 13) % (span + 1)
+            value = min_value + offset
+
+        multiple = schema.get("multipleOf")
+        if multiple:
+            factor = int(multiple)
+            if factor > 0:
+                value = max(min_value, (value // factor) * factor)
+
+        return int(value)
+
+    def _sample_number(
+        self, schema: Mapping[str, Any], *, path: Tuple[str, ...], context: _BuilderContext
+    ) -> float:
+        minimum = schema.get("minimum")
+        maximum = schema.get("maximum")
+        exclusive_min = schema.get("exclusiveMinimum")
+        exclusive_max = schema.get("exclusiveMaximum")
+
+        min_value = float(minimum) if minimum is not None else 0.0
+        max_value = float(maximum) if maximum is not None else min_value + 1000.0
+
+        if exclusive_min is True:
+            min_value = math.nextafter(min_value, math.inf)
+        elif isinstance(exclusive_min, (int, float)):
+            min_value = float(exclusive_min) + 0.1
+
+        if exclusive_max is True:
+            max_value = math.nextafter(max_value, -math.inf)
+        elif isinstance(exclusive_max, (int, float)):
+            max_value = float(exclusive_max) - 0.1
+
+        if max_value < min_value:
+            max_value = min_value
+
+        span = max_value - min_value
+        base_fraction = ((context.doc_index * 17 + len(path) * 5) % 1000) / 1000.0
+        value = min_value + span * base_fraction
+
+        decimal_places = 5 if schema.get("format") == "double" else 3
+        value = round(value, decimal_places)
+
+        multiple = schema.get("multipleOf")
+        if multiple:
+            step = float(multiple)
+            if step > 0:
+                value = round(math.floor(value / step) * step, decimal_places)
+
+        return value
 
 
 @dataclass
@@ -79,97 +421,139 @@ class AliasInfo:
     referential_partition: int
 
 
-def generate_documents(
-    writer: csv.writer,
+def deterministic_uuid(prefix: str, value: int) -> str:
+    digest = hashlib.md5(f"{prefix}:{value}".encode("utf-8")).hexdigest()
+    return f"{digest[:8]}-{digest[8:12]}-{digest[12:16]}-{digest[16:20]}-{digest[20:]}"
+
+
+def partition_key(uuid_str: str, modulus: int) -> int:
+    return uuid.UUID(uuid_str).bytes[-1] % modulus
+
+
+def parse_resource_cycle(raw: str, *, resource_version: str) -> List[ResourceConfig]:
+    entries = [entry.strip() for entry in raw.split(",") if entry.strip()]
+    if not entries:
+        raise ValueError("resource cycle must include at least one entry")
+
+    configs: List[ResourceConfig] = []
+    for entry in entries:
+        if ":" in entry:
+            resource_name, schema_name = entry.split(":", 1)
+        else:
+            resource_name = entry
+            schema_name = SCHEMA_BY_RESOURCE.get(resource_name)
+            if not schema_name:
+                raise ValueError(
+                    f"Unknown resource '{resource_name}'. Use the form resource:schema."
+                )
+        configs.append(ResourceConfig(resource_name, schema_name, resource_version))
+
+    return configs
+
+
+def ensure_positive(name: str, value: int) -> None:
+    if value <= 0:
+        raise ValueError(f"{name} must be greater than zero (received {value})")
+
+
+def load_openapi(path: Path) -> Mapping[str, Any]:
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def ensure_output_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def generate_documents_and_aliases(
+    *,
+    document_writer: csv.writer,
+    alias_writer: csv.writer,
+    builder: OpenApiExampleBuilder,
+    resource_cycle: Sequence[ResourceConfig],
     num_documents: int,
     num_partitions: int,
     avg_refs_per_doc: int,
+    project_name: str,
+    base_timestamp: datetime,
 ) -> tuple[List[DocumentInfo], List[AliasInfo]]:
-    """Generate document and alias metadata while streaming document rows."""
     documents: List[DocumentInfo] = []
     aliases: List[AliasInfo] = []
 
-    for index in range(1, num_documents + 1):
-        doc_uuid = str(uuid7.uuid7())
-        doc_partition = partition_key(doc_uuid, num_partitions)
-        alias_uuid = deterministic_uuid("alias", index)
+    for doc_index in range(1, num_documents + 1):
+        resource = resource_cycle[(doc_index - 1) % len(resource_cycle)]
+
+        document_uuid = str(uuid7())
+        document_partition = partition_key(document_uuid, num_partitions)
+
+        alias_uuid = deterministic_uuid("alias", doc_index)
         alias_partition = partition_key(alias_uuid, num_partitions)
+
+        payload = builder.build(resource.schema_name, doc_index=doc_index)
+        if not isinstance(payload, dict):
+            payload = {"value": payload}
+
+        payload["id"] = document_uuid
+        payload["_etag"] = hashlib.md5(f"etag:{document_uuid}".encode("utf-8")).hexdigest()
+        payload["_lastModifiedDate"] = (
+            base_timestamp + timedelta(minutes=doc_index)
+        ).isoformat().replace("+00:00", "Z")
+
+        last_trace_id = f"trace-{doc_index:08d}"
+        edfi_doc = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
 
         weight = (
             avg_refs_per_doc * 10
-            if (index - 1) % 20 == 0
+            if (doc_index - 1) % 20 == 0
             else avg_refs_per_doc * 3
-            if (index - 1) % 5 == 0
+            if (doc_index - 1) % 5 == 0
             else avg_refs_per_doc
         )
 
+        alias_row_number = len(aliases)
         documents.append(
             DocumentInfo(
-                document_id=index,
-                partition_key=doc_partition,
-                alias_row_number=index - 1,
+                document_id=doc_index,
+                partition_key=document_partition,
+                alias_row_number=alias_row_number,
                 weight=weight,
-                seed=(index - 1) * 8191,
+                seed=(doc_index - 1) * 8191,
             )
         )
         aliases.append(
             AliasInfo(
-                alias_id=index,
-                document_id=index,
-                document_partition=doc_partition,
+                alias_id=doc_index,
+                document_id=doc_index,
+                document_partition=document_partition,
                 referential_id=alias_uuid,
                 referential_partition=alias_partition,
             )
         )
 
-        edfi_doc = json.dumps(
-            {
-                "id": doc_uuid,
-                "studentUniqueId": f"STU{index}",
-                "firstName": f"FirstName{index}",
-                "lastSurname": f"LastName{index}",
-                "birthDate": "2010-01-01",
-                "_etag": hashlib.md5(f"etag:{index}".encode("utf-8")).hexdigest(),
-            },
-            separators=(",", ":"),
-        )
-
-        security_elements = json.dumps(
-            {
-                "Namespace": ["uri://ed-fi.org"],
-                "EducationOrganization": {"Id": str(index % 100)},
-            },
-            separators=(",", ":"),
-        )
-
-        writer.writerow(
+        document_writer.writerow(
             [
-                doc_partition,
-                doc_uuid,
-                resource_name_for(index - 1),
-                "5.0.0",
+                document_partition,
+                document_uuid,
+                resource.resource_name,
+                resource.resource_version,
                 "false",
-                "ed-fi",
+                project_name,
                 edfi_doc,
-                security_elements,
-                f"perf-test-{index}",
+                last_trace_id,
+            ]
+        )
+
+        alias_writer.writerow(
+            [
+                alias_partition,
+                alias_uuid,
+                doc_index,
+                document_partition,
             ]
         )
 
     return documents, aliases
-
-
-def generate_aliases(writer: csv.writer, alias_infos: Sequence[AliasInfo]) -> None:
-    for info in alias_infos:
-        writer.writerow(
-            [
-                info.alias_id,
-                info.referential_partition,
-                info.referential_id,
-                info.document_id,
-                info.document_partition,
-            ]
-        )
 
 
 def generate_references(
@@ -178,9 +562,8 @@ def generate_references(
     aliases: Sequence[AliasInfo],
     num_references: int,
 ) -> int:
-    """Generate deterministic reference rows limited to num_references."""
     total_aliases = len(aliases)
-    if total_aliases == 0 or len(documents) == 0 or num_references <= 0:
+    if total_aliases == 0 or not documents or num_references <= 0:
         return 0
 
     total_weight = sum(doc.weight for doc in documents)
@@ -203,7 +586,6 @@ def generate_references(
                 candidate = (candidate + 1) % total_aliases
 
             alias = aliases[candidate]
-
             writer.writerow(
                 [
                     doc.document_id,
@@ -217,12 +599,16 @@ def generate_references(
     return references_written
 
 
-def ensure_directory(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
+def _int_from_env(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    return int(raw) if raw is not None else default
 
 
-def resolve(path: Path) -> Path:
-    return path if path.is_absolute() else path.resolve()
+def _path_from_env(name: str) -> Optional[Path]:
+    raw = os.getenv(name)
+    if not raw:
+        return None
+    return Path(raw).expanduser()
 
 
 def parse_args() -> argparse.Namespace:
@@ -230,49 +616,117 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--documents",
         type=int,
-        default=int(os.getenv("NUM_DOCUMENTS", "100000")),
-        help="Number of documents to generate (default: 100000)",
+        default=_int_from_env("NUM_DOCUMENTS", 1000),
+        help="Number of document rows to generate",
+    )
+    parser.add_argument(
+        "--aliases",
+        type=int,
+        default=None,
+        help="Number of alias rows (must match documents for 1:1 mapping)",
     )
     parser.add_argument(
         "--references",
         type=int,
-        default=int(os.getenv("NUM_REFERENCES", "20000000")),
-        help="Total number of references to generate (default: 20000000)",
+        default=_int_from_env("NUM_REFERENCES", 20000000),
+        help="Total number of reference rows to generate",
     )
     parser.add_argument(
         "--avg-refs-per-doc",
         dest="avg_refs_per_doc",
         type=int,
-        default=int(os.getenv("AVG_REFS_PER_DOC", "200")),
-        help="Average references per document used for weighting (default: 200)",
+        default=_int_from_env("AVG_REFS_PER_DOC", 200),
+        help="Average references per document used for weighting",
     )
     parser.add_argument(
         "--partitions",
         type=int,
-        default=int(os.getenv("NUM_PARTITIONS", "16")),
-        help="Number of hash partitions (default: 16)",
+        default=_int_from_env("NUM_PARTITIONS", 16),
+        help="Number of hash partitions to emulate",
+    )
+    parser.add_argument(
+        "--openapi",
+        type=Path,
+        default=_path_from_env("OPENAPI_SPEC") or DEFAULT_OPENAPI_PATH,
+        help="Path to the Ed-Fi OpenAPI specification",
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(os.getenv("OUTPUT_DIR", "./out")),
-        help="Output directory for CSV files (default: ./out)",
+        default=_path_from_env("OUTPUT_DIR"),
+        help="Directory for generated CSV files (default: ./out relative to script)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=_int_from_env("PAYLOAD_SEED", 12345),
+        help="Base seed for deterministic payload generation",
+    )
+    parser.add_argument(
+        "--resource-cycle",
+        type=str,
+        default=os.getenv(
+            "RESOURCE_CYCLE", "sections:edFi_section,assessments:edFi_assessment,studentAcademicRecords:edFi_studentAcademicRecord"
+        ),
+        help="Comma-separated resource list (resource:schema) cycled per row",
+    )
+    parser.add_argument(
+        "--resource-version",
+        type=str,
+        default=os.getenv("RESOURCE_VERSION", DEFAULT_RESOURCE_VERSION),
+        help="Value written to Document.ResourceVersion",
+    )
+    parser.add_argument(
+        "--project-name",
+        type=str,
+        default=os.getenv("PROJECT_NAME", "perf-dms-document-alias-only"),
+        help="Value written to Document.ProjectName",
     )
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def main() -> None:
     args = parse_args()
-    output_dir = resolve(args.output)
-    ensure_directory(output_dir)
+
+    ensure_positive("documents", args.documents)
+    ensure_positive("partitions", args.partitions)
+
+    aliases = args.aliases if args.aliases is not None else args.documents
+    if aliases != args.documents:
+        raise ValueError("Document and alias counts must match for 1:1 generation")
+
+    openapi_path = args.openapi.expanduser().resolve()
+    if not openapi_path.exists():
+        raise FileNotFoundError(f"OpenAPI spec not found: {openapi_path}")
+
+    spec = load_openapi(openapi_path)
+    builder = OpenApiExampleBuilder(spec, base_seed=args.seed)
+    resource_cycle = parse_resource_cycle(
+        args.resource_cycle, resource_version=args.resource_version
+    )
+
+    if args.output is None:
+        default_output = Path(__file__).resolve().parent / "out"
+        output_dir = ensure_output_dir(default_output)
+    else:
+        output_dir = ensure_output_dir(args.output.expanduser().resolve())
 
     document_path = output_dir / "document.csv"
     alias_path = output_dir / "alias.csv"
     reference_path = output_dir / "reference.csv"
 
-    print(f"Generating {args.documents:,} documents to {document_path}")
-    with document_path.open("w", encoding="utf-8", newline="") as doc_file:
-        document_writer = csv.writer(doc_file)
+    print(f"Generating {args.documents:,} documents -> {document_path}")
+    print(f"Generating {aliases:,} aliases   -> {alias_path}")
+    print(f"Generating up to {args.references:,} references -> {reference_path}")
+
+    base_timestamp = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+    with document_path.open("w", encoding="utf-8", newline="") as document_file, alias_path.open(
+        "w", encoding="utf-8", newline=""
+    ) as alias_file:
+        document_writer = csv.writer(document_file)
+        alias_writer = csv.writer(alias_file)
+
         document_writer.writerow(
             [
                 "DocumentPartitionKey",
@@ -282,34 +736,33 @@ if __name__ == "__main__":
                 "IsDescriptor",
                 "ProjectName",
                 "EdfiDoc",
-                "SecurityElements",
                 "LastModifiedTraceId",
             ]
         )
-        docs, alias_infos = generate_documents(
-            document_writer,
-            args.documents,
-            args.partitions,
-            args.avg_refs_per_doc,
-        )
 
-    print(f"Generating {len(alias_infos):,} aliases to {alias_path}")
-    with alias_path.open("w", encoding="utf-8", newline="") as alias_file:
-        alias_writer = csv.writer(alias_file)
         alias_writer.writerow(
             [
-                "Id",
                 "ReferentialPartitionKey",
                 "ReferentialId",
                 "DocumentId",
                 "DocumentPartitionKey",
             ]
         )
-        generate_aliases(alias_writer, alias_infos)
 
-    print(f"Generating up to {args.references:,} references to {reference_path}")
-    with reference_path.open("w", encoding="utf-8", newline="") as ref_file:
-        reference_writer = csv.writer(ref_file)
+        documents, alias_infos = generate_documents_and_aliases(
+            document_writer=document_writer,
+            alias_writer=alias_writer,
+            builder=builder,
+            resource_cycle=resource_cycle,
+            num_documents=args.documents,
+            num_partitions=args.partitions,
+            avg_refs_per_doc=args.avg_refs_per_doc,
+            project_name=args.project_name,
+            base_timestamp=base_timestamp,
+        )
+
+    with reference_path.open("w", encoding="utf-8", newline="") as reference_file:
+        reference_writer = csv.writer(reference_file)
         reference_writer.writerow(
             [
                 "ParentDocumentId",
@@ -318,6 +771,10 @@ if __name__ == "__main__":
                 "ReferentialPartitionKey",
             ]
         )
-        written = generate_references(reference_writer, docs, alias_infos, args.references)
+        written = generate_references(reference_writer, documents, alias_infos, args.references)
 
     print(f"Reference rows written: {written:,}")
+
+
+if __name__ == "__main__":
+    main()
