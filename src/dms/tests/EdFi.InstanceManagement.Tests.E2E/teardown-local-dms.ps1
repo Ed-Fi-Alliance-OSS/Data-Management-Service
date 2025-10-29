@@ -208,12 +208,13 @@ try {
             if (-not $removed) {
                 if (docker volume ls -q | Where-Object { $_ -eq $volume }) {
                     try {
-                        docker volume rm $volume 2>&1 | Out-Null
+                        $removeOutput = docker volume rm $volume 2>&1
                         if ($LASTEXITCODE -eq 0) {
                             Write-Host " done" -ForegroundColor Green
                         }
                         else {
-                            Write-Host " not found or already removed" -ForegroundColor Gray
+                            Write-Host " error" -ForegroundColor Red
+                            Write-Warning "  $removeOutput"
                         }
                     }
                     catch {

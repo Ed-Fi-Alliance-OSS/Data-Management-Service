@@ -146,7 +146,6 @@ jobs:
   run-e2e-tests:
     name: Run ${{matrix.queryhandler}} E2E Tests (IdentityProvider ${{matrix.identityprovider}})
     runs-on: ubuntu-latest
-    needs: run-instance-management-e2e-tests
     strategy:
       matrix:
         identityprovider: [keycloak, self-contained]
