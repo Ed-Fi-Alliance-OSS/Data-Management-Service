@@ -201,12 +201,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 foreach (var (tableName, schemaName, fkConstraint) in fkConstraintsToAdd)
                 {
                     var constraint = (dynamic)fkConstraint;
-                    sb.AppendLine($"ALTER TABLE {schemaName}.{tableName}");
-                    sb.AppendLine($"    ADD CONSTRAINT {constraint.constraintName}");
-                    sb.AppendLine($"    FOREIGN KEY ({constraint.column})");
+                    var constraintName = PgsqlNamingHelper.MakePgsqlIdentifier(constraint.constraintName);
+                    sb.AppendLine($"DO $$");
+                    sb.AppendLine($"BEGIN");
                     sb.AppendLine(
-                        $"    REFERENCES {constraint.parentTable}({constraint.parentColumn}){(constraint.cascade ? " ON DELETE CASCADE" : "")};"
+                        $"        IF NOT EXISTS (\n            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('{constraintName}')\n        ) THEN"
                     );
+                    sb.AppendLine(
+                        $"            ALTER TABLE {schemaName}.{tableName} ADD CONSTRAINT {constraintName}"
+                    );
+                    sb.AppendLine($"                FOREIGN KEY ({constraint.column})");
+                    sb.AppendLine(
+                        $"                REFERENCES {constraint.parentTable}({constraint.parentColumn}){(constraint.cascade ? " ON DELETE CASCADE" : "")};"
+                    );
+                    sb.AppendLine($"        END IF;");
+                    sb.AppendLine($"END$$;");
                     sb.AppendLine();
                 }
             }
