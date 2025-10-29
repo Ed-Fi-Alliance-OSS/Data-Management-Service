@@ -197,7 +197,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 );
             }
 
-            // PASS 2: Add foreign key constraints via ALTER TABLE statements
+            // PASS 2: Add foreign key constraints via ALTER TABLE statements (idempotent)
             if (options.GenerateForeignKeyConstraints && fkConstraintsToAdd.Count > 0)
             {
                 sb.AppendLine();
@@ -207,12 +207,44 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 foreach (var (tableName, schemaName, fkConstraint) in fkConstraintsToAdd)
                 {
                     var constraint = (dynamic)fkConstraint;
-                    sb.AppendLine($"ALTER TABLE [{schemaName}].[{tableName}]");
-                    sb.AppendLine($"    ADD CONSTRAINT [{constraint.constraintName}]");
-                    sb.AppendLine($"    FOREIGN KEY ([{constraint.column}])");
+                    var constraintName = MssqlNamingHelper.MakeMssqlIdentifier(constraint.constraintName);
                     sb.AppendLine(
-                        $"    REFERENCES {constraint.parentTable}([{constraint.parentColumn}]){(constraint.cascade ? " ON DELETE CASCADE" : "")};"
+                        $"IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = '{constraintName}')"
                     );
+                    sb.AppendLine("BEGIN");
+                    // Fix: Properly format multi-column FKs for MSSQL ([col1], [col2], ...)
+                    string FormatColumns(object col)
+                    {
+                        if (col == null)
+                        {
+                            return string.Empty;
+                        }
+                        var str = col.ToString();
+                        if (string.IsNullOrWhiteSpace(str))
+                        {
+                            return string.Empty;
+                        }
+                        var cols = str.Split(',')
+                            .Select(s => s.Trim())
+                            .Where(s => !string.IsNullOrEmpty(s))
+                            .ToArray();
+                        return string.Join(
+                            ", ",
+                            cols.Select(c => c.StartsWith("[") ? c : $"[{c}]").ToArray()
+                        );
+                    }
+                    string fkCols = FormatColumns(constraint.column);
+                    string pkCols = FormatColumns(constraint.parentColumn);
+                    sb.AppendLine(
+                        $"    ALTER TABLE [{schemaName}].[{tableName}] ADD CONSTRAINT [{constraintName}] FOREIGN KEY ({fkCols}) REFERENCES {constraint.parentTable}({pkCols}){(constraint.cascade ? " ON DELETE CASCADE" : "")};"
+                    );
+                    sb.AppendLine($"    PRINT 'Foreign key constraint {constraintName} created.';");
+                    sb.AppendLine("END");
+                    sb.AppendLine("ELSE");
+                    sb.AppendLine(
+                        $"    PRINT 'Foreign key constraint {constraintName} already exists, skipped.';"
+                    );
+                    sb.AppendLine("GO");
                     sb.AppendLine();
                 }
             }
@@ -404,12 +436,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             List<(string tableName, string schemaName, object fkConstraint)> fkConstraintsToAdd
         )
         {
-            var tableName = DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options);
+            var tableName = MssqlNamingHelper.MakeMssqlIdentifier(
+                DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options)
+            );
 
             // For extension resources and descriptor resources using separate schemas, use the original schema as final schema
             var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema)
                 ? originalSchemaName
                 : options.ResolveSchemaName(null);
+            finalSchemaName = MssqlNamingHelper.MakeMssqlIdentifier(finalSchemaName);
 
             var isRootTable = parentTableName == null;
 
@@ -433,7 +468,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
                     return new
                     {
-                        name = c.ColumnName,
+                        name = MssqlNamingHelper.MakeMssqlIdentifier(c.ColumnName),
                         type = MapColumnType(c),
                         isRequired = c.IsRequired,
                     };
@@ -443,13 +478,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             // Natural key columns for unique constraint
             var naturalKeyColumns = table
                 .Columns.Where(c => c.IsNaturalKey && !c.IsParentReference)
-                .Select(c => c.ColumnName)
+                .Select(c => MssqlNamingHelper.MakeMssqlIdentifier(c.ColumnName))
                 .ToList();
 
             // Add parent FK column for child tables
             if (parentTableName != null)
             {
-                var parentFkColumn = $"{parentTableName}_Id";
+                var parentFkColumn = MssqlNamingHelper.MakeMssqlIdentifier($"{parentTableName}_Id");
                 columns.Insert(
                     0,
                     new
@@ -471,7 +506,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                 $"FK_{table.BaseName}_{parentTableName}"
                             ),
                             column = parentFkColumn,
-                            parentTable = $"[{finalSchemaName}].[{DetermineTableName(parentTableName, originalSchemaName, resourceSchema, options)}]",
+                            parentTable = $"[{finalSchemaName}].[{MssqlNamingHelper.MakeMssqlIdentifier(DetermineTableName(parentTableName, originalSchemaName, resourceSchema, options))}]",
                             parentColumn = "Id",
                             cascade = true,
                         }
@@ -513,7 +548,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                             $"FK_{table.BaseName}_Document"
                         ),
                         column = "Document_Id, Document_PartitionKey",
-                        parentTable = $"[{finalSchemaName}].[Document]",
+                        parentTable = $"[{finalSchemaName}].[{MssqlNamingHelper.MakeMssqlIdentifier("Document")}]",
                         parentColumn = "Id, DocumentPartitionKey",
                         cascade = true,
                     }
@@ -540,7 +575,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             // For child tables: Parent FK + natural key columns
             if (!isRootTable)
             {
-                var identityColumns = new List<string> { $"{parentTableName}_Id" };
+                var identityColumns = new List<string>
+                {
+                    MssqlNamingHelper.MakeMssqlIdentifier($"{parentTableName}_Id"),
+                };
                 identityColumns.AddRange(naturalKeyColumns);
 
                 if (identityColumns.Count > 1) // Only if there are identifying columns beyond parent FK
@@ -570,7 +608,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                             $"IX_{table.BaseName}_{parentTableName}"
                         ),
                         tableName,
-                        columns = new[] { $"{parentTableName}_Id" },
+                        columns = new[] { MssqlNamingHelper.MakeMssqlIdentifier($"{parentTableName}_Id") },
                     }
                 );
             }
@@ -585,7 +623,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                             $"IX_{table.BaseName}_{referencedResource}"
                         ),
                         tableName,
-                        columns = new[] { columnName },
+                        columns = new[] { MssqlNamingHelper.MakeMssqlIdentifier(columnName) },
                     }
                 );
             }
@@ -596,7 +634,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 {
                     indexName = MssqlNamingHelper.MakeMssqlIdentifier($"IX_{table.BaseName}_Document"),
                     tableName,
-                    columns = new[] { "Document_Id", "Document_PartitionKey" },
+                    columns = new[]
+                    {
+                        MssqlNamingHelper.MakeMssqlIdentifier("Document_Id"),
+                        MssqlNamingHelper.MakeMssqlIdentifier("Document_PartitionKey"),
+                    },
                 }
             );
 
