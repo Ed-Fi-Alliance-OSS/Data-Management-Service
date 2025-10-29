@@ -12,32 +12,34 @@ namespace EdFi.InstanceManagement.Tests.E2E.Management;
 /// <summary>
 /// Client for interacting with the DMS API with route qualifiers
 /// </summary>
-public class DmsApiClient(string baseUrl, string accessToken) : IDisposable
+public class DmsApiClient : IDisposable
 {
     // Shared HttpClient for unauthenticated requests (e.g., discovery endpoints)
     // HttpClient is thread-safe and designed to be reused
-    private static readonly HttpClient SharedHttpClient = new();
+    private static readonly HttpClient _sharedHttpClient = new();
 
-    private readonly HttpClient _httpClient = CreateHttpClient(baseUrl, accessToken);
-    private readonly string _baseUrl = baseUrl;
-    private readonly string _accessToken = accessToken;
+    private readonly HttpClient _httpClient;
+    private readonly string _baseUrl;
+    private readonly string _accessToken;
     private bool _disposed;
 
-    /// <summary>
-    /// Creates and configures an HttpClient with base URL and authorization header
-    /// </summary>
-    private static HttpClient CreateHttpClient(string baseUrl, string accessToken)
+    public DmsApiClient(string baseUrl, string accessToken)
     {
-        var client = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        _baseUrl = baseUrl;
+        _accessToken = accessToken;
+
+        // Create and configure HttpClient with base URL and authorization header
+        _httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
 
         // Set authorization header once during client creation (not on every request)
         // This is the recommended pattern for HttpClient to avoid threading issues
         if (!string.IsNullOrEmpty(accessToken))
         {
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                accessToken
+            );
         }
-
-        return client;
     }
 
     /// <summary>
@@ -101,7 +103,7 @@ public class DmsApiClient(string baseUrl, string accessToken) : IDisposable
         if (string.IsNullOrEmpty(_accessToken))
         {
             var fullUrl = $"{_baseUrl}/";
-            var response = await SharedHttpClient.GetAsync(fullUrl);
+            var response = await _sharedHttpClient.GetAsync(fullUrl);
             response.EnsureSuccessStatusCode();
 
             var content = await response.Content.ReadAsStringAsync();
@@ -126,7 +128,7 @@ public class DmsApiClient(string baseUrl, string accessToken) : IDisposable
         if (string.IsNullOrEmpty(_accessToken))
         {
             var fullUrl = $"{_baseUrl}{url}";
-            var response = await SharedHttpClient.GetAsync(fullUrl);
+            var response = await _sharedHttpClient.GetAsync(fullUrl);
             return response;
         }
 

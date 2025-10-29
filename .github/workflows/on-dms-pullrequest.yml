@@ -301,7 +301,8 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
           DMS_API_URL: http://localhost:8080
-          CONFIG_SERVICE_URL: http://localhost:8081
+          # CONFIG_SERVICE_URL not set here - test client uses default localhost:8081
+          # DMS container uses dms-config-service:8081 from .env.routeContext.e2e
         run: |
           # Build script handles Docker environment setup, database configuration, and test execution
           ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }}
