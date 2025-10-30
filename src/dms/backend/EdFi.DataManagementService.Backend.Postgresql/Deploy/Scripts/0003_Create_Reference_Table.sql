@@ -44,7 +44,7 @@ BEGIN
         FROM information_schema.table_constraints
         WHERE table_schema = 'dms'
           AND table_name = 'reference'
-          AND constraint_name = 'reference_parent_alias_unique'
+          AND constraint_name = 'ux_reference_parent_alias'
     ) THEN
         ALTER TABLE dms.Reference
         ADD CONSTRAINT UX_Reference_Parent_Alias
