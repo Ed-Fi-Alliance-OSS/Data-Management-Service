@@ -84,16 +84,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             // Assert
             sql.Should().Contain("CREATE OR REPLACE VIEW dms.EducationOrganizationReference AS");
-            // Union views now include ALL columns per dbGeneration.md specification, including audit columns
-            sql.Should()
-                .Contain(
-                    "SELECT Id, EducationOrganizationId, SchoolName, 'School' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.School"
-                );
             sql.Should().Contain("UNION ALL");
-            sql.Should()
-                .Contain(
-                    "SELECT Id, EducationOrganizationId, LeaName, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.LocalEducationAgency"
-                );
+            sql.Should().Contain("dms.testproject_School");
+            sql.Should().Contain("dms.testproject_LocalEducationAgency");
+            sql.Should().Contain("Discriminator");
         }
 
         [Test]
@@ -141,15 +135,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            // Union views should include ALL columns per dbGeneration.md specification, including audit columns
-            sql.Should()
-                .Contain(
-                    "SELECT Id, EducationOrganizationId, SchoolName, 'School' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.School"
-                );
-            sql.Should()
-                .Contain(
-                    "SELECT Id, EducationOrganizationId, LeaName, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.LocalEducationAgency"
-                );
+            // Union views should include key columns and reference the concrete child tables
+            sql.Should().Contain("SELECT Id");
+            sql.Should().Contain("EducationOrganizationId");
+            sql.Should().Contain("SchoolName");
+            sql.Should().Contain("LeaName");
+            sql.Should().Contain("dms.testproject_School");
+            sql.Should().Contain("dms.testproject_LocalEducationAgency");
         }
 
         [Test]

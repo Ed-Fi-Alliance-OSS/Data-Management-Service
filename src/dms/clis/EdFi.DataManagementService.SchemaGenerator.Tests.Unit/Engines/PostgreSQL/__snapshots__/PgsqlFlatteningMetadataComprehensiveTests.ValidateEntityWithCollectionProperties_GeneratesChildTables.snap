@@ -1,6 +1,7 @@
 ﻿CREATE SCHEMA IF NOT EXISTS dms;
 
 
+
 CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityName (
     Id BIGSERIAL PRIMARY KEY,
     Document_Id BIGINT NOT NULL,
@@ -9,13 +10,22 @@ CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityName (
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
     ChangeVersion BIGINT NOT NULL
-,
-    CONSTRAINT UQ_DomainEntityName_NaturalKey
-        UNIQUE (StringIdentity)
 );
 
 CREATE INDEX IF NOT EXISTS IX_DomainEntityName_Document
     ON dms.edfi_DomainEntityName(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_DomainEntityName_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_DomainEntityName ADD CONSTRAINT UQ_DomainEntityName_NaturalKey
+            UNIQUE (StringIdentity);
+    END IF;
+END$$;
+
 
 
 CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityNameRequiredIntegerProperty (
@@ -33,6 +43,9 @@ CREATE INDEX IF NOT EXISTS IX_DomainEntityNameRequiredIntegerProperty_Document
     ON dms.edfi_DomainEntityNameRequiredIntegerProperty(Document_Id, Document_PartitionKey);
 
 
+
+
+
 CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityNameSchoolYear (
     Id BIGSERIAL PRIMARY KEY,
     Document_Id BIGINT NOT NULL,
@@ -48,30 +61,62 @@ CREATE INDEX IF NOT EXISTS IX_DomainEntityNameSchoolYear_Document
     ON dms.edfi_DomainEntityNameSchoolYear(Document_Id, Document_PartitionKey);
 
 
+
+
 -- Foreign Key Constraints
 
-ALTER TABLE dms.edfi_DomainEntityName
-    ADD CONSTRAINT FK_DomainEntityName_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_DomainEntityName_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_DomainEntityName ADD CONSTRAINT FK_DomainEntityName_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_DomainEntityNameRequiredIntegerProperty
-    ADD CONSTRAINT FK_DomainEntityNameRequiredIntegerProperty_DomainEntityName
-    FOREIGN KEY (DomainEntityName_Id)
-    REFERENCES dms.edfi_DomainEntityName(Id) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_DomainEntityNameRequiredIntegerProperty_DomainEntityName')
+        ) THEN
+            ALTER TABLE dms.edfi_DomainEntityNameRequiredIntegerProperty ADD CONSTRAINT FK_DomainEntityNameRequiredIntegerProperty_DomainEntityName
+                FOREIGN KEY (DomainEntityName_Id)
+                REFERENCES dms.edfi_DomainEntityName(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_DomainEntityNameRequiredIntegerProperty
-    ADD CONSTRAINT FK_DomainEntityNameRequiredIntegerProperty_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_DomainEntityNameRequiredIntegerProperty_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_DomainEntityNameRequiredIntegerProperty ADD CONSTRAINT FK_DomainEntityNameRequiredIntegerProperty_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_DomainEntityNameSchoolYear
-    ADD CONSTRAINT FK_DomainEntityNameSchoolYear_DomainEntityName
-    FOREIGN KEY (DomainEntityName_Id)
-    REFERENCES dms.edfi_DomainEntityName(Id) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_DomainEntityNameSchoolYear_DomainEntityName')
+        ) THEN
+            ALTER TABLE dms.edfi_DomainEntityNameSchoolYear ADD CONSTRAINT FK_DomainEntityNameSchoolYear_DomainEntityName
+                FOREIGN KEY (DomainEntityName_Id)
+                REFERENCES dms.edfi_DomainEntityName(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_DomainEntityNameSchoolYear
-    ADD CONSTRAINT FK_DomainEntityNameSchoolYear_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_DomainEntityNameSchoolYear_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_DomainEntityNameSchoolYear ADD CONSTRAINT FK_DomainEntityNameSchoolYear_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 

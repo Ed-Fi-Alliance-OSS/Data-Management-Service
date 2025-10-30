@@ -1,0 +1,49 @@
+﻿-- MSSQL CREATE TABLE edfi_StudentSchoolAssociation
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_StudentSchoolAssociation' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_StudentSchoolAssociation] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [StudentUniqueId] NVARCHAR(32) NOT NULL,
+    [SchoolId] INT NOT NULL,
+    [EntryDate] DATE NOT NULL,
+    [EntryGradeLevelDescriptor] BIGINT NOT NULL,
+    [ExitWithdrawDate] DATE,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_StudentSchoolAssociation_NaturalKey]
+        UNIQUE ([StudentUniqueId], [SchoolId], [EntryDate])
+    );
+    PRINT 'Table edfi_StudentSchoolAssociation created.';
+END
+ELSE
+    PRINT 'Table edfi_StudentSchoolAssociation already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentSchoolAssociation_School' AND object_id = OBJECT_ID('[dms].[edfi_StudentSchoolAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentSchoolAssociation_School]
+        ON [dms].[edfi_StudentSchoolAssociation]([SchoolId]);
+    PRINT 'Index IX_StudentSchoolAssociation_School created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentSchoolAssociation_Document' AND object_id = OBJECT_ID('[dms].[edfi_StudentSchoolAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentSchoolAssociation_Document]
+        ON [dms].[edfi_StudentSchoolAssociation]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_StudentSchoolAssociation_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentSchoolAssociation_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentSchoolAssociation] ADD CONSTRAINT [FK_StudentSchoolAssociation_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_Document already exists, skipped.';
+GO
+

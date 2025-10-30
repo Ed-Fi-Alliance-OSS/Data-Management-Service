@@ -1,6 +1,7 @@
 ﻿CREATE SCHEMA IF NOT EXISTS dms;
 
 
+
 CREATE TABLE IF NOT EXISTS dms.edfi_CommunityOrganization (
     Id BIGSERIAL PRIMARY KEY,
     Document_Id BIGINT NOT NULL,
@@ -9,13 +10,22 @@ CREATE TABLE IF NOT EXISTS dms.edfi_CommunityOrganization (
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
     ChangeVersion BIGINT NOT NULL
-,
-    CONSTRAINT UQ_CommunityOrganization_NaturalKey
-        UNIQUE (CommunityOrganizationId)
 );
 
 CREATE INDEX IF NOT EXISTS IX_CommunityOrganization_Document
     ON dms.edfi_CommunityOrganization(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_CommunityOrganization_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_CommunityOrganization ADD CONSTRAINT UQ_CommunityOrganization_NaturalKey
+            UNIQUE (CommunityOrganizationId);
+    END IF;
+END$$;
+
 
 
 CREATE TABLE IF NOT EXISTS dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7 (
@@ -34,20 +44,40 @@ CREATE INDEX IF NOT EXISTS IX_CommunityOrganizationEducationOrganizationIdentifi
     ON dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7(Document_Id, Document_PartitionKey);
 
 
+
+
 -- Foreign Key Constraints
 
-ALTER TABLE dms.edfi_CommunityOrganization
-    ADD CONSTRAINT FK_CommunityOrganization_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_CommunityOrganization_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_CommunityOrganization ADD CONSTRAINT FK_CommunityOrganization_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7
-    ADD CONSTRAINT FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization
-    FOREIGN KEY (CommunityOrganization_Id)
-    REFERENCES dms.edfi_CommunityOrganization(Id) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_CommunityOrganizationEducationOrganizationIdentific_e26864e2')
+        ) THEN
+            ALTER TABLE dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7 ADD CONSTRAINT FK_CommunityOrganizationEducationOrganizationIdentific_e26864e2
+                FOREIGN KEY (CommunityOrganization_Id)
+                REFERENCES dms.edfi_CommunityOrganization(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7
-    ADD CONSTRAINT FK_CommunityOrganizationEducationOrganizationIdentific_accef2d7
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_CommunityOrganizationEducationOrganizationIdentific_accef2d7')
+        ) THEN
+            ALTER TABLE dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7 ADD CONSTRAINT FK_CommunityOrganizationEducationOrganizationIdentific_accef2d7
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 

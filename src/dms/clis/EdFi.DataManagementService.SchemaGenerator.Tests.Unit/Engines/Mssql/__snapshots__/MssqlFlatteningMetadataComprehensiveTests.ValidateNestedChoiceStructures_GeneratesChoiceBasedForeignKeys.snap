@@ -100,28 +100,48 @@ END
 
 -- Foreign Key Constraints
 
-ALTER TABLE [dms].[edfi_EducationContent]
-    ADD CONSTRAINT [FK_EducationContent_Document]
-    FOREIGN KEY ([Document_Id, Document_PartitionKey])
-    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_EducationContent_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_EducationContent] ADD CONSTRAINT [FK_EducationContent_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_EducationContent_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_EducationContent_Document already exists, skipped.';
+GO
 
-ALTER TABLE [dms].[edfi_EducationContentDerivativeSourceEducationContent]
-    ADD CONSTRAINT [FK_EducationContentDerivativeSourceEducationContent_EducationContent]
-    FOREIGN KEY ([EducationContent_Id])
-    REFERENCES [dms].[edfi_EducationContent]([Id]) ON DELETE CASCADE;
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_EducationContentDerivativeSourceEducationContent_EducationContent')
+BEGIN
+    ALTER TABLE [dms].[edfi_EducationContentDerivativeSourceEducationContent] ADD CONSTRAINT [FK_EducationContentDerivativeSourceEducationContent_EducationContent] FOREIGN KEY ([EducationContent_Id]) REFERENCES [dms].[edfi_EducationContent]([Id]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_EducationContentDerivativeSourceEducationContent_EducationContent created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_EducationContentDerivativeSourceEducationContent_EducationContent already exists, skipped.';
+GO
 
-ALTER TABLE [dms].[edfi_EducationContentDerivativeSourceEducationContent]
-    ADD CONSTRAINT [FK_EducationContentDerivativeSourceEducationContent_Document]
-    FOREIGN KEY ([Document_Id, Document_PartitionKey])
-    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_EducationContentDerivativeSourceEducationContent_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_EducationContentDerivativeSourceEducationContent] ADD CONSTRAINT [FK_EducationContentDerivativeSourceEducationContent_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_EducationContentDerivativeSourceEducationContent_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_EducationContentDerivativeSourceEducationContent_Document already exists, skipped.';
+GO
 
-ALTER TABLE [dms].[edfi_EducationContentRequiredURI]
-    ADD CONSTRAINT [FK_EducationContentRequiredURI_EducationContent]
-    FOREIGN KEY ([EducationContent_Id])
-    REFERENCES [dms].[edfi_EducationContent]([Id]) ON DELETE CASCADE;
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_EducationContentRequiredURI_EducationContent')
+BEGIN
+    ALTER TABLE [dms].[edfi_EducationContentRequiredURI] ADD CONSTRAINT [FK_EducationContentRequiredURI_EducationContent] FOREIGN KEY ([EducationContent_Id]) REFERENCES [dms].[edfi_EducationContent]([Id]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_EducationContentRequiredURI_EducationContent created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_EducationContentRequiredURI_EducationContent already exists, skipped.';
+GO
 
-ALTER TABLE [dms].[edfi_EducationContentRequiredURI]
-    ADD CONSTRAINT [FK_EducationContentRequiredURI_Document]
-    FOREIGN KEY ([Document_Id, Document_PartitionKey])
-    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_EducationContentRequiredURI_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_EducationContentRequiredURI] ADD CONSTRAINT [FK_EducationContentRequiredURI_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_EducationContentRequiredURI_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_EducationContentRequiredURI_Document already exists, skipped.';
+GO
 

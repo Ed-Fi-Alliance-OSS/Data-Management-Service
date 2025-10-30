@@ -63,18 +63,30 @@ END
 
 -- Foreign Key Constraints
 
-ALTER TABLE [dms].[edfi_CommunityOrganization]
-    ADD CONSTRAINT [FK_CommunityOrganization_Document]
-    FOREIGN KEY ([Document_Id, Document_PartitionKey])
-    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_CommunityOrganization_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_CommunityOrganization] ADD CONSTRAINT [FK_CommunityOrganization_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_CommunityOrganization_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_CommunityOrganization_Document already exists, skipped.';
+GO
 
-ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]
-    ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization]
-    FOREIGN KEY ([CommunityOrganization_Id])
-    REFERENCES [dms].[edfi_CommunityOrganization]([Id]) ON DELETE CASCADE;
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization')
+BEGIN
+    ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization] FOREIGN KEY ([CommunityOrganization_Id]) REFERENCES [dms].[edfi_CommunityOrganization]([Id]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization already exists, skipped.';
+GO
 
-ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]
-    ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document]
-    FOREIGN KEY ([Document_Id, Document_PartitionKey])
-    REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE;
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document already exists, skipped.';
+GO
 

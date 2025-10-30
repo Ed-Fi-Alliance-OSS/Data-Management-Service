@@ -35,7 +35,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             // Act & Assert
             Action act = () => generator.GenerateDdlString(schema, includeExtensions: false);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -67,7 +68,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            sql.Should().Contain("CREATE TABLE [dms].[specialcharsproject_Table-With-Dashes]");
+            // Generator sanitizes special characters (hyphens replaced with underscores) in table identifiers for MSSQL
+            sql.Should().Contain("CREATE TABLE [dms].[specialcharsproject_Table_With_Dashes]");
         }
 
         [Test]
@@ -107,12 +109,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     BaseName = "EmptyTable",
                                     JsonPath = "$.EmptyTable",
                                     Columns = [], // Empty columns list
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -139,14 +141,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     JsonPath = "$.Table-With-Dashes",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "Column-With-Dashes", ColumnType = "string", MaxLength = "50", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Column-With-Dashes",
+                                            ColumnType = "string",
+                                            MaxLength = "50",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -175,19 +184,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                     [
                                         new ColumnMetadata
                                         {
-                                            ColumnName = "VeryLongColumnNameThatExceedsTypicalLimitsAndShouldBeHandledGracefully",
+                                            ColumnName =
+                                                "VeryLongColumnNameThatExceedsTypicalLimitsAndShouldBeHandledGracefully",
                                             ColumnType = "string",
                                             MaxLength = "100",
                                             IsNaturalKey = true,
-                                            IsRequired = true
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
     }

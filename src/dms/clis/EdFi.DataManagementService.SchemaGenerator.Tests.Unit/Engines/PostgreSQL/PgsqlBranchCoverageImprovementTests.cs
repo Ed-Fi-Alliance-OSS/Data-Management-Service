@@ -36,8 +36,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
 
             // Assert
             result.Should().NotBeNull();
-            result.Should().NotContain("ALTER TABLE"); // No FK constraints generated
-            result.Should().NotContain("ADD CONSTRAINT");
+            // When foreign key generation is disabled, no FOREIGN KEY or FK_ named constraints should be generated
+            result.Should().NotContain("FOREIGN KEY");
+            result.Should().NotContain("FK_");
         }
 
         [Test]

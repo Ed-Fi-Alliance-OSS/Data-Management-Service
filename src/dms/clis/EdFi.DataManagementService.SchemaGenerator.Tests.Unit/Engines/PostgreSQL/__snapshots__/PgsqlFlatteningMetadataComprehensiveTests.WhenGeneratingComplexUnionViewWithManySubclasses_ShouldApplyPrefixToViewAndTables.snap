@@ -1,6 +1,7 @@
 ﻿CREATE SCHEMA IF NOT EXISTS dms;
 
 
+
 CREATE TABLE IF NOT EXISTS dms.edfi_StudentCTEProgramAssociation (
     Id BIGSERIAL PRIMARY KEY,
     Document_Id BIGINT NOT NULL,
@@ -11,13 +12,22 @@ CREATE TABLE IF NOT EXISTS dms.edfi_StudentCTEProgramAssociation (
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
     ChangeVersion BIGINT NOT NULL
-,
-    CONSTRAINT UQ_StudentCTEProgramAssociation_NaturalKey
-        UNIQUE (StudentUniqueId, BeginDate)
 );
 
 CREATE INDEX IF NOT EXISTS IX_StudentCTEProgramAssociation_Document
     ON dms.edfi_StudentCTEProgramAssociation(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_StudentCTEProgramAssociation_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_StudentCTEProgramAssociation ADD CONSTRAINT UQ_StudentCTEProgramAssociation_NaturalKey
+            UNIQUE (StudentUniqueId, BeginDate);
+    END IF;
+END$$;
+
 
 
 CREATE TABLE IF NOT EXISTS dms.edfi_StudentHomelessProgramAssociation (
@@ -30,31 +40,51 @@ CREATE TABLE IF NOT EXISTS dms.edfi_StudentHomelessProgramAssociation (
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
     ChangeVersion BIGINT NOT NULL
-,
-    CONSTRAINT UQ_StudentHomelessProgramAssociation_NaturalKey
-        UNIQUE (StudentUniqueId, BeginDate)
 );
 
 CREATE INDEX IF NOT EXISTS IX_StudentHomelessProgramAssociation_Document
     ON dms.edfi_StudentHomelessProgramAssociation(Document_Id, Document_PartitionKey);
 
 
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_StudentHomelessProgramAssociation_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_StudentHomelessProgramAssociation ADD CONSTRAINT UQ_StudentHomelessProgramAssociation_NaturalKey
+            UNIQUE (StudentUniqueId, BeginDate);
+    END IF;
+END$$;
+
+
 -- Foreign Key Constraints
 
-ALTER TABLE dms.edfi_StudentCTEProgramAssociation
-    ADD CONSTRAINT FK_StudentCTEProgramAssociation_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentCTEProgramAssociation_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentCTEProgramAssociation ADD CONSTRAINT FK_StudentCTEProgramAssociation_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_StudentHomelessProgramAssociation
-    ADD CONSTRAINT FK_StudentHomelessProgramAssociation_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentHomelessProgramAssociation_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentHomelessProgramAssociation ADD CONSTRAINT FK_StudentHomelessProgramAssociation_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 
 -- PostgreSQL Union View
 CREATE OR REPLACE VIEW dms.edfi_GeneralStudentProgramAssociation AS
-SELECT Id, 'StudentCTEProgramAssociation' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_StudentCTEProgramAssociation
+SELECT Id, BeginDate AS GeneralStudentProgramAssociationId, StudentUniqueId, 'StudentCTEProgramAssociation' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_StudentCTEProgramAssociation
 UNION ALL
-SELECT Id, 'StudentHomelessProgramAssociation' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_StudentHomelessProgramAssociation
+SELECT Id, BeginDate AS GeneralStudentProgramAssociationId, StudentUniqueId, 'StudentHomelessProgramAssociation' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_StudentHomelessProgramAssociation
 ;
 

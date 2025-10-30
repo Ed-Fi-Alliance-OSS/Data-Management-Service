@@ -1,6 +1,7 @@
 ﻿CREATE SCHEMA IF NOT EXISTS dms;
 
 
+
 CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociation (
     Id BIGSERIAL PRIMARY KEY,
     Document_Id BIGINT NOT NULL,
@@ -9,13 +10,22 @@ CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociation (
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
     ChangeVersion BIGINT NOT NULL
-,
-    CONSTRAINT UQ_StudentEducationOrganizationAssociation_NaturalKey
-        UNIQUE (StudentId)
 );
 
 CREATE INDEX IF NOT EXISTS IX_StudentEducationOrganizationAssociation_Document
     ON dms.edfi_StudentEducationOrganizationAssociation(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_StudentEducationOrganizationAssociation_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_StudentEducationOrganizationAssociation ADD CONSTRAINT UQ_StudentEducationOrganizationAssociation_NaturalKey
+            UNIQUE (StudentId);
+    END IF;
+END$$;
+
 
 
 CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociationAddress (
@@ -31,6 +41,9 @@ CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociationAddre
 
 CREATE INDEX IF NOT EXISTS IX_StudentEducationOrganizationAssociationAddress_Document
     ON dms.edfi_StudentEducationOrganizationAssociationAddress(Document_Id, Document_PartitionKey);
+
+
+
 
 
 CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociationAddressPeriod (
@@ -49,30 +62,62 @@ CREATE INDEX IF NOT EXISTS IX_StudentEducationOrganizationAssociationAddressPeri
     ON dms.edfi_StudentEducationOrganizationAssociationAddressPeriod(Document_Id, Document_PartitionKey);
 
 
+
+
 -- Foreign Key Constraints
 
-ALTER TABLE dms.edfi_StudentEducationOrganizationAssociation
-    ADD CONSTRAINT FK_StudentEducationOrganizationAssociation_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociation_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociation ADD CONSTRAINT FK_StudentEducationOrganizationAssociation_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddress
-    ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddress_StudentEducationOrganizationAssociation
-    FOREIGN KEY (StudentEducationOrganizationAssociation_Id)
-    REFERENCES dms.edfi_StudentEducationOrganizationAssociation(Id) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociationAddress_Stud_052fda57')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddress ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddress_Stud_052fda57
+                FOREIGN KEY (StudentEducationOrganizationAssociation_Id)
+                REFERENCES dms.edfi_StudentEducationOrganizationAssociation(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddress
-    ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddress_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociationAddress_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddress ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddress_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddressPeriod
-    ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddressPeriod_StudentEducationOrganizationAssociationAddress
-    FOREIGN KEY (StudentEducationOrganizationAssociationAddress_Id)
-    REFERENCES dms.edfi_StudentEducationOrganizationAssociationAddress(Id) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociationAddressPerio_8f88f5b7')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddressPeriod ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddressPerio_8f88f5b7
+                FOREIGN KEY (StudentEducationOrganizationAssociationAddress_Id)
+                REFERENCES dms.edfi_StudentEducationOrganizationAssociationAddress(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddressPeriod
-    ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddressPerio_00177584
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociationAddressPerio_00177584')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddressPeriod ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddressPerio_00177584
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 
