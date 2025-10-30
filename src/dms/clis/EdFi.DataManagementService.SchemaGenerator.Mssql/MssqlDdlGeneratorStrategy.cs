@@ -2,7 +2,6 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
-
 using System.Text;
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using HandlebarsDotNet;
@@ -363,11 +362,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         var table = resourceSchema.FlatteningMetadata.Table;
 
                         // Check if this table has polymorphic reference indicators
-                        bool hasPolymorphicRef = table.Columns.Any(c => c.IsPolymorphicReference);
-                        bool hasDiscriminator = table.Columns.Any(c => c.IsDiscriminator);
-                        bool hasChildTablesWithDiscriminatorValues = table.ChildTables.Any(ct =>
-                            !string.IsNullOrEmpty(ct.DiscriminatorValue)
-                        );
+                        bool hasPolymorphicRef = (
+                            table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                        ).Any(c => c.IsPolymorphicReference);
+                        bool hasDiscriminator = (
+                            table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                        ).Any(c => c.IsDiscriminator);
+                        bool hasChildTablesWithDiscriminatorValues = (
+                            table.ChildTables ?? System.Linq.Enumerable.Empty<TableMetadata>()
+                        ).Any(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue));
 
                         if (hasPolymorphicRef && hasDiscriminator && hasChildTablesWithDiscriminatorValues)
                         {
@@ -376,20 +379,26 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                             var selectStatements = new List<string>();
 
                             // Get the natural key columns from the parent table (these should be common across all child tables)
-                            var naturalKeyColumns = table
-                                .Columns.Where(c => c.IsNaturalKey)
+                            var naturalKeyColumns = (
+                                table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                            )
+                                .Where(c => c.IsNaturalKey)
                                 .Select(c => c.ColumnName)
                                 .ToList();
 
                             foreach (
-                                var childTable in table.ChildTables.Where(ct =>
-                                    !string.IsNullOrEmpty(ct.DiscriminatorValue)
-                                )
+                                var childTable in (
+                                    table.ChildTables ?? System.Linq.Enumerable.Empty<TableMetadata>()
+                                ).Where(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue))
                             )
                             {
                                 // Include ALL columns per specification: Id + all data columns + Document columns
                                 var columns = new List<string> { "[Id]" }; // Start with surrogate key
-                                columns.AddRange(childTable.Columns.Select(c => $"[{c.ColumnName}]"));
+                                columns.AddRange(
+                                    (
+                                        childTable.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                                    ).Select(c => $"[{c.ColumnName}]")
+                                );
 
                                 var selectCols = string.Join(", ", columns);
                                 var discriminatorValue = childTable.DiscriminatorValue;
@@ -439,6 +448,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             var tableName = MssqlNamingHelper.MakeMssqlIdentifier(
                 DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options)
             );
+
+            // Ensure collections are non-null to avoid CS8602 when metadata is incomplete
+            table.Columns = table.Columns ?? new List<ColumnMetadata>();
+            table.ChildTables = table.ChildTables ?? new List<TableMetadata>();
 
             // For extension resources and descriptor resources using separate schemas, use the original schema as final schema
             var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema)
@@ -674,6 +687,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 );
             }
 
+            // Add check constraint for discriminator if this table has a polymorphic reference and discriminator column
+            object? discriminatorCheckConstraint = null;
+            var hasPolymorphicRef = table.Columns.Any(c => c.IsPolymorphicReference);
+            var discriminatorCol = table.Columns.FirstOrDefault(c => c.IsDiscriminator);
+            if (hasPolymorphicRef && discriminatorCol != null)
+            {
+                // Collect allowed discriminator values from child tables
+                var allowedValues = (table.ChildTables ?? new List<TableMetadata>())
+                    .Where(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue))
+                    .Select(ct => ct.DiscriminatorValue!.Replace("'", "''"))
+                    .Distinct()
+                    .ToList();
+                if (allowedValues.Count > 0)
+                {
+                    var constraintName = $"CK_{table.BaseName}_{discriminatorCol.ColumnName}_AllowedValues";
+                    var allowedList = string.Join(", ", allowedValues.Select(v => $"'{v}'"));
+                    var checkExpr = $"[{discriminatorCol.ColumnName}] IN ({allowedList})";
+                    discriminatorCheckConstraint = new { constraintName, expression = checkExpr };
+                }
+            }
+
             // Prepare template data - ALL tables get Id and Document columns
             var data = new
             {
@@ -688,12 +722,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 fkColumns = new List<object>(), // NO FK constraints in this pass
                 uniqueConstraints = options.GenerateNaturalKeyConstraints ? uniqueConstraints : [],
                 indexes, // All tables get indexes (including Document index)
+                checkConstraint = discriminatorCheckConstraint,
             };
 
             sb.AppendLine(template(data));
 
             // Recursively process child tables
-            foreach (var childTable in table.ChildTables)
+            foreach (var childTable in table.ChildTables ?? System.Linq.Enumerable.Empty<TableMetadata>())
             {
                 GenerateTableDdlWithoutForeignKeys(
                     childTable,
@@ -732,6 +767,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             // Track cross-resource references for FK and index generation
             var crossResourceReferences = new List<(string columnName, string referencedResource)>();
 
+            // Ensure collections are non-null to avoid CS8602 in downstream code
+            table.Columns = table.Columns ?? new List<ColumnMetadata>();
+            table.ChildTables = table.ChildTables ?? new List<TableMetadata>();
+
+            // Ensure columns and child tables are safe for nullable metadata
+            table.Columns = table.Columns ?? new List<ColumnMetadata>();
+            table.ChildTables = table.ChildTables ?? new List<TableMetadata>();
+
             // Generate data columns (excluding parent references and system columns)
             var columns = table
                 .Columns.Where(c => !c.IsParentReference) // Parent FKs handled separately
@@ -757,13 +800,16 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 .ToList();
 
             // Natural key columns for unique constraint
-            var naturalKeyColumns = table
-                .Columns.Where(c => c.IsNaturalKey && !c.IsParentReference)
+            var naturalKeyColumns = (table.Columns ?? new List<ColumnMetadata>())
+                .Where(c => c.IsNaturalKey && !c.IsParentReference)
                 .Select(c => c.ColumnName)
                 .ToList();
 
             // Foreign key constraints
             var fkColumns = new List<object>();
+
+            // Index generation for foreign keys (critical for performance)
+            var indexes = new List<object>();
 
             // 1. FK to parent table (for child tables)
             if (parentTableName != null)
@@ -839,68 +885,30 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 );
             }
 
-            // For child tables: Parent FK + natural key columns
-            if (!isRootTable)
-            {
-                var identityColumns = new List<string> { $"{parentTableName}_Id" };
-                identityColumns.AddRange(naturalKeyColumns);
-
-                if (identityColumns.Count > 1) // Only if there are identifying columns beyond parent FK
-                {
-                    uniqueConstraints.Add(
-                        new
-                        {
-                            constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
-                                $"UQ_{table.BaseName}_Identity"
-                            ),
-                            columns = identityColumns,
-                        }
-                    );
-                }
-            }
-
-            // Index generation for foreign keys (critical for performance)
-            var indexes = new List<object>();
-
-            // 1. Index on parent FK (for child tables)
-            if (parentTableName != null)
-            {
-                indexes.Add(
-                    new
-                    {
-                        indexName = MssqlNamingHelper.MakeMssqlIdentifier(
-                            $"IX_{table.BaseName}_{parentTableName}"
-                        ),
-                        tableName,
-                        columns = new[] { $"{parentTableName}_Id" },
-                    }
-                );
-            }
-
-            // 2. Indexes on cross-resource FKs
-            foreach (var (columnName, referencedResource) in crossResourceReferences)
-            {
-                indexes.Add(
-                    new
-                    {
-                        indexName = MssqlNamingHelper.MakeMssqlIdentifier(
-                            $"IX_{table.BaseName}_{referencedResource}"
-                        ),
-                        tableName,
-                        columns = new[] { columnName },
-                    }
-                );
-            }
-
-            // 3. Index on Document FK (composite index for performance)
-            indexes.Add(
-                new
-                {
-                    indexName = MssqlNamingHelper.MakeMssqlIdentifier($"IX_{table.BaseName}_Document"),
-                    tableName,
-                    columns = new[] { "Document_Id", "Document_PartitionKey" },
-                }
+            // Add check constraint for discriminator if this table has a polymorphic reference and discriminator column
+            object? discriminatorCheckConstraint = null;
+            var hasPolymorphicRef = (table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()).Any(c =>
+                c.IsPolymorphicReference
             );
+            var discriminatorCol = (
+                table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+            ).FirstOrDefault(c => c.IsDiscriminator);
+            if (hasPolymorphicRef && discriminatorCol != null)
+            {
+                // Collect allowed discriminator values from child tables
+                var allowedValues = (table.ChildTables ?? new List<TableMetadata>())
+                    .Where(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue))
+                    .Select(ct => ct.DiscriminatorValue!.Replace("'", "''"))
+                    .Distinct()
+                    .ToList();
+                if (allowedValues.Count > 0)
+                {
+                    var constraintName = $"CK_{table.BaseName}_{discriminatorCol.ColumnName}_AllowedValues";
+                    var allowedList = string.Join(", ", allowedValues.Select(v => $"'{v}'"));
+                    var checkExpr = $"[{discriminatorCol.ColumnName}] IN ({allowedList})";
+                    discriminatorCheckConstraint = new { constraintName, expression = checkExpr };
+                }
+            }
 
             // Add audit columns if requested
             var allColumns = new List<object>(columns);
@@ -944,12 +952,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 fkColumns = options.GenerateForeignKeyConstraints ? fkColumns : [],
                 uniqueConstraints = options.GenerateNaturalKeyConstraints ? uniqueConstraints : [],
                 indexes,
+                checkConstraint = discriminatorCheckConstraint,
             };
 
             sb.AppendLine(template(data));
 
             // Recursively process child tables
-            foreach (var childTable in table.ChildTables)
+            foreach (var childTable in table.ChildTables ?? System.Linq.Enumerable.Empty<TableMetadata>())
             {
                 GenerateTableDdl(
                     childTable,
