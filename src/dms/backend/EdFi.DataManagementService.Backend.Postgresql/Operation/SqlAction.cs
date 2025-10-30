@@ -575,12 +575,9 @@ public partial class SqlAction() : ISqlAction
                 INNER JOIN (
                     SELECT r.ParentDocumentId, r.ParentDocumentPartitionKey
                     FROM dms.Reference r
-                    INNER JOIN dms.Alias a
-                        ON a.Id = r.AliasId
-                        AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
                     INNER JOIN dms.Document d2
-                        ON d2.Id = a.DocumentId
-                        AND d2.DocumentPartitionKey = a.DocumentPartitionKey
+                        ON d2.Id = r.ReferencedDocumentId
+                        AND d2.DocumentPartitionKey = r.ReferencedDocumentPartitionKey
                     WHERE d2.DocumentUuid = $1
                       AND d2.DocumentPartitionKey = $2
                 ) AS re
@@ -624,11 +621,8 @@ public partial class SqlAction() : ISqlAction
                 INNER JOIN dms.Reference r
                     ON d.Id = r.ParentDocumentId
                     AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
-                INNER JOIN dms.Alias a
-                    ON a.Id = r.AliasId
-                    AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
-                WHERE a.DocumentId = $1
-                  AND a.DocumentPartitionKey = $2
+                WHERE r.ReferencedDocumentId = $1
+                  AND r.ReferencedDocumentPartitionKey = $2
                 ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction

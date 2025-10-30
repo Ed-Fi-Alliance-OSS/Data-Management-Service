@@ -29,7 +29,9 @@ BEGIN
             ids.documentPartitionKey,
             ids.referentialId,
             ids.referentialPartitionKey,
-            a.Id AS aliasId
+            a.Id AS aliasId,
+            a.DocumentId AS aliasDocumentId,
+            a.DocumentPartitionKey AS aliasDocumentPartitionKey
         FROM unnest(parentDocumentIds, parentDocumentPartitionKeys, referentialIds, referentialPartitionKeys) AS
             ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey)
         LEFT JOIN dms.Alias a ON
@@ -41,13 +43,17 @@ BEGIN
             ParentDocumentId,
             ParentDocumentPartitionKey,
             AliasId,
-            ReferentialPartitionKey
+            ReferentialPartitionKey,
+            ReferencedDocumentId,
+            ReferencedDocumentPartitionKey
         )
         SELECT
             documentId,
             documentPartitionKey,
             aliasId,
-            referentialPartitionKey
+            referentialPartitionKey,
+            aliasDocumentId,
+            aliasDocumentPartitionKey
         FROM payload
         WHERE aliasId IS NOT NULL
         RETURNING 1

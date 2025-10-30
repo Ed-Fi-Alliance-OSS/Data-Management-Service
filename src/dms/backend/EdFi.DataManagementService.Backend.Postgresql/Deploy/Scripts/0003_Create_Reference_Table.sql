@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS dms.Reference (
   ParentDocumentPartitionKey SMALLINT NOT NULL,
   ReferentialPartitionKey SMALLINT NOT NULL,
   AliasId BIGINT NOT NULL,
+  -- Denormalized target document identity to support partition-pruned reverse lookups
+  ReferencedDocumentPartitionKey SMALLINT NOT NULL,
+  ReferencedDocumentId BIGINT NOT NULL,
   PRIMARY KEY (ParentDocumentPartitionKey, Id)
 ) PARTITION BY LIST(ParentDocumentPartitionKey);
 
@@ -33,6 +36,9 @@ CREATE INDEX IF NOT EXISTS UX_Reference_ParentDocumentId ON dms.Reference (Paren
 
 -- Lookup support for reverse reference resolution by alias
 CREATE INDEX IF NOT EXISTS IX_Reference_AliasId ON dms.Reference (ReferentialPartitionKey, AliasId);
+
+-- Reverse lookup support aligned with document partitioning
+CREATE INDEX IF NOT EXISTS IX_Reference_ReferencedDocument ON dms.Reference (ReferencedDocumentPartitionKey, ReferencedDocumentId);
 
 -- FK back to parent document
 DO $$
