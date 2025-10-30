@@ -497,8 +497,6 @@ public partial class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        return [];
-#pragma warning disable CS0162 // Unreachable code detected
         Trace.Assert(
             bulkReferences.ReferentialIds.Length == bulkReferences.ReferentialPartitionKeys.Length,
             "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
@@ -533,7 +531,6 @@ public partial class SqlAction() : ISqlAction
         }
 
         return result.ToArray();
-#pragma warning restore CS0162 // Unreachable code detected
     }
 
     /// <summary>
@@ -621,8 +618,6 @@ public partial class SqlAction() : ISqlAction
         TraceId traceId
     )
     {
-        return [];
-#pragma warning disable CS0162 // Unreachable code detected
         await using NpgsqlCommand command = new(
             $@"SELECT d.*
                 FROM dms.Document d
@@ -656,7 +651,6 @@ public partial class SqlAction() : ISqlAction
         }
 
         return documents.ToArray();
-#pragma warning restore CS0162 // Unreachable code detected
     }
 
     public async Task<int> InsertEducationOrganizationHierarchy(

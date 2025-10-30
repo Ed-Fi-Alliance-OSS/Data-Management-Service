@@ -22,6 +22,7 @@ BEGIN
     USING unnest(parentDocumentIds, parentDocumentPartitionKeys) as d (Id, DocumentPartitionKey)
     WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey;
 
+    RETURN QUERY
     WITH payload AS (
         SELECT
             ids.documentId,
@@ -54,6 +55,5 @@ BEGIN
     SELECT payload.referentialId
     FROM payload
     WHERE payload.aliasId IS NULL;
-    RETURN;
 END;
 $$;
