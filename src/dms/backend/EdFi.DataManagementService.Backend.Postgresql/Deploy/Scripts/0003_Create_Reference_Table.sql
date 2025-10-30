@@ -31,10 +31,26 @@ BEGIN
     END LOOP;
 END$$;
 
-CREATE INDEX IF NOT EXISTS UX_Reference_ParentDocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
+CREATE INDEX IF NOT EXISTS IX_Reference_ParentDocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
 
 -- Lookup support for reverse reference resolution by alias
 CREATE INDEX IF NOT EXISTS IX_Reference_AliasId ON dms.Reference (ReferentialPartitionKey, AliasId);
+
+-- Ensure parent + alias uniqueness to enable ON CONFLICT Upserts
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.table_constraints
+        WHERE table_schema = 'dms'
+          AND table_name = 'reference'
+          AND constraint_name = 'reference_parent_alias_unique'
+    ) THEN
+        ALTER TABLE dms.Reference
+        ADD CONSTRAINT UX_Reference_Parent_Alias
+        UNIQUE (ParentDocumentPartitionKey, ParentDocumentId, AliasId);
+    END IF;
+END$$;
 
 -- Reverse lookup support, includes parent document keys to enable index-only scans on each partition - still cross-partition but better
 CREATE INDEX IF NOT EXISTS IX_Reference_ReferencedDocument

@@ -5,8 +5,6 @@ This report reviews two database alternatives to the current DELETE-then-INSERT 
 Sources reviewed:
 - `perf-claude/sql/alternatives/differential_update.sql`
 - `perf-claude/sql/alternatives/merge_pattern.sql`
-- `perf-claude/sql/current/test_current_insert_references.sql`
-- `perf-claude/README.md`, `perf-claude/TEST_STRATEGY.md`, `perf-claude/TUNING_EXPLORATIONS.md`
 
 ---
 

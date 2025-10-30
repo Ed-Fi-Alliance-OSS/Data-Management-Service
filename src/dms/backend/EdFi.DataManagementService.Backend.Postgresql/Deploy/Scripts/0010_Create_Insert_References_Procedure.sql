@@ -3,42 +3,58 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
--- Attempts to insert references into Reference table.
--- If any referentialId is invalid, those rows are omitted and the function
--- returns the invalid referentialIds; the caller is responsible for transaction
--- semantics (e.g., rolling back the broader operation if desired).
+-- Replace the legacy delete-then-insert implementation with an ON CONFLICT upsert.
+-- Returns false when any referentialId failed to resolve; callers can inspect
+-- temp_reference_stage for details while the session remains open.
+
+DROP FUNCTION IF EXISTS dms.InsertReferences(
+    BIGINT[],
+    SMALLINT[],
+    UUID[],
+    SMALLINT[]
+);
+
 CREATE OR REPLACE FUNCTION dms.InsertReferences(
-    parentDocumentIds BIGINT[],
-    parentDocumentPartitionKeys SMALLINT[],
+    parentDocumentId BIGINT,
+    parentDocumentPartitionKey SMALLINT,
     referentialIds UUID[],
     referentialPartitionKeys SMALLINT[]
-) RETURNS TABLE (ReferentialId UUID)
-LANGUAGE plpgsql AS
+) RETURNS BOOLEAN
+LANGUAGE plpgsql
+AS
 $$
+DECLARE
+    invalid BOOLEAN;
 BEGIN
+    CREATE TEMP TABLE IF NOT EXISTS temp_reference_stage
+    (
+        parentdocumentid               BIGINT,
+        parentdocumentpartitionkey     SMALLINT,
+        referentialpartitionkey        SMALLINT,
+        referentialid                  UUID,
+        aliasid                        BIGINT,
+        referenceddocumentid           BIGINT,
+        referenceddocumentpartitionkey SMALLINT
+    ) ON COMMIT PRESERVE ROWS;
 
-    -- First clear out all the existing references, as they may have changed
-    DELETE from dms.Reference r
-    USING unnest(parentDocumentIds, parentDocumentPartitionKeys) as d (Id, DocumentPartitionKey)
-    WHERE d.Id = r.ParentDocumentId AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey;
+    TRUNCATE temp_reference_stage;
 
-    RETURN QUERY
-    WITH payload AS (
-        SELECT
-            ids.documentId,
-            ids.documentPartitionKey,
-            ids.referentialId,
-            ids.referentialPartitionKey,
-            a.Id AS aliasId,
-            a.DocumentId AS aliasDocumentId,
-            a.DocumentPartitionKey AS aliasDocumentPartitionKey
-        FROM unnest(parentDocumentIds, parentDocumentPartitionKeys, referentialIds, referentialPartitionKeys) AS
-            ids(documentId, documentPartitionKey, referentialId, referentialPartitionKey)
-        LEFT JOIN dms.Alias a ON
-            a.ReferentialId = ids.referentialId
-            AND a.ReferentialPartitionKey = ids.referentialPartitionKey
-    ),
-    inserted AS (
+    INSERT INTO temp_reference_stage
+    SELECT
+        parentDocumentId,
+        parentDocumentPartitionKey,
+        ids.referentialPartitionKey,
+        ids.referentialId,
+        a.Id,
+        a.DocumentId,
+        a.DocumentPartitionKey
+    FROM unnest(referentialIds, referentialPartitionKeys)
+        AS ids(referentialId, referentialPartitionKey)
+    LEFT JOIN dms.Alias a
+        ON a.ReferentialId = ids.referentialId
+       AND a.ReferentialPartitionKey = ids.referentialPartitionKey;
+
+    WITH upsert AS (
         INSERT INTO dms.Reference (
             ParentDocumentId,
             ParentDocumentPartitionKey,
@@ -48,18 +64,38 @@ BEGIN
             ReferencedDocumentPartitionKey
         )
         SELECT
-            documentId,
-            documentPartitionKey,
-            aliasId,
-            referentialPartitionKey,
-            aliasDocumentId,
-            aliasDocumentPartitionKey
-        FROM payload
-        WHERE aliasId IS NOT NULL
+            parentdocumentid,
+            parentdocumentpartitionkey,
+            aliasid,
+            referentialpartitionkey,
+            referenceddocumentid,
+            referenceddocumentpartitionkey
+        FROM temp_reference_stage
+        WHERE aliasid IS NOT NULL
+        ON CONFLICT ON CONSTRAINT reference_parent_alias_unique
+        DO UPDATE
+           SET ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
+               ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
+        WHERE (dms.Reference.ReferencedDocumentId, dms.Reference.ReferencedDocumentPartitionKey)
+              IS DISTINCT FROM (EXCLUDED.ReferencedDocumentId, EXCLUDED.ReferencedDocumentPartitionKey)
         RETURNING 1
     )
-    SELECT payload.referentialId
-    FROM payload
-    WHERE payload.aliasId IS NULL;
+    DELETE FROM dms.Reference r
+    WHERE r.ParentDocumentId = parentDocumentId
+      AND r.ParentDocumentPartitionKey = parentDocumentPartitionKey
+      AND NOT EXISTS (
+          SELECT 1
+          FROM temp_reference_stage s
+          WHERE s.aliasid = r.aliasid
+            AND s.referentialpartitionkey = r.referentialpartitionkey
+      );
+
+    invalid := EXISTS (
+        SELECT 1
+        FROM temp_reference_stage
+        WHERE aliasid IS NULL
+    );
+
+    RETURN NOT invalid;
 END;
 $$;

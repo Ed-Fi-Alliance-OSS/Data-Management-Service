@@ -488,7 +488,7 @@ public partial class SqlAction() : ISqlAction
 
     /// <summary>
     /// Attempt to insert references into the Reference table.
-    /// If any referentialId is invalid, rolls back and returns an array of invalid referentialIds.
+    /// Returns any referentialIds that failed to resolve via the ON CONFLICT-based procedure.
     /// </summary>
     public async Task<Guid[]> InsertReferences(
         BulkReferences bulkReferences,
@@ -502,12 +502,6 @@ public partial class SqlAction() : ISqlAction
             "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
         );
 
-        long[] parentDocumentIds = new long[bulkReferences.ReferentialIds.Length];
-        Array.Fill(parentDocumentIds, bulkReferences.ParentDocumentId);
-
-        short[] parentDocumentPartitionKeys = new short[bulkReferences.ReferentialIds.Length];
-        Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
-
         await using var command = new NpgsqlCommand(
             @"SELECT dms.InsertReferences($1, $2, $3, $4)",
             connection,
@@ -516,21 +510,61 @@ public partial class SqlAction() : ISqlAction
         {
             Parameters =
             {
-                new() { Value = parentDocumentIds },
-                new() { Value = parentDocumentPartitionKeys },
+                new() { Value = bulkReferences.ParentDocumentId },
+                new() { Value = bulkReferences.ParentDocumentPartitionKey },
                 new() { Value = bulkReferences.ReferentialIds },
                 new() { Value = bulkReferences.ReferentialPartitionKeys },
             },
         };
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-        List<Guid> result = [];
-        while (await reader.ReadAsync())
+        if (!command.IsPrepared)
         {
-            result.Add(reader.GetGuid(0));
+            await command.PrepareAsync();
         }
 
-        return result.ToArray();
+        object? scalarResult = await command.ExecuteScalarAsync();
+
+        if (scalarResult is not bool insertSucceeded)
+        {
+            throw new InvalidOperationException("InsertReferences returned unexpected result.");
+        }
+
+        if (insertSucceeded)
+        {
+            return Array.Empty<Guid>();
+        }
+
+        await using var failuresCommand = new NpgsqlCommand(
+            @"SELECT referentialid
+              FROM temp_reference_stage
+              WHERE aliasid IS NULL
+                AND parentdocumentid = $1
+                AND parentdocumentpartitionkey = $2;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = bulkReferences.ParentDocumentId },
+                new() { Value = bulkReferences.ParentDocumentPartitionKey },
+            },
+        };
+
+        if (!failuresCommand.IsPrepared)
+        {
+            await failuresCommand.PrepareAsync();
+        }
+
+        await using NpgsqlDataReader reader = await failuresCommand.ExecuteReaderAsync();
+
+        List<Guid> invalidReferentialIds = [];
+        while (await reader.ReadAsync())
+        {
+            invalidReferentialIds.Add(reader.GetGuid(0));
+        }
+
+        return invalidReferentialIds.ToArray();
     }
 
     /// <summary>
