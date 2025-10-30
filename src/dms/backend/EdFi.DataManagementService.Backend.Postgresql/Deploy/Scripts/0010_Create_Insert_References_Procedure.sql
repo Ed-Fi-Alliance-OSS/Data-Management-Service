@@ -78,9 +78,9 @@ BEGIN
                ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
                ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
         WHERE (
-              dms.Reference.ReferentialPartitionKey,
-              dms.Reference.ReferencedDocumentId,
-              dms.Reference.ReferencedDocumentPartitionKey
+              ReferentialPartitionKey,
+              ReferencedDocumentId,
+              ReferencedDocumentPartitionKey
         ) IS DISTINCT FROM (
               EXCLUDED.ReferentialPartitionKey,
               EXCLUDED.ReferencedDocumentId,
