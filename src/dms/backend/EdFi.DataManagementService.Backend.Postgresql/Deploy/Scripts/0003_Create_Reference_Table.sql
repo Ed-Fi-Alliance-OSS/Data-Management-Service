@@ -31,14 +31,15 @@ BEGIN
     END LOOP;
 END$$;
 
--- Lookup support for DELETE/UPDATE by id
 CREATE INDEX IF NOT EXISTS UX_Reference_ParentDocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
 
 -- Lookup support for reverse reference resolution by alias
 CREATE INDEX IF NOT EXISTS IX_Reference_AliasId ON dms.Reference (ReferentialPartitionKey, AliasId);
 
--- Reverse lookup support aligned with document partitioning
-CREATE INDEX IF NOT EXISTS IX_Reference_ReferencedDocument ON dms.Reference (ReferencedDocumentPartitionKey, ReferencedDocumentId);
+-- Reverse lookup support, includes parent document keys to enable index-only scans on each partition - still cross-partition but better
+CREATE INDEX IF NOT EXISTS IX_Reference_ReferencedDocument
+  ON dms.Reference (ReferencedDocumentPartitionKey, ReferencedDocumentId)
+  INCLUDE (ParentDocumentPartitionKey, ParentDocumentId);
 
 -- FK back to parent document
 DO $$
