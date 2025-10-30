@@ -48,7 +48,7 @@ BEGIN
        AND a.ReferentialPartitionKey = ids.referentialPartitionKey;
 
     WITH upsert AS (
-        INSERT INTO dms.Reference (
+        INSERT INTO dms.Reference AS target (
             ParentDocumentId,
             ParentDocumentPartitionKey,
             AliasId,
@@ -57,23 +57,23 @@ BEGIN
             ReferencedDocumentPartitionKey
         )
         SELECT
-            parentdocumentid,
-            parentdocumentpartitionkey,
-            aliasid,
-            referentialpartitionkey,
-            referenceddocumentid,
-            referenceddocumentpartitionkey
-        FROM temp_reference_stage
-        WHERE aliasid IS NOT NULL
+            s.parentdocumentid,
+            s.parentdocumentpartitionkey,
+            s.aliasid,
+            s.referentialpartitionkey,
+            s.referenceddocumentid,
+            s.referenceddocumentpartitionkey
+        FROM temp_reference_stage s
+        WHERE s.aliasid IS NOT NULL
         ON CONFLICT ON CONSTRAINT reference_parent_alias_unique
         DO UPDATE
            SET ReferentialPartitionKey = EXCLUDED.ReferentialPartitionKey,
                ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
                ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
         WHERE (
-              ReferentialPartitionKey,
-              ReferencedDocumentId,
-              ReferencedDocumentPartitionKey
+              target.ReferentialPartitionKey,
+              target.ReferencedDocumentId,
+              target.ReferencedDocumentPartitionKey
         ) IS DISTINCT FROM (
               EXCLUDED.ReferentialPartitionKey,
               EXCLUDED.ReferencedDocumentId,
