@@ -74,10 +74,18 @@ BEGIN
         WHERE aliasid IS NOT NULL
         ON CONFLICT ON CONSTRAINT reference_parent_alias_unique
         DO UPDATE
-           SET ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
+           SET ReferentialPartitionKey = EXCLUDED.ReferentialPartitionKey,
+               ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
                ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
-        WHERE (dms.Reference.ReferencedDocumentId, dms.Reference.ReferencedDocumentPartitionKey)
-              IS DISTINCT FROM (EXCLUDED.ReferencedDocumentId, EXCLUDED.ReferencedDocumentPartitionKey)
+        WHERE (
+              dms.Reference.ReferentialPartitionKey,
+              dms.Reference.ReferencedDocumentId,
+              dms.Reference.ReferencedDocumentPartitionKey
+        ) IS DISTINCT FROM (
+              EXCLUDED.ReferentialPartitionKey,
+              EXCLUDED.ReferencedDocumentId,
+              EXCLUDED.ReferencedDocumentPartitionKey
+        )
         RETURNING 1
     )
     DELETE FROM dms.Reference r
