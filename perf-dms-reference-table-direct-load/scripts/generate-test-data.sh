@@ -437,13 +437,17 @@ INSERT INTO dms.Reference (
     ParentDocumentId,
     ParentDocumentPartitionKey,
     AliasId,
-    ReferentialPartitionKey
+    ReferentialPartitionKey,
+    ReferencedDocumentId,
+    ReferencedDocumentPartitionKey
 )
 SELECT
     r.parent_document_id,
     r.parent_document_partition_key,
     al.alias_id,
-    al.referential_partition_key
+    al.referential_partition_key,
+    al.document_id,
+    al.document_partition_key
 FROM resolved r
 JOIN dms.alias_lookup al ON al.alias_row_number = r.alias_row_number;
 

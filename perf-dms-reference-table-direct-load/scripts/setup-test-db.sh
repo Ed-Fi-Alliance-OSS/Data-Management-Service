@@ -160,6 +160,8 @@ CREATE TABLE IF NOT EXISTS dms.Reference (
   ParentDocumentPartitionKey SMALLINT NOT NULL,
   ReferentialPartitionKey SMALLINT NOT NULL,
   AliasId BIGINT NOT NULL,
+  ReferencedDocumentPartitionKey SMALLINT NOT NULL,
+  ReferencedDocumentId BIGINT NOT NULL,
   PRIMARY KEY (ParentDocumentPartitionKey, Id)
 ) PARTITION BY HASH(ParentDocumentPartitionKey);
 
@@ -181,6 +183,7 @@ END\$\$;
 -- Create Reference indexes
 CREATE INDEX IF NOT EXISTS UX_Reference_ParentDocumentId ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId);
 CREATE INDEX IF NOT EXISTS IX_Reference_AliasId ON dms.Reference (ReferentialPartitionKey, AliasId);
+CREATE INDEX IF NOT EXISTS IX_Reference_ReferencedDocument ON dms.Reference (ReferencedDocumentPartitionKey, ReferencedDocumentId);
 
 -- Add FK constraints for Reference
 DO \$\$
@@ -243,13 +246,17 @@ BEGIN
             ParentDocumentId,
             ParentDocumentPartitionKey,
             AliasId,
-            ReferentialPartitionKey
+            ReferentialPartitionKey,
+            ReferencedDocumentId,
+            ReferencedDocumentPartitionKey
         )
         SELECT
             documentId,
             documentPartitionKey,
             aliasId,
-            referentialPartitionKey
+            referentialPartitionKey,
+            aliasDocumentId,
+            aliasDocumentPartitionKey
         FROM payload
         WHERE aliasId IS NOT NULL
         RETURNING 1
@@ -346,16 +353,20 @@ BEGIN
             td.ord,
             r.ParentDocumentId,
             r.ParentDocumentPartitionKey,
-            r.ReferentialId,
-            r.ReferentialPartitionKey,
+            a.ReferentialId,
+            a.ReferentialPartitionKey,
             ROW_NUMBER() OVER (
                 PARTITION BY r.ParentDocumentId
-                ORDER BY r.ReferentialPartitionKey, r.ReferentialId
+                ORDER BY a.ReferentialPartitionKey, a.ReferentialId
             ) AS rn
         FROM target_docs td
         JOIN dms.Reference r
             ON r.ParentDocumentId = td.Id
            AND r.ParentDocumentPartitionKey = td.DocumentPartitionKey
+        JOIN dms.Alias a
+            ON a.Id = r.AliasId
+           AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
+        ORDER BY td.ord, r.ParentDocumentId
     ),
     limited AS (
         SELECT *

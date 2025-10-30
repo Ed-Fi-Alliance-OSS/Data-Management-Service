@@ -53,7 +53,7 @@ Implementation notes
   -- On the partitioned root; creates per-partition indexes
   CREATE INDEX IF NOT EXISTS ix_reference_covering
   ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId)
-  INCLUDE (ReferentialId, ReferentialPartitionKey, ReferencedDocumentId, ReferencedDocumentPartitionKey);
+  INCLUDE (ReferentialPartitionKey, AliasId, ReferencedDocumentPartitionKey, ReferencedDocumentId);
   ```
 - Add a safe refresh step for alias retargets (avoid no-op updates):
   ```sql
@@ -62,7 +62,7 @@ Implementation notes
   SET ReferencedDocumentId = a.DocumentId,
       ReferencedDocumentPartitionKey = a.DocumentPartitionKey
   FROM dms.Alias a
-  WHERE r.ReferentialId = a.ReferentialId
+  WHERE r.AliasId = a.Id
     AND r.ReferentialPartitionKey = a.ReferentialPartitionKey
     AND (r.ReferencedDocumentId, r.ReferencedDocumentPartitionKey)
         IS DISTINCT FROM (a.DocumentId, a.DocumentPartitionKey)
@@ -80,7 +80,7 @@ Validation
 ## Alternative 2: MERGE/UPSERT Pattern (INSERT … ON CONFLICT)
 
 What it does
-- Introduces a unique constraint on `(ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)` to enable conflict detection.
+- Introduces a unique constraint on `(ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey)` to enable conflict detection.
 - Deletes only rows not present in the new staged set for the parents.
 - Performs `INSERT … ON CONFLICT DO UPDATE` to refresh `ReferencedDocument*` fields when the alias mapping changes; unchanged rows upsert without separate existence probes.
 
@@ -101,11 +101,11 @@ Implementation notes
 - Unique index + constraint (partitioned):
   ```sql
   -- Option A: create on partitioned root (blocks; plan a window)
-  CREATE UNIQUE INDEX uk_reference_parent_referential
-    ON dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey);
+  CREATE UNIQUE INDEX uk_reference_parent_alias
+    ON dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey);
   ALTER TABLE dms.Reference
-    ADD CONSTRAINT uk_reference_parent_referential
-    UNIQUE USING INDEX uk_reference_parent_referential;
+    ADD CONSTRAINT uk_reference_parent_alias
+    UNIQUE USING INDEX uk_reference_parent_alias;
 
   -- Option B: per-partition concurrent build, then ATTACH (advanced/operational)
   -- Create partitioned index on root, then for each partition create matching index CONCURRENTLY and ATTACH.
@@ -114,7 +114,7 @@ Implementation notes
   ```sql
   INSERT INTO dms.Reference (...)
   VALUES (...)
-  ON CONFLICT (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)
+  ON CONFLICT (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey)
   DO UPDATE SET
     ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
     ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
@@ -177,22 +177,22 @@ Covering index
 ```sql
 CREATE INDEX IF NOT EXISTS ix_reference_covering
 ON dms.Reference (ParentDocumentPartitionKey, ParentDocumentId)
-INCLUDE (ReferentialId, ReferentialPartitionKey, ReferencedDocumentId, ReferencedDocumentPartitionKey);
+INCLUDE (ReferentialPartitionKey, AliasId, ReferencedDocumentPartitionKey, ReferencedDocumentId);
 ```
 
 Unique index + constraint for MERGE
 ```sql
 -- Partitioned root (cannot use CONCURRENTLY here)
-CREATE UNIQUE INDEX uk_reference_parent_referential
-  ON dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey);
+CREATE UNIQUE INDEX uk_reference_parent_alias
+  ON dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey);
 ALTER TABLE dms.Reference
-  ADD CONSTRAINT uk_reference_parent_referential
-  UNIQUE USING INDEX uk_reference_parent_referential;
+  ADD CONSTRAINT uk_reference_parent_alias
+  UNIQUE USING INDEX uk_reference_parent_alias;
 ```
 
 No-op update guard in upsert
 ```sql
-ON CONFLICT (ParentDocumentId, ParentDocumentPartitionKey, ReferentialId, ReferentialPartitionKey)
+ON CONFLICT (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey)
 DO UPDATE SET
   ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
   ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
@@ -206,7 +206,7 @@ UPDATE dms.Reference r
 SET ReferencedDocumentId = a.DocumentId,
     ReferencedDocumentPartitionKey = a.DocumentPartitionKey
 FROM dms.Alias a
-WHERE r.ReferentialId = a.ReferentialId
+WHERE r.AliasId = a.Id
   AND r.ReferentialPartitionKey = a.ReferentialPartitionKey
   AND (r.ReferencedDocumentId, r.ReferencedDocumentPartitionKey)
       IS DISTINCT FROM (a.DocumentId, a.DocumentPartitionKey)
@@ -219,4 +219,3 @@ WHERE r.ReferentialId = a.ReferentialId
 
 Prepared by: perf-claude analysis
 Date: 2025-10-20
-

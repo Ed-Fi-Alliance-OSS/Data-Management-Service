@@ -92,6 +92,8 @@ BEGIN
                 AND s.parent_document_partition_key = r.ParentDocumentPartitionKey
                 AND a.Id = r.AliasId
                 AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
+                AND a.DocumentId = r.ReferencedDocumentId
+                AND a.DocumentPartitionKey = r.ReferencedDocumentPartitionKey
           )
         RETURNING 1
     )
@@ -99,13 +101,17 @@ BEGIN
         ParentDocumentId,
         ParentDocumentPartitionKey,
         AliasId,
-        ReferentialPartitionKey
+        ReferentialPartitionKey,
+        ReferencedDocumentId,
+        ReferencedDocumentPartitionKey
     )
     SELECT
         s.parent_document_id,
         s.parent_document_partition_key,
         a.Id AS alias_id,
-        s.referential_partition_key
+        s.referential_partition_key,
+        a.DocumentId,
+        a.DocumentPartitionKey
     FROM staged s
     JOIN dms.Alias a ON
         s.referential_id = a.ReferentialId
@@ -117,6 +123,8 @@ BEGIN
           AND existing.ParentDocumentPartitionKey = s.parent_document_partition_key
           AND existing.AliasId = a.Id
           AND existing.ReferentialPartitionKey = s.referential_partition_key
+          AND existing.ReferencedDocumentId = a.DocumentId
+          AND existing.ReferencedDocumentPartitionKey = a.DocumentPartitionKey
     );
 
     RETURN;

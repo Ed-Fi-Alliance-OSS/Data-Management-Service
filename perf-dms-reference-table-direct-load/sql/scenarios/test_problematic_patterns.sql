@@ -326,13 +326,17 @@ BEGIN
             ParentDocumentId,
             ParentDocumentPartitionKey,
             AliasId,
-            ReferentialPartitionKey
+            ReferentialPartitionKey,
+            ReferencedDocumentId,
+            ReferencedDocumentPartitionKey
         )
         SELECT
             referring_docs.Id,
             referring_docs.DocumentPartitionKey,
             a.Id,
-            a.ReferentialPartitionKey
+            a.ReferentialPartitionKey,
+            a.DocumentId,
+            a.DocumentPartitionKey
         FROM dms.Alias a
         WHERE a.ReferentialId = :heavydoc_heavily_ref_uuid
           AND a.ReferentialPartitionKey = :heavydoc_heavily_ref_key

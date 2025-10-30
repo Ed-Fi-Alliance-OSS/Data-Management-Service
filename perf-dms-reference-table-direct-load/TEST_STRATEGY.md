@@ -16,9 +16,9 @@ This testing suite isolates the database layer from the DMS application to ident
 - Triggers aggressive autovacuum cycles
 - Lock contention during bulk operations
 
-### 2. Reverse Lookups via Alias
-**Issue**: References partitioned by ParentDocumentPartitionKey but reverse lookups must hop through Alias using ReferentialId
-**Impact**: Requires partition-aware index support on (ReferentialPartitionKey, ReferentialId) to avoid scanning all partitions
+### 2. Reverse Lookups via Referenced Document Columns
+**Issue**: References are partitioned by `ParentDocumentPartitionKey`, so reverse lookups need a covering index aligned with `ReferencedDocumentPartitionKey/Id`
+**Impact**: Ensure the referenced-document index stays bloat-free to preserve partition pruning
 
 ### 3. Foreign Key Validation Overhead
 **Issue**: Multiple FK constraints require validation on every insert
@@ -122,10 +122,10 @@ MONITOR=true ./test-single-scenario.sh batch_operations.sql
    - Reduces dead tuples by 80%
 
 ### Short-term
-1. **Add Alias-Focused Indexes**
+1. **Add Referenced-Document Index**
    ```sql
-   CREATE INDEX IX_Reference_AliasId
-   ON dms.Reference (ReferentialPartitionKey, AliasId);
+   CREATE INDEX IX_Reference_ReferencedDocument
+   ON dms.Reference (ReferencedDocumentPartitionKey, ReferencedDocumentId);
    ```
 
 2. **Optimize FK Validation**

@@ -115,25 +115,36 @@ BEGIN
             AND s.ParentDocumentPartitionKey = r.ParentDocumentPartitionKey
             AND a.Id = r.AliasId
             AND a.ReferentialPartitionKey = r.ReferentialPartitionKey
+            AND a.DocumentId = r.ReferencedDocumentId
+            AND a.DocumentPartitionKey = r.ReferencedDocumentPartitionKey
       );
 
     INSERT INTO dms.Reference (
         ParentDocumentId,
         ParentDocumentPartitionKey,
         AliasId,
-        ReferentialPartitionKey
+        ReferentialPartitionKey,
+        ReferencedDocumentId,
+        ReferencedDocumentPartitionKey
     )
     SELECT
         s.ParentDocumentId,
         s.ParentDocumentPartitionKey,
         a.Id AS AliasId,
-        s.ReferentialPartitionKey
+        s.ReferentialPartitionKey,
+        a.DocumentId,
+        a.DocumentPartitionKey
     FROM dms_temp_reference_staging s
     JOIN dms.Alias a
       ON a.ReferentialId = s.ReferentialId
      AND a.ReferentialPartitionKey = s.ReferentialPartitionKey
     ON CONFLICT (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey)
-    DO NOTHING;
+    DO UPDATE
+    SET
+        ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
+        ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
+    WHERE (dms.Reference.ReferencedDocumentId, dms.Reference.ReferencedDocumentPartitionKey)
+          IS DISTINCT FROM (EXCLUDED.ReferencedDocumentId, EXCLUDED.ReferencedDocumentPartitionKey);
 
     TRUNCATE dms_temp_reference_staging;
     RETURN;

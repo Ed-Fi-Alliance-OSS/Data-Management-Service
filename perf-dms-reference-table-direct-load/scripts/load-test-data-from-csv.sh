@@ -95,7 +95,7 @@ log_info "Loading dms.Alias"
 psql_exec -c "COPY dms.Alias (ReferentialPartitionKey, ReferentialId, DocumentId, DocumentPartitionKey) FROM STDIN WITH (FORMAT csv, HEADER true);" < "$ALIAS_CSV"
 
 log_info "Loading dms.Reference"
-psql_exec -c "COPY dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey) FROM STDIN WITH (FORMAT csv, HEADER true);" < "$REFERENCE_CSV"
+psql_exec -c "COPY dms.Reference (ParentDocumentId, ParentDocumentPartitionKey, AliasId, ReferentialPartitionKey, ReferencedDocumentId, ReferencedDocumentPartitionKey) FROM STDIN WITH (FORMAT csv, HEADER true);" < "$REFERENCE_CSV"
 
 psql_exec <<'SQL'
 SELECT setval(pg_get_serial_sequence('dms.Document', 'Id'), COALESCE((SELECT MAX(Id) FROM dms.Document), 0));

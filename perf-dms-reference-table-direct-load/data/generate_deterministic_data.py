@@ -592,6 +592,8 @@ def generate_references(
                     doc.partition_key,
                     alias.alias_id,
                     alias.referential_partition,
+                    alias.document_id,
+                    alias.document_partition,
                 ]
             )
             references_written += 1
@@ -769,6 +771,8 @@ def main() -> None:
                 "ParentDocumentPartitionKey",
                 "AliasId",
                 "ReferentialPartitionKey",
+                "ReferencedDocumentId",
+                "ReferencedDocumentPartitionKey",
             ]
         )
         written = generate_references(reference_writer, documents, alias_infos, args.references)

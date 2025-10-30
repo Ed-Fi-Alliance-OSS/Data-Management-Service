@@ -142,6 +142,6 @@ Analyze the delta between the before/after files to understand how many shared h
 
 Performance issues identified:
 - DELETE-then-INSERT pattern in InsertReferences causes massive overhead
-- Reverse lookups depend on Alias joins; monitor IX_Reference_AliasId and Alias latency
+- Reverse lookups rely on the referenced-document covering index; monitor IX_Reference_ReferencedDocument and Alias hydration logic
 - Lock contention during bulk operations
 - No differential updates for references
