@@ -121,7 +121,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
             // Generate schema creation statements for all unique schemas
             var usedSchemas = new HashSet<string>();
-            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? [])
+            foreach (
+                var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? new Dictionary<string, ResourceSchema>()
+            )
             {
                 var resourceSchema = kvp.Value;
                 if (resourceSchema.FlatteningMetadata?.Table != null)
@@ -153,7 +155,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             // PASS 1: Generate tables WITHOUT foreign key constraints
             var fkConstraintsToAdd = new List<(string tableName, string schemaName, object fkConstraint)>();
 
-            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? [])
+            foreach (
+                var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? new Dictionary<string, ResourceSchema>()
+            )
             {
                 var resourceName = kvp.Key;
                 var resourceSchema = kvp.Value;
@@ -279,17 +283,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                 )
                                 {
                                     var table = subclassSchema.FlatteningMetadata.Table;
-
-                                    // Get the original schema name (e.g., "edfi") to properly determine table name with prefix
                                     var originalSchemaName = GetOriginalSchemaName(
                                         apiSchema.ProjectSchema,
                                         subclassSchema,
                                         options
                                     );
-
-                                    // Use the first subclass's schema for the view prefix
                                     viewSchemaName ??= originalSchemaName;
-
                                     var tableName = DetermineTableName(
                                         table.BaseName,
                                         originalSchemaName,
@@ -297,10 +296,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                         options
                                     );
                                     var finalSchemaName = options.ResolveSchemaName(null);
-                                    var tableRef = $"{finalSchemaName}.{tableName}";
+                                    var tableRef = $"{finalSchemaName}.\"{tableName}\"";
                                     var discriminator = table.DiscriminatorValue ?? subclassType;
-
-                                    // Union views include: Id, Discriminator, Document_Id, Document_PartitionKey, and audit columns if enabled
                                     var selectColumns =
                                         "Id, '{0}' AS Discriminator, Document_Id, Document_PartitionKey";
                                     if (options.IncludeAuditColumns)
@@ -331,18 +328,26 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 }
 
                 // Approach 2: Detect polymorphic references from child tables with discriminatorValue
-                foreach (var resourceSchema in (apiSchema.ProjectSchema.ResourceSchemas ?? []).Values)
+                foreach (
+                    var resourceSchema in (
+                        apiSchema.ProjectSchema.ResourceSchemas ?? new Dictionary<string, ResourceSchema>()
+                    ).Values
+                )
                 {
                     if (resourceSchema.FlatteningMetadata?.Table != null)
                     {
                         var table = resourceSchema.FlatteningMetadata.Table;
 
                         // Check if this table has polymorphic reference indicators
-                        bool hasPolymorphicRef = table.Columns.Any(c => c.IsPolymorphicReference);
-                        bool hasDiscriminator = table.Columns.Any(c => c.IsDiscriminator);
-                        bool hasChildTablesWithDiscriminatorValues = table.ChildTables.Any(ct =>
-                            !string.IsNullOrEmpty(ct.DiscriminatorValue)
-                        );
+                        bool hasPolymorphicRef = (
+                            table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                        ).Any(c => c.IsPolymorphicReference);
+                        bool hasDiscriminator = (
+                            table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                        ).Any(c => c.IsDiscriminator);
+                        bool hasChildTablesWithDiscriminatorValues = (
+                            table.ChildTables ?? System.Linq.Enumerable.Empty<TableMetadata>()
+                        ).Any(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue));
 
                         if (hasPolymorphicRef && hasDiscriminator && hasChildTablesWithDiscriminatorValues)
                         {
@@ -351,21 +356,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                             var selectStatements = new List<string>();
 
                             // Get the natural key columns from the parent table (these should be common across all child tables)
-                            var naturalKeyColumns = table
-                                .Columns.Where(c => c.IsNaturalKey)
+                            var naturalKeyColumns = (
+                                table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                            )
+                                .Where(c => c.IsNaturalKey)
                                 .Select(c => PgsqlNamingHelper.MakePgsqlIdentifier(c.ColumnName))
                                 .ToList();
 
                             foreach (
-                                var childTable in table.ChildTables.Where(ct =>
+                                var childTable in (table.ChildTables ?? new List<TableMetadata>()).Where(ct =>
                                     !string.IsNullOrEmpty(ct.DiscriminatorValue)
                                 )
                             )
                             {
                                 // Include ALL columns per specification: Id + all data columns + Document columns
-                                var columns = new List<string> { "Id" }; // Start with surrogate key
+                                var columns = new List<string> { "Id" };
                                 columns.AddRange(
-                                    childTable.Columns.Select(c =>
+                                    (childTable.Columns ?? new List<ColumnMetadata>()).Select(c =>
                                         PgsqlNamingHelper.MakePgsqlIdentifier(c.ColumnName)
                                     )
                                 );
@@ -378,7 +385,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                     resourceSchema,
                                     options
                                 );
-
                                 // Build SELECT statement with audit columns if enabled
                                 var documentColumns = "Document_Id, Document_PartitionKey";
                                 if (options.IncludeAuditColumns)
@@ -585,6 +591,29 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 );
             }
 
+            // Add check constraint for discriminator if this table has a polymorphic reference and discriminator column
+            object? discriminatorCheckConstraint = null;
+            var hasPolymorphicRef = table.Columns.Any(c => c.IsPolymorphicReference);
+            var discriminatorCol = table.Columns.FirstOrDefault(c => c.IsDiscriminator);
+            if (hasPolymorphicRef && discriminatorCol != null)
+            {
+                // Collect allowed discriminator values from child tables
+                var allowedValues = (table.ChildTables ?? new List<TableMetadata>())
+                    .Where(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue))
+                    .Select(ct => ct.DiscriminatorValue!.Replace("'", "''"))
+                    .Distinct()
+                    .ToList();
+                if (allowedValues.Count > 0)
+                {
+                    var constraintName =
+                        $"ck_{table.BaseName.ToLowerInvariant()}_{discriminatorCol.ColumnName.ToLowerInvariant()}_allowedvalues";
+                    var allowedList = string.Join(", ", allowedValues.Select(v => $"'{v}'"));
+                    var checkExpr =
+                        $"{PgsqlNamingHelper.MakePgsqlIdentifier(discriminatorCol.ColumnName)} IN ({allowedList})";
+                    discriminatorCheckConstraint = new { constraintName, expression = checkExpr };
+                }
+            }
+
             // Prepare template data - ALL tables get Id and Document columns
             var tableData = new
             {
@@ -607,13 +636,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         columns = new[] { "Document_Id", "Document_PartitionKey" },
                     },
                 },
+                checkConstraint = discriminatorCheckConstraint,
             };
 
             // Generate table DDL
             sb.AppendLine(template(tableData));
 
             // Recursively process child tables
-            foreach (var childTable in table.ChildTables)
+            foreach (var childTable in table.ChildTables ?? System.Linq.Enumerable.Empty<TableMetadata>())
             {
                 GenerateTableDdlWithoutForeignKeys(
                     childTable,
@@ -854,6 +884,29 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 );
             }
 
+            // Add check constraint for discriminator if this table has a polymorphic reference and discriminator column
+            object? discriminatorCheckConstraint = null;
+            var hasPolymorphicRef = table.Columns.Any(c => c.IsPolymorphicReference);
+            var discriminatorCol = table.Columns.FirstOrDefault(c => c.IsDiscriminator);
+            if (hasPolymorphicRef && discriminatorCol != null)
+            {
+                // Collect allowed discriminator values from child tables
+                var allowedValues = (table.ChildTables ?? new List<TableMetadata>())
+                    .Where(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue))
+                    .Select(ct => ct.DiscriminatorValue!.Replace("'", "''"))
+                    .Distinct()
+                    .ToList();
+                if (allowedValues.Count > 0)
+                {
+                    var constraintName =
+                        $"ck_{table.BaseName.ToLowerInvariant()}_{discriminatorCol.ColumnName.ToLowerInvariant()}_allowedvalues";
+                    var allowedList = string.Join(", ", allowedValues.Select(v => $"'{v}'"));
+                    var checkExpr =
+                        $"{PgsqlNamingHelper.MakePgsqlIdentifier(discriminatorCol.ColumnName)} IN ({allowedList})";
+                    discriminatorCheckConstraint = new { constraintName, expression = checkExpr };
+                }
+            }
+
             var data = new
             {
                 schemaName = finalSchemaName,
@@ -867,12 +920,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 fkColumns = options.GenerateForeignKeyConstraints ? fkColumns : [],
                 uniqueConstraints = options.GenerateNaturalKeyConstraints ? uniqueConstraints : [],
                 indexes,
+                checkConstraint = discriminatorCheckConstraint,
             };
 
             sb.AppendLine(template(data));
 
             // Recursively process child tables
-            foreach (var childTable in table.ChildTables)
+            foreach (var childTable in table.ChildTables ?? System.Linq.Enumerable.Empty<TableMetadata>())
             {
                 GenerateTableDdl(
                     childTable,

@@ -14,6 +14,10 @@ BEGIN
 {{/if}}{{#each uniqueConstraints}}    CONSTRAINT [{{constraintName}}]
         UNIQUE ({{#each columns}}[{{this}}]{{#unless @last}}, {{/unless}}{{/each}}){{#unless @last}},{{/unless}}
 {{/each}}
+{{#if checkConstraint}},
+{{/if}}{{#if checkConstraint}}    CONSTRAINT [{{checkConstraint.constraintName}}]
+    CHECK ({{checkConstraint.expression}})
+{{/if}}
     );
     PRINT 'Table {{tableName}} created.';
 END

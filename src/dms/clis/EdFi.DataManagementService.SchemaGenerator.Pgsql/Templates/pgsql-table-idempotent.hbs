@@ -7,6 +7,16 @@ CREATE TABLE IF NOT EXISTS {{schemaName}}.{{tableName}} (
 {{/if}}{{#each columns}}    {{name}} {{type}}{{#if isRequired}} NOT NULL{{/if}}{{#unless @last}},{{/unless}}
 {{/each}}
 );
+{{#if checkConstraint}}
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('{{checkConstraint.constraintName}}')
+    ) THEN
+        ALTER TABLE {{schemaName}}.{{tableName}} ADD CONSTRAINT {{checkConstraint.constraintName}} CHECK ({{checkConstraint.expression}});
+    END IF;
+END$$;
+{{/if}}
 
 {{#if indexes}}
 {{#each indexes}}
