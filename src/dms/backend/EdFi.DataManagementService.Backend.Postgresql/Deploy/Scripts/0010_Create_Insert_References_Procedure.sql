@@ -7,18 +7,11 @@
 -- Returns false when any referentialId failed to resolve; callers can inspect
 -- temp_reference_stage for details while the session remains open.
 
-DROP FUNCTION IF EXISTS dms.InsertReferences(
-    BIGINT[],
-    SMALLINT[],
-    UUID[],
-    SMALLINT[]
-);
-
 CREATE OR REPLACE FUNCTION dms.InsertReferences(
-    parentDocumentId BIGINT,
-    parentDocumentPartitionKey SMALLINT,
-    referentialIds UUID[],
-    referentialPartitionKeys SMALLINT[]
+    p_parentDocumentId BIGINT,
+    p_parentDocumentPartitionKey SMALLINT,
+    p_referentialIds UUID[],
+    p_referentialPartitionKeys SMALLINT[]
 ) RETURNS BOOLEAN
 LANGUAGE plpgsql
 AS
@@ -41,14 +34,14 @@ BEGIN
 
     INSERT INTO temp_reference_stage
     SELECT
-        parentDocumentId,
-        parentDocumentPartitionKey,
+        p_parentDocumentId,
+        p_parentDocumentPartitionKey,
         ids.referentialPartitionKey,
         ids.referentialId,
         a.Id,
         a.DocumentId,
         a.DocumentPartitionKey
-    FROM unnest(referentialIds, referentialPartitionKeys)
+    FROM unnest(p_referentialIds, p_referentialPartitionKeys)
         AS ids(referentialId, referentialPartitionKey)
     LEFT JOIN dms.Alias a
         ON a.ReferentialId = ids.referentialId
@@ -89,8 +82,8 @@ BEGIN
         RETURNING 1
     )
     DELETE FROM dms.Reference r
-    WHERE r.ParentDocumentId = parentDocumentId
-      AND r.ParentDocumentPartitionKey = parentDocumentPartitionKey
+    WHERE r.ParentDocumentId = p_parentDocumentId
+      AND r.ParentDocumentPartitionKey = p_parentDocumentPartitionKey
       AND NOT EXISTS (
           SELECT 1
           FROM temp_reference_stage s
