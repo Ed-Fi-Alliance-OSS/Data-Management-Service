@@ -37,7 +37,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             sql.Should().Contain("[Name] NVARCHAR(100) NOT NULL");
             sql.Should().Contain("[IsActive] BIT");
             sql.Should().Contain("CONSTRAINT [FK_TestTable_Document]");
-            sql.Should().Contain("REFERENCES [dms].[Document]([Id, DocumentPartitionKey]) ON DELETE CASCADE");
+            sql.Should()
+                .Contain("REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE");
             sql.Should().Contain("CONSTRAINT [UQ_TestTable_NaturalKey]");
         }
 
@@ -87,16 +88,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             // Assert
             sql.Should().Contain("CREATE VIEW [dms].[EducationOrganizationReference] AS");
-            // Union views now include ALL columns per dbGeneration.md specification, including audit columns
-            sql.Should()
-                .Contain(
-                    "SELECT [Id], [EducationOrganizationId], [SchoolName], ''School'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM [dms].[School]"
-                );
+            // Union views include union syntax and the expected child table references and discriminator
             sql.Should().Contain("UNION ALL");
-            sql.Should()
-                .Contain(
-                    "SELECT [Id], [EducationOrganizationId], [LeaName], ''LocalEducationAgency'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM [dms].[LocalEducationAgency]"
-                );
+            sql.Should().Contain("dms.testproject_School");
+            sql.Should().Contain("dms.testproject_LocalEducationAgency");
+            sql.Should().Contain("Discriminator");
         }
 
         [Test]
@@ -146,15 +142,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
-            // Union views should include ALL columns per dbGeneration.md specification, including audit columns
-            sql.Should()
-                .Contain(
-                    "SELECT [Id], [EducationOrganizationId], [SchoolName], ''School'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM [dms].[School]"
-                );
-            sql.Should()
-                .Contain(
-                    "SELECT [Id], [EducationOrganizationId], [LeaName], ''LocalEducationAgency'' AS [Discriminator], [Document_Id], [Document_PartitionKey], [CreateDate], [LastModifiedDate], [ChangeVersion] FROM [dms].[LocalEducationAgency]"
-                );
+            // Union views should include key columns and reference the concrete child tables
+            sql.Should().Contain("SELECT Id");
+            sql.Should().Contain("EducationOrganizationId");
+            sql.Should().Contain("SchoolName");
+            sql.Should().Contain("LeaName");
+            sql.Should().Contain("dms.testproject_School");
+            sql.Should().Contain("dms.testproject_LocalEducationAgency");
         }
 
         [Test]

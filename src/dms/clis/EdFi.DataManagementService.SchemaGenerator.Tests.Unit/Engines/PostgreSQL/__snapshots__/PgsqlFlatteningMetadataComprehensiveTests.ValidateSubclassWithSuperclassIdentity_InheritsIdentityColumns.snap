@@ -1,6 +1,7 @@
 ﻿CREATE SCHEMA IF NOT EXISTS dms;
 
 
+
 CREATE TABLE IF NOT EXISTS dms.edfi_GeneralStudentProgramAssociation (
     Id BIGSERIAL PRIMARY KEY,
     Document_Id BIGINT NOT NULL,
@@ -14,19 +15,33 @@ CREATE TABLE IF NOT EXISTS dms.edfi_GeneralStudentProgramAssociation (
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
     ChangeVersion BIGINT NOT NULL
-,
-    CONSTRAINT UQ_GeneralStudentProgramAssociation_NaturalKey
-        UNIQUE (StudentUniqueId, ProgramEducationOrganizationId, ProgramName, ProgramTypeDescriptor, BeginDate)
 );
 
 CREATE INDEX IF NOT EXISTS IX_GeneralStudentProgramAssociation_Document
     ON dms.edfi_GeneralStudentProgramAssociation(Document_Id, Document_PartitionKey);
 
 
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_GeneralStudentProgramAssociation_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_GeneralStudentProgramAssociation ADD CONSTRAINT UQ_GeneralStudentProgramAssociation_NaturalKey
+            UNIQUE (StudentUniqueId, ProgramEducationOrganizationId, ProgramName, ProgramTypeDescriptor, BeginDate);
+    END IF;
+END$$;
+
+
 -- Foreign Key Constraints
 
-ALTER TABLE dms.edfi_GeneralStudentProgramAssociation
-    ADD CONSTRAINT FK_GeneralStudentProgramAssociation_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_GeneralStudentProgramAssociation_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_GeneralStudentProgramAssociation ADD CONSTRAINT FK_GeneralStudentProgramAssociation_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 

@@ -292,10 +292,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
                             var unionViewName = unionViewNameNode.GetString() ?? "";
 
-                            // Build select statements for each subclass
-
+                            // Build select statements for each subclass - compute intersection of common columns
                             var selectStatements = new List<string>();
                             string? viewSchemaName = null; // Track schema name for view prefixing
+
+                            // List of per-subclass column name sets
+                            var subclassColumnSets = new List<HashSet<string>>();
+                            var subclassInfos = new List<(string tableRef, string discriminator)>();
+
                             foreach (var subclassType in subclassTypes)
                             {
                                 if (
@@ -323,18 +327,115 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                     var tableRef = $"{finalSchemaName}.[{tableName}]";
                                     var discriminator = table.DiscriminatorValue ?? subclassType;
 
-                                    // Union views include: Id, Discriminator, Document_Id, Document_PartitionKey, and audit columns if enabled
-                                    var selectColumns =
-                                        "[Id], ''{0}'' AS [Discriminator], [Document_Id], [Document_PartitionKey]";
-                                    if (options.IncludeAuditColumns)
-                                    {
-                                        selectColumns +=
-                                            ", [CreateDate], [LastModifiedDate], [ChangeVersion]";
-                                    }
-                                    selectStatements.Add(
-                                        $"SELECT {string.Format(selectColumns, discriminator)} FROM {tableRef}"
-                                    );
+                                    // Collect column names for this subclass (exclude system columns)
+                                    var cols = (
+                                        table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                                    )
+                                        .Where(c => !c.IsParentReference)
+                                        .Select(c => c.ColumnName)
+                                        .Where(n => !string.IsNullOrEmpty(n))
+                                        .Select(n => n.Trim())
+                                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                                    subclassColumnSets.Add(cols);
+                                    subclassInfos.Add((tableRef, discriminator));
                                 }
+                            }
+
+                            // Compute intersection of subclass columns (if any subclasses found)
+                            HashSet<string> commonColumns = new(StringComparer.OrdinalIgnoreCase);
+                            if (subclassColumnSets.Count > 0)
+                            {
+                                commonColumns = new HashSet<string>(
+                                    subclassColumnSets[0],
+                                    StringComparer.OrdinalIgnoreCase
+                                );
+                                foreach (var s in subclassColumnSets.Skip(1))
+                                {
+                                    commonColumns.IntersectWith(s);
+                                }
+                            }
+
+                            // Ensure we always include Document and audit columns via SELECT literal; commonColumns only holds extra common user columns
+                            foreach (var (tableRef, discriminator) in subclassInfos)
+                            {
+                                // Emit unquoted identifiers for union view selects and alias any IsSuperclassIdentity column
+                                var colsList = new List<string> { "Id" };
+
+                                // Attempt to find matching subclass schema by comparing unquoted table names
+                                string unquotedTableName = tableRef.Split('.').Last().Trim('[', ']');
+                                ResourceSchema? matchingSchema = null;
+                                foreach (var st in subclassTypes)
+                                {
+                                    if (
+                                        apiSchema.ProjectSchema.ResourceSchemas?.TryGetValue(st, out var ss)
+                                            == true
+                                        && ss.FlatteningMetadata?.Table != null
+                                    )
+                                    {
+                                        var candidateName = DetermineTableName(
+                                            ss.FlatteningMetadata.Table.BaseName,
+                                            GetOriginalSchemaName(apiSchema.ProjectSchema, ss, options),
+                                            ss,
+                                            options
+                                        );
+                                        candidateName = candidateName.Trim('[', ']');
+                                        if (
+                                            string.Equals(
+                                                candidateName,
+                                                unquotedTableName,
+                                                StringComparison.Ordinal
+                                            )
+                                        )
+                                        {
+                                            matchingSchema = ss;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                string viewNaturalKeyName = unionViewName + "Id";
+                                if (matchingSchema != null)
+                                {
+                                    var supCol = (
+                                        matchingSchema.FlatteningMetadata?.Table?.Columns
+                                        ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                                    ).FirstOrDefault(c => c.IsSuperclassIdentity);
+                                    if (supCol != null && !string.IsNullOrEmpty(supCol.ColumnName))
+                                    {
+                                        colsList.Add($"{supCol.ColumnName} AS {viewNaturalKeyName}");
+                                    }
+                                }
+
+                                // Add remaining common columns (avoid adding the superclass identity twice)
+                                var matchingCols = (
+                                    matchingSchema?.FlatteningMetadata?.Table?.Columns
+                                    ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                                );
+                                colsList.AddRange(
+                                    commonColumns.Where(c =>
+                                        matchingSchema == null
+                                        || !matchingCols.Any(col =>
+                                            col.IsSuperclassIdentity
+                                            && string.Equals(
+                                                col.ColumnName,
+                                                c,
+                                                StringComparison.OrdinalIgnoreCase
+                                            )
+                                        )
+                                    )
+                                );
+
+                                var documentColumns = "Document_Id, Document_PartitionKey";
+                                if (options.IncludeAuditColumns)
+                                {
+                                    documentColumns += ", CreateDate, LastModifiedDate, ChangeVersion";
+                                }
+
+                                var selectCols = string.Join(", ", colsList);
+                                selectStatements.Add(
+                                    $"SELECT {selectCols}, '{discriminator}' AS Discriminator, {documentColumns} FROM {tableRef}"
+                                );
                             }
 
                             // Only generate view if we have select statements
@@ -392,31 +493,39 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                 ).Where(ct => !string.IsNullOrEmpty(ct.DiscriminatorValue))
                             )
                             {
-                                // Include ALL columns per specification: Id + all data columns + Document columns
-                                var columns = new List<string> { "[Id]" }; // Start with surrogate key
+                                // Emit unquoted identifiers and include IsSuperclassIdentity alias where applicable
+                                var columns = new List<string> { "Id" };
                                 columns.AddRange(
                                     (
                                         childTable.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
-                                    ).Select(c => $"[{c.ColumnName}]")
+                                    ).Select(c => c.ColumnName)
                                 );
 
                                 var selectCols = string.Join(", ", columns);
                                 var discriminatorValue = childTable.DiscriminatorValue;
-                                var tableRef = BuildTableReference(
-                                    childTable.BaseName,
+                                // Build unquoted table ref: use final schema (resolved) and unquoted table name
+                                var originalSchemaName = GetOriginalSchemaName(
                                     apiSchema.ProjectSchema,
                                     resourceSchema,
                                     options
                                 );
+                                var tableName = DetermineTableName(
+                                    childTable.BaseName,
+                                    originalSchemaName,
+                                    resourceSchema,
+                                    options
+                                );
+                                var finalSchemaName = options.ResolveSchemaName(null);
+                                var tableRef = $"{finalSchemaName}.{tableName}";
 
                                 // Build SELECT statement with audit columns if enabled
-                                var documentColumns = "[Document_Id], [Document_PartitionKey]";
+                                var documentColumns = "Document_Id, Document_PartitionKey";
                                 if (options.IncludeAuditColumns)
                                 {
-                                    documentColumns += ", [CreateDate], [LastModifiedDate], [ChangeVersion]";
+                                    documentColumns += ", CreateDate, LastModifiedDate, ChangeVersion";
                                 }
                                 selectStatements.Add(
-                                    $"SELECT {selectCols}, ''{discriminatorValue}'' AS [Discriminator], {documentColumns} FROM {tableRef}"
+                                    $"SELECT {selectCols}, '{discriminatorValue}' AS Discriminator, {documentColumns} FROM {tableRef}"
                                 );
                             }
 

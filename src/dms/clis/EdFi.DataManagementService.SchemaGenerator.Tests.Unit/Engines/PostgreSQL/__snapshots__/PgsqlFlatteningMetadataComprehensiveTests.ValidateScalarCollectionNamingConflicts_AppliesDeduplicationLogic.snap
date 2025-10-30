@@ -1,6 +1,7 @@
 ﻿CREATE SCHEMA IF NOT EXISTS dms;
 
 
+
 CREATE TABLE IF NOT EXISTS dms.edfi_EducationContent (
     Id BIGSERIAL PRIMARY KEY,
     Document_Id BIGINT NOT NULL,
@@ -9,13 +10,22 @@ CREATE TABLE IF NOT EXISTS dms.edfi_EducationContent (
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
     ChangeVersion BIGINT NOT NULL
-,
-    CONSTRAINT UQ_EducationContent_NaturalKey
-        UNIQUE (ContentIdentifier)
 );
 
 CREATE INDEX IF NOT EXISTS IX_EducationContent_Document
     ON dms.edfi_EducationContent(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_EducationContent_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_EducationContent ADD CONSTRAINT UQ_EducationContent_NaturalKey
+            UNIQUE (ContentIdentifier);
+    END IF;
+END$$;
+
 
 
 CREATE TABLE IF NOT EXISTS dms.edfi_EducationContentEducationContentSuffixName (
@@ -33,20 +43,40 @@ CREATE INDEX IF NOT EXISTS IX_EducationContentEducationContentSuffixName_Documen
     ON dms.edfi_EducationContentEducationContentSuffixName(Document_Id, Document_PartitionKey);
 
 
+
+
 -- Foreign Key Constraints
 
-ALTER TABLE dms.edfi_EducationContent
-    ADD CONSTRAINT FK_EducationContent_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContent_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContent ADD CONSTRAINT FK_EducationContent_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_EducationContentEducationContentSuffixName
-    ADD CONSTRAINT FK_EducationContentEducationContentSuffixName_EducationContent
-    FOREIGN KEY (EducationContent_Id)
-    REFERENCES dms.edfi_EducationContent(Id) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContentEducationContentSuffixName_EducationContent')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContentEducationContentSuffixName ADD CONSTRAINT FK_EducationContentEducationContentSuffixName_EducationContent
+                FOREIGN KEY (EducationContent_Id)
+                REFERENCES dms.edfi_EducationContent(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
 
-ALTER TABLE dms.edfi_EducationContentEducationContentSuffixName
-    ADD CONSTRAINT FK_EducationContentEducationContentSuffixName_Document
-    FOREIGN KEY (Document_Id, Document_PartitionKey)
-    REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContentEducationContentSuffixName_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContentEducationContentSuffixName ADD CONSTRAINT FK_EducationContentEducationContentSuffixName_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
 

@@ -1015,6 +1015,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                         ""columnType"": ""integer"",
                                         ""isNaturalKey"": true,
                                         ""isRequired"": true,
+                                        ""isSuperclassIdentity"": true,
                                         ""jsonPath"": ""$.educationOrganizationId""
                                     },
                                     {
@@ -1048,6 +1049,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                         ""columnType"": ""integer"",
                                         ""isNaturalKey"": true,
                                         ""isRequired"": true,
+                                        ""isSuperclassIdentity"": true,
                                         ""jsonPath"": ""$.educationOrganizationId""
                                     },
                                     {
@@ -1081,6 +1083,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                         ""columnType"": ""integer"",
                                         ""isNaturalKey"": true,
                                         ""isRequired"": true,
+                                        ""isSuperclassIdentity"": true,
                                         ""jsonPath"": ""$.educationOrganizationId""
                                     },
                                     {
@@ -1163,6 +1166,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                             IsNaturalKey = true,
                                             IsRequired = true,
                                             IsPolymorphicReference = true,
+                                            IsSuperclassIdentity = true,
                                             PolymorphicType = "EducationOrganization",
                                             JsonPath = "$.schoolReference.schoolId",
                                             FromReferencePath = "SchoolReference",
@@ -1205,14 +1209,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             // Assert - Verify the table is created with polymorphic reference column
             sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE [dms].[edfi_StudentSchoolAssociation]");
-            sql.Should().Contain("[StudentUniqueId] NVARCHAR(32) NOT NULL");
-            sql.Should().Contain("[SchoolId] INT NOT NULL");
-            sql.Should().Contain("[EntryDate] DATE NOT NULL");
-            sql.Should().Contain("[EntryGradeLevelDescriptor] BIGINT NOT NULL");
-            sql.Should().Contain("[ExitWithdrawDate] DATE");
-            sql.Should().Contain("UQ_StudentSchoolAssociation_NaturalKey");
-            sql.Should().Contain("UNIQUE ([StudentUniqueId], [SchoolId], [EntryDate])");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1316,14 +1313,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             // Assert
             sql.Should().NotBeEmpty();
-            sql.Should().Contain("CREATE TABLE [dms].[edfi_GeneralStudentProgramAssociation]");
-            sql.Should().Contain("[StudentUniqueId] NVARCHAR(32) NOT NULL");
-            sql.Should().Contain("[ProgramEducationOrganizationId] INT NOT NULL");
-            sql.Should().Contain("[ProgramName] NVARCHAR(60) NOT NULL");
-            sql.Should().Contain("[ProgramTypeDescriptor] BIGINT NOT NULL");
-            sql.Should().Contain("[BeginDate] DATE NOT NULL");
-            sql.Should().Contain("[ServedOutsideOfRegularSession] BIT");
-            sql.Should().Contain("UQ_GeneralStudentProgramAssociation_NaturalKey");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1456,12 +1446,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify both tables are created with their discriminator values stored
-            sql.Should().Contain("CREATE TABLE [dms].[edfi_Assessment]");
-            sql.Should().Contain("CREATE TABLE [dms].[edfi_ObjectiveAssessment]");
-            sql.Should().Contain("[AssessmentIdentifier] NVARCHAR(60) NOT NULL");
-            sql.Should().Contain("[Namespace] NVARCHAR(255) NOT NULL");
-            sql.Should().Contain("[AssessmentTitle] NVARCHAR(100) NOT NULL");
-            sql.Should().Contain("[IdentificationCode] NVARCHAR(60) NOT NULL");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1729,10 +1714,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
 
             // Assert - Verify no union view is created
-            sql.Should().NotContain("CREATE VIEW");
-            sql.Should().NotContain("ALTER VIEW");
-            sql.Should().NotContain("UNION ALL");
-            sql.Should().Contain("CREATE TABLE [dms].[edfi_School]");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
@@ -1814,53 +1796,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var sql = generator.GenerateDdlString(schema, options);
 
             // Assert - Root table (Student) has all required columns
-            sql.Should().Contain("CREATE TABLE [dms].[edfi_Student]");
-            sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
-            sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
-            sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
-            sql.Should().Contain("[CreateDate] DATETIME2 NOT NULL");
-            sql.Should().Contain("[LastModifiedDate] DATETIME2 NOT NULL");
-            sql.Should().Contain("[ChangeVersion] BIGINT NOT NULL");
-
-            // Assert - Child table (StudentAddress) also has all required columns
-            sql.Should().Contain("CREATE TABLE [dms].[edfi_StudentAddress]");
-            // Child table should have Id, Document columns, audit columns, AND parent FK
-            var studentAddressTableMatch = System.Text.RegularExpressions.Regex.Match(
-                sql,
-                @"CREATE TABLE \[dms\]\.\[edfi_StudentAddress\] \((.*?)\);",
-                System.Text.RegularExpressions.RegexOptions.Singleline
-            );
-            studentAddressTableMatch.Success.Should().BeTrue("StudentAddress table should exist");
-            var studentAddressColumns = studentAddressTableMatch.Groups[1].Value;
-
-            studentAddressColumns
-                .Should()
-                .Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)", "child table needs Id");
-            studentAddressColumns
-                .Should()
-                .Contain("[Document_Id] BIGINT NOT NULL", "child table needs Document_Id");
-            studentAddressColumns
-                .Should()
-                .Contain(
-                    "[Document_PartitionKey] TINYINT NOT NULL",
-                    "child table needs Document_PartitionKey"
-                );
-            studentAddressColumns
-                .Should()
-                .Contain("[Student_Id] BIGINT NOT NULL", "child table needs parent FK");
-            studentAddressColumns
-                .Should()
-                .Contain("[CreateDate] DATETIME2 NOT NULL", "child table needs CreateDate");
-            studentAddressColumns
-                .Should()
-                .Contain("[LastModifiedDate] DATETIME2 NOT NULL", "child table needs LastModifiedDate");
-            studentAddressColumns
-                .Should()
-                .Contain("[ChangeVersion] BIGINT NOT NULL", "child table needs ChangeVersion");
-
-            // Assert - Document indexes for both tables
-            sql.Should().Contain("IX_Student_Document");
-            sql.Should().Contain("IX_StudentAddress_Document");
+            Snapshot.Match(sql);
         }
     }
 }
