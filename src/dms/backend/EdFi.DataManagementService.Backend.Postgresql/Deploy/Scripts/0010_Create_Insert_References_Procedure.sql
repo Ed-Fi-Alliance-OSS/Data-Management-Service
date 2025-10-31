@@ -32,22 +32,39 @@ BEGIN
 
     TRUNCATE temp_reference_stage;
 
+    WITH staged AS (
+        -- Materialize the incoming references along with resolved alias/document metadata.
+        -- ROW_NUMBER keeps only a single row per alias, preventing PostgreSQL from hitting
+        -- the same ON CONFLICT target more than once in the same statement.
+        SELECT
+            p_parentDocumentId AS parentdocumentid,
+            p_parentDocumentPartitionKey AS parentdocumentpartitionkey,
+            ids.referentialPartitionKey,
+            ids.referentialId,
+            a.Id AS aliasid,
+            a.DocumentId AS referenceddocumentid,
+            a.DocumentPartitionKey AS referenceddocumentpartitionkey,
+            ROW_NUMBER() OVER (PARTITION BY a.Id ORDER BY ids.referentialId) AS alias_row_number
+        FROM unnest(p_referentialIds, p_referentialPartitionKeys)
+            AS ids(referentialId, referentialPartitionKey)
+        LEFT JOIN dms.Alias a
+            ON a.ReferentialId = ids.referentialId
+           AND a.ReferentialPartitionKey = ids.referentialPartitionKey
+    )
     INSERT INTO temp_reference_stage
     SELECT
-        p_parentDocumentId,
-        p_parentDocumentPartitionKey,
-        ids.referentialPartitionKey,
-        ids.referentialId,
-        a.Id,
-        a.DocumentId,
-        a.DocumentPartitionKey
-    FROM unnest(p_referentialIds, p_referentialPartitionKeys)
-        AS ids(referentialId, referentialPartitionKey)
-    LEFT JOIN dms.Alias a
-        ON a.ReferentialId = ids.referentialId
-       AND a.ReferentialPartitionKey = ids.referentialPartitionKey;
+        parentdocumentid,
+        parentdocumentpartitionkey,
+        referentialpartitionkey,
+        referentialid,
+        aliasid,
+        referenceddocumentid,
+        referenceddocumentpartitionkey
+    FROM staged
+    WHERE aliasid IS NULL OR alias_row_number = 1;
 
     WITH upsert AS (
+        -- Perform the reference upsert, relying on the deduplicated staging rows above.
         INSERT INTO dms.Reference AS target (
             ParentDocumentId,
             ParentDocumentPartitionKey,
