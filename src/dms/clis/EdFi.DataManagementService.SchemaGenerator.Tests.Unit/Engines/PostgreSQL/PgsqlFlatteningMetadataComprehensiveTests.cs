@@ -18,6 +18,103 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
     public class PgsqlFlatteningMetadataComprehensiveTests
     {
         /// <summary>
+        /// Validates that descriptor foreign key targets are correct for both edfi_ prefixed tables in PostgreSQL.
+        /// Ensures FKs reference dms.edfi_descriptor for edfi_ tables.
+        /// </summary>
+        [Test]
+        public void ValidateDescriptorForeignKeyTarget_PrefixedTables()
+        {
+            // Arrange: edfi_ prefixed table
+            var schemaPrefixed = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["AssessmentItem"] = new ResourceSchema
+                        {
+                            ResourceName = "AssessmentItem",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "edfi_AssessmentItem",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "AssessmentItemCategoryDescriptorId",
+                                            ColumnType = "integer",
+                                            IsRequired = true,
+                                            JsonPath = "$.assessmentItemCategoryDescriptor",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+            var sqlPrefixed = generator.GenerateDdlString(schemaPrefixed, includeExtensions: false);
+            Snapshot.Match(sqlPrefixed);
+        }
+
+        /// <summary>
+        /// Validates that descriptor foreign key targets are correct for both edfi_ non-prefixed tables in PostgreSQL.
+        /// Ensures FKs reference dms.descriptor.
+        /// </summary>
+        [Test]
+        public void ValidateDescriptorForeignKeyTarget_NonPrefixedTables()
+        {
+            // Arrange: non-prefixed table
+            var schemaNonPrefixed = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["OtherItem"] = new ResourceSchema
+                        {
+                            ResourceName = "OtherItem",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "otherItem",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SomeDescriptorId",
+                                            ColumnType = "integer",
+                                            IsRequired = true,
+                                            JsonPath = "$.someDescriptor",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+            var generator = new PgsqlDdlGeneratorStrategy();
+            var sqlNonPrefixed = generator.GenerateDdlString(schemaNonPrefixed, includeExtensions: false);
+            Snapshot.Match(sqlNonPrefixed);
+        }
+
+        /// <summary>
         /// Validates DDL generation for a simple entity with scalar properties (string, integer, optional reference).
         /// Tests: VARCHAR with length, INTEGER types, NOT NULL constraints, natural key unique constraint.
         /// </summary>
@@ -1115,11 +1212,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Act - Generate DDL without skipping union views
             var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
 
-            // Emit actual SQL for diagnosis and Assert - Verify individual subclass tables AND union view are created
-            System.Console.WriteLine(sql);
-            sql.Should().Contain("CREATE OR REPLACE VIEW dms.edfi_EducationOrganization");
-            sql.Should().Contain("UNION ALL");
-            sql.Should().Contain("'School' AS Discriminator");
+            Snapshot.Match(sql);
         }
 
         /// <summary>
