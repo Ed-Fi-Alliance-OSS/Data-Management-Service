@@ -536,10 +536,7 @@ public partial class SqlAction() : ISqlAction
 
         await using var failuresCommand = new NpgsqlCommand(
             @"SELECT referentialid
-              FROM temp_reference_stage
-              WHERE aliasid IS NULL
-                AND parentdocumentid = $1
-                AND parentdocumentpartitionkey = $2;",
+              FROM dms.GetInvalidReferencesAndClear($1, $2);",
             connection,
             transaction
         )
