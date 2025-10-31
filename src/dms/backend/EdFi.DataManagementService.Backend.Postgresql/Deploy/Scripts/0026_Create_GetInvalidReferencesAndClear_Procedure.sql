@@ -7,9 +7,22 @@ CREATE OR REPLACE FUNCTION dms.GetInvalidReferencesAndClear(
     p_parentDocumentId BIGINT,
     p_parentDocumentPartitionKey SMALLINT
 ) RETURNS TABLE (referentialid UUID)
-LANGUAGE sql
+LANGUAGE plpgsql
 AS
 $$
+BEGIN
+    CREATE TEMP TABLE IF NOT EXISTS temp_reference_stage
+    (
+        parentdocumentid               BIGINT,
+        parentdocumentpartitionkey     SMALLINT,
+        referentialpartitionkey        SMALLINT,
+        referentialid                  UUID,
+        aliasid                        BIGINT,
+        referenceddocumentid           BIGINT,
+        referenceddocumentpartitionkey SMALLINT
+    ) ON COMMIT PRESERVE ROWS;
+
+    RETURN QUERY
     WITH invalid AS (
         SELECT referentialid
         FROM temp_reference_stage
@@ -23,4 +36,5 @@ $$
     )
     SELECT referentialid
     FROM invalid;
+END;
 $$;

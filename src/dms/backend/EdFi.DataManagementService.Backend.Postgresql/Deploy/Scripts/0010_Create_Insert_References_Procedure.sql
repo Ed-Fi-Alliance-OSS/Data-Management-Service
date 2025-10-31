@@ -28,8 +28,10 @@ BEGIN
         referenceddocumentpartitionkey SMALLINT
     ) ON COMMIT PRESERVE ROWS;  -- Available to get invalid referentialId information on failure
 
-    -- Guarantee we start from a clean slate for each invocation.
-    TRUNCATE temp_reference_stage;
+    -- Guarantee we start from a clean slate for each invocation in this session.
+    DELETE FROM temp_reference_stage
+    WHERE parentdocumentid = p_parentDocumentId
+      AND parentdocumentpartitionkey = p_parentDocumentPartitionKey;
 
     WITH staged AS (
         -- Materialize the incoming references along with resolved alias/document metadata.
@@ -68,7 +70,9 @@ BEGIN
     IF EXISTS (
         SELECT 1
         FROM temp_reference_stage
-        WHERE aliasid IS NULL
+        WHERE parentdocumentid = p_parentDocumentId
+          AND parentdocumentpartitionkey = p_parentDocumentPartitionKey
+          AND aliasid IS NULL
     ) THEN
         RETURN FALSE;
     END IF;
@@ -128,6 +132,11 @@ BEGIN
     USING to_remove tr
     WHERE r.ctid = tr.ctid
       AND r.tableoid = tr.tableoid;
+
+    -- Clear the staged rows for the current document so the session can be reused safely.
+    DELETE FROM temp_reference_stage
+    WHERE parentdocumentid = p_parentDocumentId
+      AND parentdocumentpartitionkey = p_parentDocumentPartitionKey;
 
     -- All staged references were valid, so return true.
     RETURN TRUE;
