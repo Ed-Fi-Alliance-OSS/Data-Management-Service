@@ -112,18 +112,22 @@ BEGIN
               EXCLUDED.ReferencedDocumentPartitionKey
         )
         RETURNING 1
+    ),
+    to_remove AS (
+        -- Identify existing references that are absent from the current request.
+        SELECT r.ctid, r.tableoid
+        FROM dms.Reference r
+        LEFT JOIN temp_reference_stage s
+            ON s.aliasid = r.aliasid
+           AND s.referentialpartitionkey = r.referentialpartitionkey
+        WHERE r.ParentDocumentId = p_parentDocumentId
+          AND r.ParentDocumentPartitionKey = p_parentDocumentPartitionKey
+          AND s.aliasid IS NULL
     )
-    -- Remove references tied to the parent document that were not included in this upsert request,
-    -- ensuring the database reflects exactly the references supplied in the current operation.
     DELETE FROM dms.Reference r
-    WHERE r.ParentDocumentId = p_parentDocumentId
-      AND r.ParentDocumentPartitionKey = p_parentDocumentPartitionKey
-      AND NOT EXISTS (
-          SELECT 1
-          FROM temp_reference_stage s
-          WHERE s.aliasid = r.aliasid
-            AND s.referentialpartitionkey = r.referentialpartitionkey
-      );
+    USING to_remove tr
+    WHERE r.ctid = tr.ctid
+      AND r.tableoid = tr.tableoid;
 
     -- All staged references were valid, so return true.
     RETURN TRUE;
