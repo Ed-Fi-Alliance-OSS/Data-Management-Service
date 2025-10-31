@@ -432,8 +432,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                 }
 
                                 var selectCols = string.Join(", ", colsList);
+                                // Escape single quotes for EXEC('...') context
                                 selectStatements.Add(
-                                    $"SELECT {selectCols}, '{discriminator}' AS Discriminator, {documentColumns} FROM {tableRef}"
+                                    $"SELECT {selectCols}, ''{discriminator}'' AS Discriminator, {documentColumns} FROM {tableRef}"
                                 );
                             }
 
@@ -523,8 +524,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                 {
                                     documentColumns += ", CreateDate, LastModifiedDate, ChangeVersion";
                                 }
+                                // Escape single quotes for EXEC('...') context
                                 selectStatements.Add(
-                                    $"SELECT {selectCols}, '{discriminatorValue}' AS Discriminator, {documentColumns} FROM {tableRef}"
+                                    $"SELECT {selectCols}, ''{discriminatorValue}'' AS Discriminator, {documentColumns} FROM {tableRef}"
                                 );
                             }
 

@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using FluentAssertions;
+using Snapshooter.NUnit;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 {
@@ -57,7 +58,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 
             // Act & Assert - Should not throw exception
             var sql = generator.GenerateDdlString(schema, includeExtensions: false);
-            sql.Should().Contain("NVARCHAR(MAX)"); // Default for string without max length
+            Snapshot.Match(sql);
         }
 
         [Test]

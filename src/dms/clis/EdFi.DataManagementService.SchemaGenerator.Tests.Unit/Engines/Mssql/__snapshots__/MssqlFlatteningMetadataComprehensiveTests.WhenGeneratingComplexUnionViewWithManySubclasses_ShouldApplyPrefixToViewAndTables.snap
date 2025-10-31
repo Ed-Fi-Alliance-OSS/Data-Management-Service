@@ -81,18 +81,18 @@ GO
 IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'edfi_GeneralStudentProgramAssociation' AND SCHEMA_NAME(schema_id) = 'dms')
 BEGIN
     EXEC('CREATE VIEW [dms].[edfi_GeneralStudentProgramAssociation] AS
-SELECT Id, StudentUniqueId, BeginDate, 'StudentCTEProgramAssociation' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentCTEProgramAssociation]
+SELECT Id, StudentUniqueId, BeginDate, ''StudentCTEProgramAssociation'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentCTEProgramAssociation]
 UNION ALL
-SELECT Id, StudentUniqueId, BeginDate, 'StudentHomelessProgramAssociation' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentHomelessProgramAssociation]
+SELECT Id, StudentUniqueId, BeginDate, ''StudentHomelessProgramAssociation'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentHomelessProgramAssociation]
 ');
     PRINT 'View edfi_GeneralStudentProgramAssociation created.';
 END
 ELSE
 BEGIN
     EXEC('ALTER VIEW [dms].[edfi_GeneralStudentProgramAssociation] AS
-SELECT Id, StudentUniqueId, BeginDate, 'StudentCTEProgramAssociation' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentCTEProgramAssociation]
+SELECT Id, StudentUniqueId, BeginDate, ''StudentCTEProgramAssociation'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentCTEProgramAssociation]
 UNION ALL
-SELECT Id, StudentUniqueId, BeginDate, 'StudentHomelessProgramAssociation' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentHomelessProgramAssociation]
+SELECT Id, StudentUniqueId, BeginDate, ''StudentHomelessProgramAssociation'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentHomelessProgramAssociation]
 ');
     PRINT 'View edfi_GeneralStudentProgramAssociation altered.';
 END
