@@ -72,6 +72,17 @@ CREATE INDEX IF NOT EXISTS IX_EducationContentRequiredURI_Document
 DO $$
 BEGIN
         IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContent_ContentClassDescriptorId_Descriptor')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContent ADD CONSTRAINT FK_EducationContent_ContentClassDescriptorId_Descriptor
+                FOREIGN KEY (ContentClassDescriptorId)
+                REFERENCES dms.edfi_descriptor(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
             SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContent_Document')
         ) THEN
             ALTER TABLE dms.edfi_EducationContent ADD CONSTRAINT FK_EducationContent_Document

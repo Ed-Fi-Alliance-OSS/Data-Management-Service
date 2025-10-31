@@ -2,9 +2,9 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
-
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
+using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
 using Snapshooter.NUnit;
 
@@ -17,6 +17,103 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
     [TestFixture]
     public class MssqlFlatteningMetadataComprehensiveTests
     {
+        /// <summary>
+        /// Validates that descriptor foreign key targets are correct for both edfi_ prefixed tables in PostgreSQL.
+        /// Ensures FKs reference dms.edfi_descriptor for edfi_ tables.
+        /// </summary>
+        [Test]
+        public void ValidateDescriptorForeignKeyTarget_PrefixedTables()
+        {
+            // Arrange: edfi_ prefixed table
+            var schemaPrefixed = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["AssessmentItem"] = new ResourceSchema
+                        {
+                            ResourceName = "AssessmentItem",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "edfi_AssessmentItem",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "AssessmentItemCategoryDescriptorId",
+                                            ColumnType = "integer",
+                                            IsRequired = true,
+                                            JsonPath = "$.assessmentItemCategoryDescriptor",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new MssqlDdlGeneratorStrategy();
+            var sqlPrefixed = generator.GenerateDdlString(schemaPrefixed, includeExtensions: false);
+            Snapshot.Match(sqlPrefixed);
+        }
+
+        /// <summary>
+        /// Validates that descriptor foreign key targets are correct for both edfi_ non-prefixed tables in PostgreSQL.
+        /// Ensures FKs reference dms.descriptor.
+        /// </summary>
+        [Test]
+        public void ValidateDescriptorForeignKeyTarget_NonPrefixedTables()
+        {
+            // Arrange: non-prefixed table
+            var schemaNonPrefixed = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["OtherItem"] = new ResourceSchema
+                        {
+                            ResourceName = "OtherItem",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "otherItem",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SomeDescriptorId",
+                                            ColumnType = "integer",
+                                            IsRequired = true,
+                                            JsonPath = "$.someDescriptor",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+            var generator = new MssqlDdlGeneratorStrategy();
+            var sqlNonPrefixed = generator.GenerateDdlString(schemaNonPrefixed, includeExtensions: false);
+            Snapshot.Match(sqlNonPrefixed);
+        }
+
         /// <summary>
         /// Validates DDL generation for a simple entity with scalar properties (string, integer, optional reference).
         /// Tests: NVARCHAR with length, INT types, NOT NULL constraints, natural key unique constraint, IDENTITY columns.

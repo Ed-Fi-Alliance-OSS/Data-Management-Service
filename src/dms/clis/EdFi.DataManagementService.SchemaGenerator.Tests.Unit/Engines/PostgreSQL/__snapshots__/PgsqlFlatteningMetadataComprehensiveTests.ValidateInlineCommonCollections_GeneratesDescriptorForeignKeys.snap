@@ -73,6 +73,17 @@ END$$;
 DO $$
 BEGIN
         IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_AssessmentAssessmentIdentificationCode_AssessmentId_a7baca49')
+        ) THEN
+            ALTER TABLE dms.edfi_AssessmentAssessmentIdentificationCode ADD CONSTRAINT FK_AssessmentAssessmentIdentificationCode_AssessmentId_a7baca49
+                FOREIGN KEY (AssessmentIdentificationSystemDescriptorId)
+                REFERENCES dms.edfi_descriptor(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
             SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_AssessmentAssessmentIdentificationCode_Document')
         ) THEN
             ALTER TABLE dms.edfi_AssessmentAssessmentIdentificationCode ADD CONSTRAINT FK_AssessmentAssessmentIdentificationCode_Document
