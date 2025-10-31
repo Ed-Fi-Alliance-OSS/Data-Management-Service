@@ -14,8 +14,6 @@ CREATE OR REPLACE FUNCTION dms.InsertReferences(
 LANGUAGE plpgsql
 AS
 $$
-DECLARE
-    invalid BOOLEAN;
 BEGIN
     -- Temp table caches the staged references for the current session scope.
     -- ON COMMIT PRESERVE ROWS keeps the data available until the caller finishes.
@@ -65,6 +63,15 @@ BEGIN
     FROM staged
     -- Keeps unresolved alias rows while taking only the first resolved match per alias
     WHERE aliasid IS NULL OR alias_row_number = 1;
+
+    -- If any staged rows failed to resolve aliases, do not mutate persistent tables.
+    IF EXISTS (
+        SELECT 1
+        FROM temp_reference_stage
+        WHERE aliasid IS NULL
+    ) THEN
+        RETURN FALSE;
+    END IF;
 
     WITH upsert AS (
         -- Perform the reference upsert, relying on the deduplicated staging rows above.
@@ -118,15 +125,7 @@ BEGIN
             AND s.referentialpartitionkey = r.referentialpartitionkey
       );
 
-    -- Flag staged references whose alias could not be found in dms.Alias so temp_reference_stage
-    -- can be queried on these invalid references.
-    invalid := EXISTS (
-        SELECT 1
-        FROM temp_reference_stage
-        WHERE aliasid IS NULL
-    );
-
-    -- Return true when every staged reference is valid.
-    RETURN NOT invalid;
+    -- All staged references were valid, so return true.
+    RETURN TRUE;
 END;
 $$;
