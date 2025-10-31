@@ -28,10 +28,12 @@ public class IdentityModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/connect/register", RegisterClient).DisableAntiforgery();
-        endpoints.MapPost("/connect/token", GetClientAccessToken).DisableAntiforgery();
-        endpoints.MapPost("/connect/introspect", IntrospectToken).DisableAntiforgery();
-        endpoints.MapPost("/connect/revoke", RevokeToken).DisableAntiforgery();
+        // Support dynamic route contexts: allows zero or more path segments after the endpoint
+        // Examples: /connect/token, /connect/token/{districtId}, /connect/token/{districtId}/{schoolYear}
+        endpoints.MapPost("connect/register/{**contextPath}", RegisterClient).DisableAntiforgery();
+        endpoints.MapPost("connect/token/{**contextPath}", GetClientAccessToken).DisableAntiforgery();
+        endpoints.MapPost("connect/introspect/{**contextPath}", IntrospectToken).DisableAntiforgery();
+        endpoints.MapPost("connect/revoke/{**contextPath}", RevokeToken).DisableAntiforgery();
     }
 
     private async Task<IResult> RegisterClient(
