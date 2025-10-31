@@ -382,10 +382,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                 }
 
                                 // Add remaining common columns (excluding any superclass identity already added)
-                                var matchingCols = (
+                                var matchingCols =
                                     matchingSchema?.FlatteningMetadata?.Table?.Columns
-                                    ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
-                                );
+                                    ?? System.Linq.Enumerable.Empty<ColumnMetadata>();
                                 var toAdd = commonColumns.Where(c =>
                                     matchingSchema == null
                                     || !matchingCols.Any(col =>
@@ -602,28 +601,34 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 );
             }
 
-            // REMOVED: Cross-resource FK constraints (fromReferencePath)
-            // Design decision: Only generate FK constraints for parent-child relationships (IsParentReference)
-            // Entity-to-entity references are maintained through application logic and Document/Alias tables
-            // foreach (var (columnName, referencedResource) in crossResourceReferences)
-            // {
-            //     fkConstraintsToAdd.Add(
-            //         (
-            //             tableName,
-            //             finalSchemaName,
-            //             new
-            //             {
-            //                 constraintName = PgsqlNamingHelper.MakePgsqlIdentifier(
-            //                     $"FK_{table.BaseName}_{referencedResource}"
-            //                 ),
-            //                 column = PgsqlNamingHelper.MakePgsqlIdentifier(columnName),
-            //                 parentTable = $"{finalSchemaName}.{DetermineTableName(referencedResource, originalSchemaName, null, options)}",
-            //                 parentColumn = "Id",
-            //                 cascade = false,
-            //             }
-            //         )
-            //     );
-            // }
+            // Add FK constraints for descriptor columns to dms.Descriptor(Id)
+            foreach (
+                var descriptorCol in table.Columns.Where(c =>
+                    string.Equals(c.ColumnType, "descriptor", StringComparison.OrdinalIgnoreCase)
+                )
+            )
+            {
+                // If table name starts with edfi_ (case-insensitive), use edfi_descriptor, else descriptor
+                var descriptorTable = tableName.StartsWith("edfi_", StringComparison.OrdinalIgnoreCase)
+                    ? "dms.edfi_descriptor"
+                    : "dms.descriptor";
+                fkConstraintsToAdd.Add(
+                    (
+                        tableName,
+                        finalSchemaName,
+                        new
+                        {
+                            constraintName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                                $"FK_{table.BaseName}_{descriptorCol.ColumnName}_Descriptor"
+                            ),
+                            column = PgsqlNamingHelper.MakePgsqlIdentifier(descriptorCol.ColumnName),
+                            parentTable = descriptorTable,
+                            parentColumn = "Id",
+                            cascade = false,
+                        }
+                    )
+                );
+            }
 
             // Store Document FK constraint for later generation (FIXED: no double parentheses)
             fkConstraintsToAdd.Add(

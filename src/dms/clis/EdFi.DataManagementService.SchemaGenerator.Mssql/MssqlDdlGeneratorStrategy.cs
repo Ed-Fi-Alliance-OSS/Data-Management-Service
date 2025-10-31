@@ -408,10 +408,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                 }
 
                                 // Add remaining common columns (avoid adding the superclass identity twice)
-                                var matchingCols = (
+                                var matchingCols =
                                     matchingSchema?.FlatteningMetadata?.Table?.Columns
-                                    ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
-                                );
+                                    ?? System.Linq.Enumerable.Empty<ColumnMetadata>();
                                 colsList.AddRange(
                                     commonColumns.Where(c =>
                                         matchingSchema == null
