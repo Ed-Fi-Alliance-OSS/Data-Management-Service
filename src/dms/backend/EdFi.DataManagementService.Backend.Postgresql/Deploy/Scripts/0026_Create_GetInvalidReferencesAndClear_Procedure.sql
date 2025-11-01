@@ -24,17 +24,17 @@ BEGIN
 
     RETURN QUERY
     WITH invalid AS (
-        SELECT referentialid
-        FROM temp_reference_stage
-        WHERE aliasid IS NULL
-          AND parentdocumentid = p_parentDocumentId
-          AND parentdocumentpartitionkey = p_parentDocumentPartitionKey
+        SELECT s.referentialid
+        FROM temp_reference_stage s
+        WHERE s.aliasid IS NULL
+          AND s.parentdocumentid = p_parentDocumentId
+          AND s.parentdocumentpartitionkey = p_parentDocumentPartitionKey
     ), cleanup AS (
         DELETE FROM temp_reference_stage
         WHERE parentdocumentid = p_parentDocumentId
           AND parentdocumentpartitionkey = p_parentDocumentPartitionKey
     )
-    SELECT referentialid
+    SELECT invalid.referentialid
     FROM invalid;
 END;
 $$;
