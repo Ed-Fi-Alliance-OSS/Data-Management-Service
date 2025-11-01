@@ -21,13 +21,25 @@ INSERT INTO dms.Alias (referentialpartitionkey, referentialid, documentid, docum
 VALUES (8, uuid_generate_v4(), :ref_b_id, 8)
 RETURNING id AS alias_b_id, referentialid AS ref_b_uuid;\gset
 
-SELECT dms.InsertReferences((:parent_id)::bigint, 13::smallint, ARRAY[:'ref_a_uuid', :'ref_b_uuid']::uuid[], ARRAY[7,8]::smallint[]) AS initial_result;
+SELECT success, invalid_ids
+FROM dms.InsertReferences(
+    (:parent_id)::bigint,
+    13::smallint,
+    ARRAY[:'ref_a_uuid', :'ref_b_uuid']::uuid[],
+    ARRAY[7, 8]::smallint[]
+);
 
 SELECT COUNT(*) AS initial_ref_count
 FROM dms.Reference
 WHERE parentdocumentid = (:parent_id)::bigint AND parentdocumentpartitionkey = 13;\gset
 
-SELECT dms.InsertReferences((:parent_id)::bigint, 13::smallint, ARRAY[:'ref_a_uuid']::uuid[], ARRAY[7]::smallint[]) AS pruned_result;
+SELECT success, invalid_ids
+FROM dms.InsertReferences(
+    (:parent_id)::bigint,
+    13::smallint,
+    ARRAY[:'ref_a_uuid']::uuid[],
+    ARRAY[7]::smallint[]
+);
 
 SELECT aliasid, referencedDocumentPartitionKey
 FROM dms.Reference

@@ -13,7 +13,13 @@ INSERT INTO dms.Alias (referentialpartitionkey, referentialid, documentid, docum
 VALUES (3, uuid_generate_v4(), :ref_id, 3)
 RETURNING referentialid AS ref_uuid;\gset
 
-SELECT dms.InsertReferences((:parent_id)::bigint, 15::smallint, ARRAY[:'ref_uuid']::uuid[], ARRAY[3]::smallint[]) AS insert_result;
+SELECT success, invalid_ids
+FROM dms.InsertReferences(
+    (:parent_id)::bigint,
+    15::smallint,
+    ARRAY[:'ref_uuid']::uuid[],
+    ARRAY[3]::smallint[]
+);
 
 SELECT parentdocumentid, parentdocumentpartitionkey, aliasid, referencedDocumentId, referencedDocumentPartitionKey
 FROM dms.Reference

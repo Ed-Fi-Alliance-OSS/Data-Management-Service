@@ -503,7 +503,8 @@ public partial class SqlAction() : ISqlAction
         );
 
         await using var command = new NpgsqlCommand(
-            @"SELECT dms.InsertReferences($1, $2, $3, $4)",
+            @"SELECT success, invalid_ids
+              FROM dms.InsertReferences($1, $2, $3, $4)",
             connection,
             transaction
         )
@@ -522,46 +523,19 @@ public partial class SqlAction() : ISqlAction
             await command.PrepareAsync();
         }
 
-        object? scalarResult = await command.ExecuteScalarAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-        if (scalarResult is not bool insertSucceeded)
+        if (!await reader.ReadAsync())
         {
-            throw new InvalidOperationException("InsertReferences returned unexpected result.");
+            throw new InvalidOperationException("InsertReferences returned no result.");
         }
 
-        if (insertSucceeded)
+        if (reader.GetBoolean(0))
         {
-            return Array.Empty<Guid>();
+            return [];
         }
 
-        await using var failuresCommand = new NpgsqlCommand(
-            @"SELECT referentialid
-              FROM dms.GetInvalidReferencesAndClear($1, $2);",
-            connection,
-            transaction
-        )
-        {
-            Parameters =
-            {
-                new() { Value = bulkReferences.ParentDocumentId },
-                new() { Value = bulkReferences.ParentDocumentPartitionKey },
-            },
-        };
-
-        if (!failuresCommand.IsPrepared)
-        {
-            await failuresCommand.PrepareAsync();
-        }
-
-        await using NpgsqlDataReader reader = await failuresCommand.ExecuteReaderAsync();
-
-        List<Guid> invalidReferentialIds = [];
-        while (await reader.ReadAsync())
-        {
-            invalidReferentialIds.Add(reader.GetGuid(0));
-        }
-
-        return invalidReferentialIds.ToArray();
+        return (await reader.IsDBNullAsync(1)) ? [] : await reader.GetFieldValueAsync<Guid[]>(1);
     }
 
     /// <summary>

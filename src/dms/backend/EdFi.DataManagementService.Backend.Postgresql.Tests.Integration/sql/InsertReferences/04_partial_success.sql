@@ -15,19 +15,17 @@ RETURNING referentialid AS resolved_uuid;\gset
 
 SELECT uuid_generate_v4() AS missing_uuid;\gset
 
-SELECT dms.InsertReferences((:parent_id)::bigint, 9::smallint, ARRAY[:'resolved_uuid', :'missing_uuid']::uuid[], ARRAY[2,2]::smallint[]) AS result;
+SELECT success, invalid_ids
+FROM dms.InsertReferences(
+    (:parent_id)::bigint,
+    9::smallint,
+    ARRAY[:'resolved_uuid', :'missing_uuid']::uuid[],
+    ARRAY[2, 2]::smallint[]
+);
 
 SELECT COUNT(*) AS reference_count_after_failure
 FROM dms.Reference
 WHERE parentdocumentid = (:parent_id)::bigint AND parentdocumentpartitionkey = 9;
-
-SELECT referentialid AS staged_invalid_uuid
-FROM temp_reference_stage
-WHERE parentdocumentid = (:parent_id)::bigint
-  AND parentdocumentpartitionkey = 9
-  AND aliasid IS NULL;
-
-SELECT dms.GetInvalidReferencesAndClear((:parent_id)::bigint, 9::smallint) AS cleared_invalid_uuid;
 
 SELECT COUNT(*) AS staged_rows_post_clear
 FROM temp_reference_stage
