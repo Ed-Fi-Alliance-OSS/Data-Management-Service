@@ -11,30 +11,38 @@ LANGUAGE plpgsql
 AS
 $$
 BEGIN
-    CREATE TEMP TABLE IF NOT EXISTS temp_reference_stage
-    (
-        parentdocumentid               BIGINT,
-        parentdocumentpartitionkey     SMALLINT,
-        referentialpartitionkey        SMALLINT,
-        referentialid                  UUID,
-        aliasid                        BIGINT,
-        referenceddocumentid           BIGINT,
-        referenceddocumentpartitionkey SMALLINT
-    ) ON COMMIT PRESERVE ROWS;
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_class
+        WHERE relnamespace = pg_my_temp_schema()
+          AND relname = 'temp_reference_stage'
+    ) THEN
+        RAISE EXCEPTION 'temp_reference_stage is not initialized for this session';
+    END IF;
 
     RETURN QUERY
     WITH invalid AS (
         SELECT s.referentialid
-        FROM temp_reference_stage s
+        FROM pg_temp.temp_reference_stage s
         WHERE s.aliasid IS NULL
           AND s.parentdocumentid = p_parentDocumentId
           AND s.parentdocumentpartitionkey = p_parentDocumentPartitionKey
     ), cleanup AS (
-        DELETE FROM temp_reference_stage
+        DELETE FROM pg_temp.temp_reference_stage
         WHERE parentdocumentid = p_parentDocumentId
           AND parentdocumentpartitionkey = p_parentDocumentPartitionKey
     )
     SELECT invalid.referentialid
     FROM invalid;
+
+    PERFORM 1
+    FROM pg_temp.temp_reference_stage
+    WHERE parentdocumentid = p_parentDocumentId
+      AND parentdocumentpartitionkey = p_parentDocumentPartitionKey
+    LIMIT 1;
+
+    IF FOUND THEN
+        RAISE EXCEPTION 'temp_reference_stage still holds rows for %, %', p_parentDocumentId, p_parentDocumentPartitionKey;
+    END IF;
 END;
 $$;
