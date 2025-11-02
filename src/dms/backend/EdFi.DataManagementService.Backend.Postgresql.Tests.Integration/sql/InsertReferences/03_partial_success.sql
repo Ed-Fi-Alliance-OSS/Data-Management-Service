@@ -28,7 +28,8 @@ FROM dms.Reference
 WHERE parentdocumentid = (:parent_id)::bigint AND parentdocumentpartitionkey = 9;
 
 SELECT COUNT(*) AS staged_rows_post_clear
-FROM temp_reference_stage
-WHERE parentdocumentid = (:parent_id)::bigint
+FROM dms.ReferenceStage
+WHERE SessionId = pg_backend_pid()
+  AND parentdocumentid = (:parent_id)::bigint
   AND parentdocumentpartitionkey = 9;
 ROLLBACK;
