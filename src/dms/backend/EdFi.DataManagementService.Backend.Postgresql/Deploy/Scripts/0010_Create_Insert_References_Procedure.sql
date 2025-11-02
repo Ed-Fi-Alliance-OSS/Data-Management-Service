@@ -21,8 +21,6 @@ $$
 DECLARE
     reference_partition TEXT;
 BEGIN
-    -- Temp table caches the staged references for the current session scope.
-    -- ON COMMIT PRESERVE ROWS keeps the data available until the caller finishes.
     CREATE TEMP TABLE IF NOT EXISTS temp_reference_stage
     (
         parentdocumentid               BIGINT,
@@ -32,12 +30,7 @@ BEGIN
         aliasid                        BIGINT,
         referenceddocumentid           BIGINT,
         referenceddocumentpartitionkey SMALLINT
-    ) ON COMMIT PRESERVE ROWS;  -- Available to get invalid referentialId information on failure
-
-    -- Guarantee we start from a clean slate
-    DELETE FROM temp_reference_stage
-    WHERE parentdocumentid = p_parentDocumentId
-      AND parentdocumentpartitionkey = p_parentDocumentPartitionKey;
+    ) ON COMMIT DELETE ROWS;
 
     WITH staged AS (
         -- Materialize the incoming references along with resolved alias/document metadata.
@@ -136,11 +129,6 @@ BEGIN
         )
         USING p_parentDocumentId, p_parentDocumentPartitionKey;
     END IF;
-
-    -- Clear the staged rows for the current document so the session can be reused safely.
-    DELETE FROM temp_reference_stage
-    WHERE parentdocumentid = p_parentDocumentId
-      AND parentdocumentpartitionkey = p_parentDocumentPartitionKey;
 
     RETURN QUERY
     SELECT
