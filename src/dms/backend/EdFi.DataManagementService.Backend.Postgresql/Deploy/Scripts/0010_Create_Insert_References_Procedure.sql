@@ -10,7 +10,8 @@ CREATE OR REPLACE FUNCTION dms.InsertReferences(
     p_parentDocumentId BIGINT,
     p_parentDocumentPartitionKey SMALLINT,
     p_referentialIds UUID[],
-    p_referentialPartitionKeys SMALLINT[]
+    p_referentialPartitionKeys SMALLINT[],
+    p_isPureInsert BOOLEAN DEFAULT FALSE
 ) RETURNS TABLE (
     success BOOLEAN,
     invalid_ids UUID[]
@@ -107,27 +108,29 @@ BEGIN
               EXCLUDED.ReferencedDocumentPartitionKey
         );
 
-        reference_partition := format('reference_%s', lpad(p_parentDocumentPartitionKey::text, 2, '0'));
+        IF NOT p_isPureInsert THEN
+            reference_partition := format('reference_%s', lpad(p_parentDocumentPartitionKey::text, 2, '0'));
 
-        -- Remove references tied to the parent document that were not included in this upsert request,
-        -- targeting only the specific partition that stores the parent's rows to avoid cross-partition scans.
-        EXECUTE format(
-            $sql$
-            DELETE FROM %I.%I AS r
-            WHERE r.ParentDocumentId = $1
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM temp_reference_stage s
-                  WHERE s.aliasid = r.aliasid
-                    AND s.referentialpartitionkey = r.referentialpartitionkey
-                    AND s.parentdocumentpartitionkey = $2
-                    AND r.parentdocumentpartitionKey = $2
-              )
-            $sql$,
-            'dms',
-            reference_partition
-        )
-        USING p_parentDocumentId, p_parentDocumentPartitionKey;
+            -- Remove references tied to the parent document that were not included in this upsert request,
+            -- targeting only the specific partition that stores the parent's rows to avoid cross-partition scans.
+            EXECUTE format(
+                $sql$
+                DELETE FROM %I.%I AS r
+                WHERE r.ParentDocumentId = $1
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM temp_reference_stage s
+                      WHERE s.aliasid = r.aliasid
+                        AND s.referentialpartitionkey = r.referentialpartitionkey
+                        AND s.parentdocumentpartitionkey = $2
+                        AND r.parentdocumentpartitionKey = $2
+                  )
+                $sql$,
+                'dms',
+                reference_partition
+            )
+            USING p_parentDocumentId, p_parentDocumentPartitionKey;
+        END IF;
     END IF;
 
     RETURN QUERY
