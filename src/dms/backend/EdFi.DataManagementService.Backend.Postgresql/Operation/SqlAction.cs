@@ -510,7 +510,7 @@ public partial class SqlAction() : ISqlAction
 
         await using NpgsqlCommand command = new(
             @"SELECT success, invalid_ids
-              FROM dms.InsertReferences($1, $2, $3, $4)",
+              FROM dms.InsertReferences($1, $2, $3, $4, $5)",
             connection,
             transaction
         )
@@ -521,6 +521,7 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = bulkReferences.ParentDocumentPartitionKey },
                 new() { Value = referentialIds },
                 new() { Value = referentialPartitionKeys },
+                new() { Value = bulkReferences.IsPureInsert },
             },
         };
 

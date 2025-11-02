@@ -136,7 +136,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                         .ToArray(),
                     ReferentialPartitionKeys: documentReferenceIds
                         .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
-                        .ToArray()
+                        .ToArray(),
+                    IsPureInsert: true
                 ),
                 connection,
                 transaction,
