@@ -1,12 +1,12 @@
 \set ON_ERROR_STOP on
-\echo >>> Test 5: references removed when omitted from subsequent call
+\echo >>> Test 4: references removed when omitted from subsequent call
 BEGIN;
 INSERT INTO dms.Document (documentpartitionkey, documentuuid, resourcename, resourceversion, isdescriptor, projectname, edfidoc, lastmodifiedtraceid)
-VALUES (13, uuid_generate_v4(), 'ParentResource', '1', false, 'Integration', '{}'::jsonb, 'test-5')
+VALUES (13, uuid_generate_v4(), 'ParentResource', '1', false, 'Integration', '{}'::jsonb, 'test-4')
 RETURNING id AS parent_id;\gset
 
 INSERT INTO dms.Document (documentpartitionkey, documentuuid, resourcename, resourceversion, isdescriptor, projectname, edfidoc, lastmodifiedtraceid)
-VALUES (7, uuid_generate_v4(), 'ReferencedResourceA', '1', false, 'Integration', '{}'::jsonb, 'test-5')
+VALUES (7, uuid_generate_v4(), 'ReferencedResourceA', '1', false, 'Integration', '{}'::jsonb, 'test-4')
 RETURNING id AS ref_a_id;\gset
 
 INSERT INTO dms.Alias (referentialpartitionkey, referentialid, documentid, documentpartitionkey)
@@ -14,7 +14,7 @@ VALUES (7, uuid_generate_v4(), :ref_a_id, 7)
 RETURNING id AS alias_a_id, referentialid AS ref_a_uuid;\gset
 
 INSERT INTO dms.Document (documentpartitionkey, documentuuid, resourcename, resourceversion, isdescriptor, projectname, edfidoc, lastmodifiedtraceid)
-VALUES (8, uuid_generate_v4(), 'ReferencedResourceB', '1', false, 'Integration', '{}'::jsonb, 'test-5')
+VALUES (8, uuid_generate_v4(), 'ReferencedResourceB', '1', false, 'Integration', '{}'::jsonb, 'test-4')
 RETURNING id AS ref_b_id;\gset
 
 INSERT INTO dms.Alias (referentialpartitionkey, referentialid, documentid, documentpartitionkey)

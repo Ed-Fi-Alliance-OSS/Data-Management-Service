@@ -1,12 +1,12 @@
 \set ON_ERROR_STOP on
-\echo >>> Test 4: mix of resolved and unresolved referentials returns false and records invalid entries
+\echo >>> Test 3: mix of resolved and unresolved referentials returns false and records invalid entries
 BEGIN;
 INSERT INTO dms.Document (documentpartitionkey, documentuuid, resourcename, resourceversion, isdescriptor, projectname, edfidoc, lastmodifiedtraceid)
-VALUES (9, uuid_generate_v4(), 'ParentResource', '1', false, 'Integration', '{}'::jsonb, 'test-4')
+VALUES (9, uuid_generate_v4(), 'ParentResource', '1', false, 'Integration', '{}'::jsonb, 'test-3')
 RETURNING id AS parent_id;\gset
 
 INSERT INTO dms.Document (documentpartitionkey, documentuuid, resourcename, resourceversion, isdescriptor, projectname, edfidoc, lastmodifiedtraceid)
-VALUES (2, uuid_generate_v4(), 'ReferencedResource', '1', false, 'Integration', '{}'::jsonb, 'test-4')
+VALUES (2, uuid_generate_v4(), 'ReferencedResource', '1', false, 'Integration', '{}'::jsonb, 'test-3')
 RETURNING id AS ref_id;\gset
 
 INSERT INTO dms.Alias (referentialpartitionkey, referentialid, documentid, documentpartitionkey)
