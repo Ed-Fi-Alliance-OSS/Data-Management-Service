@@ -20,7 +20,6 @@ AS
 $$
 DECLARE
     reference_partition TEXT;
-    invalid_ids UUID[];
 BEGIN
     -- Temp table caches the staged references for the current session scope.
     -- ON COMMIT PRESERVE ROWS keeps the data available until the caller finishes.
@@ -39,8 +38,6 @@ BEGIN
     DELETE FROM temp_reference_stage
     WHERE parentdocumentid = p_parentDocumentId
       AND parentdocumentpartitionkey = p_parentDocumentPartitionKey;
-
-    reference_partition := format('reference_%s', lpad(p_parentDocumentPartitionKey::text, 2, '0'));
 
     WITH staged AS (
         -- Materialize the incoming references along with resolved alias/document metadata.
@@ -117,6 +114,8 @@ BEGIN
               EXCLUDED.ReferencedDocumentPartitionKey
         );
 
+        reference_partition := format('reference_%s', lpad(p_parentDocumentPartitionKey::text, 2, '0'));
+
         -- Remove references tied to the parent document that were not included in this upsert request,
         -- targeting only the specific partition that stores the parent's rows to avoid cross-partition scans.
         EXECUTE format(
@@ -129,6 +128,7 @@ BEGIN
                   WHERE s.aliasid = r.aliasid
                     AND s.referentialpartitionkey = r.referentialpartitionkey
                     AND s.parentdocumentpartitionkey = $2
+                    AND r.parentdocumentpartitionKey = $2
               )
             $sql$,
             'dms',
