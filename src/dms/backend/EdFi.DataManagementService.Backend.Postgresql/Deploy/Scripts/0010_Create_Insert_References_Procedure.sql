@@ -108,6 +108,7 @@ BEGIN
               EXCLUDED.ReferencedDocumentPartitionKey
         );
 
+        -- If we know this is a pure insert, there is nothing to delete
         IF NOT p_isPureInsert THEN
             reference_partition := format('reference_%s', lpad(p_parentDocumentPartitionKey::text, 2, '0'));
 
