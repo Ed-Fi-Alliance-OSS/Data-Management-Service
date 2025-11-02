@@ -4,8 +4,8 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 -- Upserts document references for a parent document.
--- The provided referential id / partition key pairs MUST be unique; callers must deduplicate them
--- before invoking this function. Returns a success flag plus any referentialIds that are invalid.
+-- The provided referentialIds MUST be unique
+-- Returns a success flag plus the invalid referentialIds if unsuccessful.
 CREATE OR REPLACE FUNCTION dms.InsertReferences(
     p_parentDocumentId BIGINT,
     p_parentDocumentPartitionKey SMALLINT,
@@ -23,7 +23,7 @@ DECLARE
     reference_partition TEXT;
     current_session_id INTEGER := pg_backend_pid();
 BEGIN
-    -- Reuse the unlogged staging table across calls; discard any leftovers from prior aborted executions.
+    -- Reuse the unlogged staging table across calls, discard any leftovers from prior aborted executions.
     DELETE FROM dms.ReferenceStage
     WHERE SessionId = current_session_id;
 
@@ -75,9 +75,10 @@ BEGIN
       AND aliasid IS NULL;
 
     IF cardinality(invalid_ids) = 0 THEN
-        -- Fast path: when staged aliases already mirror persisted references we skip the write path entirely.
-        -- Both predicates rely on the selective ux_reference_parent_alias index, keeping the probe to a handful
-        -- of index lookups and eliminating WAL churn in the common no-op case.
+        -- Optimization: Detect when ReferenceStage mirrors References, meaning no reference changes
+        -- so we skip the write path entirely.
+
+        -- Detects when a ReferenceStage row is missing in Reference table
         IF NOT EXISTS (
                SELECT 1
                FROM dms.ReferenceStage s
@@ -94,6 +95,7 @@ BEGIN
                   OR r.ReferencedDocumentPartitionKey IS DISTINCT FROM s.referenceddocumentpartitionkey
                )
            )
+           -- Detects when a Reference table row is missing in ReferenceStage
            AND NOT EXISTS (
                SELECT 1
                FROM dms.Reference r
@@ -114,7 +116,7 @@ BEGIN
         THEN
             NULL;
         ELSE
-            -- Perform the reference upsert, relying on the deduplicated staging rows above.
+            -- Perform the reference upsert
             INSERT INTO dms.Reference AS target (
                 ParentDocumentId,
                 ParentDocumentPartitionKey,
@@ -136,13 +138,10 @@ BEGIN
             -- Use the unique constraint to detect existing reference rows. Deduplicated staging
             -- rows ensure ON CONFLICT only fires once per target row within a single statement.
             ON CONFLICT ON CONSTRAINT ux_reference_parent_alias
-            -- Refresh the target when any downstream document metadata changed; skip the write when the
-            -- triple matches to avoid unnecessary churn and triggering immutability checks.
             DO UPDATE
                SET ReferentialPartitionKey = EXCLUDED.ReferentialPartitionKey,
                    ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
                    ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
-            -- Only perform the update when the persisted targeting metadata actually differs.
             WHERE (
                   target.ReferentialPartitionKey,
                   target.ReferencedDocumentId,
@@ -155,10 +154,11 @@ BEGIN
 
             -- If we know this is a pure insert, there is nothing to delete
             IF NOT p_isPureInsert THEN
+                -- We already know the partition table we want
                 reference_partition := format('reference_%s', lpad(p_parentDocumentPartitionKey::text, 2, '0'));
 
-                -- Remove references tied to the parent document that were not included in this upsert request,
-                -- targeting only the specific partition that stores the parent's rows to avoid cross-partition scans.
+                -- Remove obsolete parent document references
+                -- Targeting the specific partition table prevents this from being a cross-partition index scan
                 EXECUTE format(
                     $sql$
                     DELETE FROM %I.%I AS r
