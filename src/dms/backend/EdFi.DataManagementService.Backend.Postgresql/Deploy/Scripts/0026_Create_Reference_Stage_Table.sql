@@ -3,12 +3,6 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
--- Retired: invalid reference UUIDs now surface directly from dms.InsertReferences.
-DROP FUNCTION IF EXISTS dms.GetInvalidReferencesAndClear(
-    BIGINT,
-    SMALLINT
-);
-
 -- Unlogged staging table used by InsertReferences to avoid per-session TEMP table churn and WAL writes.
 CREATE UNLOGGED TABLE IF NOT EXISTS dms.ReferenceStage
 (
