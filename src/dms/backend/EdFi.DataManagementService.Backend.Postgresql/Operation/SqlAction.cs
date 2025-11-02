@@ -488,7 +488,7 @@ public partial class SqlAction() : ISqlAction
 
     /// <summary>
     /// Attempt to insert references into the Reference table.
-    /// Returns any referentialIds that failed to resolve via the ON CONFLICT-based procedure.
+    /// Returns any invalid referentialIds
     /// </summary>
     public async Task<Guid[]> InsertReferences(
         BulkReferences bulkReferences,
@@ -502,7 +502,13 @@ public partial class SqlAction() : ISqlAction
             "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
         );
 
-        await using var command = new NpgsqlCommand(
+        // Ensure we do not send redundant referential rows to the database.
+        var (referentialIds, referentialPartitionKeys) = DeduplicateReferentialIds(
+            bulkReferences.ReferentialIds,
+            bulkReferences.ReferentialPartitionKeys
+        );
+
+        await using NpgsqlCommand command = new(
             @"SELECT success, invalid_ids
               FROM dms.InsertReferences($1, $2, $3, $4)",
             connection,
@@ -513,8 +519,8 @@ public partial class SqlAction() : ISqlAction
             {
                 new() { Value = bulkReferences.ParentDocumentId },
                 new() { Value = bulkReferences.ParentDocumentPartitionKey },
-                new() { Value = bulkReferences.ReferentialIds },
-                new() { Value = bulkReferences.ReferentialPartitionKeys },
+                new() { Value = referentialIds },
+                new() { Value = referentialPartitionKeys },
             },
         };
 
@@ -536,6 +542,45 @@ public partial class SqlAction() : ISqlAction
         }
 
         return (await reader.IsDBNullAsync(1)) ? [] : await reader.GetFieldValueAsync<Guid[]>(1);
+    }
+
+    /// <summary>
+    /// Filters duplicate referential ids while keeping the initial ordering intact.
+    /// </summary>
+    private static (Guid[] ReferentialIds, short[] ReferentialPartitionKeys) DeduplicateReferentialIds(
+        Guid[] referentialIds,
+        short[] referentialPartitionKeys
+    )
+    {
+        // Remove duplicate (ReferentialId, PartitionKey) pairs while retaining their original order.
+        if (referentialIds.Length <= 1)
+        {
+            return (referentialIds, referentialPartitionKeys);
+        }
+
+        List<Guid> uniqueIds = new(referentialIds.Length);
+        List<short> uniquePartitionKeys = new(referentialPartitionKeys.Length);
+        HashSet<(Guid ReferentialId, short PartitionKey)> seen = [];
+        var duplicatesDetected = false;
+
+        // Traverse the parallel arrays once, storing only the first occurrence of each tuple.
+        for (var index = 0; index < referentialIds.Length; index++)
+        {
+            var pair = (ReferentialId: referentialIds[index], PartitionKey: referentialPartitionKeys[index]);
+
+            if (!seen.Add(pair))
+            {
+                duplicatesDetected = true;
+                continue;
+            }
+
+            uniqueIds.Add(pair.ReferentialId);
+            uniquePartitionKeys.Add(pair.PartitionKey);
+        }
+
+        return duplicatesDetected
+            ? (uniqueIds.ToArray(), uniquePartitionKeys.ToArray())
+            : (referentialIds, referentialPartitionKeys);
     }
 
     /// <summary>
