@@ -108,6 +108,14 @@ public interface ISqlAction
         TraceId traceId
     );
 
+    public Task<Guid[]> FindInvalidReferences(
+        Guid[] referentialIds,
+        short[] referentialPartitionKeys,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
+
     public Task<int> DeleteDocumentByDocumentUuid(
         PartitionKey documentPartitionKey,
         DocumentUuid documentUuid,

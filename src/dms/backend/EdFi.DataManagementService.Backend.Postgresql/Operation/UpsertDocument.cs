@@ -64,6 +64,44 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     {
         short documentPartitionKey = PartitionKeyFor(upsertRequest.DocumentUuid).Value;
 
+        var hasReferences =
+            documentReferenceIds.ReferentialIds.Length > 0
+            || descriptorReferenceIds.ReferentialIds.Length > 0;
+
+        Guid[] combinedReferentialIds = [];
+        short[] combinedReferentialPartitionKeys = [];
+
+        if (hasReferences)
+        {
+            combinedReferentialIds = documentReferenceIds
+                .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
+                .ToArray();
+            combinedReferentialPartitionKeys = documentReferenceIds
+                .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
+                .ToArray();
+
+            // Pre-flight validation trims doomed requests before we touch heap/index storage.
+            // InsertReferences repeats the lookup later to catch aliases that change between statements.
+            // Pre-flight validation trims doomed requests before we touch heap/index storage.
+            // InsertReferences repeats the lookup later to catch aliases that change between statements.
+            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferences(
+                combinedReferentialIds,
+                combinedReferentialPartitionKeys,
+                connection,
+                transaction,
+                traceId
+            );
+
+            if (invalidReferentialIds.Length > 0)
+            {
+                _logger.LogDebug(
+                    "Invalid references on Upsert as Insert - {TraceId}",
+                    upsertRequest.TraceId.Value
+                );
+                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
+            }
+        }
+
         // First insert into Documents
         upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
         long newDocumentId = await _sqlAction.InsertDocumentAndAlias(
@@ -122,21 +160,16 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
         }
 
-        if (
-            documentReferenceIds.ReferentialIds.Length > 0
-            || descriptorReferenceIds.ReferentialIds.Length > 0
-        )
+        if (hasReferences)
         {
+            // InsertReferences revalidates using the live snapshot to guard against aliases disappearing
+            // after the pre-check but before the write executes.
             Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: newDocumentId,
-                    ReferentialIds: documentReferenceIds
-                        .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
-                        .ToArray(),
-                    ReferentialPartitionKeys: documentReferenceIds
-                        .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
-                        .ToArray(),
+                    ReferentialIds: combinedReferentialIds,
+                    ReferentialPartitionKeys: combinedReferentialPartitionKeys,
                     IsPureInsert: true
                 ),
                 connection,
@@ -176,6 +209,41 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     {
         // Update the EdfiDoc of the Document
         upsertRequest.EdfiDoc["id"] = documentUuid;
+
+        var hasReferences =
+            documentReferenceIds.ReferentialIds.Length > 0
+            || descriptorReferenceIds.ReferentialIds.Length > 0;
+
+        Guid[] combinedReferentialIds = [];
+        short[] combinedReferentialPartitionKeys = [];
+
+        if (hasReferences)
+        {
+            combinedReferentialIds = documentReferenceIds
+                .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
+                .ToArray();
+            combinedReferentialPartitionKeys = documentReferenceIds
+                .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
+                .ToArray();
+
+            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferences(
+                combinedReferentialIds,
+                combinedReferentialPartitionKeys,
+                connection,
+                transaction,
+                traceId
+            );
+
+            if (invalidReferentialIds.Length > 0)
+            {
+                _logger.LogDebug(
+                    "Invalid references on Upsert as Update - {TraceId}",
+                    upsertRequest.TraceId.Value
+                );
+                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
+            }
+        }
+
         await _sqlAction.UpdateDocumentEdfiDoc(
             documentPartitionKey,
             documentUuid,
@@ -190,21 +258,16 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             traceId
         );
 
-        if (
-            documentReferenceIds.ReferentialIds.Length > 0
-            || descriptorReferenceIds.ReferentialIds.Length > 0
-        )
+        if (hasReferences)
         {
+            // InsertReferences revalidates using the live snapshot to guard against aliases disappearing
+            // after the pre-check but before the write executes.
             Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: documentId,
-                    ReferentialIds: documentReferenceIds
-                        .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
-                        .ToArray(),
-                    ReferentialPartitionKeys: documentReferenceIds
-                        .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
-                        .ToArray()
+                    ReferentialIds: combinedReferentialIds,
+                    ReferentialPartitionKeys: combinedReferentialPartitionKeys
                 ),
                 connection,
                 transaction,

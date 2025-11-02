@@ -546,6 +546,66 @@ public partial class SqlAction() : ISqlAction
     }
 
     /// <summary>
+    /// Queries the Alias table to identify referentialIds that are invalid.
+    /// </summary>
+    public async Task<Guid[]> FindInvalidReferences(
+        Guid[] referentialIds,
+        short[] referentialPartitionKeys,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        Trace.Assert(
+            referentialIds.Length == referentialPartitionKeys.Length,
+            "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
+        );
+
+        if (referentialIds.Length == 0)
+        {
+            return [];
+        }
+
+        var (dedupedIds, dedupedPartitionKeys) = DeduplicateReferentialIds(
+            referentialIds,
+            referentialPartitionKeys
+        );
+
+        await using NpgsqlCommand command = new(
+            @"
+            SELECT ids.referential_id
+            FROM unnest($1::uuid[], $2::smallint[]) AS ids(referential_id, referential_partition_key)
+            LEFT JOIN dms.Alias a
+                   ON a.ReferentialId = ids.referential_id
+                  AND a.ReferentialPartitionKey = ids.referential_partition_key
+            WHERE a.Id IS NULL;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = dedupedIds },
+                new() { Value = dedupedPartitionKeys },
+            },
+        };
+
+        if (!command.IsPrepared)
+        {
+            await command.PrepareAsync();
+        }
+
+        List<Guid> invalid = [];
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            invalid.Add(await reader.GetFieldValueAsync<Guid>(0));
+        }
+
+        return invalid.Count == 0 ? [] : invalid.ToArray();
+    }
+
+    /// <summary>
     /// Filters duplicate referential ids while keeping the initial ordering intact.
     /// </summary>
     private static (Guid[] ReferentialIds, short[] ReferentialPartitionKeys) DeduplicateReferentialIds(
