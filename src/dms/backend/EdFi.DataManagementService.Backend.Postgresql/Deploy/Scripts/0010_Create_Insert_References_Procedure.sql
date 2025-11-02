@@ -3,9 +3,9 @@
 -- The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 -- See the LICENSE and NOTICES files in the project root for more information.
 
--- Returns success status plus any invalid referentialIds discovered while processing
-
-
+-- Upserts document references for a parent document.
+-- The provided referential id / partition key pairs MUST be unique; callers must deduplicate them
+-- before invoking this function. Returns a success flag plus any referentialIds that are invalid.
 CREATE OR REPLACE FUNCTION dms.InsertReferences(
     p_parentDocumentId BIGINT,
     p_parentDocumentPartitionKey SMALLINT,
@@ -44,8 +44,6 @@ BEGIN
 
     WITH staged AS (
         -- Materialize the incoming references along with resolved alias/document metadata.
-        -- ROW_NUMBER keeps only a single row per alias, preventing PostgreSQL from hitting
-        -- the same ON CONFLICT target more than once in the same statement.
         SELECT
             p_parentDocumentId AS parentdocumentid,
             p_parentDocumentPartitionKey AS parentdocumentpartitionkey,
@@ -53,8 +51,7 @@ BEGIN
             ids.referentialId,
             a.Id AS aliasid,
             a.DocumentId AS referenceddocumentid,
-            a.DocumentPartitionKey AS referenceddocumentpartitionkey,
-            ROW_NUMBER() OVER (PARTITION BY a.Id ORDER BY ids.referentialId) AS alias_row_number
+            a.DocumentPartitionKey AS referenceddocumentpartitionkey
         -- Expand the parallel referentialId/partition key arrays into individual rows for staging.
         FROM unnest(p_referentialIds, p_referentialPartitionKeys)
             AS ids(referentialId, referentialPartitionKey)
@@ -71,9 +68,7 @@ BEGIN
         aliasid,
         referenceddocumentid,
         referenceddocumentpartitionkey
-    FROM staged
-    -- Keeps unresolved alias rows while taking only the first resolved match per alias
-    WHERE aliasid IS NULL OR alias_row_number = 1;
+    FROM staged;
 
     SELECT
         COALESCE(array_agg(DISTINCT referentialid), ARRAY[]::uuid[])
