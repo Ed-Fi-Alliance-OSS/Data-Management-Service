@@ -21,17 +21,11 @@ AS
 $$
 DECLARE
     reference_partition TEXT;
+    current_session_id INTEGER := pg_backend_pid();
 BEGIN
-    CREATE TEMP TABLE IF NOT EXISTS temp_reference_stage
-    (
-        parentdocumentid               BIGINT,
-        parentdocumentpartitionkey     SMALLINT,
-        referentialpartitionkey        SMALLINT,
-        referentialid                  UUID,
-        aliasid                        BIGINT,
-        referenceddocumentid           BIGINT,
-        referenceddocumentpartitionkey SMALLINT
-    ) ON COMMIT DELETE ROWS;
+    -- Reuse the unlogged staging table across calls; discard any leftovers from prior aborted executions.
+    DELETE FROM dms.ReferenceStage
+    WHERE SessionId = current_session_id;
 
     WITH staged AS (
         -- Materialize the incoming references along with resolved alias/document metadata.
@@ -50,8 +44,18 @@ BEGIN
             ON a.ReferentialId = ids.referentialId
            AND a.ReferentialPartitionKey = ids.referentialPartitionKey
     )
-    INSERT INTO temp_reference_stage
+    INSERT INTO dms.ReferenceStage (
+        SessionId,
+        parentdocumentid,
+        parentdocumentpartitionkey,
+        referentialpartitionkey,
+        referentialid,
+        aliasid,
+        referenceddocumentid,
+        referenceddocumentpartitionkey
+    )
     SELECT
+        current_session_id,
         parentdocumentid,
         parentdocumentpartitionkey,
         referentialpartitionkey,
@@ -64,75 +68,122 @@ BEGIN
     SELECT
         COALESCE(array_agg(DISTINCT referentialid), ARRAY[]::uuid[])
     INTO invalid_ids
-    FROM temp_reference_stage
-    WHERE parentdocumentid = p_parentDocumentId
+    FROM dms.ReferenceStage
+    WHERE SessionId = current_session_id
+      AND parentdocumentid = p_parentDocumentId
       AND parentdocumentpartitionkey = p_parentDocumentPartitionKey
       AND aliasid IS NULL;
 
     IF cardinality(invalid_ids) = 0 THEN
-        -- Perform the reference upsert, relying on the deduplicated staging rows above.
-        INSERT INTO dms.Reference AS target (
-            ParentDocumentId,
-            ParentDocumentPartitionKey,
-            AliasId,
-            ReferentialPartitionKey,
-            ReferencedDocumentId,
-            ReferencedDocumentPartitionKey
-        )
-        SELECT
-            s.parentdocumentid,
-            s.parentdocumentpartitionkey,
-            s.aliasid,
-            s.referentialpartitionkey,
-            s.referenceddocumentid,
-            s.referenceddocumentpartitionkey
-        FROM temp_reference_stage s
-        WHERE s.aliasid IS NOT NULL
-        -- Use the unique constraint to detect existing reference rows. Deduplicated staging
-        -- rows ensure ON CONFLICT only fires once per target row within a single statement.
-        ON CONFLICT ON CONSTRAINT ux_reference_parent_alias
-        -- Refresh the target when any downstream document metadata changed; skip the write when the
-        -- triple matches to avoid unnecessary churn and triggering immutability checks.
-        DO UPDATE
-           SET ReferentialPartitionKey = EXCLUDED.ReferentialPartitionKey,
-               ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
-               ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
-        -- Only perform the update when the persisted targeting metadata actually differs.
-        WHERE (
-              target.ReferentialPartitionKey,
-              target.ReferencedDocumentId,
-              target.ReferencedDocumentPartitionKey
-        ) IS DISTINCT FROM (
-              EXCLUDED.ReferentialPartitionKey,
-              EXCLUDED.ReferencedDocumentId,
-              EXCLUDED.ReferencedDocumentPartitionKey
-        );
-
-        -- If we know this is a pure insert, there is nothing to delete
-        IF NOT p_isPureInsert THEN
-            reference_partition := format('reference_%s', lpad(p_parentDocumentPartitionKey::text, 2, '0'));
-
-            -- Remove references tied to the parent document that were not included in this upsert request,
-            -- targeting only the specific partition that stores the parent's rows to avoid cross-partition scans.
-            EXECUTE format(
-                $sql$
-                DELETE FROM %I.%I AS r
-                WHERE r.ParentDocumentId = $1
-                  AND NOT EXISTS (
-                      SELECT 1
-                      FROM temp_reference_stage s
-                      WHERE s.aliasid = r.aliasid
-                        AND s.referentialpartitionkey = r.referentialpartitionkey
-                        AND s.parentdocumentpartitionkey = $2
-                        AND r.parentdocumentpartitionKey = $2
-                  )
-                $sql$,
-                'dms',
-                reference_partition
+        -- Fast path: when staged aliases already mirror persisted references we skip the write path entirely.
+        -- Both predicates rely on the selective ux_reference_parent_alias index, keeping the probe to a handful
+        -- of index lookups and eliminating WAL churn in the common no-op case.
+        IF NOT EXISTS (
+               SELECT 1
+               FROM dms.ReferenceStage s
+               LEFT JOIN dms.Reference r
+                 ON r.ParentDocumentPartitionKey = s.parentdocumentpartitionkey
+                AND r.ParentDocumentId = s.parentdocumentid
+                AND r.AliasId = s.aliasid
+               WHERE s.SessionId = current_session_id
+                 AND s.aliasid IS NOT NULL
+                 AND (
+                     r.AliasId IS NULL
+                  OR r.ReferentialPartitionKey IS DISTINCT FROM s.referentialpartitionkey
+                  OR r.ReferencedDocumentId IS DISTINCT FROM s.referenceddocumentid
+                  OR r.ReferencedDocumentPartitionKey IS DISTINCT FROM s.referenceddocumentpartitionkey
+               )
+           )
+           AND NOT EXISTS (
+               SELECT 1
+               FROM dms.Reference r
+               WHERE r.ParentDocumentPartitionKey = p_parentDocumentPartitionKey
+                 AND r.ParentDocumentId = p_parentDocumentId
+                 AND NOT EXISTS (
+                     SELECT 1
+                     FROM dms.ReferenceStage s
+                     WHERE s.SessionId = current_session_id
+                       AND s.parentdocumentpartitionkey = r.ParentDocumentPartitionKey
+                       AND s.parentdocumentid = r.ParentDocumentId
+                       AND s.aliasid = r.AliasId
+                       AND s.referentialpartitionkey = r.ReferentialPartitionKey
+                       AND s.referenceddocumentid = r.ReferencedDocumentId
+                       AND s.referenceddocumentpartitionkey = r.ReferencedDocumentPartitionKey
+                 )
+           )
+        THEN
+            NULL;
+        ELSE
+            -- Perform the reference upsert, relying on the deduplicated staging rows above.
+            INSERT INTO dms.Reference AS target (
+                ParentDocumentId,
+                ParentDocumentPartitionKey,
+                AliasId,
+                ReferentialPartitionKey,
+                ReferencedDocumentId,
+                ReferencedDocumentPartitionKey
             )
-            USING p_parentDocumentId, p_parentDocumentPartitionKey;
+            SELECT
+                s.parentdocumentid,
+                s.parentdocumentpartitionkey,
+                s.aliasid,
+                s.referentialpartitionkey,
+                s.referenceddocumentid,
+                s.referenceddocumentpartitionkey
+            FROM dms.ReferenceStage s
+            WHERE s.SessionId = current_session_id
+              AND s.aliasid IS NOT NULL
+            -- Use the unique constraint to detect existing reference rows. Deduplicated staging
+            -- rows ensure ON CONFLICT only fires once per target row within a single statement.
+            ON CONFLICT ON CONSTRAINT ux_reference_parent_alias
+            -- Refresh the target when any downstream document metadata changed; skip the write when the
+            -- triple matches to avoid unnecessary churn and triggering immutability checks.
+            DO UPDATE
+               SET ReferentialPartitionKey = EXCLUDED.ReferentialPartitionKey,
+                   ReferencedDocumentId = EXCLUDED.ReferencedDocumentId,
+                   ReferencedDocumentPartitionKey = EXCLUDED.ReferencedDocumentPartitionKey
+            -- Only perform the update when the persisted targeting metadata actually differs.
+            WHERE (
+                  target.ReferentialPartitionKey,
+                  target.ReferencedDocumentId,
+                  target.ReferencedDocumentPartitionKey
+            ) IS DISTINCT FROM (
+                  EXCLUDED.ReferentialPartitionKey,
+                  EXCLUDED.ReferencedDocumentId,
+                  EXCLUDED.ReferencedDocumentPartitionKey
+            );
+
+            -- If we know this is a pure insert, there is nothing to delete
+            IF NOT p_isPureInsert THEN
+                reference_partition := format('reference_%s', lpad(p_parentDocumentPartitionKey::text, 2, '0'));
+
+                -- Remove references tied to the parent document that were not included in this upsert request,
+                -- targeting only the specific partition that stores the parent's rows to avoid cross-partition scans.
+                EXECUTE format(
+                    $sql$
+                    DELETE FROM %I.%I AS r
+                    WHERE r.ParentDocumentId = $1
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM dms.ReferenceStage s
+                          WHERE s.SessionId = $3
+                            AND s.aliasid = r.aliasid
+                            AND s.referentialpartitionkey = r.referentialpartitionkey
+                            AND s.parentdocumentpartitionkey = $2
+                            AND r.parentdocumentpartitionKey = $2
+                      )
+                    $sql$,
+                    'dms',
+                    reference_partition
+                )
+                USING p_parentDocumentId, p_parentDocumentPartitionKey, current_session_id;
+            END IF;
         END IF;
     END IF;
+
+    -- Ensure the session-specific staging rows are cleared before returning.
+    DELETE FROM dms.ReferenceStage
+    WHERE SessionId = current_session_id;
 
     RETURN QUERY
     SELECT
