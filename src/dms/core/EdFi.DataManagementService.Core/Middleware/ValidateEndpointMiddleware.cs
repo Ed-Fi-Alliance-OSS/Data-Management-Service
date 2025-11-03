@@ -37,8 +37,12 @@ internal class ValidateEndpointMiddleware(ILogger _logger) : IPipelineStep
             );
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 404,
-                Body: $"Invalid resource '{requestInfo.PathComponents.EndpointName}'.",
-                Headers: []
+                Body: ForNotFound(
+                    "The specified data could not be found.",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: [],
+                ContentType: "application/problem+json"
             );
             return;
         }

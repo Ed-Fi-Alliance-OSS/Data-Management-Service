@@ -98,6 +98,33 @@ if (!ReportInvalidConfiguration(app))
     app.MapRouteEndpoints();
 
     app.MapHealthChecks("/health");
+
+    // Catch-all fallback for unmatched routes
+    app.MapFallback(context =>
+    {
+        context.Response.StatusCode = 404;
+        context.Response.ContentType = "application/problem+json";
+
+        var traceId = context.Request.Headers.TryGetValue(
+            app.Configuration.GetValue<string>("AppSettings:CorrelationIdHeader") ?? "correlationid",
+            out var correlationId
+        )
+            ? correlationId.ToString()
+            : context.TraceIdentifier;
+
+        var response = new
+        {
+            detail = "The specified data could not be found.",
+            type = "urn:ed-fi:api:not-found",
+            title = "Not Found",
+            status = 404,
+            correlationId = traceId,
+            validationErrors = new { },
+            errors = Array.Empty<string>(),
+        };
+
+        return context.Response.WriteAsJsonAsync(response);
+    });
 }
 
 await app.RunAsync();
