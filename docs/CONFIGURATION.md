@@ -49,11 +49,17 @@ The `RateLimit` object should have the following parameters.
 
 ## Identity Provider Configuration
 
-For most deployments, environment variables and the setup script are sufficient, but for custom scenarios you may edit these files directly.
+For most deployments, environment variables and the setup script are sufficient,
+but for custom scenarios you may edit these files directly.
 
-By default, the configuration uses the self-contained (OpenIddict) identity provider. The `appsettings.json` files are pre-configured for self-contained endpoints, and the setup scripts will use self-contained unless you explicitly specify `keycloak` as the identity provider.
+By default, the configuration uses the self-contained (OpenIddict) identity
+provider. The `appsettings.json` files are pre-configured for self-contained
+endpoints, and the setup scripts will use self-contained unless you explicitly
+specify `keycloak` as the identity provider.
 
-If you wish to use Keycloak as the identity provider, you must update the relevant environment variables or appsettings to set `IdentityProvider` to `keycloak` and configure the appropriate Keycloak endpoints.
+If you wish to use Keycloak as the identity provider, you must update the
+relevant environment variables or appsettings to set `IdentityProvider` to
+`keycloak` and configure the appropriate Keycloak endpoints.
 
 ### Relevant parameters in `appsettings.json` (Configuration Service)
 

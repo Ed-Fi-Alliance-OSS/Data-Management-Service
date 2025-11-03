@@ -2,38 +2,54 @@
 
 ## Overview
 
-The Ed-Fi Data Management Service (DMS) supports explicit data segmentation through context-based routing using **route qualifiers**. This approach allows API requests to include contextual values (such as school year, district ID, or other identifiers) in the URL path, enabling the same API client to access multiple DMS instances with a single set of credentials.
+The Ed-Fi Data Management Service (DMS) supports explicit data segmentation
+through context-based routing using **route qualifiers**. This approach allows
+API requests to include contextual values (such as school year, district ID, or
+other identifiers) in the URL path, enabling the same API client to access
+multiple DMS instances with a single set of credentials.
 
 ## Database Segmentation Strategy
 
 ### Why Segment Data?
 
-Large-scale Ed-Fi deployments benefit from dividing data into separate databases rather than storing everything in a single datastore. Segmentation provides:
+Large-scale Ed-Fi deployments benefit from dividing data into separate databases
+rather than storing everything in a single datastore. Segmentation provides:
 
-- **Performance optimization** - Smaller databases improve query performance and reduce resource contention
-- **Data isolation** - Separate databases ensure district or year-specific data remains isolated
-- **Operational flexibility** - Independent databases can be backed up, restored, or archived individually
-- **Scalability** - Distributed databases can be hosted across multiple servers as data volumes grow
-- **Compliance** - Some regulations require physical separation of data by organization or timeframe
+- **Performance optimization** - Smaller databases improve query performance and
+  reduce resource contention
+- **Data isolation** - Separate databases ensure district or year-specific data
+  remains isolated
+- **Operational flexibility** - Independent databases can be backed up,
+  restored, or archived individually
+- **Scalability** - Distributed databases can be hosted across multiple servers
+  as data volumes grow
+- **Compliance** - Some regulations require physical separation of data by
+  organization or timeframe
 
-The segmentation strategy should be planned before deployment, as it affects both the database architecture and the API client experience.
+The segmentation strategy should be planned before deployment, as it affects
+both the database architecture and the API client experience.
 
 ### Choosing a Segmentation Strategy
 
 When implementing database segmentation in DMS, you need to make two key decisions:
 
-1. **Segmentation approach** - How to divide the data (by school year, district, region, or other criteria)
-2. **Client experience** - Whether segmentation is implicit (transparent to API clients) or explicit (requires route qualifiers in URLs)
+1. **Segmentation approach** - How to divide the data (by school year, district,
+   region, or other criteria)
+2. **Client experience** - Whether segmentation is implicit (transparent to API
+   clients) or explicit (requires route qualifiers in URLs)
 
 ### Client Experience Models
 
 **Implicit Segmentation:**
+
 - Each API client credential has access to a single DMS instance
-- The database routing is transparent - clients don't specify which instance in the URL
+- The database routing is transparent - clients don't specify which instance in
+  the URL
 - Simplest for API clients but requires separate credentials for each instance
 - Best for clients that only need access to one district or one year
 
 **Explicit Segmentation:**
+
 - API clients use route qualifiers in URLs to specify which instance to access
 - Single credential can access multiple instances based on URL context
 - Requires clients to construct URLs like `/255901/2024/data/ed-fi/students`
@@ -53,43 +69,57 @@ The table below shows common segmentation strategies and their characteristics:
 | **Instance-Year Specific** | Implicit | Data is segmented by both district (or other instance type) and school year. Each client credential accesses only one specific instance-year combination. Provides maximum isolation but requires many credential sets. |
 | **Instance-Year Specific** | Explicit | Multi-dimensional routing allows access to different instances and years via URL paths (e.g., `/255901/2024/data/ed-fi/schools`). Single credential accesses multiple dimensions. Requires defining multiple route context keys (e.g., `districtId` and `schoolYear`). |
 
-**Note:** Custom segmentation strategies are also possible. DMS's flexible route context system allows you to define segmentation dimensions that match your operational needs (regions, programs, departments, etc.).
+**Note:** Custom segmentation strategies are also possible. DMS's flexible route
+context system allows you to define segmentation dimensions that match your
+operational needs (regions, programs, departments, etc.).
 
 ### Choosing the Right Strategy
 
 Consider these factors when selecting your segmentation approach:
 
 - **Deployment scale** - How many districts, years, or other segments will you manage?
-- **Client capabilities** - Can your API clients handle explicit URL routing, or do they need simple endpoints?
-- **Access patterns** - Do clients need multi-year or multi-district access, or single-instance access?
+- **Client capabilities** - Can your API clients handle explicit URL routing, or
+  do they need simple endpoints?
+- **Access patterns** - Do clients need multi-year or multi-district access, or
+  single-instance access?
 - **Operational model** - Who manages credentials, and how often do they change?
 - **Data retention** - How long must historical data remain accessible?
 
-For most regional or multi-district deployments, **explicit segmentation** with district and year routing provides the best balance of flexibility and manageability.
+For most regional or multi-district deployments, **explicit segmentation** with
+district and year routing provides the best balance of flexibility and manageability.
 
 ## Key Concept
 
-Context-based routing enables a single DMS deployment to serve multiple isolated data instances, each identified by one or more route qualifiers. For example:
+Context-based routing enables a single DMS deployment to serve multiple isolated
+data instances, each identified by one or more route qualifiers. For example:
 
-- `/255901/2024/data/ed-fi/students` → Routes to District 255901's 2024 school year database
-- `/255901/2025/data/ed-fi/students` → Routes to District 255901's 2025 school year database
-- `/255902/2024/data/ed-fi/students` → Routes to District 255902's 2024 school year database
+- `/255901/2024/data/ed-fi/students` → Routes to District 255901's 2024 school
+  year database
+- `/255901/2025/data/ed-fi/students` → Routes to District 255901's 2025 school
+  year database
+- `/255902/2024/data/ed-fi/students` → Routes to District 255902's 2024 school
+  year database
 
-The primary benefit is allowing the same API client credentials to access multiple segregated databases based on URL context, without requiring separate authentication for each instance.
+The primary benefit is allowing the same API client credentials to access multiple
+segregated databases based on URL context, without requiring separate
+authentication for each instance.
 
 ## Configuration Overview
 
-To enable context-based routing, administrators use the **DMS Configuration Service** to:
+To enable context-based routing, administrators use the **DMS Configuration Service**
+to:
 
-1. **Create DMS Database Instances** - Define separate database instances with connection strings
-2. **Define Route Contexts** - Associate each instance with one or more context key-value pairs
+1. **Create DMS Database Instances** - Define separate database instances with
+   connection strings
+2. **Define Route Contexts** - Associate each instance with one or more context
+   key-value pairs
 3. **Configure Applications** - Grant applications access to multiple instances
 
 ## URL Pattern
 
 When context-based routing is configured, API requests follow this pattern:
 
-```
+```http
 http://{host}:{port}/{qualifier1}/{qualifier2}/.../data/ed-fi/{resource}
 ```
 
@@ -99,7 +129,8 @@ http://{host}:{port}/{qualifier1}/{qualifier2}/.../data/ed-fi/{resource}
 - `http://localhost:8080/255901/2025/data/ed-fi/schools`
 - `http://localhost:8080/255902/2024/data/ed-fi/contentClassDescriptors`
 
-The order and number of route qualifiers must match the context keys defined for your instances.
+The order and number of route qualifiers must match the context keys defined for
+your instances.
 
 ## Configuration Steps
 
@@ -137,7 +168,8 @@ The response will include an `id` field that you'll use to associate route conte
 
 ### Step 3: Define Route Contexts
 
-For each instance, create route context entries that define how URL segments map to that instance:
+For each instance, create route context entries that define how URL segments map
+to that instance:
 
 ```http
 POST http://localhost:8081/v2/dmsInstanceRouteContexts
@@ -163,7 +195,8 @@ Content-Type: application/json
 }
 ```
 
-**Important:** Each instance can have multiple route contexts. DMS requires **all** context keys to match for routing to succeed.
+**Important:** Each instance can have multiple route contexts. DMS requires **all**
+context keys to match for routing to succeed.
 
 ### Step 4: Create Vendor and Application
 
@@ -238,7 +271,8 @@ Content-Type: application/json
 When DMS receives a request:
 
 1. **Extracts route qualifiers** from the URL path (e.g., `255901` and `2024`)
-2. **Matches against route contexts** to find an instance where all context key-value pairs match
+2. **Matches against route contexts** to find an instance where all context
+   key-value pairs match
 3. **Routes the request** to the matched instance's database
 4. **Returns 404** if no instance matches the provided qualifiers
 
@@ -326,11 +360,17 @@ Response: 404 Not Found or 400 Bad Request
 
 ## Important Notes
 
-- **All context keys must match**: If an instance has multiple route contexts (e.g., districtId and schoolYear), the request URL must provide values for all of them in the correct order.
-- **Application access control**: Applications must be explicitly granted access to instances via the `dmsInstanceIds` field when creating the application.
-- **Route qualifier order**: The order of route qualifiers in the URL should be consistent across your API implementation.
-- **Discovery API**: Route qualifiers are included in Location headers and should be used consistently across all operations (GET, POST, PUT, DELETE).
-- **No default instance**: Unlike single-instance deployments, there is no default database when using context-based routing. Route qualifiers are always required.
+- **All context keys must match**: If an instance has multiple route contexts
+  (e.g., districtId and schoolYear), the request URL must provide values for all
+  of them in the correct order.
+- **Application access control**: Applications must be explicitly granted access
+  to instances via the `dmsInstanceIds` field when creating the application.
+- **Route qualifier order**: The order of route qualifiers in the URL should be
+  consistent across your API implementation.
+- **Discovery API**: Route qualifiers are included in Location headers and
+  should be used consistently across all operations (GET, POST, PUT, DELETE).
+- **No default instance**: Unlike single-instance deployments, there is no
+ default database when using context-based routing. Route qualifiers are always required.
 
 ## Viewing Configuration
 
@@ -368,11 +408,15 @@ If you're migrating from the Ed-Fi ODS/API platform that used `OdsContextRouteTe
 
 ## Summary
 
-Context-based routing in DMS provides a powerful way to segment data while maintaining a unified API surface. By configuring instances and route contexts through the Configuration Service, you can:
+Context-based routing in DMS provides a powerful way to segment data while
+maintaining a unified API surface. By configuring instances and route contexts
+through the Configuration Service, you can:
 
 - Support multiple districts with a single API deployment
 - Maintain year-over-year historical data in separate databases
 - Use flexible multi-dimensional routing (district + year, or other combinations)
 - Grant applications access to multiple instances with a single credential
 
-This approach is ideal for regional deployments and for organizations that require strict data segmentation, while making the segmentation explicit to the API client through the API routes.
+This approach is ideal for regional deployments and for organizations that
+require strict data segmentation, while making the segmentation explicit to the
+API client through the API routes.
