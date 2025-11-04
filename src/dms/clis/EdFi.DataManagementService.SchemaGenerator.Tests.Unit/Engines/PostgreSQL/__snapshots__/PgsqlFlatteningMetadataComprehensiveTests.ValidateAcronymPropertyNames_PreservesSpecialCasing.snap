@@ -41,3 +41,21 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentSpecialEducationProgramAssociation_View
+CREATE OR REPLACE VIEW dms.StudentSpecialEducationProgramAssociation_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.ContentIdentifier,
+    base.IEPBeginDate
+FROM dms.edfi_StudentSpecialEducationProgramAssociation base;
+
+
+

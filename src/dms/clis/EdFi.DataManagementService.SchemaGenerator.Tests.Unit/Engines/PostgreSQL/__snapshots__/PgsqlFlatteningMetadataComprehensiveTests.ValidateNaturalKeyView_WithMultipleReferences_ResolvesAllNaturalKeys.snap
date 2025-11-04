@@ -1,0 +1,227 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_StudentSchoolAssociation (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    EntryDate DATE NOT NULL,
+    Student_Id BIGINT NOT NULL,
+    School_Id BIGINT NOT NULL,
+    GraduationPlan_Id BIGINT,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_StudentSchoolAssociation_Document
+    ON dms.edfi_StudentSchoolAssociation(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_StudentSchoolAssociation_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_StudentSchoolAssociation ADD CONSTRAINT UQ_StudentSchoolAssociation_NaturalKey
+            UNIQUE (EntryDate, Student_Id, School_Id);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_Student (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    StudentUniqueId VARCHAR(32) NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_Student_Document
+    ON dms.edfi_Student(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_Student_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_Student ADD CONSTRAINT UQ_Student_NaturalKey
+            UNIQUE (StudentUniqueId);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_School (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    SchoolId INTEGER NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_School_Document
+    ON dms.edfi_School(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_School_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_School ADD CONSTRAINT UQ_School_NaturalKey
+            UNIQUE (SchoolId);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_GraduationPlan (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    GraduationPlanTypeDescriptorId INTEGER NOT NULL,
+    GraduationSchoolYear INTEGER NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_GraduationPlan_Document
+    ON dms.edfi_GraduationPlan(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_GraduationPlan_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_GraduationPlan ADD CONSTRAINT UQ_GraduationPlan_NaturalKey
+            UNIQUE (GraduationPlanTypeDescriptorId, GraduationSchoolYear);
+    END IF;
+END$$;
+
+
+-- Foreign Key Constraints
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentSchoolAssociation_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentSchoolAssociation ADD CONSTRAINT FK_StudentSchoolAssociation_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_Student_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_Student ADD CONSTRAINT FK_Student_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_School_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_School ADD CONSTRAINT FK_School_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_GraduationPlan_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_GraduationPlan ADD CONSTRAINT FK_GraduationPlan_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentSchoolAssociation_View
+CREATE OR REPLACE VIEW dms.StudentSchoolAssociation_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.EntryDate,
+    base.Student_Id,
+    student.StudentUniqueId AS Student_StudentUniqueId,
+    base.School_Id,
+    school.SchoolId AS School_SchoolId,
+    base.GraduationPlan_Id,
+    graduationplan.GraduationPlanTypeDescriptorId AS GraduationPlan_GraduationPlanTypeDescriptorId,
+    graduationplan.GraduationSchoolYear AS GraduationPlan_GraduationSchoolYear
+FROM dms.edfi_StudentSchoolAssociation base
+    INNER JOIN dms.edfi_Student student ON base.Student_Id = student.Id
+    INNER JOIN dms.edfi_School school ON base.School_Id = school.Id
+    INNER JOIN dms.edfi_GraduationPlan graduationplan ON base.GraduationPlan_Id = graduationplan.Id;
+
+
+
+-- Natural Key Resolution View for Student_View
+CREATE OR REPLACE VIEW dms.Student_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.StudentUniqueId
+FROM dms.edfi_Student base;
+
+
+
+-- Natural Key Resolution View for School_View
+CREATE OR REPLACE VIEW dms.School_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.SchoolId
+FROM dms.edfi_School base;
+
+
+
+-- Natural Key Resolution View for GraduationPlan_View
+CREATE OR REPLACE VIEW dms.GraduationPlan_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.GraduationPlanTypeDescriptorId,
+    base.GraduationSchoolYear
+FROM dms.edfi_GraduationPlan base;
+
+
+

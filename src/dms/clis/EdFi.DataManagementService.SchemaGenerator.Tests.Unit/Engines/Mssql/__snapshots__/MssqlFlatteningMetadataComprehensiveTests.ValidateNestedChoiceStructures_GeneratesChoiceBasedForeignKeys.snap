@@ -145,3 +145,125 @@ ELSE
     PRINT 'Foreign key constraint FK_EducationContentRequiredURI_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for EducationContent_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'EducationContent_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[EducationContent_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.ContentIdentifier,
+        base.LearningResourceMetadataURI,
+        base.Description,
+        base.ShortDescription,
+        base.ContentClassDescriptorId
+    FROM [dms].[edfi_EducationContent] base');
+    PRINT 'View EducationContent_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[EducationContent_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.ContentIdentifier,
+        base.LearningResourceMetadataURI,
+        base.Description,
+        base.ShortDescription,
+        base.ContentClassDescriptorId
+    FROM [dms].[edfi_EducationContent] base');
+    PRINT 'View EducationContent_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for EducationContentDerivativeSourceEducationContent_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'EducationContentDerivativeSourceEducationContent_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[EducationContentDerivativeSourceEducationContent_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.EducationContent_Id,
+        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
+        base.DerivativeSource_EducationContent_Id
+    FROM [dms].[edfi_EducationContentDerivativeSourceEducationContent] base
+    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
+    PRINT 'View EducationContentDerivativeSourceEducationContent_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[EducationContentDerivativeSourceEducationContent_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.EducationContent_Id,
+        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
+        base.DerivativeSource_EducationContent_Id
+    FROM [dms].[edfi_EducationContentDerivativeSourceEducationContent] base
+    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
+    PRINT 'View EducationContentDerivativeSourceEducationContent_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for EducationContentRequiredURI_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'EducationContentRequiredURI_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[EducationContentRequiredURI_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.EducationContent_Id,
+        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
+        base.RequiredURI
+    FROM [dms].[edfi_EducationContentRequiredURI] base
+    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
+    PRINT 'View EducationContentRequiredURI_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[EducationContentRequiredURI_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.EducationContent_Id,
+        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
+        base.RequiredURI
+    FROM [dms].[edfi_EducationContentRequiredURI] base
+    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
+    PRINT 'View EducationContentRequiredURI_View altered.';
+END
+GO
+
+
+

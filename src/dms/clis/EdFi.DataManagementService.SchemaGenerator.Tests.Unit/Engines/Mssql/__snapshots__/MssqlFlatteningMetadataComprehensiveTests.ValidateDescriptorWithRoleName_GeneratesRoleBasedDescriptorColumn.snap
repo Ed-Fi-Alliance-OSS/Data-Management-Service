@@ -38,3 +38,41 @@ ELSE
     PRINT 'Foreign key constraint FK_Assessment_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Assessment_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Assessment_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Assessment_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.AssessmentIdentifier,
+        base.AssessedGradeLevelDescriptorId
+    FROM [dms].[edfi_Assessment] base');
+    PRINT 'View Assessment_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[Assessment_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.AssessmentIdentifier,
+        base.AssessedGradeLevelDescriptorId
+    FROM [dms].[edfi_Assessment] base');
+    PRINT 'View Assessment_View altered.';
+END
+GO
+
+
+

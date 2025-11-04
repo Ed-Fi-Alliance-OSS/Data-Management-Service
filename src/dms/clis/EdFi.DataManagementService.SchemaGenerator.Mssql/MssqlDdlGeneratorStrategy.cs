@@ -248,6 +248,74 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 }
             }
 
+            // PASS 3: Generate natural key resolution views
+            if (!options.SkipUnionViews) // Reuse this flag for view generation control
+            {
+                var naturalKeyViewTemplatePath = Path.Combine(
+                    AppContext.BaseDirectory,
+                    "Templates",
+                    "mssql-natural-key-view.hbs"
+                );
+                if (!File.Exists(naturalKeyViewTemplatePath))
+                {
+                    naturalKeyViewTemplatePath = Path.Combine(
+                        Directory.GetCurrentDirectory(),
+                        "Templates",
+                        "mssql-natural-key-view.hbs"
+                    );
+                }
+                var naturalKeyViewTemplateContent = File.ReadAllText(naturalKeyViewTemplatePath);
+                var naturalKeyViewTemplate = Handlebars.Compile(naturalKeyViewTemplateContent);
+
+                bool headerAdded = false;
+
+                foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas ?? [])
+                {
+                    var resourceName = kvp.Key;
+                    var resourceSchema = kvp.Value;
+
+                    if (resourceSchema.FlatteningMetadata?.Table == null)
+                    {
+                        continue;
+                    }
+
+                    // Skip extensions if not requested
+                    if (
+                        !options.IncludeExtensions && resourceSchema.FlatteningMetadata.Table.IsExtensionTable
+                    )
+                    {
+                        continue;
+                    }
+
+                    // Add header only when we have views to generate
+                    if (!headerAdded)
+                    {
+                        sb.AppendLine();
+                        sb.AppendLine("-- Natural Key Resolution Views");
+                        sb.AppendLine();
+                        headerAdded = true;
+                    }
+
+                    var originalSchemaName = GetOriginalSchemaName(
+                        apiSchema.ProjectSchema,
+                        resourceSchema,
+                        options
+                    );
+
+                    // Generate views for the root table and all child tables
+                    GenerateNaturalKeyViews(
+                        resourceSchema.FlatteningMetadata.Table,
+                        naturalKeyViewTemplate,
+                        sb,
+                        null,
+                        originalSchemaName,
+                        options,
+                        resourceSchema,
+                        apiSchema.ProjectSchema
+                    );
+                }
+            }
+
             // Generate union views for abstract resources unless skipped
             if (!options.SkipUnionViews && apiSchema.ProjectSchema != null)
             {
@@ -1485,6 +1553,374 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 : options.ResolveSchemaName(null);
 
             return $"[{finalSchemaName}].[{tableName}]";
+        }
+
+        /// <summary>
+        /// Generates natural key resolution views for a table and its children.
+        /// Views join to referenced tables to expose natural keys instead of surrogate keys.
+        /// </summary>
+        private void GenerateNaturalKeyViews(
+            TableMetadata table,
+            HandlebarsTemplate<object, object> template,
+            StringBuilder sb,
+            string? parentTableName,
+            string originalSchemaName,
+            DdlGenerationOptions options,
+            ResourceSchema? resourceSchema,
+            ProjectSchema projectSchema
+        )
+        {
+            var tableName = MssqlNamingHelper.MakeMssqlIdentifier(
+                DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options)
+            );
+            var viewName = $"{table.BaseName}_View";
+
+            var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema)
+                ? originalSchemaName
+                : options.ResolveSchemaName(null);
+            finalSchemaName = MssqlNamingHelper.MakeMssqlIdentifier(finalSchemaName);
+
+            var selectColumns = new List<string>();
+            var joins = new List<string>();
+
+            // Always include base table columns
+            selectColumns.Add("base.Id");
+            selectColumns.Add("base.Document_Id");
+            selectColumns.Add("base.Document_PartitionKey");
+
+            // Add audit columns if enabled
+            if (options.IncludeAuditColumns)
+            {
+                selectColumns.Add("base.CreateDate");
+                selectColumns.Add("base.LastModifiedDate");
+                selectColumns.Add("base.ChangeVersion");
+            }
+
+            // Track used aliases to avoid duplicates
+            var usedAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Id",
+                "Document_Id",
+                "Document_PartitionKey",
+                "CreateDate",
+                "LastModifiedDate",
+                "ChangeVersion",
+            };
+
+            // If this is a child table, add parent FK and resolve parent's natural keys
+            if (parentTableName != null)
+            {
+                var parentFkColumn = MssqlNamingHelper.MakeMssqlIdentifier($"{parentTableName}_Id");
+                selectColumns.Add($"base.{parentFkColumn}");
+                usedAliases.Add(parentFkColumn);
+
+                // Join to parent table to resolve its natural keys
+                var parentTableRef = MssqlNamingHelper.MakeMssqlIdentifier(
+                    DetermineTableName(parentTableName, originalSchemaName, resourceSchema, options)
+                );
+                joins.Add(
+                    $"\r\n    INNER JOIN [{finalSchemaName}].[{parentTableRef}] parent ON base.{parentFkColumn} = parent.Id"
+                );
+
+                // Find parent resource schema to get its natural key columns
+                var parentResourceSchema = FindResourceSchemaByTableName(
+                    projectSchema,
+                    parentTableName,
+                    options
+                );
+                if (parentResourceSchema != null && parentResourceSchema.FlatteningMetadata?.Table != null)
+                {
+                    // Add parent's natural key columns
+                    foreach (
+                        var parentNkCol in parentResourceSchema.FlatteningMetadata.Table.Columns.Where(c =>
+                            c.IsNaturalKey && !c.IsParentReference
+                        )
+                    )
+                    {
+                        var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
+                            $"{parentTableName}_{parentNkCol.ColumnName}"
+                        );
+                        if (!usedAliases.Contains(aliasName))
+                        {
+                            selectColumns.Add(
+                                $"parent.{MssqlNamingHelper.MakeMssqlIdentifier(parentNkCol.ColumnName)} AS {aliasName}"
+                            );
+                            usedAliases.Add(aliasName);
+                        }
+                    }
+
+                    // Recursively resolve parent's cross-resource references
+                    ResolveParentReferences(
+                        parentResourceSchema.FlatteningMetadata.Table,
+                        projectSchema,
+                        selectColumns,
+                        joins,
+                        "parent",
+                        parentTableName,
+                        finalSchemaName,
+                        originalSchemaName,
+                        options,
+                        parentResourceSchema,
+                        usedAliases
+                    );
+                }
+            }
+
+            // First pass: collect all FK columns that are part of cross-resource references
+            var fkColumnsInReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var column in table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>())
+            {
+                if (
+                    !string.IsNullOrEmpty(column.FromReferencePath)
+                    && column.ColumnName.EndsWith("Id")
+                    && !column.IsParentReference
+                )
+                {
+                    fkColumnsInReferences.Add(column.ColumnName);
+                }
+            }
+
+            // Process cross-resource references in current table
+            var processedReferences = new HashSet<string>();
+            foreach (var column in table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>())
+            {
+                if (
+                    !string.IsNullOrEmpty(column.FromReferencePath)
+                    && column.ColumnName.EndsWith("Id")
+                    && !column.IsParentReference
+                )
+                {
+                    var referencedResource = ResolveResourceNameFromPath(column.FromReferencePath);
+                    if (
+                        !string.IsNullOrEmpty(referencedResource)
+                        && !processedReferences.Contains(referencedResource)
+                    )
+                    {
+                        processedReferences.Add(referencedResource);
+
+                        // Include all FK columns for this reference (handles composite keys)
+                        foreach (
+                            var fkCol in (
+                                table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()
+                            ).Where(c =>
+                                !string.IsNullOrEmpty(c.FromReferencePath)
+                                && c.FromReferencePath == column.FromReferencePath
+                                && c.ColumnName.EndsWith("Id")
+                            )
+                        )
+                        {
+                            var columnIdentifier = MssqlNamingHelper.MakeMssqlIdentifier(fkCol.ColumnName);
+                            if (!usedAliases.Contains(columnIdentifier))
+                            {
+                                selectColumns.Add($"base.{columnIdentifier}");
+                                usedAliases.Add(columnIdentifier);
+                            }
+                        }
+
+                        // Find referenced resource schema
+                        var referencedSchema = FindResourceSchemaByName(projectSchema, referencedResource);
+                        if (referencedSchema?.FlatteningMetadata?.Table != null)
+                        {
+                            var refTable = referencedSchema.FlatteningMetadata.Table;
+                            var refTableName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                DetermineTableName(
+                                    refTable.BaseName,
+                                    GetOriginalSchemaName(projectSchema, referencedSchema, options),
+                                    referencedSchema,
+                                    options
+                                )
+                            );
+                            var refAlias = referencedResource.ToLower();
+
+                            // Determine the join condition (use first FK column for single-column join)
+                            var mainFkColumn = MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName);
+                            joins.Add(
+                                $"\r\n    INNER JOIN [{finalSchemaName}].[{refTableName}] {refAlias} ON base.{mainFkColumn} = {refAlias}.Id"
+                            );
+
+                            // Add natural key columns from referenced resource
+                            foreach (
+                                var refNkCol in refTable.Columns.Where(c =>
+                                    c.IsNaturalKey && !c.IsParentReference
+                                )
+                            )
+                            {
+                                var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                    $"{referencedResource}_{refNkCol.ColumnName}"
+                                );
+                                if (!usedAliases.Contains(aliasName))
+                                {
+                                    selectColumns.Add(
+                                        $"{refAlias}.{MssqlNamingHelper.MakeMssqlIdentifier(refNkCol.ColumnName)} AS {aliasName}"
+                                    );
+                                    usedAliases.Add(aliasName);
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (!column.IsParentReference && !fkColumnsInReferences.Contains(column.ColumnName))
+                {
+                    // Include regular data columns (skip FK columns already added above)
+                    var columnIdentifier = MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName);
+                    if (!usedAliases.Contains(columnIdentifier))
+                    {
+                        selectColumns.Add($"base.{columnIdentifier}");
+                        usedAliases.Add(columnIdentifier);
+                    }
+                }
+            }
+
+            // Generate view with proper naming
+            var sanitizedViewName = MssqlNamingHelper.MakeMssqlIdentifier($"{table.BaseName}_View");
+
+            var viewData = new
+            {
+                viewName = sanitizedViewName,
+                schemaName = finalSchemaName,
+                baseTableName = tableName,
+                selectColumns,
+                joins,
+            };
+
+            sb.AppendLine(template(viewData));
+
+            // Recursively process child tables
+            foreach (var childTable in table.ChildTables ?? System.Linq.Enumerable.Empty<TableMetadata>())
+            {
+                GenerateNaturalKeyViews(
+                    childTable,
+                    template,
+                    sb,
+                    table.BaseName,
+                    originalSchemaName,
+                    options,
+                    resourceSchema,
+                    projectSchema
+                );
+            }
+        }
+
+        /// <summary>
+        /// Resolves parent table's cross-resource references recursively.
+        /// </summary>
+        private void ResolveParentReferences(
+            TableMetadata parentTable,
+            ProjectSchema projectSchema,
+            List<string> selectColumns,
+            List<string> joins,
+            string parentAlias,
+            string parentPrefix,
+            string finalSchemaName,
+            string originalSchemaName,
+            DdlGenerationOptions options,
+            ResourceSchema parentResourceSchema,
+            HashSet<string> usedAliases
+        )
+        {
+            var processedRefs = new HashSet<string>();
+
+            foreach (var column in parentTable.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>())
+            {
+                if (
+                    !string.IsNullOrEmpty(column.FromReferencePath)
+                    && column.ColumnName.EndsWith("Id")
+                    && !column.IsParentReference
+                )
+                {
+                    var referencedResource = ResolveResourceNameFromPath(column.FromReferencePath);
+                    if (
+                        !string.IsNullOrEmpty(referencedResource)
+                        && !processedRefs.Contains(referencedResource)
+                    )
+                    {
+                        processedRefs.Add(referencedResource);
+
+                        // Include parent's surrogate key column
+                        var parentFkAlias = MssqlNamingHelper.MakeMssqlIdentifier(
+                            $"{parentPrefix}_{column.ColumnName}"
+                        );
+                        if (!usedAliases.Contains(parentFkAlias))
+                        {
+                            selectColumns.Add(
+                                $"{parentAlias}.{MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName)} AS {parentFkAlias}"
+                            );
+                            usedAliases.Add(parentFkAlias);
+                        }
+
+                        // Find referenced resource
+                        var referencedSchema = FindResourceSchemaByName(projectSchema, referencedResource);
+                        if (referencedSchema?.FlatteningMetadata?.Table != null)
+                        {
+                            var refTable = referencedSchema.FlatteningMetadata.Table;
+                            var refTableName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                DetermineTableName(
+                                    refTable.BaseName,
+                                    GetOriginalSchemaName(projectSchema, referencedSchema, options),
+                                    referencedSchema,
+                                    options
+                                )
+                            );
+                            var refAlias = $"{parentAlias}_{referencedResource.ToLower()}";
+
+                            // Join to referenced table
+                            joins.Add(
+                                $"\r\n    INNER JOIN [{finalSchemaName}].[{refTableName}] {refAlias} ON {parentAlias}.{MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName)} = {refAlias}.Id"
+                            );
+
+                            // Add natural key columns
+                            foreach (
+                                var refNkCol in refTable.Columns.Where(c =>
+                                    c.IsNaturalKey && !c.IsParentReference
+                                )
+                            )
+                            {
+                                var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                    $"{parentPrefix}_{referencedResource}_{refNkCol.ColumnName}"
+                                );
+                                if (!usedAliases.Contains(aliasName))
+                                {
+                                    selectColumns.Add(
+                                        $"{refAlias}.{MssqlNamingHelper.MakeMssqlIdentifier(refNkCol.ColumnName)} AS {aliasName}"
+                                    );
+                                    usedAliases.Add(aliasName);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Finds a resource schema by its resource name.
+        /// </summary>
+        private ResourceSchema? FindResourceSchemaByName(ProjectSchema projectSchema, string resourceName)
+        {
+            if (projectSchema.ResourceSchemas?.TryGetValue(resourceName, out var schema) == true)
+            {
+                return schema;
+            }
+
+            // Try case-insensitive match
+            return projectSchema.ResourceSchemas?.Values.FirstOrDefault(rs =>
+                string.Equals(rs.ResourceName, resourceName, StringComparison.OrdinalIgnoreCase)
+            );
+        }
+
+        /// <summary>
+        /// Finds a resource schema by its table base name.
+        /// </summary>
+        private ResourceSchema? FindResourceSchemaByTableName(
+            ProjectSchema projectSchema,
+            string tableName,
+            DdlGenerationOptions options
+        )
+        {
+            return projectSchema.ResourceSchemas?.Values.FirstOrDefault(rs =>
+                rs.FlatteningMetadata?.Table != null
+                && string.Equals(rs.FlatteningMetadata.Table.BaseName, tableName, StringComparison.Ordinal)
+            );
         }
     }
 }

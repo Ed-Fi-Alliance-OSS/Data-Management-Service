@@ -121,3 +121,54 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociation_View
+CREATE OR REPLACE VIEW dms.StudentEducationOrganizationAssociation_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.StudentId
+FROM dms.edfi_StudentEducationOrganizationAssociation base;
+
+
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociationAddress_View
+CREATE OR REPLACE VIEW dms.StudentEducationOrganizationAssociationAddress_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.StudentEducationOrganizationAssociation_Id,
+    parent.StudentId AS StudentEducationOrganizationAssociation_StudentId,
+    base.StreetNumberName
+FROM dms.edfi_StudentEducationOrganizationAssociationAddress base
+    INNER JOIN dms.edfi_StudentEducationOrganizationAssociation parent ON base.StudentEducationOrganizationAssociation_Id = parent.Id;
+
+
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociationAddressPeriod_View
+CREATE OR REPLACE VIEW dms.StudentEducationOrganizationAssociationAddressPeriod_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.StudentEducationOrganizationAssociationAddress_Id,
+    base.BeginDate,
+    base.EndDate
+FROM dms.edfi_StudentEducationOrganizationAssociationAddressPeriod base
+    INNER JOIN dms.edfi_StudentEducationOrganizationAssociationAddress parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id;
+
+
+

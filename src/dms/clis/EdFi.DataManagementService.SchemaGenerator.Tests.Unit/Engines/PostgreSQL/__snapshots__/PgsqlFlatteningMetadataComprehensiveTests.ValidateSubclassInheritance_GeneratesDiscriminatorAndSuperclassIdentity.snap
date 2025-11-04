@@ -92,3 +92,38 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for CommunityOrganization_View
+CREATE OR REPLACE VIEW dms.CommunityOrganization_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.CommunityOrganizationId
+FROM dms.edfi_CommunityOrganization base;
+
+
+
+-- Natural Key Resolution View for CommunityOrganizationEducationOrganizationIdentificati_07b00020
+CREATE OR REPLACE VIEW dms.CommunityOrganizationEducationOrganizationIdentificati_07b00020 AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.CommunityOrganization_Id,
+    parent.CommunityOrganizationId AS CommunityOrganization_CommunityOrganizationId,
+    base.IdentificationCode,
+    base.EducationOrganizationIdentificationSystemDescriptorId
+FROM dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7 base
+    INNER JOIN dms.edfi_CommunityOrganization parent ON base.CommunityOrganization_Id = parent.Id;
+
+
+

@@ -77,6 +77,83 @@ ELSE
     PRINT 'Foreign key constraint FK_StudentHomelessProgramAssociation_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentCTEProgramAssociation_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentCTEProgramAssociation_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentCTEProgramAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId,
+        base.BeginDate,
+        base.NonTraditionalGenderStatus
+    FROM [dms].[edfi_StudentCTEProgramAssociation] base');
+    PRINT 'View StudentCTEProgramAssociation_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[StudentCTEProgramAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId,
+        base.BeginDate,
+        base.NonTraditionalGenderStatus
+    FROM [dms].[edfi_StudentCTEProgramAssociation] base');
+    PRINT 'View StudentCTEProgramAssociation_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for StudentHomelessProgramAssociation_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentHomelessProgramAssociation_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentHomelessProgramAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId,
+        base.BeginDate,
+        base.AwaitingFosterCare
+    FROM [dms].[edfi_StudentHomelessProgramAssociation] base');
+    PRINT 'View StudentHomelessProgramAssociation_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[StudentHomelessProgramAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId,
+        base.BeginDate,
+        base.AwaitingFosterCare
+    FROM [dms].[edfi_StudentHomelessProgramAssociation] base');
+    PRINT 'View StudentHomelessProgramAssociation_View altered.';
+END
+GO
+
+
+
 -- SQL Server Union View
 IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'edfi_GeneralStudentProgramAssociation' AND SCHEMA_NAME(schema_id) = 'dms')
 BEGIN

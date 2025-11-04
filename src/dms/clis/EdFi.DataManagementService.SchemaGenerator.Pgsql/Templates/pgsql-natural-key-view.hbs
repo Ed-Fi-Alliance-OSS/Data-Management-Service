@@ -1,0 +1,9 @@
+-- Natural Key Resolution View for {{viewName}}
+CREATE OR REPLACE VIEW {{schemaName}}.{{viewName}} AS
+SELECT
+    {{#each selectColumns}}
+    {{this}}{{#unless @last}},{{/unless}}
+    {{/each}}
+FROM {{schemaName}}.{{baseTableName}} base{{#each joins}}{{this}}{{/each}};
+
+

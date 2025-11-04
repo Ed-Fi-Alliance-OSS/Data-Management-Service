@@ -75,6 +75,79 @@ ELSE
     PRINT 'Foreign key constraint FK_LocalEducationAgency_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for School_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'School_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[School_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.SchoolId,
+        base.NameOfInstitution
+    FROM [dms].[edfi_School] base');
+    PRINT 'View School_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[School_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.SchoolId,
+        base.NameOfInstitution
+    FROM [dms].[edfi_School] base');
+    PRINT 'View School_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for LocalEducationAgency_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'LocalEducationAgency_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[LocalEducationAgency_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.LocalEducationAgencyId,
+        base.NameOfInstitution
+    FROM [dms].[edfi_LocalEducationAgency] base');
+    PRINT 'View LocalEducationAgency_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[LocalEducationAgency_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.LocalEducationAgencyId,
+        base.NameOfInstitution
+    FROM [dms].[edfi_LocalEducationAgency] base');
+    PRINT 'View LocalEducationAgency_View altered.';
+END
+GO
+
+
+
 -- SQL Server Union View
 IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'edfi_EducationOrganization' AND SCHEMA_NAME(schema_id) = 'dms')
 BEGIN

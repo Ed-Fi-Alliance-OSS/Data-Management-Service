@@ -81,3 +81,39 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for DomainEntityName_View
+CREATE OR REPLACE VIEW dms.DomainEntityName_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.SectionIdentifier,
+    base.CourseOffering_Id
+FROM dms.edfi_DomainEntityName base;
+
+
+
+-- Natural Key Resolution View for DomainEntityNameClassPeriod_View
+CREATE OR REPLACE VIEW dms.DomainEntityNameClassPeriod_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.DomainEntityName_Id,
+    parent.SectionIdentifier AS DomainEntityName_SectionIdentifier,
+    parent.CourseOffering_Id AS DomainEntityName_CourseOffering_Id,
+    base.ClassPeriod_Id
+FROM dms.edfi_DomainEntityNameClassPeriod base
+    INNER JOIN dms.edfi_DomainEntityName parent ON base.DomainEntityName_Id = parent.Id;
+
+
+

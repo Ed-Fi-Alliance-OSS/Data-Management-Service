@@ -52,3 +52,21 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Assessment_View
+CREATE OR REPLACE VIEW dms.Assessment_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.AssessmentIdentifier,
+    base.AssessedGradeLevelDescriptorId
+FROM dms.edfi_Assessment base;
+
+
+

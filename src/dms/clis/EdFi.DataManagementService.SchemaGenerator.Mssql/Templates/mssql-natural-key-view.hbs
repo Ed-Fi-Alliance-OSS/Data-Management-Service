@@ -1,0 +1,24 @@
+-- Natural Key Resolution View for {{viewName}}
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = '{{viewName}}' AND SCHEMA_NAME(schema_id) = '{{schemaName}}')
+BEGIN
+    EXEC('CREATE VIEW [{{schemaName}}].[{{viewName}}] AS
+    SELECT
+        {{#each selectColumns}}
+        {{this}}{{#unless @last}},{{/unless}}
+        {{/each}}
+    FROM [{{schemaName}}].[{{baseTableName}}] base{{#each joins}}{{this}}{{/each}}');
+    PRINT 'View {{viewName}} created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [{{schemaName}}].[{{viewName}}] AS
+    SELECT
+        {{#each selectColumns}}
+        {{this}}{{#unless @last}},{{/unless}}
+        {{/each}}
+    FROM [{{schemaName}}].[{{baseTableName}}] base{{#each joins}}{{this}}{{/each}}');
+    PRINT 'View {{viewName}} altered.';
+END
+GO
+
+

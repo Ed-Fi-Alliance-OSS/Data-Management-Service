@@ -41,3 +41,21 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for DomainEntityName_View
+CREATE OR REPLACE VIEW dms.DomainEntityName_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.SectionIdentifier,
+    base.CourseOffering_Id
+FROM dms.edfi_DomainEntityName base;
+
+
+
