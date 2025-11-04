@@ -107,7 +107,7 @@ BEGIN
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
     [Document_PartitionKey] SMALLINT NOT NULL,
-    [GraduationPlanTypeDescriptorId] INT NOT NULL,
+    [GraduationPlanTypeDescriptorId] BIGINT NOT NULL,
     [GraduationSchoolYear] INT NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
     [LastModifiedDate] DATETIME2 NOT NULL,

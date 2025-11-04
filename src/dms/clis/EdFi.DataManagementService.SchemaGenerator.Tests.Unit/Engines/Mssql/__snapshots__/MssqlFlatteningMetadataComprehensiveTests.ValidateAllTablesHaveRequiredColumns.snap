@@ -33,7 +33,7 @@ BEGIN
     [Document_Id] BIGINT NOT NULL,
     [Document_PartitionKey] SMALLINT NOT NULL,
     [Student_Id] BIGINT NOT NULL,
-    [AddressTypeDescriptorId] INT NOT NULL,
+    [AddressTypeDescriptorId] BIGINT NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
     [LastModifiedDate] DATETIME2 NOT NULL,
     [ChangeVersion] BIGINT NOT NULL

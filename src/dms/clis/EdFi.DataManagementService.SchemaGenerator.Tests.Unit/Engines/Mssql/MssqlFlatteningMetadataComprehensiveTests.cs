@@ -40,14 +40,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                             {
                                 Table = new TableMetadata
                                 {
-                                    BaseName = "edfi_AssessmentItem",
+                                    BaseName = "AssessmentItem",
                                     JsonPath = "$",
                                     Columns = new List<ColumnMetadata>
                                     {
                                         new ColumnMetadata
                                         {
                                             ColumnName = "AssessmentItemCategoryDescriptorId",
-                                            ColumnType = "integer",
+                                            ColumnType = "descriptor",
                                             IsRequired = true,
                                             JsonPath = "$.assessmentItemCategoryDescriptor",
                                         },
@@ -96,7 +96,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                         new ColumnMetadata
                                         {
                                             ColumnName = "SomeDescriptorId",
-                                            ColumnType = "integer",
+                                            ColumnType = "descriptor",
                                             IsRequired = true,
                                             JsonPath = "$.someDescriptor",
                                         },
@@ -1862,7 +1862,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                                 new ColumnMetadata
                                                 {
                                                     ColumnName = "AddressTypeDescriptorId",
-                                                    ColumnType = "integer",
+                                                    ColumnType = "descriptor",
                                                     IsRequired = true,
                                                     IsNaturalKey = true,
                                                     JsonPath = "$.addresses[*].addressTypeDescriptor",
@@ -2241,7 +2241,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                         new ColumnMetadata
                                         {
                                             ColumnName = "GraduationPlanTypeDescriptorId",
-                                            ColumnType = "integer",
+                                            ColumnType = "descriptor",
                                             IsNaturalKey = true,
                                             IsRequired = true,
                                             JsonPath = "$.graduationPlanTypeDescriptor",
