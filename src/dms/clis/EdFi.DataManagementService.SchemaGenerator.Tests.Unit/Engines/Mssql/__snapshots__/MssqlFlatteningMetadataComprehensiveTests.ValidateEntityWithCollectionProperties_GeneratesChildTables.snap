@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_DomainEntityName] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [StringIdentity] NVARCHAR(30) NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
     [LastModifiedDate] DATETIME2 NOT NULL,
@@ -31,7 +31,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_DomainEntityNameRequiredIntegerProperty] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [DomainEntityName_Id] BIGINT NOT NULL,
     [RequiredIntegerProperty] INT,
     [CreateDate] DATETIME2 NOT NULL,
@@ -62,7 +62,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_DomainEntityNameSchoolYear] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [DomainEntityName_Id] BIGINT NOT NULL,
     [SchoolYear] INT,
     [CreateDate] DATETIME2 NOT NULL,
@@ -110,7 +110,7 @@ GO
 
 IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_DomainEntityNameRequiredIntegerProperty_Document')
 BEGIN
-    ALTER TABLE [dms].[edfi_DomainEntityNameRequiredIntegerProperty] ADD CONSTRAINT [FK_DomainEntityNameRequiredIntegerProperty_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    ALTER TABLE [dms].[edfi_DomainEntityNameRequiredIntegerProperty] ADD CONSTRAINT [FK_DomainEntityNameRequiredIntegerProperty_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
     PRINT 'Foreign key constraint FK_DomainEntityNameRequiredIntegerProperty_Document created.';
 END
 ELSE
@@ -128,7 +128,7 @@ GO
 
 IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_DomainEntityNameSchoolYear_Document')
 BEGIN
-    ALTER TABLE [dms].[edfi_DomainEntityNameSchoolYear] ADD CONSTRAINT [FK_DomainEntityNameSchoolYear_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    ALTER TABLE [dms].[edfi_DomainEntityNameSchoolYear] ADD CONSTRAINT [FK_DomainEntityNameSchoolYear_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
     PRINT 'Foreign key constraint FK_DomainEntityNameSchoolYear_Document created.';
 END
 ELSE

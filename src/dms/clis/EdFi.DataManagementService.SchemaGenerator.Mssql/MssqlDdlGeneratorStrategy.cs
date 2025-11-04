@@ -729,6 +729,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             // }
 
             // Store Document FK constraint for later generation (FIXED: no double parentheses)
+            // For child tables, use NO ACTION to avoid multiple cascade paths in SQL Server
             fkConstraintsToAdd.Add(
                 (
                     tableName,
@@ -741,7 +742,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         column = "Document_Id, Document_PartitionKey",
                         parentTable = $"[{finalSchemaName}].[{MssqlNamingHelper.MakeMssqlIdentifier("Document")}]",
                         parentColumn = "Id, DocumentPartitionKey",
-                        cascade = true,
+                        cascade = isRootTable, // Only root tables cascade; child tables use NO ACTION
                     }
                 )
             );

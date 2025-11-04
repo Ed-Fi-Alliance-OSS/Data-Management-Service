@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_StudentSchoolAssociation] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [EntryDate] DATE NOT NULL,
     [Student_Id] BIGINT NOT NULL,
     [School_Id] BIGINT NOT NULL,
@@ -52,7 +52,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_Student] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [StudentUniqueId] NVARCHAR(32) NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
     [LastModifiedDate] DATETIME2 NOT NULL,
@@ -79,7 +79,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_School] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [SchoolId] INT NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
     [LastModifiedDate] DATETIME2 NOT NULL,
@@ -106,7 +106,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_GraduationPlan] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [GraduationPlanTypeDescriptorId] INT NOT NULL,
     [GraduationSchoolYear] INT NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,

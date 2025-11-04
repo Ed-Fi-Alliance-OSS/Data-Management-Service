@@ -54,7 +54,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             sql.Should().Contain("CREATE TABLE [dms].[emptytableproject_EmptyTable]");
             sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
             sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
-            sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
+            sql.Should().Contain("[Document_PartitionKey] SMALLINT NOT NULL");
         }
 
         [Test]

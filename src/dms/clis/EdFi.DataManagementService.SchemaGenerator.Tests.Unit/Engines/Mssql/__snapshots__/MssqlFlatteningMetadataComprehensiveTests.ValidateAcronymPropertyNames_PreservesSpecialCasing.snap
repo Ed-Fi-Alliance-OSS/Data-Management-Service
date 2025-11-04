@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_StudentSpecialEducationProgramAssociation] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [ContentIdentifier] NVARCHAR(30) NOT NULL,
     [IEPBeginDate] DATETIME2(7) NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,

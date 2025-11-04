@@ -33,7 +33,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 );
             sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
             sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
-            sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
+            sql.Should().Contain("[Document_PartitionKey] SMALLINT NOT NULL");
             sql.Should().Contain("[Name] NVARCHAR(100) NOT NULL");
             sql.Should().Contain("[IsActive] BIT");
             sql.Should().Contain("CONSTRAINT [FK_TestTable_Document]");
@@ -70,7 +70,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             // Assert
             sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
             sql.Should().Contain("[Document_Id] BIGINT NOT NULL");
-            sql.Should().Contain("[Document_PartitionKey] TINYINT NOT NULL");
+            sql.Should().Contain("[Document_PartitionKey] SMALLINT NOT NULL");
             sql.Should().Contain("[Name] NVARCHAR(100) NOT NULL");
             sql.Should().Contain("[IsActive] BIT");
             sql.Should().NotContain("[IsActive] BIT NOT NULL");
