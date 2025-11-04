@@ -112,7 +112,7 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    parent.CommunityOrganizationId,
+    parent.CommunityOrganizationId AS CommunityOrganization_CommunityOrganizationId,
     base.IdentificationCode,
     base.EducationOrganizationIdentificationSystemDescriptorId
 FROM dms.edfi_CommunityOrganizationEducationOrganizationIdentif_d23abda7 base

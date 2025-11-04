@@ -168,7 +168,7 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        parent.StudentId,
+        parent.StudentId AS StudentEducationOrganizationAssociation_StudentId,
         base.StreetNumberName
     FROM [dms].[edfi_StudentEducationOrganizationAssociationAddress] base
     INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociation] parent ON base.StudentEducationOrganizationAssociation_Id = parent.Id');
@@ -188,7 +188,7 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        ancestor_1.StudentId,
+        ancestor_1.StudentId AS StudentEducationOrganizationAssociation_StudentId,
         base.BeginDate,
         base.EndDate
     FROM [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] base

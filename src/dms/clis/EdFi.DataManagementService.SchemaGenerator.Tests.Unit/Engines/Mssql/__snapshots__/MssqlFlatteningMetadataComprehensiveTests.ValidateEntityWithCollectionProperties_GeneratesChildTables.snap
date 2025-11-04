@@ -164,7 +164,7 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        parent.StringIdentity,
+        parent.StringIdentity AS DomainEntityName_StringIdentity,
         base.RequiredIntegerProperty
     FROM [dms].[edfi_DomainEntityNameRequiredIntegerProperty] base
     INNER JOIN [dms].[edfi_DomainEntityName] parent ON base.DomainEntityName_Id = parent.Id');
@@ -184,7 +184,7 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        parent.StringIdentity,
+        parent.StringIdentity AS DomainEntityName_StringIdentity,
         base.SchoolYear
     FROM [dms].[edfi_DomainEntityNameSchoolYear] base
     INNER JOIN [dms].[edfi_DomainEntityName] parent ON base.DomainEntityName_Id = parent.Id');

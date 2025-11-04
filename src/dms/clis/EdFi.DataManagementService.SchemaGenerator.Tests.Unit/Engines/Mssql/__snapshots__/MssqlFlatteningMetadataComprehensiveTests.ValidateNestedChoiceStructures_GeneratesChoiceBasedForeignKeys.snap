@@ -178,7 +178,7 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        parent.ContentIdentifier,
+        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
         base.DerivativeSource_EducationContent_Id
     FROM [dms].[edfi_EducationContentDerivativeSourceEducationContent] base
     INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
@@ -198,7 +198,7 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        parent.ContentIdentifier,
+        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
         base.RequiredURI
     FROM [dms].[edfi_EducationContentRequiredURI] base
     INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
