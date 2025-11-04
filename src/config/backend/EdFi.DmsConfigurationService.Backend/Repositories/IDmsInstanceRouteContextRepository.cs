@@ -20,6 +20,9 @@ public interface IDmsInstanceRouteContextRepository
     );
     Task<InstanceRouteContextDeleteResult> DeleteInstanceRouteContext(long id);
     Task<InstanceRouteContextQueryByInstanceResult> GetInstanceRouteContextsByInstance(long instanceId);
+    Task<InstanceRouteContextQueryByInstanceIdsResult> GetInstanceRouteContextsByInstanceIds(
+        List<long> instanceIds
+    );
 }
 
 public record DmsInstanceRouteContextInsertResult
@@ -140,4 +143,18 @@ public record InstanceRouteContextQueryByInstanceResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : InstanceRouteContextQueryByInstanceResult();
+}
+
+public record InstanceRouteContextQueryByInstanceIdsResult
+{
+    /// <summary>
+    /// Successful retrieval of instance route contexts for multiple instances
+    /// </summary>
+    public record Success(IEnumerable<DmsInstanceRouteContextResponse> DmsInstanceRouteContextResponses)
+        : InstanceRouteContextQueryByInstanceIdsResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : InstanceRouteContextQueryByInstanceIdsResult();
 }

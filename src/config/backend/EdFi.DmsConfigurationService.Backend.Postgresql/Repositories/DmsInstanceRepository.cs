@@ -68,12 +68,45 @@ public class DmsInstanceRepository(
                 string InstanceName,
                 byte[]? ConnectionString
             )>(sql, query);
-            var instances = results.Select(row => new DmsInstanceResponse
+
+            var instancesList = results.ToList();
+            if (!instancesList.Any())
+            {
+                return new DmsInstanceQueryResult.Success([]);
+            }
+
+            // Fetch route contexts for all instances in this page
+            var instanceIds = instancesList.Select(i => i.Id).ToList();
+            var routeContextsResult = await routeContextRepository.GetInstanceRouteContextsByInstanceIds(
+                instanceIds
+            );
+
+            // Group route contexts by instance ID
+            var routeContextsByInstanceId = routeContextsResult switch
+            {
+                InstanceRouteContextQueryByInstanceIdsResult.Success success => success
+                    .DmsInstanceRouteContextResponses.GroupBy(rc => rc.InstanceId)
+                    .ToDictionary(
+                        g => g.Key,
+                        g =>
+                            g.Select(rc => new DmsInstanceRouteContextItem(
+                                    rc.Id,
+                                    rc.InstanceId,
+                                    rc.ContextKey,
+                                    rc.ContextValue
+                                ))
+                                .ToList()
+                    ),
+                _ => new Dictionary<long, List<DmsInstanceRouteContextItem>>(),
+            };
+
+            var instances = instancesList.Select(row => new DmsInstanceResponse
             {
                 Id = row.Id,
                 InstanceType = row.InstanceType,
                 InstanceName = row.InstanceName,
                 ConnectionString = encryptionService.Decrypt(row.ConnectionString),
+                DmsInstanceRouteContexts = routeContextsByInstanceId.GetValueOrDefault(row.Id, []),
             });
             return new DmsInstanceQueryResult.Success(instances);
         }

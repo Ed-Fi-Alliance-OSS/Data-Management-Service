@@ -217,4 +217,37 @@ public class DmsInstanceRouteContextRepository(
             return new InstanceRouteContextQueryByInstanceResult.FailureUnknown(ex.Message);
         }
     }
+
+    public async Task<InstanceRouteContextQueryByInstanceIdsResult> GetInstanceRouteContextsByInstanceIds(
+        List<long> instanceIds
+    )
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        try
+        {
+            if (instanceIds == null || !instanceIds.Any())
+            {
+                return new InstanceRouteContextQueryByInstanceIdsResult.Success([]);
+            }
+
+            string sql = """
+                SELECT Id, InstanceId, ContextKey, ContextValue
+                FROM dmscs.DmsInstanceRouteContext
+                WHERE InstanceId = ANY(@InstanceIds)
+                ORDER BY InstanceId, ContextKey;
+                """;
+            var instanceRouteContexts = await connection.QueryAsync<DmsInstanceRouteContextResponse>(
+                sql,
+                new { InstanceIds = instanceIds }
+            );
+
+            return new InstanceRouteContextQueryByInstanceIdsResult.Success(instanceRouteContexts);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get instance route contexts by instance IDs failure");
+            return new InstanceRouteContextQueryByInstanceIdsResult.FailureUnknown(ex.Message);
+        }
+    }
 }
