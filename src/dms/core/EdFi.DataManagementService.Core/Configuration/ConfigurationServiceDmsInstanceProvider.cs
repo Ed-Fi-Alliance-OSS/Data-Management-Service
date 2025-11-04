@@ -156,75 +156,18 @@ public class ConfigurationServiceDmsInstanceProvider(
             return [];
         }
 
-        Dictionary<long, Dictionary<RouteQualifierName, RouteQualifierValue>> routeContextsByInstanceId =
-            await FetchRouteContexts();
-
         return dmsInstanceResponses
             .Select(response => new DmsInstance(
                 response.Id,
                 response.InstanceType,
                 response.InstanceName,
                 response.ConnectionString,
-                routeContextsByInstanceId.GetValueOrDefault(response.Id, [])
+                response.DmsInstanceRouteContexts.ToDictionary(
+                    rc => new RouteQualifierName(rc.ContextKey),
+                    rc => new RouteQualifierValue(rc.ContextValue)
+                )
             ))
             .ToList();
-    }
-
-    /// <summary>
-    /// Fetches route context information from the Configuration Service API
-    /// and maps it by InstanceId
-    /// </summary>
-    private async Task<
-        Dictionary<long, Dictionary<RouteQualifierName, RouteQualifierValue>>
-    > FetchRouteContexts()
-    {
-        // TODO: As part of DMS-851 this round trip can be eliminated. Contexts will be  included in the instance response.
-        const string RouteContextsEndpoint = "v2/dmsinstanceroutecontexts/";
-
-        logger.LogDebug("Sending GET request to {Endpoint}", RouteContextsEndpoint);
-
-        HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(
-            RouteContextsEndpoint
-        );
-
-        if (!response.IsSuccessStatusCode)
-        {
-            logger.LogWarning(
-                "Configuration Service returned status code {StatusCode} for route contexts endpoint",
-                response.StatusCode
-            );
-        }
-
-        response.EnsureSuccessStatusCode();
-
-        string routeContextsJson = await response.Content.ReadAsStringAsync();
-
-        logger.LogDebug(
-            "Received route contexts response from Configuration Service, deserializing {ByteCount} bytes",
-            routeContextsJson.Length
-        );
-
-        List<DmsInstanceRouteContextResponse>? routeContextResponses = JsonSerializer.Deserialize<
-            List<DmsInstanceRouteContextResponse>
-        >(routeContextsJson, _jsonOptions);
-
-        if (routeContextResponses == null)
-        {
-            logger.LogWarning("Route context deserialization returned null - treating as empty list");
-            return [];
-        }
-
-        // Group route contexts by InstanceId and convert to dictionary mapping ContextKey to ContextValue
-        return routeContextResponses
-            .GroupBy(rc => rc.InstanceId)
-            .ToDictionary(
-                group => group.Key,
-                group =>
-                    group.ToDictionary(
-                        rc => new RouteQualifierName(rc.ContextKey),
-                        rc => new RouteQualifierValue(rc.ContextValue)
-                    )
-            );
     }
 
     /// <summary>
@@ -236,15 +179,14 @@ public class ConfigurationServiceDmsInstanceProvider(
         public string InstanceType { get; init; } = string.Empty;
         public string InstanceName { get; init; } = string.Empty;
         public string? ConnectionString { get; init; } = null;
+        public IList<DmsInstanceRouteContextItem> DmsInstanceRouteContexts { get; init; } = [];
     }
 
     /// <summary>
-    /// Response model for route context information from Configuration Service API
+    /// Response model for route context items within a DMS instance response
     /// </summary>
-    private sealed class DmsInstanceRouteContextResponse
+    private sealed class DmsInstanceRouteContextItem
     {
-        public long Id { get; init; } = 0;
-        public long InstanceId { get; init; } = 0;
         public string ContextKey { get; init; } = string.Empty;
         public string ContextValue { get; init; } = string.Empty;
     }

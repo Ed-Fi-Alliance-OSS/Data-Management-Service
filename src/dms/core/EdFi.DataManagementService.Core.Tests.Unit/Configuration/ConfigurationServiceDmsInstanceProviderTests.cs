@@ -39,6 +39,11 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Production",
                     InstanceName = "Main Instance",
                     ConnectionString = "host=localhost;port=5432;database=edfi;",
+                    DmsInstanceRouteContexts = new object[]
+                    {
+                        new { ContextKey = "district", ContextValue = "255901" },
+                        new { ContextKey = "schoolYear", ContextValue = "2024" },
+                    },
                 },
                 new
                 {
@@ -46,29 +51,11 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Development",
                     InstanceName = "Dev Instance",
                     ConnectionString = "host=devhost;port=5432;database=edfi_dev;",
+                    DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
 
             handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
-
-            var routeContextsResponse = new[]
-            {
-                new
-                {
-                    Id = 1L,
-                    InstanceId = 1L,
-                    ContextKey = "district",
-                    ContextValue = "255901",
-                },
-                new
-                {
-                    Id = 2L,
-                    InstanceId = 1L,
-                    ContextKey = "schoolYear",
-                    ContextValue = "2024",
-                },
-            };
-            handler.SetResponse("v2/dmsinstanceroutecontexts/", routeContextsResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -165,7 +152,6 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 .Returns("valid-token");
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
-            handler.SetResponse("v2/dmsinstanceroutecontexts/", Array.Empty<object>());
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
             var context = new ConfigurationServiceContext("clientId", "secret", "scope");
@@ -271,6 +257,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Production",
                     InstanceName = "First Instance",
                     ConnectionString = "host=first;database=db1;",
+                    DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
 
@@ -283,6 +270,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Development",
                     InstanceName = "Second Instance",
                     ConnectionString = "host=second;database=db2;",
+                    DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
                 new
                 {
@@ -290,11 +278,11 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Staging",
                     InstanceName = "Third Instance",
                     ConnectionString = "host=third;database=db3;",
+                    DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
 
             handler.SetResponse("v2/dmsInstances/", firstResponse);
-            handler.SetResponse("v2/dmsinstanceroutecontexts/", Array.Empty<object>());
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -367,19 +355,20 @@ public class ConfigurationServiceDmsInstanceProviderTests
                         "id": 1,
                         "instanceType": "Production",
                         "instanceName": "Valid Instance",
-                        "connectionString": "host=localhost;database=edfi;"
+                        "connectionString": "host=localhost;database=edfi;",
+                        "dmsInstanceRouteContexts": []
                     },
                     {
                         "id": 2,
                         "instanceType": "Development",
                         "instanceName": "Instance With Null Connection",
-                        "connectionString": null
+                        "connectionString": null,
+                        "dmsInstanceRouteContexts": []
                     }
                 ]
                 """;
 
             handler.SetJsonResponse("v2/dmsInstances/", dmsInstancesJson);
-            handler.SetResponse("v2/dmsinstanceroutecontexts/", Array.Empty<object>());
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -431,6 +420,11 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Production",
                     InstanceName = "District 255901 - 2024",
                     ConnectionString = "host=localhost;database=edfi_255901_2024;",
+                    DmsInstanceRouteContexts = new object[]
+                    {
+                        new { ContextKey = "district", ContextValue = "255901" },
+                        new { ContextKey = "schoolYear", ContextValue = "2024" },
+                    },
                 },
                 new
                 {
@@ -438,6 +432,11 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Production",
                     InstanceName = "District 255901 - 2025",
                     ConnectionString = "host=localhost;database=edfi_255901_2025;",
+                    DmsInstanceRouteContexts = new object[]
+                    {
+                        new { ContextKey = "district", ContextValue = "255901" },
+                        new { ContextKey = "schoolYear", ContextValue = "2025" },
+                    },
                 },
                 new
                 {
@@ -445,57 +444,15 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Production",
                     InstanceName = "District 255902 - 2024",
                     ConnectionString = "host=localhost;database=edfi_255902_2024;",
-                },
-            };
-
-            var routeContextsResponse = new[]
-            {
-                new
-                {
-                    Id = 1L,
-                    InstanceId = 1L,
-                    ContextKey = "district",
-                    ContextValue = "255901",
-                },
-                new
-                {
-                    Id = 2L,
-                    InstanceId = 1L,
-                    ContextKey = "schoolYear",
-                    ContextValue = "2024",
-                },
-                new
-                {
-                    Id = 3L,
-                    InstanceId = 2L,
-                    ContextKey = "district",
-                    ContextValue = "255901",
-                },
-                new
-                {
-                    Id = 4L,
-                    InstanceId = 2L,
-                    ContextKey = "schoolYear",
-                    ContextValue = "2025",
-                },
-                new
-                {
-                    Id = 5L,
-                    InstanceId = 3L,
-                    ContextKey = "district",
-                    ContextValue = "255902",
-                },
-                new
-                {
-                    Id = 6L,
-                    InstanceId = 3L,
-                    ContextKey = "schoolYear",
-                    ContextValue = "2024",
+                    DmsInstanceRouteContexts = new object[]
+                    {
+                        new { ContextKey = "district", ContextValue = "255902" },
+                        new { ContextKey = "schoolYear", ContextValue = "2024" },
+                    },
                 },
             };
 
             handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
-            handler.SetResponse("v2/dmsinstanceroutecontexts/", routeContextsResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -581,30 +538,11 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Production",
                     InstanceName = "Valid Instance",
                     ConnectionString = "host=localhost;database=edfi;",
-                },
-            };
-
-            // Route contexts reference non-existent instance IDs
-            var routeContextsResponse = new[]
-            {
-                new
-                {
-                    Id = 1L,
-                    InstanceId = 999L,
-                    ContextKey = "district",
-                    ContextValue = "255901",
-                },
-                new
-                {
-                    Id = 2L,
-                    InstanceId = 999L,
-                    ContextKey = "schoolYear",
-                    ContextValue = "2024",
+                    DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
 
             handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
-            handler.SetResponse("v2/dmsinstanceroutecontexts/", routeContextsResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -650,11 +588,11 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Production",
                     InstanceName = "Instance Without Route Context",
                     ConnectionString = "host=localhost;database=edfi;",
+                    DmsInstanceRouteContexts = Array.Empty<object>(),
                 },
             };
 
             handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
-            handler.SetResponse("v2/dmsinstanceroutecontexts/", Array.Empty<object>());
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
@@ -706,22 +644,14 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     InstanceType = "Production",
                     InstanceName = "District Only Instance",
                     ConnectionString = "host=localhost;database=edfi;",
-                },
-            };
-
-            var routeContextsResponse = new[]
-            {
-                new
-                {
-                    Id = 1L,
-                    InstanceId = 1L,
-                    ContextKey = "district",
-                    ContextValue = "255901",
+                    DmsInstanceRouteContexts = new object[]
+                    {
+                        new { ContextKey = "district", ContextValue = "255901" },
+                    },
                 },
             };
 
             handler.SetResponse("v2/dmsInstances/", dmsInstancesResponse);
-            handler.SetResponse("v2/dmsinstanceroutecontexts/", routeContextsResponse);
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
