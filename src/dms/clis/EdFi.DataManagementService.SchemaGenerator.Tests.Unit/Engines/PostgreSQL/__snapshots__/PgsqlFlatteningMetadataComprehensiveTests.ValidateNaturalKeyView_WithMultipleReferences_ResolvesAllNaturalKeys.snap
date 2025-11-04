@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS dms.edfi_GraduationPlan (
     Id BIGSERIAL PRIMARY KEY,
     Document_Id BIGINT NOT NULL,
     Document_PartitionKey SMALLINT NOT NULL,
-    GraduationPlanTypeDescriptorId INTEGER NOT NULL,
+    GraduationPlanTypeDescriptorId BIGINT NOT NULL,
     GraduationSchoolYear INTEGER NOT NULL,
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
@@ -141,6 +141,17 @@ BEGIN
             ALTER TABLE dms.edfi_School ADD CONSTRAINT FK_School_Document
                 FOREIGN KEY (Document_Id, Document_PartitionKey)
                 REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_GraduationPlan_GraduationPlanTypeDescriptorId_Descriptor')
+        ) THEN
+            ALTER TABLE dms.edfi_GraduationPlan ADD CONSTRAINT FK_GraduationPlan_GraduationPlanTypeDescriptorId_Descriptor
+                FOREIGN KEY (GraduationPlanTypeDescriptorId)
+                REFERENCES dms.edfi_descriptor(Id);
         END IF;
 END$$;
 
