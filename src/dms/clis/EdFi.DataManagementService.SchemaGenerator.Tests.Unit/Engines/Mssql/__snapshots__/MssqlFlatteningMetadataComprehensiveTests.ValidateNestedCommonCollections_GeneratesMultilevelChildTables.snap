@@ -150,27 +150,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StudentId
     FROM [dms].[edfi_StudentEducationOrganizationAssociation] base');
     PRINT 'View StudentEducationOrganizationAssociation_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StudentEducationOrganizationAssociation_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentId
-    FROM [dms].[edfi_StudentEducationOrganizationAssociation] base');
-    PRINT 'View StudentEducationOrganizationAssociation_View altered.';
-END
+    PRINT 'View StudentEducationOrganizationAssociation_View already exists, skipped.';
 GO
 
 
@@ -183,10 +168,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentEducationOrganizationAssociation_Id,
         parent.StudentId AS StudentEducationOrganizationAssociation_StudentId,
         base.StreetNumberName
     FROM [dms].[edfi_StudentEducationOrganizationAssociationAddress] base
@@ -194,22 +175,7 @@ BEGIN
     PRINT 'View StudentEducationOrganizationAssociationAddress_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StudentEducationOrganizationAssociationAddress_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentEducationOrganizationAssociation_Id,
-        parent.StudentId AS StudentEducationOrganizationAssociation_StudentId,
-        base.StreetNumberName
-    FROM [dms].[edfi_StudentEducationOrganizationAssociationAddress] base
-    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociation] parent ON base.StudentEducationOrganizationAssociation_Id = parent.Id');
-    PRINT 'View StudentEducationOrganizationAssociationAddress_View altered.';
-END
+    PRINT 'View StudentEducationOrganizationAssociationAddress_View already exists, skipped.';
 GO
 
 
@@ -222,33 +188,16 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentEducationOrganizationAssociationAddress_Id,
+        ancestor_1.StudentId AS StudentEducationOrganizationAssociation_StudentId,
         base.BeginDate,
         base.EndDate
     FROM [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] base
-    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociationAddress] parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id');
+    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociationAddress] parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id
+    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociation] ancestor_1 ON parent.StudentEducationOrganizationAssociation_Id = ancestor_1.Id');
     PRINT 'View StudentEducationOrganizationAssociationAddressPeriod_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StudentEducationOrganizationAssociationAddressPeriod_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentEducationOrganizationAssociationAddress_Id,
-        base.BeginDate,
-        base.EndDate
-    FROM [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] base
-    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociationAddress] parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id');
-    PRINT 'View StudentEducationOrganizationAssociationAddressPeriod_View altered.';
-END
+    PRINT 'View StudentEducationOrganizationAssociationAddressPeriod_View already exists, skipped.';
 GO
 
 

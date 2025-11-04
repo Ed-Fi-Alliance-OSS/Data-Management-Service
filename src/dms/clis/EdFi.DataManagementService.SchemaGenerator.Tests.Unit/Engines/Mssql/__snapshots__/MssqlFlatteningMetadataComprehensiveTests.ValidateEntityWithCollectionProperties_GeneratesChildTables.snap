@@ -146,27 +146,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StringIdentity
     FROM [dms].[edfi_DomainEntityName] base');
     PRINT 'View DomainEntityName_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[DomainEntityName_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StringIdentity
-    FROM [dms].[edfi_DomainEntityName] base');
-    PRINT 'View DomainEntityName_View altered.';
-END
+    PRINT 'View DomainEntityName_View already exists, skipped.';
 GO
 
 
@@ -179,10 +164,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.DomainEntityName_Id,
         parent.StringIdentity AS DomainEntityName_StringIdentity,
         base.RequiredIntegerProperty
     FROM [dms].[edfi_DomainEntityNameRequiredIntegerProperty] base
@@ -190,22 +171,7 @@ BEGIN
     PRINT 'View DomainEntityNameRequiredIntegerProperty_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[DomainEntityNameRequiredIntegerProperty_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.DomainEntityName_Id,
-        parent.StringIdentity AS DomainEntityName_StringIdentity,
-        base.RequiredIntegerProperty
-    FROM [dms].[edfi_DomainEntityNameRequiredIntegerProperty] base
-    INNER JOIN [dms].[edfi_DomainEntityName] parent ON base.DomainEntityName_Id = parent.Id');
-    PRINT 'View DomainEntityNameRequiredIntegerProperty_View altered.';
-END
+    PRINT 'View DomainEntityNameRequiredIntegerProperty_View already exists, skipped.';
 GO
 
 
@@ -218,10 +184,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.DomainEntityName_Id,
         parent.StringIdentity AS DomainEntityName_StringIdentity,
         base.SchoolYear
     FROM [dms].[edfi_DomainEntityNameSchoolYear] base
@@ -229,22 +191,7 @@ BEGIN
     PRINT 'View DomainEntityNameSchoolYear_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[DomainEntityNameSchoolYear_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.DomainEntityName_Id,
-        parent.StringIdentity AS DomainEntityName_StringIdentity,
-        base.SchoolYear
-    FROM [dms].[edfi_DomainEntityNameSchoolYear] base
-    INNER JOIN [dms].[edfi_DomainEntityName] parent ON base.DomainEntityName_Id = parent.Id');
-    PRINT 'View DomainEntityNameSchoolYear_View altered.';
-END
+    PRINT 'View DomainEntityNameSchoolYear_View already exists, skipped.';
 GO
 
 

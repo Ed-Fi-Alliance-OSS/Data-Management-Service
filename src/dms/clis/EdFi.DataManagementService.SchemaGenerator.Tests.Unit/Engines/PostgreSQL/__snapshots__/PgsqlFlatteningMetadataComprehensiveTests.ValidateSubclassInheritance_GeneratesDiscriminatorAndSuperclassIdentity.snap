@@ -101,9 +101,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.CommunityOrganizationId
 FROM dms.edfi_CommunityOrganization base;
 
@@ -115,10 +112,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.CommunityOrganization_Id,
     parent.CommunityOrganizationId AS CommunityOrganization_CommunityOrganizationId,
     base.IdentificationCode,
     base.EducationOrganizationIdentificationSystemDescriptorId

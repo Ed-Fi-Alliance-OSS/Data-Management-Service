@@ -101,9 +101,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.AssessmentIdentifier
 FROM dms.edfi_Assessment base;
 
@@ -115,10 +112,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.Assessment_Id,
     parent.AssessmentIdentifier AS Assessment_AssessmentIdentifier,
     base.IdentificationCode,
     base.AssessmentIdentificationSystemDescriptorId

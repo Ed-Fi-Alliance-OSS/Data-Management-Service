@@ -110,29 +110,13 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.SectionIdentifier,
         base.CourseOffering_Id
     FROM [dms].[edfi_DomainEntityName] base');
     PRINT 'View DomainEntityName_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[DomainEntityName_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.SectionIdentifier,
-        base.CourseOffering_Id
-    FROM [dms].[edfi_DomainEntityName] base');
-    PRINT 'View DomainEntityName_View altered.';
-END
+    PRINT 'View DomainEntityName_View already exists, skipped.';
 GO
 
 
@@ -145,10 +129,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.DomainEntityName_Id,
         parent.SectionIdentifier AS DomainEntityName_SectionIdentifier,
         parent.CourseOffering_Id AS DomainEntityName_CourseOffering_Id,
         base.ClassPeriod_Id
@@ -157,23 +137,7 @@ BEGIN
     PRINT 'View DomainEntityNameClassPeriod_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[DomainEntityNameClassPeriod_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.DomainEntityName_Id,
-        parent.SectionIdentifier AS DomainEntityName_SectionIdentifier,
-        parent.CourseOffering_Id AS DomainEntityName_CourseOffering_Id,
-        base.ClassPeriod_Id
-    FROM [dms].[edfi_DomainEntityNameClassPeriod] base
-    INNER JOIN [dms].[edfi_DomainEntityName] parent ON base.DomainEntityName_Id = parent.Id');
-    PRINT 'View DomainEntityNameClassPeriod_View altered.';
-END
+    PRINT 'View DomainEntityNameClassPeriod_View already exists, skipped.';
 GO
 
 

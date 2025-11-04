@@ -175,9 +175,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.EntryDate,
     base.Student_Id,
     student.StudentUniqueId AS Student_StudentUniqueId,
@@ -199,9 +196,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.StudentUniqueId
 FROM dms.edfi_Student base;
 
@@ -213,9 +207,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.SchoolId
 FROM dms.edfi_School base;
 
@@ -227,9 +218,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.GraduationPlanTypeDescriptorId,
     base.GraduationSchoolYear
 FROM dms.edfi_GraduationPlan base;

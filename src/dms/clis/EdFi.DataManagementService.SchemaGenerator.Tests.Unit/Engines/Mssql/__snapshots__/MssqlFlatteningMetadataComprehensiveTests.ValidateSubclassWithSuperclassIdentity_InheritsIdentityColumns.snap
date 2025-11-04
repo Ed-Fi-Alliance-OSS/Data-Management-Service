@@ -53,9 +53,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StudentUniqueId,
         base.ProgramEducationOrganizationId,
         base.ProgramName,
@@ -66,24 +63,7 @@ BEGIN
     PRINT 'View GeneralStudentProgramAssociation_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[GeneralStudentProgramAssociation_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentUniqueId,
-        base.ProgramEducationOrganizationId,
-        base.ProgramName,
-        base.ProgramTypeDescriptor,
-        base.BeginDate,
-        base.ServedOutsideOfRegularSession
-    FROM [dms].[edfi_GeneralStudentProgramAssociation] base');
-    PRINT 'View GeneralStudentProgramAssociation_View altered.';
-END
+    PRINT 'View GeneralStudentProgramAssociation_View already exists, skipped.';
 GO
 
 

@@ -100,9 +100,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.StudentUniqueId
 FROM dms.edfi_Student base;
 
@@ -114,10 +111,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.Student_Id,
     parent.StudentUniqueId AS Student_StudentUniqueId,
     base.AddressTypeDescriptorId
 FROM dms.edfi_StudentAddress base

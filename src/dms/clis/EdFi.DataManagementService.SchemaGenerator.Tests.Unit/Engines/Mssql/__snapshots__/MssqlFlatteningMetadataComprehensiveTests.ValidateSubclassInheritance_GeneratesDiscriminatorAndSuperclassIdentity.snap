@@ -101,27 +101,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.CommunityOrganizationId
     FROM [dms].[edfi_CommunityOrganization] base');
     PRINT 'View CommunityOrganization_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[CommunityOrganization_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.CommunityOrganizationId
-    FROM [dms].[edfi_CommunityOrganization] base');
-    PRINT 'View CommunityOrganization_View altered.';
-END
+    PRINT 'View CommunityOrganization_View already exists, skipped.';
 GO
 
 
@@ -134,10 +119,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.CommunityOrganization_Id,
         parent.CommunityOrganizationId AS CommunityOrganization_CommunityOrganizationId,
         base.IdentificationCode,
         base.EducationOrganizationIdentificationSystemDescriptorId
@@ -146,23 +127,7 @@ BEGIN
     PRINT 'View CommunityOrganizationEducationOrganizationIdentificationCode_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[CommunityOrganizationEducationOrganizationIdentificationCode_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.CommunityOrganization_Id,
-        parent.CommunityOrganizationId AS CommunityOrganization_CommunityOrganizationId,
-        base.IdentificationCode,
-        base.EducationOrganizationIdentificationSystemDescriptorId
-    FROM [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] base
-    INNER JOIN [dms].[edfi_CommunityOrganization] parent ON base.CommunityOrganization_Id = parent.Id');
-    PRINT 'View CommunityOrganizationEducationOrganizationIdentificationCode_View altered.';
-END
+    PRINT 'View CommunityOrganizationEducationOrganizationIdentificationCode_View already exists, skipped.';
 GO
 
 
