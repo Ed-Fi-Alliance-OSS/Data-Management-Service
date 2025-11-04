@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_School] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [SchoolId] INT NOT NULL,
     [CharterApprovalSchoolYear_Id] BIGINT,
     [CreateDate] DATETIME2 NOT NULL,
@@ -38,7 +38,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_SchoolYear] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [SchoolYear] INT NOT NULL,
     [SchoolYearDescription] NVARCHAR(50) NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,

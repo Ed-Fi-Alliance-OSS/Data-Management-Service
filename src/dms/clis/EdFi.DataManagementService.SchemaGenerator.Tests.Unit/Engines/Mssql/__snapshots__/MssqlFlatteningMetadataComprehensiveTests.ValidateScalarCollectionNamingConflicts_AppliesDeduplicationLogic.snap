@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_EducationContent] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [ContentIdentifier] NVARCHAR(30) NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
     [LastModifiedDate] DATETIME2 NOT NULL,
@@ -31,7 +31,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_EducationContentEducationContentSuffixName] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [EducationContent_Id] BIGINT NOT NULL,
     [EducationContentSuffixName] NVARCHAR(30),
     [CreateDate] DATETIME2 NOT NULL,
@@ -79,7 +79,7 @@ GO
 
 IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_EducationContentEducationContentSuffixName_Document')
 BEGIN
-    ALTER TABLE [dms].[edfi_EducationContentEducationContentSuffixName] ADD CONSTRAINT [FK_EducationContentEducationContentSuffixName_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    ALTER TABLE [dms].[edfi_EducationContentEducationContentSuffixName] ADD CONSTRAINT [FK_EducationContentEducationContentSuffixName_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
     PRINT 'Foreign key constraint FK_EducationContentEducationContentSuffixName_Document created.';
 END
 ELSE

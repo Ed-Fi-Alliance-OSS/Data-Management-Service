@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [{{schemaName}}].[{{tableName}}] (
     {{#if hasId}}[{{id}}] BIGINT PRIMARY KEY IDENTITY(1,1),{{/if}}
 {{#if hasDocumentColumns}}    [{{documentId}}] BIGINT NOT NULL,
-    [{{documentPartitionKey}}] TINYINT NOT NULL,
+    [{{documentPartitionKey}}] SMALLINT NOT NULL,
 {{/if}}{{#each columns}}    [{{name}}] {{type}}{{#if isRequired}} NOT NULL{{/if}}{{#unless @last}},{{/unless}}
 {{/each}}{{#if fkColumns}},
 {{/if}}{{#each fkColumns}}    CONSTRAINT [{{constraintName}}]

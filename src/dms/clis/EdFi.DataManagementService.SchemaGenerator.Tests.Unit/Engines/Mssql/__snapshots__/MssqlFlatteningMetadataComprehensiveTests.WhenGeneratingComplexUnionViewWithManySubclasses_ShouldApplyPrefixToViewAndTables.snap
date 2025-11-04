@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_StudentCTEProgramAssociation] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [StudentUniqueId] NVARCHAR(32) NOT NULL,
     [BeginDate] DATE NOT NULL,
     [NonTraditionalGenderStatus] BIT,
@@ -33,7 +33,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_StudentHomelessProgramAssociation] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [StudentUniqueId] NVARCHAR(32) NOT NULL,
     [BeginDate] DATE NOT NULL,
     [AwaitingFosterCare] BIT,

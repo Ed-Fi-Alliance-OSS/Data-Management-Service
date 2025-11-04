@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_Assessment] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [AssessmentIdentifier] NVARCHAR(60) NOT NULL,
     [Namespace] NVARCHAR(255) NOT NULL,
     [AssessmentTitle] NVARCHAR(100) NOT NULL,
@@ -34,7 +34,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_ObjectiveAssessment] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [AssessmentIdentifier] NVARCHAR(60) NOT NULL,
     [IdentificationCode] NVARCHAR(60) NOT NULL,
     [Namespace] NVARCHAR(255) NOT NULL,

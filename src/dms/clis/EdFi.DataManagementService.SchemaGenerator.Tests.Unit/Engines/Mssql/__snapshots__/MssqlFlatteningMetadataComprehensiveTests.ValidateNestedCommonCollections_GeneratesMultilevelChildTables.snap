@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_StudentEducationOrganizationAssociation] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [StudentId] INT NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
     [LastModifiedDate] DATETIME2 NOT NULL,
@@ -31,7 +31,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddress] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [StudentEducationOrganizationAssociation_Id] BIGINT NOT NULL,
     [StreetNumberName] NVARCHAR(30) NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
@@ -62,7 +62,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [StudentEducationOrganizationAssociationAddress_Id] BIGINT NOT NULL,
     [BeginDate] INT NOT NULL,
     [EndDate] INT,
@@ -114,7 +114,7 @@ GO
 
 IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentEducationOrganizationAssociationAddress_Document')
 BEGIN
-    ALTER TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddress] ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddress_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    ALTER TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddress] ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddress_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
     PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddress_Document created.';
 END
 ELSE
@@ -132,7 +132,7 @@ GO
 
 IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentEducationOrganizationAssociationAddressPeriod_Document')
 BEGIN
-    ALTER TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddressPeriod_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    ALTER TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddressPeriod_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
     PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddressPeriod_Document created.';
 END
 ELSE

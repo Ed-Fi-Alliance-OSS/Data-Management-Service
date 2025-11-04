@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_DomainEntityName] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [StringIdentity] NVARCHAR(30) NOT NULL,
     [RequiredIntegerProperty] INT NOT NULL,
     [SchoolYear] INT,

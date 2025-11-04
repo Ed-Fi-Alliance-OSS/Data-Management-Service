@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_School] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [EducationOrganizationId] INT NOT NULL,
     [NameOfInstitution] NVARCHAR(255) NOT NULL,
     [SchoolTypeDescriptor] BIGINT,
@@ -33,7 +33,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_LocalEducationAgency] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [EducationOrganizationId] INT NOT NULL,
     [NameOfInstitution] NVARCHAR(255) NOT NULL,
     [LocalEducationAgencyCategoryDescriptor] BIGINT NOT NULL,
@@ -62,7 +62,7 @@ BEGIN
     CREATE TABLE [dms].[edfi_StateEducationAgency] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
-    [Document_PartitionKey] TINYINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
     [EducationOrganizationId] INT NOT NULL,
     [NameOfInstitution] NVARCHAR(255) NOT NULL,
     [StateEducationAgencyCategoryDescriptor] BIGINT,
