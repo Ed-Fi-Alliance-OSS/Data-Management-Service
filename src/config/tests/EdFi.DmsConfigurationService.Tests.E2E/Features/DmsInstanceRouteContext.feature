@@ -240,10 +240,14 @@ Feature: DMS Instance Route Context
                        "connectionString": "Server=localhost;Database=TestDb;",
                        "dmsInstanceRouteContexts": [
                            {
+                               "id": {id},
+                               "instanceId": {id},
                                "contextKey": "environment",
                                "contextValue": "production"
                            },
                            {
+                               "id": {id},
+                               "instanceId": {id},
                                "contextKey": "schoolYear",
                                "contextValue": "2024"
                            }

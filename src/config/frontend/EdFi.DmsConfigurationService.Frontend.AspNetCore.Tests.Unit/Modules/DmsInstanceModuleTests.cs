@@ -116,8 +116,8 @@ public class DmsInstanceModuleTests
                             ConnectionString = "Server=localhost;Database=TestDb;",
                             DmsInstanceRouteContexts =
                             [
-                                new("contextKey1", "contextValue1"),
-                                new("contextKey2", "contextValue2"),
+                                new(1, 1, "contextKey1", "contextValue1"),
+                                new(2, 1, "contextKey2", "contextValue2"),
                             ],
                         }
                     )

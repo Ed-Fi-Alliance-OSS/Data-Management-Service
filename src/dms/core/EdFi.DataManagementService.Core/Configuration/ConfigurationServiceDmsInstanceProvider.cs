@@ -187,6 +187,8 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// </summary>
     private sealed class DmsInstanceRouteContextItem
     {
+        public long Id { get; init; } = 0;
+        public long InstanceId { get; init; } = 0;
         public string ContextKey { get; init; } = string.Empty;
         public string ContextValue { get; init; } = string.Empty;
     }

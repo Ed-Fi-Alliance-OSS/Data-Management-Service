@@ -112,6 +112,8 @@ public class DmsInstanceRepository(
             {
                 InstanceRouteContextQueryByInstanceResult.Success success =>
                     success.DmsInstanceRouteContextResponses.Select(rc => new DmsInstanceRouteContextItem(
+                        rc.Id,
+                        rc.InstanceId,
                         rc.ContextKey,
                         rc.ContextValue
                     )),

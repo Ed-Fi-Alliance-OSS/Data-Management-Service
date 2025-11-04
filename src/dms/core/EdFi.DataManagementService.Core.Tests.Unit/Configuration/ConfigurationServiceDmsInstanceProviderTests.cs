@@ -41,8 +41,20 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     ConnectionString = "host=localhost;port=5432;database=edfi;",
                     DmsInstanceRouteContexts = new object[]
                     {
-                        new { ContextKey = "district", ContextValue = "255901" },
-                        new { ContextKey = "schoolYear", ContextValue = "2024" },
+                        new
+                        {
+                            Id = 1L,
+                            InstanceId = 1L,
+                            ContextKey = "district",
+                            ContextValue = "255901",
+                        },
+                        new
+                        {
+                            Id = 2L,
+                            InstanceId = 1L,
+                            ContextKey = "schoolYear",
+                            ContextValue = "2024",
+                        },
                     },
                 },
                 new
@@ -422,8 +434,20 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     ConnectionString = "host=localhost;database=edfi_255901_2024;",
                     DmsInstanceRouteContexts = new object[]
                     {
-                        new { ContextKey = "district", ContextValue = "255901" },
-                        new { ContextKey = "schoolYear", ContextValue = "2024" },
+                        new
+                        {
+                            Id = 1L,
+                            InstanceId = 1L,
+                            ContextKey = "district",
+                            ContextValue = "255901",
+                        },
+                        new
+                        {
+                            Id = 2L,
+                            InstanceId = 1L,
+                            ContextKey = "schoolYear",
+                            ContextValue = "2024",
+                        },
                     },
                 },
                 new
@@ -434,8 +458,20 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     ConnectionString = "host=localhost;database=edfi_255901_2025;",
                     DmsInstanceRouteContexts = new object[]
                     {
-                        new { ContextKey = "district", ContextValue = "255901" },
-                        new { ContextKey = "schoolYear", ContextValue = "2025" },
+                        new
+                        {
+                            Id = 3L,
+                            InstanceId = 2L,
+                            ContextKey = "district",
+                            ContextValue = "255901",
+                        },
+                        new
+                        {
+                            Id = 4L,
+                            InstanceId = 2L,
+                            ContextKey = "schoolYear",
+                            ContextValue = "2025",
+                        },
                     },
                 },
                 new
@@ -446,8 +482,20 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     ConnectionString = "host=localhost;database=edfi_255902_2024;",
                     DmsInstanceRouteContexts = new object[]
                     {
-                        new { ContextKey = "district", ContextValue = "255902" },
-                        new { ContextKey = "schoolYear", ContextValue = "2024" },
+                        new
+                        {
+                            Id = 5L,
+                            InstanceId = 3L,
+                            ContextKey = "district",
+                            ContextValue = "255902",
+                        },
+                        new
+                        {
+                            Id = 6L,
+                            InstanceId = 3L,
+                            ContextKey = "schoolYear",
+                            ContextValue = "2024",
+                        },
                     },
                 },
             };
@@ -646,7 +694,13 @@ public class ConfigurationServiceDmsInstanceProviderTests
                     ConnectionString = "host=localhost;database=edfi;",
                     DmsInstanceRouteContexts = new object[]
                     {
-                        new { ContextKey = "district", ContextValue = "255901" },
+                        new
+                        {
+                            Id = 1L,
+                            InstanceId = 1L,
+                            ContextKey = "district",
+                            ContextValue = "255901",
+                        },
                     },
                 },
             };
