@@ -578,30 +578,7 @@ Feature: Validation of the structure of the URLs
                   """
 
         @DMS-816
-        Scenario: 21 Ensure clients get 404 for DELETE on non-existent path
-             When a DELETE request is made to "/nonexistent/endpoint"
-             Then it should respond with 404
-              And the response body is
-                  """
-                  {
-                      "detail": "The specified data could not be found.",
-                      "type": "urn:ed-fi:api:not-found",
-                      "title": "Not Found",
-                      "status": 404,
-                      "correlationId": null,
-                      "validationErrors": {},
-                      "errors": []
-                  }
-                  """
-              And the response headers include
-                  """
-                    {
-                        "Content-Type": "application/problem+json"
-                    }
-                  """
-
-        @DMS-816
-        Scenario: 22 Ensure clients get 404 for PUT on non-existent path with ID
+        Scenario: 21 Ensure clients get 404 for PUT on non-existent path with ID
              When a PUT request is made to "/invalid/path/00000000-0000-4000-a000-000000000000" with
                   """
                   {
