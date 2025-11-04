@@ -11,4 +11,7 @@ public class DmsInstanceResponse
     public required string InstanceType { get; set; }
     public required string InstanceName { get; set; }
     public string? ConnectionString { get; set; }
+    public IEnumerable<DmsInstanceRouteContextItem> DmsInstanceRouteContexts { get; set; } = [];
 }
+
+public record DmsInstanceRouteContextItem(string ContextKey, string ContextValue);

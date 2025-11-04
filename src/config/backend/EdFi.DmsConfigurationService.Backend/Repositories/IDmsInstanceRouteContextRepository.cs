@@ -10,10 +10,14 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IDmsInstanceRouteContextRepository
 {
-    Task<DmsInstanceRouteContextInsertResult> InsertDmsInstanceRouteContext(DmsInstanceRouteContextInsertCommand command);
+    Task<DmsInstanceRouteContextInsertResult> InsertDmsInstanceRouteContext(
+        DmsInstanceRouteContextInsertCommand command
+    );
     Task<DmsInstanceRouteContextQueryResult> QueryInstanceRouteContext(PagingQuery query);
     Task<DmsInstanceRouteContextGetResult> GetInstanceRouteContext(long id);
-    Task<DmsInstanceRouteContextUpdateResult> UpdateDmsInstanceRouteContext(DmsInstanceRouteContextUpdateCommand command);
+    Task<DmsInstanceRouteContextUpdateResult> UpdateDmsInstanceRouteContext(
+        DmsInstanceRouteContextUpdateCommand command
+    );
     Task<InstanceRouteContextDeleteResult> DeleteInstanceRouteContext(long id);
     Task<InstanceRouteContextQueryByInstanceResult> GetInstanceRouteContextsByInstance(long instanceId);
 }
@@ -34,7 +38,8 @@ public record DmsInstanceRouteContextInsertResult
     /// <summary>
     /// Instance route context already exists for the given InstanceId and ContextKey
     /// </summary>
-    public record FailureDuplicateDmsInstanceRouteContext(long InstanceId, string ContextKey) : DmsInstanceRouteContextInsertResult();
+    public record FailureDuplicateDmsInstanceRouteContext(long InstanceId, string ContextKey)
+        : DmsInstanceRouteContextInsertResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -47,7 +52,8 @@ public record DmsInstanceRouteContextQueryResult
     /// <summary>
     /// A successful query result with responses
     /// </summary>
-    public record Success(IEnumerable<DmsInstanceRouteContextResponse> DmsInstanceRouteContextResponses) : DmsInstanceRouteContextQueryResult();
+    public record Success(IEnumerable<DmsInstanceRouteContextResponse> DmsInstanceRouteContextResponses)
+        : DmsInstanceRouteContextQueryResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -61,7 +67,8 @@ public record DmsInstanceRouteContextGetResult
     /// Successful get instance route context with the response
     /// </summary>
     /// <param name="DmsInstanceRouteContextResponse"></param>
-    public record Success(DmsInstanceRouteContextResponse DmsInstanceRouteContextResponse) : DmsInstanceRouteContextGetResult();
+    public record Success(DmsInstanceRouteContextResponse DmsInstanceRouteContextResponse)
+        : DmsInstanceRouteContextGetResult();
 
     /// <summary>
     /// Instance route context not found in data store
@@ -94,7 +101,8 @@ public record DmsInstanceRouteContextUpdateResult
     /// <summary>
     /// Instance route context already exists for the given InstanceId and ContextKey
     /// </summary>
-    public record FailureDuplicateDmsInstanceRouteContext(long InstanceId, string ContextKey) : DmsInstanceRouteContextUpdateResult();
+    public record FailureDuplicateDmsInstanceRouteContext(long InstanceId, string ContextKey)
+        : DmsInstanceRouteContextUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
@@ -125,7 +133,8 @@ public record InstanceRouteContextQueryByInstanceResult
     /// <summary>
     /// Successful retrieval of instance route contexts for a specific instance
     /// </summary>
-    public record Success(IEnumerable<DmsInstanceRouteContextResponse> DmsInstanceRouteContextResponses) : InstanceRouteContextQueryByInstanceResult();
+    public record Success(IEnumerable<DmsInstanceRouteContextResponse> DmsInstanceRouteContextResponses)
+        : InstanceRouteContextQueryByInstanceResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

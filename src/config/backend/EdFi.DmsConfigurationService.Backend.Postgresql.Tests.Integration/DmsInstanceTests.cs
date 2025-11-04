@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
+using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -16,11 +17,23 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public class DmsInstanceTests : DatabaseTest
 {
-    private readonly IDmsInstanceRepository _repository = new DmsInstanceRepository(
-        Configuration.DatabaseOptions,
-        NullLogger<DmsInstanceRepository>.Instance,
-        new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
-    );
+    private readonly IDmsInstanceRouteContextRepository _routeContextRepository =
+        new DmsInstanceRouteContextRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<DmsInstanceRouteContextRepository>.Instance
+        );
+
+    private readonly IDmsInstanceRepository _repository;
+
+    public DmsInstanceTests()
+    {
+        _repository = new DmsInstanceRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<DmsInstanceRepository>.Instance,
+            new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+            _routeContextRepository
+        );
+    }
 
     [TestFixture]
     public class Given_insert_dms_instance : DmsInstanceTests
@@ -261,6 +274,87 @@ public class DmsInstanceTests : DatabaseTest
         {
             var result = await _repository.GetDmsInstance(9999);
             result.Should().BeOfType<DmsInstanceGetResult.FailureNotFound>();
+        }
+    }
+
+    [TestFixture]
+    public class Given_dms_instance_with_route_contexts : DmsInstanceTests
+    {
+        private long _instanceId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert DMS instance
+            DmsInstanceInsertCommand instance = new()
+            {
+                InstanceType = "Production",
+                InstanceName = "Instance With Contexts",
+                ConnectionString = "Server=localhost;Database=TestDb;",
+            };
+
+            var result = await _repository.InsertDmsInstance(instance);
+            result.Should().BeOfType<DmsInstanceInsertResult.Success>();
+            _instanceId = (result as DmsInstanceInsertResult.Success)!.Id;
+
+            // Insert route contexts
+            await _routeContextRepository.InsertDmsInstanceRouteContext(
+                new()
+                {
+                    InstanceId = _instanceId,
+                    ContextKey = "environment",
+                    ContextValue = "production",
+                }
+            );
+
+            await _routeContextRepository.InsertDmsInstanceRouteContext(
+                new()
+                {
+                    InstanceId = _instanceId,
+                    ContextKey = "region",
+                    ContextValue = "us-east-1",
+                }
+            );
+        }
+
+        [Test]
+        public async Task It_should_retrieve_instance_with_route_contexts()
+        {
+            var getByIdResult = await _repository.GetDmsInstance(_instanceId);
+            getByIdResult.Should().BeOfType<DmsInstanceGetResult.Success>();
+
+            var instanceFromDb = ((DmsInstanceGetResult.Success)getByIdResult).DmsInstanceResponse;
+            instanceFromDb.InstanceType.Should().Be("Production");
+            instanceFromDb.InstanceName.Should().Be("Instance With Contexts");
+            instanceFromDb.DmsInstanceRouteContexts.Should().HaveCount(2);
+
+            instanceFromDb
+                .DmsInstanceRouteContexts.Should()
+                .Contain(c => c.ContextKey == "environment" && c.ContextValue == "production");
+            instanceFromDb
+                .DmsInstanceRouteContexts.Should()
+                .Contain(c => c.ContextKey == "region" && c.ContextValue == "us-east-1");
+        }
+
+        [Test]
+        public async Task It_should_return_empty_contexts_for_instance_without_contexts()
+        {
+            // Insert an instance without route contexts
+            DmsInstanceInsertCommand instance = new()
+            {
+                InstanceType = "Development",
+                InstanceName = "Instance Without Contexts",
+                ConnectionString = "Server=localhost;Database=DevDb;",
+            };
+
+            var result = await _repository.InsertDmsInstance(instance);
+            var instanceId = (result as DmsInstanceInsertResult.Success)!.Id;
+
+            var getByIdResult = await _repository.GetDmsInstance(instanceId);
+            getByIdResult.Should().BeOfType<DmsInstanceGetResult.Success>();
+
+            var instanceFromDb = ((DmsInstanceGetResult.Success)getByIdResult).DmsInstanceResponse;
+            instanceFromDb.DmsInstanceRouteContexts.Should().BeEmpty();
         }
     }
 }

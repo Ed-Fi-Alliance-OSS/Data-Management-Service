@@ -612,9 +612,9 @@ public class ClaimsFragmentComposer(ILogger<ClaimsFragmentComposer> logger) : IC
 
         [JsonPropertyName("_defaultAuthorizationStrategiesForCrud")]
         public List<ClaimSetResourceClaimActionAuthStrategies?> DefaultAuthorizationStrategiesForCRUD { get; set; } =
-            [];
+        [];
         public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCRUD { get; set; } =
-            [];
+        [];
         public List<ResourceClaim> Children { get; set; } = [];
         public List<TransformationClaimSet> ClaimSets { get; set; } = [];
     }

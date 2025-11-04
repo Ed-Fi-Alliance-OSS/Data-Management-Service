@@ -209,3 +209,46 @@ Feature: DMS Instance Route Context
              Then it should respond with 204
              When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
              Then it should respond with 204
+
+        Scenario: 09 Verify route contexts appear in DMS instance GET response
+             When a POST request is made to "/v2/dmsInstanceRouteContexts" with
+                  """
+                  {
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "schoolYear",
+                       "contextValue": "2024"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v2/dmsInstanceRouteContexts" with
+                  """
+                  {
+                       "instanceId": {dmsInstanceId},
+                       "contextKey": "environment",
+                       "contextValue": "production"
+                  }
+                  """
+             Then it should respond with 201
+             When a GET request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                       "id": {id},
+                       "instanceType": "Production",
+                       "instanceName": "Test Instance",
+                       "connectionString": "Server=localhost;Database=TestDb;",
+                       "dmsInstanceRouteContexts": [
+                           {
+                               "contextKey": "environment",
+                               "contextValue": "production"
+                           },
+                           {
+                               "contextKey": "schoolYear",
+                               "contextValue": "2024"
+                           }
+                       ]
+                  }
+                  """
+             When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 204

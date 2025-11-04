@@ -18,13 +18,15 @@ Feature: DmsInstances endpoints
                           "id": {id},
                           "instanceType": "Production",
                           "instanceName": "Test Instance",
-                          "connectionString": "Server=localhost;Database=TestDb;"
+                          "connectionString": "Server=localhost;Database=TestDb;",
+                          "dmsInstanceRouteContexts": []
                       },
                       {
                           "id": {id},
                           "instanceType": "Development",
                           "instanceName": "Dev Instance",
-                          "connectionString": "Server=dev;Database=DevDb;"
+                          "connectionString": "Server=dev;Database=DevDb;",
+                          "dmsInstanceRouteContexts": []
                       }]
                   """
 
@@ -50,7 +52,8 @@ Feature: DmsInstances endpoints
                         "id": {id},
                         "instanceType": "Production",
                         "instanceName": "New Test Instance",
-                        "connectionString": "Server=newtest;Database=NewTestDb;"
+                        "connectionString": "Server=newtest;Database=NewTestDb;",
+                        "dmsInstanceRouteContexts": []
                     }
                   """
 
@@ -72,7 +75,8 @@ Feature: DmsInstances endpoints
                           "id": {id},
                           "instanceType": "Development",
                           "instanceName": "Retrieved Instance",
-                          "connectionString": "Server=retrieved;Database=RetrievedDb;"
+                          "connectionString": "Server=retrieved;Database=RetrievedDb;",
+                          "dmsInstanceRouteContexts": []
                       }
                   """
 
@@ -102,7 +106,8 @@ Feature: DmsInstances endpoints
                         "id": {id},
                         "instanceType": "Production",
                         "instanceName": "Updated Instance",
-                        "connectionString": "Server=updated;Database=UpdatedDb;"
+                        "connectionString": "Server=updated;Database=UpdatedDb;",
+                        "dmsInstanceRouteContexts": []
                     }
                   """
 

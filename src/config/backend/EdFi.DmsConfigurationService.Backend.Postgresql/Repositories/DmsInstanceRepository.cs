@@ -8,6 +8,7 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
+using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -17,7 +18,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 public class DmsInstanceRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<DmsInstanceRepository> logger,
-    IConnectionStringEncryptionService encryptionService
+    IConnectionStringEncryptionService encryptionService,
+    IDmsInstanceRouteContextRepository routeContextRepository
 ) : IDmsInstanceRepository
 {
     public async Task<DmsInstanceInsertResult> InsertDmsInstance(DmsInstanceInsertCommand command)
@@ -104,12 +106,25 @@ public class DmsInstanceRepository(
                 return new DmsInstanceGetResult.FailureNotFound();
             }
 
+            // Fetch route contexts for this instance
+            var routeContextsResult = await routeContextRepository.GetInstanceRouteContextsByInstance(id);
+            var routeContexts = routeContextsResult switch
+            {
+                InstanceRouteContextQueryByInstanceResult.Success success =>
+                    success.DmsInstanceRouteContextResponses.Select(rc => new DmsInstanceRouteContextItem(
+                        rc.ContextKey,
+                        rc.ContextValue
+                    )),
+                _ => [],
+            };
+
             var instance = new DmsInstanceResponse
             {
                 Id = result.Value.Id,
                 InstanceType = result.Value.InstanceType,
                 InstanceName = result.Value.InstanceName,
                 ConnectionString = encryptionService.Decrypt(result.Value.ConnectionString),
+                DmsInstanceRouteContexts = routeContexts,
             };
             return new DmsInstanceGetResult.Success(instance);
         }
