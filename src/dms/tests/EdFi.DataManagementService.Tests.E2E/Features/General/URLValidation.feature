@@ -494,7 +494,7 @@ Feature: Validation of the structure of the URLs
 
         @DMS-816
         Scenario: 18 Ensure clients get 404 for completely invalid path with prefix before data model
-             When a POST request is made to "/notExisting/ed-fi/gradeLevelDescriptors" with
+             When a POST request is made to "/ed-fi/notExisting" with
                   """
                   {
                       "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
@@ -556,7 +556,7 @@ Feature: Validation of the structure of the URLs
 
         @DMS-816
         Scenario: 20 Ensure clients get 404 for arbitrary non-existent path
-             When a GET request is made to "/foo/bar/baz"
+             When a GET request is made to "/foo/bar"
              Then it should respond with 404
               And the response body is
                   """
