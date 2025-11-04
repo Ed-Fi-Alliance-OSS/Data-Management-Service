@@ -11,7 +11,9 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
+using EdFi.DataManagementService.Core.External.Model;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
+using EdFi.DataManagementService.Core.Response;
 
 // Disable reload to work around .NET file watcher bug on Linux. See:
 // https://github.com/dotnet/runtime/issues/62869
@@ -98,6 +100,26 @@ if (!ReportInvalidConfiguration(app))
     app.MapRouteEndpoints();
 
     app.MapHealthChecks("/health");
+
+    // Catch-all fallback for unmatched routes
+    app.MapFallback(context =>
+    {
+        context.Response.StatusCode = 404;
+        context.Response.ContentType = "application/problem+json";
+
+        var traceId = context.Request.Headers.TryGetValue(
+            app.Configuration.GetValue<string>("AppSettings:CorrelationIdHeader") ?? "correlationid",
+            out var correlationId
+        )
+            ? correlationId.ToString()
+            : context.TraceIdentifier;
+
+        var response = FailureResponse.ForNotFound(
+            "The specified data could not be found.",
+            new TraceId(traceId)
+        );
+        return context.Response.WriteAsJsonAsync(response);
+    });
 }
 
 await app.RunAsync();

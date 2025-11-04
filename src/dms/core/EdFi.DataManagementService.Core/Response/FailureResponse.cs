@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Core.Response;
 /// <summary>
 /// Failure response with error lists
 /// </summary>
-internal static class FailureResponse
+public static class FailureResponse
 {
     private static readonly string _typePrefix = "urn:ed-fi:api";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
