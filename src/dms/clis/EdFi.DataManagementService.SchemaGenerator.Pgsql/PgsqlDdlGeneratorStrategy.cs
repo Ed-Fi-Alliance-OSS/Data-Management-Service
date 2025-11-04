@@ -1620,15 +1620,17 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     )
                 )
                 {
-                    var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
-                        $"{parentTableName}_{parentNkCol.ColumnName}"
-                    );
-                    if (!usedAliases.Contains(aliasName))
+                    var columnName = PgsqlNamingHelper.MakePgsqlIdentifier(parentNkCol.ColumnName);
+                    if (!usedAliases.Contains(columnName))
                     {
-                        selectColumns.Add(
-                            $"parent.{PgsqlNamingHelper.MakePgsqlIdentifier(parentNkCol.ColumnName)} AS {aliasName}"
+                        selectColumns.Add($"parent.{columnName}");
+                        usedAliases.Add(columnName);
+                    }
+                    else
+                    {
+                        Console.WriteLine(
+                            $"INFO: Column name collision detected in view {viewName}: '{columnName}' from parent '{parentTableName}' already exists. Skipping duplicate."
                         );
-                        usedAliases.Add(aliasName);
                     }
                 }
 
@@ -1871,23 +1873,24 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
                 if (grandparentTable != null)
                 {
-                    // Add grandparent's natural key columns with simple prefix (just grandparentTable_columnName)
+                    // Add grandparent's natural key columns without prefix
                     foreach (
                         var grandparentNkCol in grandparentTable.Columns.Where(c =>
                             c.IsNaturalKey && !c.IsParentReference
                         )
                     )
                     {
-                        // Use simple prefix: grandparentTable_columnName (matches parent view naming)
-                        var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
-                            $"{grandparentTableName}_{grandparentNkCol.ColumnName}"
-                        );
-                        if (!usedAliases.Contains(aliasName))
+                        var columnName = PgsqlNamingHelper.MakePgsqlIdentifier(grandparentNkCol.ColumnName);
+                        if (!usedAliases.Contains(columnName))
                         {
-                            selectColumns.Add(
-                                $"{ancestorAlias}.{PgsqlNamingHelper.MakePgsqlIdentifier(grandparentNkCol.ColumnName)} AS {aliasName}"
+                            selectColumns.Add($"{ancestorAlias}.{columnName}");
+                            usedAliases.Add(columnName);
+                        }
+                        else
+                        {
+                            Console.WriteLine(
+                                $"INFO: Column name collision detected: '{columnName}' from ancestor '{grandparentTableName}' already exists. Skipping duplicate."
                             );
-                            usedAliases.Add(aliasName);
                         }
                     }
 

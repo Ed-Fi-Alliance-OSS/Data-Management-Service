@@ -140,7 +140,7 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    parent.StringIdentity AS DomainEntityName_StringIdentity,
+    parent.StringIdentity,
     base.RequiredIntegerProperty
 FROM dms.edfi_DomainEntityNameRequiredIntegerProperty base
     INNER JOIN dms.edfi_DomainEntityName parent ON base.DomainEntityName_Id = parent.Id;
@@ -153,7 +153,7 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    parent.StringIdentity AS DomainEntityName_StringIdentity,
+    parent.StringIdentity,
     base.SchoolYear
 FROM dms.edfi_DomainEntityNameSchoolYear base
     INNER JOIN dms.edfi_DomainEntityName parent ON base.DomainEntityName_Id = parent.Id;
