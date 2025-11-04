@@ -80,3 +80,37 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Student_View
+CREATE OR REPLACE VIEW dms.Student_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.StudentUniqueId
+FROM dms.edfi_Student base;
+
+
+
+-- Natural Key Resolution View for StudentAddress_View
+CREATE OR REPLACE VIEW dms.StudentAddress_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.Student_Id,
+    parent.StudentUniqueId AS Student_StudentUniqueId,
+    base.AddressTypeDescriptorId
+FROM dms.edfi_StudentAddress base
+    INNER JOIN dms.edfi_Student parent ON base.Student_Id = parent.Id;
+
+
+

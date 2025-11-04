@@ -89,3 +89,78 @@ ELSE
     PRINT 'Foreign key constraint FK_StudentAddress_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Student_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Student_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Student_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId
+    FROM [dms].[edfi_Student] base');
+    PRINT 'View Student_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[Student_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId
+    FROM [dms].[edfi_Student] base');
+    PRINT 'View Student_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for StudentAddress_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentAddress_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentAddress_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.Student_Id,
+        parent.StudentUniqueId AS Student_StudentUniqueId,
+        base.AddressTypeDescriptorId
+    FROM [dms].[edfi_StudentAddress] base
+    INNER JOIN [dms].[edfi_Student] parent ON base.Student_Id = parent.Id');
+    PRINT 'View StudentAddress_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[StudentAddress_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.Student_Id,
+        parent.StudentUniqueId AS Student_StudentUniqueId,
+        base.AddressTypeDescriptorId
+    FROM [dms].[edfi_StudentAddress] base
+    INNER JOIN [dms].[edfi_Student] parent ON base.Student_Id = parent.Id');
+    PRINT 'View StudentAddress_View altered.';
+END
+GO
+
+
+

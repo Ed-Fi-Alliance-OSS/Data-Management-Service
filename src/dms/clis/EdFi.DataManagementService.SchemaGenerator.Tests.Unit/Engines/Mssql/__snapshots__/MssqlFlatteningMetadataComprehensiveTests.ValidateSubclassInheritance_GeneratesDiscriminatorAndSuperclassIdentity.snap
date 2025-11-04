@@ -90,3 +90,80 @@ ELSE
     PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for CommunityOrganization_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'CommunityOrganization_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[CommunityOrganization_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.CommunityOrganizationId
+    FROM [dms].[edfi_CommunityOrganization] base');
+    PRINT 'View CommunityOrganization_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[CommunityOrganization_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.CommunityOrganizationId
+    FROM [dms].[edfi_CommunityOrganization] base');
+    PRINT 'View CommunityOrganization_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for CommunityOrganizationEducationOrganizationIdentificationCode_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'CommunityOrganizationEducationOrganizationIdentificationCode_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[CommunityOrganizationEducationOrganizationIdentificationCode_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.CommunityOrganization_Id,
+        parent.CommunityOrganizationId AS CommunityOrganization_CommunityOrganizationId,
+        base.IdentificationCode,
+        base.EducationOrganizationIdentificationSystemDescriptorId
+    FROM [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] base
+    INNER JOIN [dms].[edfi_CommunityOrganization] parent ON base.CommunityOrganization_Id = parent.Id');
+    PRINT 'View CommunityOrganizationEducationOrganizationIdentificationCode_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[CommunityOrganizationEducationOrganizationIdentificationCode_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.CommunityOrganization_Id,
+        parent.CommunityOrganizationId AS CommunityOrganization_CommunityOrganizationId,
+        base.IdentificationCode,
+        base.EducationOrganizationIdentificationSystemDescriptorId
+    FROM [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] base
+    INNER JOIN [dms].[edfi_CommunityOrganization] parent ON base.CommunityOrganization_Id = parent.Id');
+    PRINT 'View CommunityOrganizationEducationOrganizationIdentificationCode_View altered.';
+END
+GO
+
+
+

@@ -1,0 +1,248 @@
+﻿-- MSSQL CREATE TABLE edfi_Section
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_Section' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_Section] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [SectionIdentifier] NVARCHAR(255) NOT NULL,
+    [Location_School_Id] BIGINT,
+    [Location_Location_Id] BIGINT,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_Section_NaturalKey]
+        UNIQUE ([SectionIdentifier])
+    );
+    PRINT 'Table edfi_Section created.';
+END
+ELSE
+    PRINT 'Table edfi_Section already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Section_Location_School' AND object_id = OBJECT_ID('[dms].[edfi_Section]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Section_Location_School]
+        ON [dms].[edfi_Section]([Location_School_Id]);
+    PRINT 'Index IX_Section_Location_School created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Section_Location' AND object_id = OBJECT_ID('[dms].[edfi_Section]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Section_Location]
+        ON [dms].[edfi_Section]([Location_Location_Id]);
+    PRINT 'Index IX_Section_Location created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Section_Document' AND object_id = OBJECT_ID('[dms].[edfi_Section]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Section_Document]
+        ON [dms].[edfi_Section]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_Section_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_Location
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_Location' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_Location] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [School_Id] BIGINT NOT NULL,
+    [ClassroomIdentificationCode] NVARCHAR(60) NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_Location_NaturalKey]
+        UNIQUE ([School_Id], [ClassroomIdentificationCode])
+    );
+    PRINT 'Table edfi_Location created.';
+END
+ELSE
+    PRINT 'Table edfi_Location already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Location_School' AND object_id = OBJECT_ID('[dms].[edfi_Location]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Location_School]
+        ON [dms].[edfi_Location]([School_Id]);
+    PRINT 'Index IX_Location_School created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Location_Document' AND object_id = OBJECT_ID('[dms].[edfi_Location]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Location_Document]
+        ON [dms].[edfi_Location]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_Location_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_School
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_School' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_School] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] TINYINT NOT NULL,
+    [SchoolId] INT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_School_NaturalKey]
+        UNIQUE ([SchoolId])
+    );
+    PRINT 'Table edfi_School created.';
+END
+ELSE
+    PRINT 'Table edfi_School already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_School_Document' AND object_id = OBJECT_ID('[dms].[edfi_School]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_School_Document]
+        ON [dms].[edfi_School]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_School_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Section_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_Section] ADD CONSTRAINT [FK_Section_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_Section_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Section_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Location_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_Location] ADD CONSTRAINT [FK_Location_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_Location_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Location_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_School_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_School] ADD CONSTRAINT [FK_School_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_School_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_School_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Section_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Section_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Section_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.SectionIdentifier,
+        base.Location_School_Id,
+        base.Location_Location_Id,
+        location.ClassroomIdentificationCode AS Location_ClassroomIdentificationCode
+    FROM [dms].[edfi_Section] base
+    INNER JOIN [dms].[edfi_Location] location ON base.Location_Location_Id = location.Id');
+    PRINT 'View Section_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[Section_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.SectionIdentifier,
+        base.Location_School_Id,
+        base.Location_Location_Id,
+        location.ClassroomIdentificationCode AS Location_ClassroomIdentificationCode
+    FROM [dms].[edfi_Section] base
+    INNER JOIN [dms].[edfi_Location] location ON base.Location_Location_Id = location.Id');
+    PRINT 'View Section_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for Location_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Location_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Location_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.School_Id,
+        school.SchoolId AS School_SchoolId,
+        base.ClassroomIdentificationCode
+    FROM [dms].[edfi_Location] base
+    INNER JOIN [dms].[edfi_School] school ON base.School_Id = school.Id');
+    PRINT 'View Location_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[Location_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.School_Id,
+        school.SchoolId AS School_SchoolId,
+        base.ClassroomIdentificationCode
+    FROM [dms].[edfi_Location] base
+    INNER JOIN [dms].[edfi_School] school ON base.School_Id = school.Id');
+    PRINT 'View Location_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for School_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'School_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[School_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.SchoolId
+    FROM [dms].[edfi_School] base');
+    PRINT 'View School_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[School_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.SchoolId
+    FROM [dms].[edfi_School] base');
+    PRINT 'View School_View altered.';
+END
+GO
+
+
+

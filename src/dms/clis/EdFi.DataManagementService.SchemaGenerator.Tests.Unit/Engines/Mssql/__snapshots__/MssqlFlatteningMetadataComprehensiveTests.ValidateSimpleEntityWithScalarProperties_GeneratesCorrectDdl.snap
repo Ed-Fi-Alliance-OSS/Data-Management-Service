@@ -39,3 +39,43 @@ ELSE
     PRINT 'Foreign key constraint FK_DomainEntityName_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for DomainEntityName_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'DomainEntityName_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[DomainEntityName_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StringIdentity,
+        base.RequiredIntegerProperty,
+        base.SchoolYear
+    FROM [dms].[edfi_DomainEntityName] base');
+    PRINT 'View DomainEntityName_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[DomainEntityName_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StringIdentity,
+        base.RequiredIntegerProperty,
+        base.SchoolYear
+    FROM [dms].[edfi_DomainEntityName] base');
+    PRINT 'View DomainEntityName_View altered.';
+END
+GO
+
+
+

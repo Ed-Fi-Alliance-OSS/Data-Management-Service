@@ -42,3 +42,49 @@ ELSE
     PRINT 'Foreign key constraint FK_GeneralStudentProgramAssociation_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for GeneralStudentProgramAssociation_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'GeneralStudentProgramAssociation_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[GeneralStudentProgramAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId,
+        base.ProgramEducationOrganizationId,
+        base.ProgramName,
+        base.ProgramTypeDescriptor,
+        base.BeginDate,
+        base.ServedOutsideOfRegularSession
+    FROM [dms].[edfi_GeneralStudentProgramAssociation] base');
+    PRINT 'View GeneralStudentProgramAssociation_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[GeneralStudentProgramAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId,
+        base.ProgramEducationOrganizationId,
+        base.ProgramName,
+        base.ProgramTypeDescriptor,
+        base.BeginDate,
+        base.ServedOutsideOfRegularSession
+    FROM [dms].[edfi_GeneralStudentProgramAssociation] base');
+    PRINT 'View GeneralStudentProgramAssociation_View altered.';
+END
+GO
+
+
+

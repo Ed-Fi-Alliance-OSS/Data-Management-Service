@@ -139,3 +139,117 @@ ELSE
     PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddressPeriod_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociation_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentEducationOrganizationAssociation_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentEducationOrganizationAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentId
+    FROM [dms].[edfi_StudentEducationOrganizationAssociation] base');
+    PRINT 'View StudentEducationOrganizationAssociation_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[StudentEducationOrganizationAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentId
+    FROM [dms].[edfi_StudentEducationOrganizationAssociation] base');
+    PRINT 'View StudentEducationOrganizationAssociation_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociationAddress_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentEducationOrganizationAssociationAddress_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentEducationOrganizationAssociationAddress_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentEducationOrganizationAssociation_Id,
+        parent.StudentId AS StudentEducationOrganizationAssociation_StudentId,
+        base.StreetNumberName
+    FROM [dms].[edfi_StudentEducationOrganizationAssociationAddress] base
+    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociation] parent ON base.StudentEducationOrganizationAssociation_Id = parent.Id');
+    PRINT 'View StudentEducationOrganizationAssociationAddress_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[StudentEducationOrganizationAssociationAddress_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentEducationOrganizationAssociation_Id,
+        parent.StudentId AS StudentEducationOrganizationAssociation_StudentId,
+        base.StreetNumberName
+    FROM [dms].[edfi_StudentEducationOrganizationAssociationAddress] base
+    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociation] parent ON base.StudentEducationOrganizationAssociation_Id = parent.Id');
+    PRINT 'View StudentEducationOrganizationAssociationAddress_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociationAddressPeriod_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentEducationOrganizationAssociationAddressPeriod_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentEducationOrganizationAssociationAddressPeriod_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentEducationOrganizationAssociationAddress_Id,
+        base.BeginDate,
+        base.EndDate
+    FROM [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] base
+    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociationAddress] parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id');
+    PRINT 'View StudentEducationOrganizationAssociationAddressPeriod_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[StudentEducationOrganizationAssociationAddressPeriod_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentEducationOrganizationAssociationAddress_Id,
+        base.BeginDate,
+        base.EndDate
+    FROM [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] base
+    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociationAddress] parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id');
+    PRINT 'View StudentEducationOrganizationAssociationAddressPeriod_View altered.';
+END
+GO
+
+
+

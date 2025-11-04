@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
-using FluentAssertions;
 using Snapshooter.NUnit;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
@@ -1886,6 +1885,383 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, options);
 
             // Assert - Root table (Student) has all required columns
+            Snapshot.Match(sql);
+        }
+
+        /// <summary>
+        /// Validates natural key resolution view generation for a simple entity with a single reference.
+        /// Tests: View creation with {TableName}_View naming, natural key columns from referenced table, no duplicate columns.
+        /// </summary>
+        [Test]
+        public void ValidateNaturalKeyView_WithSingleReference_GeneratesViewWithNaturalKeys()
+        {
+            // Arrange - Schema with School table and its reference to EducationOrganization
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["School"] = new ResourceSchema
+                        {
+                            ResourceName = "School",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "School",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "integer",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.schoolId",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "CharterApprovalSchoolYear_Id",
+                                            ColumnType = "bigint",
+                                            FromReferencePath = "CharterApprovalSchoolYear",
+                                            IsRequired = false,
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                        ["SchoolYear"] = new ResourceSchema
+                        {
+                            ResourceName = "SchoolYear",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "SchoolYear",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolYear",
+                                            ColumnType = "integer",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.schoolYear",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolYearDescription",
+                                            ColumnType = "string",
+                                            IsRequired = true,
+                                            JsonPath = "$.schoolYearDescription",
+                                            MaxLength = "50",
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert - Verify School_View is created with natural key from SchoolYear
+            Snapshot.Match(sql);
+        }
+
+        /// <summary>
+        /// Validates natural key resolution view with composite foreign keys.
+        /// Tests: Composite FK handling, no duplicate columns when FK has multiple columns, proper JOIN syntax.
+        /// </summary>
+        [Test]
+        public void ValidateNaturalKeyView_WithCompositeForeignKey_NoDuplicateColumns()
+        {
+            // Arrange - Section table with composite FK to Location (School_Id + Location_Id)
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["Section"] = new ResourceSchema
+                        {
+                            ResourceName = "Section",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Section",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SectionIdentifier",
+                                            ColumnType = "string",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.sectionIdentifier",
+                                            MaxLength = "255",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Location_School_Id",
+                                            ColumnType = "bigint",
+                                            FromReferencePath = "Location.School",
+                                            IsRequired = false,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Location_Location_Id",
+                                            ColumnType = "bigint",
+                                            FromReferencePath = "Location",
+                                            IsRequired = false,
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                        ["Location"] = new ResourceSchema
+                        {
+                            ResourceName = "Location",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Location",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "School_Id",
+                                            ColumnType = "bigint",
+                                            FromReferencePath = "School",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "ClassroomIdentificationCode",
+                                            ColumnType = "string",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.classroomIdentificationCode",
+                                            MaxLength = "60",
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                        ["School"] = new ResourceSchema
+                        {
+                            ResourceName = "School",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "School",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "integer",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.schoolId",
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert - Verify Section_View has NO duplicate Location_School_Id column
+            Snapshot.Match(sql);
+        }
+
+        /// <summary>
+        /// Validates natural key resolution view with multiple references.
+        /// Tests: Multiple JOINs, natural key resolution from multiple referenced tables, alias uniqueness.
+        /// </summary>
+        [Test]
+        public void ValidateNaturalKeyView_WithMultipleReferences_ResolvesAllNaturalKeys()
+        {
+            // Arrange - StudentSchoolAssociation with references to Student, School, and GraduationPlan
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["StudentSchoolAssociation"] = new ResourceSchema
+                        {
+                            ResourceName = "StudentSchoolAssociation",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "StudentSchoolAssociation",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "EntryDate",
+                                            ColumnType = "date",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.entryDate",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Student_Id",
+                                            ColumnType = "bigint",
+                                            FromReferencePath = "Student",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "School_Id",
+                                            ColumnType = "bigint",
+                                            FromReferencePath = "School",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "GraduationPlan_Id",
+                                            ColumnType = "bigint",
+                                            FromReferencePath = "GraduationPlan",
+                                            IsRequired = false,
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                        ["Student"] = new ResourceSchema
+                        {
+                            ResourceName = "Student",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Student",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.studentUniqueId",
+                                            MaxLength = "32",
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                        ["School"] = new ResourceSchema
+                        {
+                            ResourceName = "School",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "School",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "integer",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.schoolId",
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                        ["GraduationPlan"] = new ResourceSchema
+                        {
+                            ResourceName = "GraduationPlan",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "GraduationPlan",
+                                    JsonPath = "$",
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "GraduationPlanTypeDescriptorId",
+                                            ColumnType = "integer",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.graduationPlanTypeDescriptor",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "GraduationSchoolYear",
+                                            ColumnType = "integer",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.graduationSchoolYear",
+                                        },
+                                    ],
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            // Assert - Verify StudentSchoolAssociation_View resolves all natural keys
             Snapshot.Match(sql);
         }
     }

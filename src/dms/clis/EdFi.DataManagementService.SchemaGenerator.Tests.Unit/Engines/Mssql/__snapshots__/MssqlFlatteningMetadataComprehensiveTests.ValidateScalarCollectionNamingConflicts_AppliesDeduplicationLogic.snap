@@ -86,3 +86,78 @@ ELSE
     PRINT 'Foreign key constraint FK_EducationContentEducationContentSuffixName_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for EducationContent_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'EducationContent_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[EducationContent_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.ContentIdentifier
+    FROM [dms].[edfi_EducationContent] base');
+    PRINT 'View EducationContent_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[EducationContent_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.ContentIdentifier
+    FROM [dms].[edfi_EducationContent] base');
+    PRINT 'View EducationContent_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for EducationContentEducationContentSuffixName_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'EducationContentEducationContentSuffixName_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[EducationContentEducationContentSuffixName_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.EducationContent_Id,
+        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
+        base.EducationContentSuffixName
+    FROM [dms].[edfi_EducationContentEducationContentSuffixName] base
+    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
+    PRINT 'View EducationContentEducationContentSuffixName_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[EducationContentEducationContentSuffixName_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.EducationContent_Id,
+        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
+        base.EducationContentSuffixName
+    FROM [dms].[edfi_EducationContentEducationContentSuffixName] base
+    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
+    PRINT 'View EducationContentEducationContentSuffixName_View altered.';
+END
+GO
+
+
+

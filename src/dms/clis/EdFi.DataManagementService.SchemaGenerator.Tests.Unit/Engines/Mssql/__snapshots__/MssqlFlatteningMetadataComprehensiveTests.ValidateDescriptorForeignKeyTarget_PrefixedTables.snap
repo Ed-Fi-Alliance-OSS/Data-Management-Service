@@ -34,3 +34,39 @@ ELSE
     PRINT 'Foreign key constraint FK_edfi_AssessmentItem_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for edfi_AssessmentItem_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'edfi_AssessmentItem_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[edfi_AssessmentItem_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.AssessmentItemCategoryDescriptorId
+    FROM [dms].[edfi_edfi_AssessmentItem] base');
+    PRINT 'View edfi_AssessmentItem_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[edfi_AssessmentItem_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.AssessmentItemCategoryDescriptorId
+    FROM [dms].[edfi_edfi_AssessmentItem] base');
+    PRINT 'View edfi_AssessmentItem_View altered.';
+END
+GO
+
+
+

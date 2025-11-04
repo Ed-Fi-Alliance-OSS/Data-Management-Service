@@ -135,3 +135,117 @@ ELSE
     PRINT 'Foreign key constraint FK_DomainEntityNameSchoolYear_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for DomainEntityName_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'DomainEntityName_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[DomainEntityName_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StringIdentity
+    FROM [dms].[edfi_DomainEntityName] base');
+    PRINT 'View DomainEntityName_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[DomainEntityName_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StringIdentity
+    FROM [dms].[edfi_DomainEntityName] base');
+    PRINT 'View DomainEntityName_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for DomainEntityNameRequiredIntegerProperty_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'DomainEntityNameRequiredIntegerProperty_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[DomainEntityNameRequiredIntegerProperty_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.DomainEntityName_Id,
+        parent.StringIdentity AS DomainEntityName_StringIdentity,
+        base.RequiredIntegerProperty
+    FROM [dms].[edfi_DomainEntityNameRequiredIntegerProperty] base
+    INNER JOIN [dms].[edfi_DomainEntityName] parent ON base.DomainEntityName_Id = parent.Id');
+    PRINT 'View DomainEntityNameRequiredIntegerProperty_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[DomainEntityNameRequiredIntegerProperty_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.DomainEntityName_Id,
+        parent.StringIdentity AS DomainEntityName_StringIdentity,
+        base.RequiredIntegerProperty
+    FROM [dms].[edfi_DomainEntityNameRequiredIntegerProperty] base
+    INNER JOIN [dms].[edfi_DomainEntityName] parent ON base.DomainEntityName_Id = parent.Id');
+    PRINT 'View DomainEntityNameRequiredIntegerProperty_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for DomainEntityNameSchoolYear_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'DomainEntityNameSchoolYear_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[DomainEntityNameSchoolYear_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.DomainEntityName_Id,
+        parent.StringIdentity AS DomainEntityName_StringIdentity,
+        base.SchoolYear
+    FROM [dms].[edfi_DomainEntityNameSchoolYear] base
+    INNER JOIN [dms].[edfi_DomainEntityName] parent ON base.DomainEntityName_Id = parent.Id');
+    PRINT 'View DomainEntityNameSchoolYear_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[DomainEntityNameSchoolYear_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.DomainEntityName_Id,
+        parent.StringIdentity AS DomainEntityName_StringIdentity,
+        base.SchoolYear
+    FROM [dms].[edfi_DomainEntityNameSchoolYear] base
+    INNER JOIN [dms].[edfi_DomainEntityName] parent ON base.DomainEntityName_Id = parent.Id');
+    PRINT 'View DomainEntityNameSchoolYear_View altered.';
+END
+GO
+
+
+

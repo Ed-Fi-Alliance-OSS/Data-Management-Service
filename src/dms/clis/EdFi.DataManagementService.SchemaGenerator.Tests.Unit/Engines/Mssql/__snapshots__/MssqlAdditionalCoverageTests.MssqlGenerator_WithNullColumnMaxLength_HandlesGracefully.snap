@@ -34,3 +34,39 @@ ELSE
     PRINT 'Foreign key constraint FK_TestTable_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for TestTable_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'TestTable_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[TestTable_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StringColumnNoMaxLength
+    FROM [dms].[testproject_TestTable] base');
+    PRINT 'View TestTable_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[TestTable_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StringColumnNoMaxLength
+    FROM [dms].[testproject_TestTable] base');
+    PRINT 'View TestTable_View altered.';
+END
+GO
+
+
+

@@ -80,3 +80,37 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for EducationContent_View
+CREATE OR REPLACE VIEW dms.EducationContent_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.ContentIdentifier
+FROM dms.edfi_EducationContent base;
+
+
+
+-- Natural Key Resolution View for EducationContentEducationContentSuffixName_View
+CREATE OR REPLACE VIEW dms.EducationContentEducationContentSuffixName_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.EducationContent_Id,
+    parent.ContentIdentifier AS EducationContent_ContentIdentifier,
+    base.EducationContentSuffixName
+FROM dms.edfi_EducationContentEducationContentSuffixName base
+    INNER JOIN dms.edfi_EducationContent parent ON base.EducationContent_Id = parent.Id;
+
+
+

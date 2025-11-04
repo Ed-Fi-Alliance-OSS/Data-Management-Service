@@ -31,3 +31,20 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for otherItem_View
+CREATE OR REPLACE VIEW dms.otherItem_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.SomeDescriptorId
+FROM dms.edfi_otherItem base;
+
+
+

@@ -56,3 +56,25 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for GeneralStudentProgramAssociation_View
+CREATE OR REPLACE VIEW dms.GeneralStudentProgramAssociation_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.StudentUniqueId,
+    base.ProgramEducationOrganizationId,
+    base.ProgramName,
+    base.ProgramTypeDescriptor,
+    base.BeginDate,
+    base.ServedOutsideOfRegularSession
+FROM dms.edfi_GeneralStudentProgramAssociation base;
+
+
+

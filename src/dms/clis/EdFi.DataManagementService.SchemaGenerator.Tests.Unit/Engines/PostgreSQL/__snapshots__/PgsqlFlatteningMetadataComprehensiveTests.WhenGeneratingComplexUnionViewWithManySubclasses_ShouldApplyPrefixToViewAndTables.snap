@@ -81,6 +81,41 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentCTEProgramAssociation_View
+CREATE OR REPLACE VIEW dms.StudentCTEProgramAssociation_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.StudentUniqueId,
+    base.BeginDate,
+    base.NonTraditionalGenderStatus
+FROM dms.edfi_StudentCTEProgramAssociation base;
+
+
+
+-- Natural Key Resolution View for StudentHomelessProgramAssociation_View
+CREATE OR REPLACE VIEW dms.StudentHomelessProgramAssociation_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.StudentUniqueId,
+    base.BeginDate,
+    base.AwaitingFosterCare
+FROM dms.edfi_StudentHomelessProgramAssociation base;
+
+
+
 -- PostgreSQL Union View
 CREATE OR REPLACE VIEW dms.edfi_GeneralStudentProgramAssociation AS
 SELECT Id, BeginDate AS GeneralStudentProgramAssociationId, StudentUniqueId, 'StudentCTEProgramAssociation' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_StudentCTEProgramAssociation

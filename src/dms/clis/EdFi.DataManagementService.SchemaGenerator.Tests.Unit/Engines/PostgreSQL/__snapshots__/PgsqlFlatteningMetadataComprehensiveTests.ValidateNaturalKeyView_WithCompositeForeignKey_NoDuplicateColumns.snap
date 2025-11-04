@@ -1,0 +1,171 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_Section (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    SectionIdentifier VARCHAR(255) NOT NULL,
+    Location_School_Id BIGINT,
+    Location_Location_Id BIGINT,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_Section_Document
+    ON dms.edfi_Section(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_Section_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_Section ADD CONSTRAINT UQ_Section_NaturalKey
+            UNIQUE (SectionIdentifier);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_Location (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    School_Id BIGINT NOT NULL,
+    ClassroomIdentificationCode VARCHAR(60) NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_Location_Document
+    ON dms.edfi_Location(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_Location_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_Location ADD CONSTRAINT UQ_Location_NaturalKey
+            UNIQUE (School_Id, ClassroomIdentificationCode);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_School (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    SchoolId INTEGER NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_School_Document
+    ON dms.edfi_School(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_School_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_School ADD CONSTRAINT UQ_School_NaturalKey
+            UNIQUE (SchoolId);
+    END IF;
+END$$;
+
+
+-- Foreign Key Constraints
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_Section_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_Section ADD CONSTRAINT FK_Section_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_Location_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_Location ADD CONSTRAINT FK_Location_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_School_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_School ADD CONSTRAINT FK_School_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Section_View
+CREATE OR REPLACE VIEW dms.Section_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.SectionIdentifier,
+    base.Location_School_Id,
+    base.Location_Location_Id,
+    location.ClassroomIdentificationCode AS Location_ClassroomIdentificationCode
+FROM dms.edfi_Section base
+    INNER JOIN dms.edfi_Location location ON base.Location_Location_Id = location.Id;
+
+
+
+-- Natural Key Resolution View for Location_View
+CREATE OR REPLACE VIEW dms.Location_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.School_Id,
+    school.SchoolId AS School_SchoolId,
+    base.ClassroomIdentificationCode
+FROM dms.edfi_Location base
+    INNER JOIN dms.edfi_School school ON base.School_Id = school.Id;
+
+
+
+-- Natural Key Resolution View for School_View
+CREATE OR REPLACE VIEW dms.School_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.CreateDate,
+    base.LastModifiedDate,
+    base.ChangeVersion,
+    base.SchoolId
+FROM dms.edfi_School base;
+
+
+

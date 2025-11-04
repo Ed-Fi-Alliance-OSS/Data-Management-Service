@@ -34,3 +34,39 @@ ELSE
     PRINT 'Foreign key constraint FK_otherItem_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for otherItem_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'otherItem_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[otherItem_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.SomeDescriptorId
+    FROM [dms].[edfi_otherItem] base');
+    PRINT 'View otherItem_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[otherItem_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.SomeDescriptorId
+    FROM [dms].[edfi_otherItem] base');
+    PRINT 'View otherItem_View altered.';
+END
+GO
+
+
+

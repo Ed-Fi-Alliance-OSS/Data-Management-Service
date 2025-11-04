@@ -47,3 +47,47 @@ ELSE
     PRINT 'Foreign key constraint FK_StudentSchoolAssociation_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentSchoolAssociation_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentSchoolAssociation_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentSchoolAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId,
+        base.SchoolId,
+        base.EntryDate,
+        base.EntryGradeLevelDescriptor,
+        base.ExitWithdrawDate
+    FROM [dms].[edfi_StudentSchoolAssociation] base');
+    PRINT 'View StudentSchoolAssociation_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[StudentSchoolAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.StudentUniqueId,
+        base.SchoolId,
+        base.EntryDate,
+        base.EntryGradeLevelDescriptor,
+        base.ExitWithdrawDate
+    FROM [dms].[edfi_StudentSchoolAssociation] base');
+    PRINT 'View StudentSchoolAssociation_View altered.';
+END
+GO
+
+
+

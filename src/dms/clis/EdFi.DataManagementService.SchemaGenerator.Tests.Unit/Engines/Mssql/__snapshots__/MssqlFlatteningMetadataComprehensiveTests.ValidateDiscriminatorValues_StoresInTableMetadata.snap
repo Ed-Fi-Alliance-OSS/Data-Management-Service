@@ -79,3 +79,84 @@ ELSE
     PRINT 'Foreign key constraint FK_ObjectiveAssessment_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Assessment_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Assessment_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Assessment_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.AssessmentIdentifier,
+        base.Namespace,
+        base.AssessmentTitle,
+        base.AssessmentCategoryDescriptor
+    FROM [dms].[edfi_Assessment] base');
+    PRINT 'View Assessment_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[Assessment_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.AssessmentIdentifier,
+        base.Namespace,
+        base.AssessmentTitle,
+        base.AssessmentCategoryDescriptor
+    FROM [dms].[edfi_Assessment] base');
+    PRINT 'View Assessment_View altered.';
+END
+GO
+
+
+
+-- Natural Key Resolution View for ObjectiveAssessment_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'ObjectiveAssessment_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[ObjectiveAssessment_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.AssessmentIdentifier,
+        base.IdentificationCode,
+        base.Namespace,
+        base.Description
+    FROM [dms].[edfi_ObjectiveAssessment] base');
+    PRINT 'View ObjectiveAssessment_View created.';
+END
+ELSE
+BEGIN
+    EXEC('ALTER VIEW [dms].[ObjectiveAssessment_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CreateDate,
+        base.LastModifiedDate,
+        base.ChangeVersion,
+        base.AssessmentIdentifier,
+        base.IdentificationCode,
+        base.Namespace,
+        base.Description
+    FROM [dms].[edfi_ObjectiveAssessment] base');
+    PRINT 'View ObjectiveAssessment_View altered.';
+END
+GO
+
+
+
