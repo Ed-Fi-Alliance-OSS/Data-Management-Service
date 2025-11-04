@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS dms.edfi_StudentAddress (
     Document_Id BIGINT NOT NULL,
     Document_PartitionKey SMALLINT NOT NULL,
     Student_Id BIGINT NOT NULL,
-    AddressTypeDescriptorId INTEGER NOT NULL,
+    AddressTypeDescriptorId BIGINT NOT NULL,
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
     ChangeVersion BIGINT NOT NULL
@@ -66,6 +66,17 @@ BEGIN
             ALTER TABLE dms.edfi_StudentAddress ADD CONSTRAINT FK_StudentAddress_Student
                 FOREIGN KEY (Student_Id)
                 REFERENCES dms.edfi_Student(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentAddress_AddressTypeDescriptorId_Descriptor')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentAddress ADD CONSTRAINT FK_StudentAddress_AddressTypeDescriptorId_Descriptor
+                FOREIGN KEY (AddressTypeDescriptorId)
+                REFERENCES dms.edfi_descriptor(Id);
         END IF;
 END$$;
 

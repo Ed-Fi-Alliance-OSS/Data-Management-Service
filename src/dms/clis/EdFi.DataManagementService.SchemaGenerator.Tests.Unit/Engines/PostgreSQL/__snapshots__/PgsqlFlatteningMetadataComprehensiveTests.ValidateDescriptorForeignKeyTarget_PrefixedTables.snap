@@ -2,18 +2,18 @@
 
 
 
-CREATE TABLE IF NOT EXISTS dms.edfi_edfi_AssessmentItem (
+CREATE TABLE IF NOT EXISTS dms.edfi_AssessmentItem (
     Id BIGSERIAL PRIMARY KEY,
     Document_Id BIGINT NOT NULL,
     Document_PartitionKey SMALLINT NOT NULL,
-    AssessmentItemCategoryDescriptorId INTEGER NOT NULL,
+    AssessmentItemCategoryDescriptorId BIGINT NOT NULL,
     CreateDate TIMESTAMP NOT NULL,
     LastModifiedDate TIMESTAMP NOT NULL,
     ChangeVersion BIGINT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS IX_edfi_AssessmentItem_Document
-    ON dms.edfi_edfi_AssessmentItem(Document_Id, Document_PartitionKey);
+CREATE INDEX IF NOT EXISTS IX_AssessmentItem_Document
+    ON dms.edfi_AssessmentItem(Document_Id, Document_PartitionKey);
 
 
 
@@ -23,9 +23,20 @@ CREATE INDEX IF NOT EXISTS IX_edfi_AssessmentItem_Document
 DO $$
 BEGIN
         IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_edfi_AssessmentItem_Document')
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_AssessmentItem_AssessmentItemCategoryDescriptorId_Descriptor')
         ) THEN
-            ALTER TABLE dms.edfi_edfi_AssessmentItem ADD CONSTRAINT FK_edfi_AssessmentItem_Document
+            ALTER TABLE dms.edfi_AssessmentItem ADD CONSTRAINT FK_AssessmentItem_AssessmentItemCategoryDescriptorId_Descriptor
+                FOREIGN KEY (AssessmentItemCategoryDescriptorId)
+                REFERENCES dms.edfi_descriptor(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_AssessmentItem_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_AssessmentItem ADD CONSTRAINT FK_AssessmentItem_Document
                 FOREIGN KEY (Document_Id, Document_PartitionKey)
                 REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
         END IF;
@@ -34,8 +45,8 @@ END$$;
 
 -- Natural Key Resolution Views
 
--- Natural Key Resolution View for edfi_AssessmentItem_View
-CREATE OR REPLACE VIEW dms.edfi_AssessmentItem_View AS
+-- Natural Key Resolution View for AssessmentItem_View
+CREATE OR REPLACE VIEW dms.AssessmentItem_View AS
 SELECT
     base.Id,
     base.Document_Id,
@@ -44,7 +55,7 @@ SELECT
     base.LastModifiedDate,
     base.ChangeVersion,
     base.AssessmentItemCategoryDescriptorId
-FROM dms.edfi_edfi_AssessmentItem base;
+FROM dms.edfi_AssessmentItem base;
 
 
 

@@ -1,46 +1,46 @@
-﻿-- MSSQL CREATE TABLE edfi_edfi_AssessmentItem
-IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_edfi_AssessmentItem' AND SCHEMA_NAME(schema_id) = 'dms')
+﻿-- MSSQL CREATE TABLE edfi_AssessmentItem
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_AssessmentItem' AND SCHEMA_NAME(schema_id) = 'dms')
 BEGIN
-    CREATE TABLE [dms].[edfi_edfi_AssessmentItem] (
+    CREATE TABLE [dms].[edfi_AssessmentItem] (
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
     [Document_PartitionKey] SMALLINT NOT NULL,
-    [AssessmentItemCategoryDescriptorId] INT NOT NULL,
+    [AssessmentItemCategoryDescriptorId] BIGINT NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
     [LastModifiedDate] DATETIME2 NOT NULL,
     [ChangeVersion] BIGINT NOT NULL
     );
-    PRINT 'Table edfi_edfi_AssessmentItem created.';
+    PRINT 'Table edfi_AssessmentItem created.';
 END
 ELSE
-    PRINT 'Table edfi_edfi_AssessmentItem already exists, skipped.';
+    PRINT 'Table edfi_AssessmentItem already exists, skipped.';
 
-IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_edfi_AssessmentItem_Document' AND object_id = OBJECT_ID('[dms].[edfi_edfi_AssessmentItem]'))
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_AssessmentItem_Document' AND object_id = OBJECT_ID('[dms].[edfi_AssessmentItem]'))
 BEGIN
-    CREATE NONCLUSTERED INDEX [IX_edfi_AssessmentItem_Document]
-        ON [dms].[edfi_edfi_AssessmentItem]([Document_Id], [Document_PartitionKey]);
-    PRINT 'Index IX_edfi_AssessmentItem_Document created.';
+    CREATE NONCLUSTERED INDEX [IX_AssessmentItem_Document]
+        ON [dms].[edfi_AssessmentItem]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_AssessmentItem_Document created.';
 END
 
 
 -- Foreign Key Constraints
 
-IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_edfi_AssessmentItem_Document')
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_AssessmentItem_Document')
 BEGIN
-    ALTER TABLE [dms].[edfi_edfi_AssessmentItem] ADD CONSTRAINT [FK_edfi_AssessmentItem_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
-    PRINT 'Foreign key constraint FK_edfi_AssessmentItem_Document created.';
+    ALTER TABLE [dms].[edfi_AssessmentItem] ADD CONSTRAINT [FK_AssessmentItem_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_AssessmentItem_Document created.';
 END
 ELSE
-    PRINT 'Foreign key constraint FK_edfi_AssessmentItem_Document already exists, skipped.';
+    PRINT 'Foreign key constraint FK_AssessmentItem_Document already exists, skipped.';
 GO
 
 
 -- Natural Key Resolution Views
 
--- Natural Key Resolution View for edfi_AssessmentItem_View
-IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'edfi_AssessmentItem_View' AND SCHEMA_NAME(schema_id) = 'dms')
+-- Natural Key Resolution View for AssessmentItem_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'AssessmentItem_View' AND SCHEMA_NAME(schema_id) = 'dms')
 BEGIN
-    EXEC('CREATE VIEW [dms].[edfi_AssessmentItem_View] AS
+    EXEC('CREATE VIEW [dms].[AssessmentItem_View] AS
     SELECT
         base.Id,
         base.Document_Id,
@@ -49,12 +49,12 @@ BEGIN
         base.LastModifiedDate,
         base.ChangeVersion,
         base.AssessmentItemCategoryDescriptorId
-    FROM [dms].[edfi_edfi_AssessmentItem] base');
-    PRINT 'View edfi_AssessmentItem_View created.';
+    FROM [dms].[edfi_AssessmentItem] base');
+    PRINT 'View AssessmentItem_View created.';
 END
 ELSE
 BEGIN
-    EXEC('ALTER VIEW [dms].[edfi_AssessmentItem_View] AS
+    EXEC('ALTER VIEW [dms].[AssessmentItem_View] AS
     SELECT
         base.Id,
         base.Document_Id,
@@ -63,8 +63,8 @@ BEGIN
         base.LastModifiedDate,
         base.ChangeVersion,
         base.AssessmentItemCategoryDescriptorId
-    FROM [dms].[edfi_edfi_AssessmentItem] base');
-    PRINT 'View edfi_AssessmentItem_View altered.';
+    FROM [dms].[edfi_AssessmentItem] base');
+    PRINT 'View AssessmentItem_View altered.';
 END
 GO
 

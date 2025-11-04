@@ -5,7 +5,7 @@ BEGIN
     [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
     [Document_Id] BIGINT NOT NULL,
     [Document_PartitionKey] SMALLINT NOT NULL,
-    [SomeDescriptorId] INT NOT NULL,
+    [SomeDescriptorId] BIGINT NOT NULL,
     [CreateDate] DATETIME2 NOT NULL,
     [LastModifiedDate] DATETIME2 NOT NULL,
     [ChangeVersion] BIGINT NOT NULL
