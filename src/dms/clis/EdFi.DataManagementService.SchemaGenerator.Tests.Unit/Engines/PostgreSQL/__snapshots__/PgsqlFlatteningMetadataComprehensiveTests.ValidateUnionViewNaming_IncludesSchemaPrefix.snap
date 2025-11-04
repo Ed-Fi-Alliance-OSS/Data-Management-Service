@@ -88,9 +88,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.SchoolId,
     base.NameOfInstitution
 FROM dms.edfi_School base;
@@ -103,9 +100,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.LocalEducationAgencyId,
     base.NameOfInstitution
 FROM dms.edfi_LocalEducationAgency base;

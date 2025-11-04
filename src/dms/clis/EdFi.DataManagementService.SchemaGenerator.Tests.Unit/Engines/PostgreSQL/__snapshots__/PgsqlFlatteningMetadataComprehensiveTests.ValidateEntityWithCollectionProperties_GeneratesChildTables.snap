@@ -129,9 +129,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.StringIdentity
 FROM dms.edfi_DomainEntityName base;
 
@@ -143,10 +140,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.DomainEntityName_Id,
     parent.StringIdentity AS DomainEntityName_StringIdentity,
     base.RequiredIntegerProperty
 FROM dms.edfi_DomainEntityNameRequiredIntegerProperty base
@@ -160,10 +153,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.DomainEntityName_Id,
     parent.StringIdentity AS DomainEntityName_StringIdentity,
     base.SchoolYear
 FROM dms.edfi_DomainEntityNameSchoolYear base

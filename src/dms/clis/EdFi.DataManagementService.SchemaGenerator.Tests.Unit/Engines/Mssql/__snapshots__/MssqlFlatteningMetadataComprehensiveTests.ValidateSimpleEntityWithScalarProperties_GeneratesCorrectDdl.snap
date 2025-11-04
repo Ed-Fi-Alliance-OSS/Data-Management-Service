@@ -50,9 +50,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StringIdentity,
         base.RequiredIntegerProperty,
         base.SchoolYear
@@ -60,21 +57,7 @@ BEGIN
     PRINT 'View DomainEntityName_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[DomainEntityName_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StringIdentity,
-        base.RequiredIntegerProperty,
-        base.SchoolYear
-    FROM [dms].[edfi_DomainEntityName] base');
-    PRINT 'View DomainEntityName_View altered.';
-END
+    PRINT 'View DomainEntityName_View already exists, skipped.';
 GO
 
 

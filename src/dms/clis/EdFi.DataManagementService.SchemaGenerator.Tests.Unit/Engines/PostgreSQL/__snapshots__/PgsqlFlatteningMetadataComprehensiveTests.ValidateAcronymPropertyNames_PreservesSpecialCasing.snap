@@ -50,9 +50,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.ContentIdentifier,
     base.IEPBeginDate
 FROM dms.edfi_StudentSpecialEducationProgramAssociation base;

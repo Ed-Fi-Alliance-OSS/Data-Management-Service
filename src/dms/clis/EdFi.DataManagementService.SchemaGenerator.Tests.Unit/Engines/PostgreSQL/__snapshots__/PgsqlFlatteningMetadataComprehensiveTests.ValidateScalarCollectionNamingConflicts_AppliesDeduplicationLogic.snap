@@ -89,9 +89,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.ContentIdentifier
 FROM dms.edfi_EducationContent base;
 
@@ -103,10 +100,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.EducationContent_Id,
     parent.ContentIdentifier AS EducationContent_ContentIdentifier,
     base.EducationContentSuffixName
 FROM dms.edfi_EducationContentEducationContentSuffixName base

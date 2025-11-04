@@ -178,9 +178,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.EntryDate,
         base.Student_Id,
         student.StudentUniqueId AS Student_StudentUniqueId,
@@ -196,29 +193,7 @@ BEGIN
     PRINT 'View StudentSchoolAssociation_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StudentSchoolAssociation_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.EntryDate,
-        base.Student_Id,
-        student.StudentUniqueId AS Student_StudentUniqueId,
-        base.School_Id,
-        school.SchoolId AS School_SchoolId,
-        base.GraduationPlan_Id,
-        graduationplan.GraduationPlanTypeDescriptorId AS GraduationPlan_GraduationPlanTypeDescriptorId,
-        graduationplan.GraduationSchoolYear AS GraduationPlan_GraduationSchoolYear
-    FROM [dms].[edfi_StudentSchoolAssociation] base
-    INNER JOIN [dms].[edfi_Student] student ON base.Student_Id = student.Id
-    INNER JOIN [dms].[edfi_School] school ON base.School_Id = school.Id
-    INNER JOIN [dms].[edfi_GraduationPlan] graduationplan ON base.GraduationPlan_Id = graduationplan.Id');
-    PRINT 'View StudentSchoolAssociation_View altered.';
-END
+    PRINT 'View StudentSchoolAssociation_View already exists, skipped.';
 GO
 
 
@@ -231,27 +206,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StudentUniqueId
     FROM [dms].[edfi_Student] base');
     PRINT 'View Student_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[Student_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentUniqueId
-    FROM [dms].[edfi_Student] base');
-    PRINT 'View Student_View altered.';
-END
+    PRINT 'View Student_View already exists, skipped.';
 GO
 
 
@@ -264,27 +224,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.SchoolId
     FROM [dms].[edfi_School] base');
     PRINT 'View School_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[School_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.SchoolId
-    FROM [dms].[edfi_School] base');
-    PRINT 'View School_View altered.';
-END
+    PRINT 'View School_View already exists, skipped.';
 GO
 
 
@@ -297,29 +242,13 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.GraduationPlanTypeDescriptorId,
         base.GraduationSchoolYear
     FROM [dms].[edfi_GraduationPlan] base');
     PRINT 'View GraduationPlan_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[GraduationPlan_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.GraduationPlanTypeDescriptorId,
-        base.GraduationSchoolYear
-    FROM [dms].[edfi_GraduationPlan] base');
-    PRINT 'View GraduationPlan_View altered.';
-END
+    PRINT 'View GraduationPlan_View already exists, skipped.';
 GO
 
 

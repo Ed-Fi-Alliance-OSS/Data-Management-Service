@@ -126,9 +126,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.EducationOrganizationId,
         base.NameOfInstitution,
         base.SchoolTypeDescriptor
@@ -136,21 +133,7 @@ BEGIN
     PRINT 'View School_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[School_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.EducationOrganizationId,
-        base.NameOfInstitution,
-        base.SchoolTypeDescriptor
-    FROM [dms].[edfi_School] base');
-    PRINT 'View School_View altered.';
-END
+    PRINT 'View School_View already exists, skipped.';
 GO
 
 
@@ -163,9 +146,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.EducationOrganizationId,
         base.NameOfInstitution,
         base.LocalEducationAgencyCategoryDescriptor
@@ -173,21 +153,7 @@ BEGIN
     PRINT 'View LocalEducationAgency_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[LocalEducationAgency_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.EducationOrganizationId,
-        base.NameOfInstitution,
-        base.LocalEducationAgencyCategoryDescriptor
-    FROM [dms].[edfi_LocalEducationAgency] base');
-    PRINT 'View LocalEducationAgency_View altered.';
-END
+    PRINT 'View LocalEducationAgency_View already exists, skipped.';
 GO
 
 
@@ -200,9 +166,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.EducationOrganizationId,
         base.NameOfInstitution,
         base.StateEducationAgencyCategoryDescriptor
@@ -210,21 +173,7 @@ BEGIN
     PRINT 'View StateEducationAgency_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StateEducationAgency_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.EducationOrganizationId,
-        base.NameOfInstitution,
-        base.StateEducationAgencyCategoryDescriptor
-    FROM [dms].[edfi_StateEducationAgency] base');
-    PRINT 'View StateEducationAgency_View altered.';
-END
+    PRINT 'View StateEducationAgency_View already exists, skipped.';
 GO
 
 
@@ -242,14 +191,6 @@ SELECT Id, EducationOrganizationId AS EducationOrganizationId, NameOfInstitution
     PRINT 'View edfi_EducationOrganization created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[edfi_EducationOrganization] AS
-SELECT Id, EducationOrganizationId AS EducationOrganizationId, NameOfInstitution, ''School'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_School]
-UNION ALL
-SELECT Id, EducationOrganizationId AS EducationOrganizationId, NameOfInstitution, ''LocalEducationAgency'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_LocalEducationAgency]
-UNION ALL
-SELECT Id, EducationOrganizationId AS EducationOrganizationId, NameOfInstitution, ''StateEducationAgency'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StateEducationAgency]
-');
-    PRINT 'View edfi_EducationOrganization altered.';
-END
+    PRINT 'View edfi_EducationOrganization already exists, skipped.';
+
 

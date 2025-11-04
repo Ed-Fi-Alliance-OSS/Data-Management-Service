@@ -101,27 +101,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.AssessmentIdentifier
     FROM [dms].[edfi_Assessment] base');
     PRINT 'View Assessment_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[Assessment_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.AssessmentIdentifier
-    FROM [dms].[edfi_Assessment] base');
-    PRINT 'View Assessment_View altered.';
-END
+    PRINT 'View Assessment_View already exists, skipped.';
 GO
 
 
@@ -134,10 +119,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.Assessment_Id,
         parent.AssessmentIdentifier AS Assessment_AssessmentIdentifier,
         base.IdentificationCode,
         base.AssessmentIdentificationSystemDescriptorId
@@ -146,23 +127,7 @@ BEGIN
     PRINT 'View AssessmentAssessmentIdentificationCode_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[AssessmentAssessmentIdentificationCode_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.Assessment_Id,
-        parent.AssessmentIdentifier AS Assessment_AssessmentIdentifier,
-        base.IdentificationCode,
-        base.AssessmentIdentificationSystemDescriptorId
-    FROM [dms].[edfi_AssessmentAssessmentIdentificationCode] base
-    INNER JOIN [dms].[edfi_Assessment] parent ON base.Assessment_Id = parent.Id');
-    PRINT 'View AssessmentAssessmentIdentificationCode_View altered.';
-END
+    PRINT 'View AssessmentAssessmentIdentificationCode_View already exists, skipped.';
 GO
 
 

@@ -45,27 +45,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.SomeDescriptorId
     FROM [dms].[edfi_otherItem] base');
     PRINT 'View otherItem_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[otherItem_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.SomeDescriptorId
-    FROM [dms].[edfi_otherItem] base');
-    PRINT 'View otherItem_View altered.';
-END
+    PRINT 'View otherItem_View already exists, skipped.';
 GO
 
 

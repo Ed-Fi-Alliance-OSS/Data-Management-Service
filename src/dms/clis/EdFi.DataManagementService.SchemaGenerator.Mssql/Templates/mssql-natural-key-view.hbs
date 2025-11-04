@@ -10,15 +10,7 @@ BEGIN
     PRINT 'View {{viewName}} created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [{{schemaName}}].[{{viewName}}] AS
-    SELECT
-        {{#each selectColumns}}
-        {{this}}{{#unless @last}},{{/unless}}
-        {{/each}}
-    FROM [{{schemaName}}].[{{baseTableName}}] base{{#each joins}}{{this}}{{/each}}');
-    PRINT 'View {{viewName}} altered.';
-END
+    PRINT 'View {{viewName}} already exists, skipped.';
 GO
 
 

@@ -58,9 +58,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StudentUniqueId,
         base.SchoolId,
         base.EntryDate,
@@ -70,23 +67,7 @@ BEGIN
     PRINT 'View StudentSchoolAssociation_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StudentSchoolAssociation_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentUniqueId,
-        base.SchoolId,
-        base.EntryDate,
-        base.EntryGradeLevelDescriptor,
-        base.ExitWithdrawDate
-    FROM [dms].[edfi_StudentSchoolAssociation] base');
-    PRINT 'View StudentSchoolAssociation_View altered.';
-END
+    PRINT 'View StudentSchoolAssociation_View already exists, skipped.';
 GO
 
 

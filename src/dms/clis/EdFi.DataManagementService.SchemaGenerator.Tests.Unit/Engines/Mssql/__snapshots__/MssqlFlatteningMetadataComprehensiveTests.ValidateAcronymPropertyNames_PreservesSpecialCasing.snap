@@ -49,29 +49,13 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.ContentIdentifier,
         base.IEPBeginDate
     FROM [dms].[edfi_StudentSpecialEducationProgramAssociation] base');
     PRINT 'View StudentSpecialEducationProgramAssociation_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StudentSpecialEducationProgramAssociation_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.ContentIdentifier,
-        base.IEPBeginDate
-    FROM [dms].[edfi_StudentSpecialEducationProgramAssociation] base');
-    PRINT 'View StudentSpecialEducationProgramAssociation_View altered.';
-END
+    PRINT 'View StudentSpecialEducationProgramAssociation_View already exists, skipped.';
 GO
 
 

@@ -88,9 +88,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StudentUniqueId,
         base.BeginDate,
         base.NonTraditionalGenderStatus
@@ -98,21 +95,7 @@ BEGIN
     PRINT 'View StudentCTEProgramAssociation_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StudentCTEProgramAssociation_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentUniqueId,
-        base.BeginDate,
-        base.NonTraditionalGenderStatus
-    FROM [dms].[edfi_StudentCTEProgramAssociation] base');
-    PRINT 'View StudentCTEProgramAssociation_View altered.';
-END
+    PRINT 'View StudentCTEProgramAssociation_View already exists, skipped.';
 GO
 
 
@@ -125,9 +108,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StudentUniqueId,
         base.BeginDate,
         base.AwaitingFosterCare
@@ -135,21 +115,7 @@ BEGIN
     PRINT 'View StudentHomelessProgramAssociation_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StudentHomelessProgramAssociation_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentUniqueId,
-        base.BeginDate,
-        base.AwaitingFosterCare
-    FROM [dms].[edfi_StudentHomelessProgramAssociation] base');
-    PRINT 'View StudentHomelessProgramAssociation_View altered.';
-END
+    PRINT 'View StudentHomelessProgramAssociation_View already exists, skipped.';
 GO
 
 
@@ -165,12 +131,6 @@ SELECT Id, StudentUniqueId, BeginDate, ''StudentHomelessProgramAssociation'' AS 
     PRINT 'View edfi_GeneralStudentProgramAssociation created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[edfi_GeneralStudentProgramAssociation] AS
-SELECT Id, StudentUniqueId, BeginDate, ''StudentCTEProgramAssociation'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentCTEProgramAssociation]
-UNION ALL
-SELECT Id, StudentUniqueId, BeginDate, ''StudentHomelessProgramAssociation'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_StudentHomelessProgramAssociation]
-');
-    PRINT 'View edfi_GeneralStudentProgramAssociation altered.';
-END
+    PRINT 'View edfi_GeneralStudentProgramAssociation already exists, skipped.';
+
 

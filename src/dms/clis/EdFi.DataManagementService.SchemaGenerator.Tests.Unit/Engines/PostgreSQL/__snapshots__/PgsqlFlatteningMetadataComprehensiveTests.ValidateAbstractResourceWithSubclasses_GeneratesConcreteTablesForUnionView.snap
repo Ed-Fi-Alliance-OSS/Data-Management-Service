@@ -162,9 +162,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.EducationOrganizationId,
     base.NameOfInstitution,
     base.SchoolTypeDescriptor
@@ -178,9 +175,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.EducationOrganizationId,
     base.NameOfInstitution,
     base.LocalEducationAgencyCategoryDescriptor
@@ -194,9 +188,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.EducationOrganizationId,
     base.NameOfInstitution,
     base.StateEducationAgencyCategoryDescriptor
