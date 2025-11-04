@@ -90,9 +90,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.AssessmentIdentifier,
         base.Namespace,
         base.AssessmentTitle,
@@ -101,22 +98,7 @@ BEGIN
     PRINT 'View Assessment_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[Assessment_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.AssessmentIdentifier,
-        base.Namespace,
-        base.AssessmentTitle,
-        base.AssessmentCategoryDescriptor
-    FROM [dms].[edfi_Assessment] base');
-    PRINT 'View Assessment_View altered.';
-END
+    PRINT 'View Assessment_View already exists, skipped.';
 GO
 
 
@@ -129,9 +111,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.AssessmentIdentifier,
         base.IdentificationCode,
         base.Namespace,
@@ -140,22 +119,7 @@ BEGIN
     PRINT 'View ObjectiveAssessment_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[ObjectiveAssessment_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.AssessmentIdentifier,
-        base.IdentificationCode,
-        base.Namespace,
-        base.Description
-    FROM [dms].[edfi_ObjectiveAssessment] base');
-    PRINT 'View ObjectiveAssessment_View altered.';
-END
+    PRINT 'View ObjectiveAssessment_View already exists, skipped.';
 GO
 
 

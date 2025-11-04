@@ -9,11 +9,5 @@ BEGIN
     PRINT 'View {{viewName}} created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[{{viewName}}] AS
-{{#each selectStatements}}
-{{#if @first}}{{else}}UNION ALL
-{{/if}}{{{this}}}
-{{/each}}');
-    PRINT 'View {{viewName}} altered.';
-END
+    PRINT 'View {{viewName}} already exists, skipped.';
+

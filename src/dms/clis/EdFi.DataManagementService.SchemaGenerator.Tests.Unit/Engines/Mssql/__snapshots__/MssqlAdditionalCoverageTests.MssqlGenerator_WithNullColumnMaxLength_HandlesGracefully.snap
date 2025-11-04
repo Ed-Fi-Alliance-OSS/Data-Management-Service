@@ -45,27 +45,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StringColumnNoMaxLength
     FROM [dms].[testproject_TestTable] base');
     PRINT 'View TestTable_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[TestTable_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StringColumnNoMaxLength
-    FROM [dms].[testproject_TestTable] base');
-    PRINT 'View TestTable_View altered.';
-END
+    PRINT 'View TestTable_View already exists, skipped.';
 GO
 
 

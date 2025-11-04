@@ -156,9 +156,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.ContentIdentifier,
         base.LearningResourceMetadataURI,
         base.Description,
@@ -168,23 +165,7 @@ BEGIN
     PRINT 'View EducationContent_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[EducationContent_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.ContentIdentifier,
-        base.LearningResourceMetadataURI,
-        base.Description,
-        base.ShortDescription,
-        base.ContentClassDescriptorId
-    FROM [dms].[edfi_EducationContent] base');
-    PRINT 'View EducationContent_View altered.';
-END
+    PRINT 'View EducationContent_View already exists, skipped.';
 GO
 
 
@@ -197,10 +178,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.EducationContent_Id,
         parent.ContentIdentifier AS EducationContent_ContentIdentifier,
         base.DerivativeSource_EducationContent_Id
     FROM [dms].[edfi_EducationContentDerivativeSourceEducationContent] base
@@ -208,22 +185,7 @@ BEGIN
     PRINT 'View EducationContentDerivativeSourceEducationContent_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[EducationContentDerivativeSourceEducationContent_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.EducationContent_Id,
-        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
-        base.DerivativeSource_EducationContent_Id
-    FROM [dms].[edfi_EducationContentDerivativeSourceEducationContent] base
-    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
-    PRINT 'View EducationContentDerivativeSourceEducationContent_View altered.';
-END
+    PRINT 'View EducationContentDerivativeSourceEducationContent_View already exists, skipped.';
 GO
 
 
@@ -236,10 +198,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.EducationContent_Id,
         parent.ContentIdentifier AS EducationContent_ContentIdentifier,
         base.RequiredURI
     FROM [dms].[edfi_EducationContentRequiredURI] base
@@ -247,22 +205,7 @@ BEGIN
     PRINT 'View EducationContentRequiredURI_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[EducationContentRequiredURI_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.EducationContent_Id,
-        parent.ContentIdentifier AS EducationContent_ContentIdentifier,
-        base.RequiredURI
-    FROM [dms].[edfi_EducationContentRequiredURI] base
-    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
-    PRINT 'View EducationContentRequiredURI_View altered.';
-END
+    PRINT 'View EducationContentRequiredURI_View already exists, skipped.';
 GO
 
 

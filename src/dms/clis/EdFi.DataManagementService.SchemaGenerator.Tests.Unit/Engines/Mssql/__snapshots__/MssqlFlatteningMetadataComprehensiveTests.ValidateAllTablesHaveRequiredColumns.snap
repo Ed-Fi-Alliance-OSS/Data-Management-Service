@@ -100,27 +100,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.StudentUniqueId
     FROM [dms].[edfi_Student] base');
     PRINT 'View Student_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[Student_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.StudentUniqueId
-    FROM [dms].[edfi_Student] base');
-    PRINT 'View Student_View altered.';
-END
+    PRINT 'View Student_View already exists, skipped.';
 GO
 
 
@@ -133,10 +118,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.Student_Id,
         parent.StudentUniqueId AS Student_StudentUniqueId,
         base.AddressTypeDescriptorId
     FROM [dms].[edfi_StudentAddress] base
@@ -144,22 +125,7 @@ BEGIN
     PRINT 'View StudentAddress_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[StudentAddress_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.Student_Id,
-        parent.StudentUniqueId AS Student_StudentUniqueId,
-        base.AddressTypeDescriptorId
-    FROM [dms].[edfi_StudentAddress] base
-    INNER JOIN [dms].[edfi_Student] parent ON base.Student_Id = parent.Id');
-    PRINT 'View StudentAddress_View altered.';
-END
+    PRINT 'View StudentAddress_View already exists, skipped.';
 GO
 
 

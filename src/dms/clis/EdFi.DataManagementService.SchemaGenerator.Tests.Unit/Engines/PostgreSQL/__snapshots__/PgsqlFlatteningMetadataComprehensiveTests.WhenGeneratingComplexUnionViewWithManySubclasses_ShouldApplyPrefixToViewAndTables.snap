@@ -90,9 +90,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.StudentUniqueId,
     base.BeginDate,
     base.NonTraditionalGenderStatus
@@ -106,9 +103,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.StudentUniqueId,
     base.BeginDate,
     base.AwaitingFosterCare

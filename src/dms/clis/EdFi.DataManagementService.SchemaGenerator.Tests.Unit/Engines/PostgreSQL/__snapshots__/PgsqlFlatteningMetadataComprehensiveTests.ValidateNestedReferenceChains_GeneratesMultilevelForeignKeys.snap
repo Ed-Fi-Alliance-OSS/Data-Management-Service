@@ -90,9 +90,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.SectionIdentifier,
     base.CourseOffering_Id
 FROM dms.edfi_DomainEntityName base;
@@ -105,10 +102,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.DomainEntityName_Id,
     parent.SectionIdentifier AS DomainEntityName_SectionIdentifier,
     parent.CourseOffering_Id AS DomainEntityName_CourseOffering_Id,
     base.ClassPeriod_Id

@@ -141,9 +141,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.SectionIdentifier,
         base.Location_School_Id,
         base.Location_Location_Id,
@@ -153,23 +150,7 @@ BEGIN
     PRINT 'View Section_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[Section_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.SectionIdentifier,
-        base.Location_School_Id,
-        base.Location_Location_Id,
-        location.ClassroomIdentificationCode AS Location_ClassroomIdentificationCode
-    FROM [dms].[edfi_Section] base
-    INNER JOIN [dms].[edfi_Location] location ON base.Location_Location_Id = location.Id');
-    PRINT 'View Section_View altered.';
-END
+    PRINT 'View Section_View already exists, skipped.';
 GO
 
 
@@ -182,9 +163,6 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.School_Id,
         school.SchoolId AS School_SchoolId,
         base.ClassroomIdentificationCode
@@ -193,22 +171,7 @@ BEGIN
     PRINT 'View Location_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[Location_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.School_Id,
-        school.SchoolId AS School_SchoolId,
-        base.ClassroomIdentificationCode
-    FROM [dms].[edfi_Location] base
-    INNER JOIN [dms].[edfi_School] school ON base.School_Id = school.Id');
-    PRINT 'View Location_View altered.';
-END
+    PRINT 'View Location_View already exists, skipped.';
 GO
 
 
@@ -221,27 +184,12 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.SchoolId
     FROM [dms].[edfi_School] base');
     PRINT 'View School_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[School_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.SchoolId
-    FROM [dms].[edfi_School] base');
-    PRINT 'View School_View altered.';
-END
+    PRINT 'View School_View already exists, skipped.';
 GO
 
 

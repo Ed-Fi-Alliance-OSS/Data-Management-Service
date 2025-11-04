@@ -144,9 +144,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.ContentIdentifier,
     base.LearningResourceMetadataURI,
     base.Description,
@@ -162,10 +159,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.EducationContent_Id,
     parent.ContentIdentifier AS EducationContent_ContentIdentifier,
     base.DerivativeSource_EducationContent_Id
 FROM dms.edfi_EducationContentDerivativeSourceEducationContent base
@@ -179,10 +172,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.EducationContent_Id,
     parent.ContentIdentifier AS EducationContent_ContentIdentifier,
     base.RequiredURI
 FROM dms.edfi_EducationContentRequiredURI base

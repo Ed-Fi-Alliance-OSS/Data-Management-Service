@@ -92,29 +92,13 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.SchoolId,
         base.CharterApprovalSchoolYear_Id
     FROM [dms].[edfi_School] base');
     PRINT 'View School_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[School_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.SchoolId,
-        base.CharterApprovalSchoolYear_Id
-    FROM [dms].[edfi_School] base');
-    PRINT 'View School_View altered.';
-END
+    PRINT 'View School_View already exists, skipped.';
 GO
 
 
@@ -127,29 +111,13 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
         base.SchoolYear,
         base.SchoolYearDescription
     FROM [dms].[edfi_SchoolYear] base');
     PRINT 'View SchoolYear_View created.';
 END
 ELSE
-BEGIN
-    EXEC('ALTER VIEW [dms].[SchoolYear_View] AS
-    SELECT
-        base.Id,
-        base.Document_Id,
-        base.Document_PartitionKey,
-        base.CreateDate,
-        base.LastModifiedDate,
-        base.ChangeVersion,
-        base.SchoolYear,
-        base.SchoolYearDescription
-    FROM [dms].[edfi_SchoolYear] base');
-    PRINT 'View SchoolYear_View altered.';
-END
+    PRINT 'View SchoolYear_View already exists, skipped.';
 GO
 
 

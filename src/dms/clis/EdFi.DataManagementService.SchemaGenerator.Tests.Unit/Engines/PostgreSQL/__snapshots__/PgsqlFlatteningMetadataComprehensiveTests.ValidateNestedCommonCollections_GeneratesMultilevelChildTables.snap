@@ -130,9 +130,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.StudentId
 FROM dms.edfi_StudentEducationOrganizationAssociation base;
 
@@ -144,10 +141,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.StudentEducationOrganizationAssociation_Id,
     parent.StudentId AS StudentEducationOrganizationAssociation_StudentId,
     base.StreetNumberName
 FROM dms.edfi_StudentEducationOrganizationAssociationAddress base
@@ -161,14 +154,12 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
-    base.StudentEducationOrganizationAssociationAddress_Id,
+    ancestor_1.StudentId AS StudentEducationOrganizationAssociation_StudentId,
     base.BeginDate,
     base.EndDate
 FROM dms.edfi_StudentEducationOrganizationAssociationAddressPeriod base
-    INNER JOIN dms.edfi_StudentEducationOrganizationAssociationAddress parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id;
+    INNER JOIN dms.edfi_StudentEducationOrganizationAssociationAddress parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id
+    INNER JOIN dms.edfi_StudentEducationOrganizationAssociation ancestor_1 ON parent.StudentEducationOrganizationAssociation_Id = ancestor_1.Id;
 
 
 

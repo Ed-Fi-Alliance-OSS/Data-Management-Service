@@ -126,9 +126,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.SectionIdentifier,
     base.Location_School_Id,
     base.Location_Location_Id,
@@ -144,9 +141,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.School_Id,
     school.SchoolId AS School_SchoolId,
     base.ClassroomIdentificationCode
@@ -161,9 +155,6 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.CreateDate,
-    base.LastModifiedDate,
-    base.ChangeVersion,
     base.SchoolId
 FROM dms.edfi_School base;
 

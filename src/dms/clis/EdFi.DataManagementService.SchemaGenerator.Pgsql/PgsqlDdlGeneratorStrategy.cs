@@ -287,6 +287,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         naturalKeyViewTemplate,
                         sb,
                         null,
+                        null, // No parent for root tables
                         originalSchemaName,
                         options,
                         resourceSchema,
@@ -1562,6 +1563,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             HandlebarsTemplate<object, object> template,
             StringBuilder sb,
             string? parentTableName,
+            TableMetadata? parentTableMetadata,
             string originalSchemaName,
             DdlGenerationOptions options,
             ResourceSchema? resourceSchema,
@@ -1583,14 +1585,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             selectColumns.Add("base.Document_Id");
             selectColumns.Add("base.Document_PartitionKey");
 
-            // Add audit columns if enabled
-            if (options.IncludeAuditColumns)
-            {
-                selectColumns.Add("base.CreateDate");
-                selectColumns.Add("base.LastModifiedDate");
-                selectColumns.Add("base.ChangeVersion");
-            }
-
             // Track used aliases to avoid duplicates
             var usedAliases = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -1602,12 +1596,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 "ChangeVersion",
             };
 
-            // If this is a child table, add parent FK and resolve parent's natural keys
-            if (parentTableName != null)
+            // If this is a child table, resolve parent's natural keys (exclude intermediate FK)
+            if (parentTableName != null && parentTableMetadata != null)
             {
                 var parentFkColumn = PgsqlNamingHelper.MakePgsqlIdentifier($"{parentTableName}_Id");
-                selectColumns.Add($"base.{parentFkColumn}");
-                usedAliases.Add(parentFkColumn);
+                usedAliases.Add(parentFkColumn); // Track to avoid duplicate, but don't include in view
 
                 // Join to parent table to resolve its natural keys
                 var parentTableRef = DetermineTableName(
@@ -1620,36 +1613,51 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     $"\r\n    INNER JOIN {finalSchemaName}.{parentTableRef} parent ON base.{parentFkColumn} = parent.Id"
                 );
 
-                // Find parent resource schema to get its natural key columns
+                // Add parent's natural key columns directly from parent TableMetadata
+                foreach (
+                    var parentNkCol in parentTableMetadata.Columns.Where(c =>
+                        c.IsNaturalKey && !c.IsParentReference
+                    )
+                )
+                {
+                    var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                        $"{parentTableName}_{parentNkCol.ColumnName}"
+                    );
+                    if (!usedAliases.Contains(aliasName))
+                    {
+                        selectColumns.Add(
+                            $"parent.{PgsqlNamingHelper.MakePgsqlIdentifier(parentNkCol.ColumnName)} AS {aliasName}"
+                        );
+                        usedAliases.Add(aliasName);
+                    }
+                }
+
+                // Recursively resolve parent's parent natural keys (grandparent and beyond)
+                ResolveAncestorNaturalKeys(
+                    parentTableMetadata,
+                    projectSchema,
+                    selectColumns,
+                    joins,
+                    usedAliases,
+                    "parent",
+                    parentTableName,
+                    finalSchemaName,
+                    originalSchemaName,
+                    options,
+                    resourceSchema,
+                    1 // depth level starts at 1 for grandparent
+                );
+
+                // Recursively resolve parent's cross-resource references (only for resource-level tables)
                 var parentResourceSchema = FindResourceSchemaByTableName(
                     projectSchema,
                     parentTableName,
                     options
                 );
-                if (parentResourceSchema != null && parentResourceSchema.FlatteningMetadata?.Table != null)
+                if (parentResourceSchema != null)
                 {
-                    // Add parent's natural key columns
-                    foreach (
-                        var parentNkCol in parentResourceSchema.FlatteningMetadata.Table.Columns.Where(c =>
-                            c.IsNaturalKey && !c.IsParentReference
-                        )
-                    )
-                    {
-                        var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
-                            $"{parentTableName}_{parentNkCol.ColumnName}"
-                        );
-                        if (!usedAliases.Contains(aliasName))
-                        {
-                            selectColumns.Add(
-                                $"parent.{PgsqlNamingHelper.MakePgsqlIdentifier(parentNkCol.ColumnName)} AS {aliasName}"
-                            );
-                            usedAliases.Add(aliasName);
-                        }
-                    }
-
-                    // Recursively resolve parent's cross-resource references
                     ResolveParentReferences(
-                        parentResourceSchema.FlatteningMetadata.Table,
+                        parentTableMetadata,
                         projectSchema,
                         selectColumns,
                         joins,
@@ -1789,12 +1797,163 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     template,
                     sb,
                     table.BaseName,
+                    table, // Pass parent table metadata
                     originalSchemaName,
                     options,
                     resourceSchema,
                     projectSchema
                 );
             }
+        }
+
+        /// <summary>
+        /// Recursively resolves ancestor (grandparent and beyond) natural keys by chaining joins through the parent hierarchy.
+        /// This ensures that natural keys from all ancestor levels propagate down to deeply nested child tables.
+        /// </summary>
+        private void ResolveAncestorNaturalKeys(
+            TableMetadata parentTable,
+            ProjectSchema projectSchema,
+            List<string> selectColumns,
+            List<string> joins,
+            HashSet<string> usedAliases,
+            string currentAlias,
+            string currentPrefix,
+            string finalSchemaName,
+            string originalSchemaName,
+            DdlGenerationOptions options,
+            ResourceSchema? resourceSchema,
+            int depth
+        )
+        {
+            // Check if the parent table itself has a parent (making it a grandparent from the original child's perspective)
+            var grandparentTableName = FindParentTableName(parentTable);
+            if (grandparentTableName != null)
+            {
+                // Create alias for the grandparent join
+                var ancestorAlias = $"ancestor_{depth}";
+                var grandparentFkColumn = PgsqlNamingHelper.MakePgsqlIdentifier($"{grandparentTableName}_Id");
+
+                // Join to grandparent table through the parent
+                var grandparentTableRef = DetermineTableName(
+                    grandparentTableName,
+                    originalSchemaName,
+                    resourceSchema,
+                    options
+                );
+                joins.Add(
+                    $"\r\n    INNER JOIN {finalSchemaName}.{grandparentTableRef} {ancestorAlias} ON {currentAlias}.{grandparentFkColumn} = {ancestorAlias}.Id"
+                );
+
+                // Try to find grandparent as a resource first, otherwise look for it as a child table
+                var grandparentResourceSchema = FindResourceSchemaByTableName(
+                    projectSchema,
+                    grandparentTableName,
+                    options
+                );
+
+                TableMetadata? grandparentTable = null;
+                if (
+                    grandparentResourceSchema != null
+                    && grandparentResourceSchema.FlatteningMetadata?.Table != null
+                )
+                {
+                    // Grandparent is a top-level resource
+                    grandparentTable = grandparentResourceSchema.FlatteningMetadata.Table;
+                }
+                else
+                {
+                    // Grandparent is a child table - search for it in the resource hierarchy
+                    grandparentTable = FindChildTableByName(
+                        resourceSchema?.FlatteningMetadata?.Table,
+                        grandparentTableName
+                    );
+                }
+
+                if (grandparentTable != null)
+                {
+                    // Add grandparent's natural key columns with simple prefix (just grandparentTable_columnName)
+                    foreach (
+                        var grandparentNkCol in grandparentTable.Columns.Where(c =>
+                            c.IsNaturalKey && !c.IsParentReference
+                        )
+                    )
+                    {
+                        // Use simple prefix: grandparentTable_columnName (matches parent view naming)
+                        var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                            $"{grandparentTableName}_{grandparentNkCol.ColumnName}"
+                        );
+                        if (!usedAliases.Contains(aliasName))
+                        {
+                            selectColumns.Add(
+                                $"{ancestorAlias}.{PgsqlNamingHelper.MakePgsqlIdentifier(grandparentNkCol.ColumnName)} AS {aliasName}"
+                            );
+                            usedAliases.Add(aliasName);
+                        }
+                    }
+
+                    // Continue recursively up the chain for even higher ancestors
+                    ResolveAncestorNaturalKeys(
+                        grandparentTable,
+                        projectSchema,
+                        selectColumns,
+                        joins,
+                        usedAliases,
+                        ancestorAlias,
+                        grandparentTableName, // Use grandparent name as new prefix for next level
+                        finalSchemaName,
+                        originalSchemaName,
+                        options,
+                        grandparentResourceSchema ?? resourceSchema,
+                        depth + 1
+                    );
+                }
+            }
+        }
+
+        /// <summary>
+        /// Recursively searches for a child table by name in the table hierarchy.
+        /// </summary>
+        private TableMetadata? FindChildTableByName(TableMetadata? table, string tableName)
+        {
+            if (table == null)
+            {
+                return null;
+            }
+
+            // Check direct children
+            var child = table.ChildTables?.FirstOrDefault(c =>
+                string.Equals(c.BaseName, tableName, StringComparison.Ordinal)
+            );
+            if (child != null)
+            {
+                return child;
+            }
+
+            // Recursively check grandchildren
+            foreach (var childTable in table.ChildTables ?? System.Linq.Enumerable.Empty<TableMetadata>())
+            {
+                var found = FindChildTableByName(childTable, tableName);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Finds the parent table name by looking for a column with IsParentReference = true.
+        /// </summary>
+        private string? FindParentTableName(TableMetadata table)
+        {
+            var parentRefColumn = table.Columns?.FirstOrDefault(c => c.IsParentReference);
+            if (parentRefColumn != null && parentRefColumn.ColumnName.EndsWith("_Id"))
+            {
+                // Extract parent table name by removing the "_Id" suffix
+                return parentRefColumn.ColumnName.Substring(0, parentRefColumn.ColumnName.Length - 3);
+            }
+            return null;
         }
 
         /// <summary>
