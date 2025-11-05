@@ -491,3 +491,117 @@ Feature: Validation of the structure of the URLs
                         "Total-Count": 1
                     }
                   """
+
+        @DMS-816
+        Scenario: 18 Ensure clients get 404 for completely invalid path with prefix before data model
+             When a POST request is made to "/ed-fi/notExisting" with
+                  """
+                  {
+                      "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+                      "codeValue": "Test",
+                      "shortDescription": "Test",
+                      "description": "Test"
+                  }
+                  """
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+
+        @DMS-816
+        Scenario: 19 Ensure clients get 404 for misspelled resource endpoint
+             When a POST request is made to "/ed-fi/gradeLevelDescriptorz" with
+                  """
+                  {
+                      "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+                      "codeValue": "Test",
+                      "shortDescription": "Test",
+                      "description": "Test"
+                  }
+                  """
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+
+        @DMS-816
+        Scenario: 20 Ensure clients get 404 for arbitrary non-existent path
+             When a GET request is made to "/foo/bar"
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
+                  """
+
+        @DMS-816
+        Scenario: 21 Ensure clients get 404 for PUT on non-existent path with ID
+             When a PUT request is made to "/invalid/path/00000000-0000-4000-a000-000000000000" with
+                  """
+                  {
+                      "id": "00000000-0000-4000-a000-000000000000",
+                      "test": "value"
+                  }
+                  """
+             Then it should respond with 404
+              And the response body is
+                  """
+                  {
+                      "detail": "The specified data could not be found.",
+                      "type": "urn:ed-fi:api:not-found",
+                      "title": "Not Found",
+                      "status": 404,
+                      "correlationId": null,
+                      "validationErrors": {},
+                      "errors": []
+                  }
+                  """
+              And the response headers include
+                  """
+                    {
+                        "Content-Type": "application/problem+json"
+                    }
+                  """

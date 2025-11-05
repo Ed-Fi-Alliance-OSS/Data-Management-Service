@@ -68,7 +68,10 @@ public class ValidateEndpointMiddlewareTests
         [Test]
         public void It_returns_message_body()
         {
-            _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Invalid resource");
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain("The specified data could not be found.");
         }
 
         [Test]
