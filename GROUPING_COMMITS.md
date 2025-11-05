@@ -57,7 +57,7 @@ This document outlines the steps to move the Data Management Service to a scoped
 
 3. **Operations (`UpsertDocument`, `DeleteDocumentById`, etc.)**
    - Continue to accept `NpgsqlConnection` / `NpgsqlTransaction` parameters; the repository supplies them via the new session.
-   - Remove per-method commit/rollback or savepoint usage that assumed direct transaction control. Allow the middleware to manage error recovery unless a true nested transaction is required.
+   - Retain targeted savepoints when the operation needs to recover from partial failures (e.g., the FK handling in `DeleteDocumentById` still uses `SaveAsync` / `RollbackAsync` to surface referencing resources). Remove only the catch-all commit/rollback logic now owned by the middleware.
 
 4. **`SqlAction` changes**
    - Confirm all methods accept `NpgsqlConnection` / `NpgsqlTransaction`. With session in place, the repository will continue to pass the active objects—no signature changes needed.
@@ -82,14 +82,14 @@ This document outlines the steps to move the Data Management Service to a scoped
 
 ---
 
-## 4. Remove Manual Savepoints in Delete Paths
+## 4. Audit Savepoint Usage
 
 1. **DeleteDocumentById.cs**
-   - Remove `await transaction.SaveAsync("beforeDelete")` and `await transaction.RollbackAsync("beforeDelete")`.
-   - When catch an FK violation, just rethrow (or return failure). The outer middleware will roll back the entire unit automatically.
+   - Keep the targeted `transaction.SaveAsync("beforeDelete")` / `transaction.RollbackAsync("beforeDelete")` pair so FK violations can be rolled back to the savepoint and `FindReferencingResourceNamesByDocumentUuid` can still run.
+   - Remove only the outer commit/rollback handling—the middleware owns the final transaction outcome.
 
 2. **Any other savepoint usage**
-   - Grep for `.SaveAsync(` to ensure all redundant savepoints are eliminated unless a true nested transaction is required.
+   - Grep for `.SaveAsync(` to ensure that remaining savepoints are intentional (e.g., surface partial-failure details) and not compensating for missing middleware rollback logic.
 
 ---
 
