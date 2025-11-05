@@ -93,6 +93,7 @@ This document outlines the steps to move the Data Management Service to a scoped
    - Add coverage verifying that failure paths explicitly roll back and that `UnitOfWorkMiddleware` commits only when `HasActiveTransaction` is true.
    - Adjust repository tests to supply a fake `IDbSession` (or a wrapper exposing a real connection/transaction).
    - Add middleware coverage that verifies commit-on-success and rollback-on-exception behaviors.
+   - Augment the foundational PostgreSQL integration suites in `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`—`UpsertTests.cs`, `UpdateTests.cs`, `DeleteTests.cs`, `GetTests.cs`, and `QueryTests.cs`—with scenarios that exercise the new unit-of-work behavior (e.g., retries after rollback, savepoint recovery, read-only snapshots). Ensure every existing and new test in that project passes (`dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration`) before considering the work complete.
 
 ---
 
