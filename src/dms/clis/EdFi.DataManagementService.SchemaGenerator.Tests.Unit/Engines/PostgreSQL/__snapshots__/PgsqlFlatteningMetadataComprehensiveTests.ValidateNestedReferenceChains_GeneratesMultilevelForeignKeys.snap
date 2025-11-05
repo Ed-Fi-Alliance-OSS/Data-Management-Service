@@ -102,8 +102,8 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    parent.SectionIdentifier AS DomainEntityName_SectionIdentifier,
-    parent.CourseOffering_Id AS DomainEntityName_CourseOffering_Id,
+    parent.SectionIdentifier,
+    parent.CourseOffering_Id,
     base.ClassPeriod_Id
 FROM dms.edfi_DomainEntityNameClassPeriod base
     INNER JOIN dms.edfi_DomainEntityName parent ON base.DomainEntityName_Id = parent.Id;

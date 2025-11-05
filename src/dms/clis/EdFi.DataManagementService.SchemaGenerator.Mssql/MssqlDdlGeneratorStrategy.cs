@@ -1623,15 +1623,17 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     )
                 )
                 {
-                    var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
-                        $"{parentTableName}_{parentNkCol.ColumnName}"
-                    );
-                    if (!usedAliases.Contains(aliasName))
+                    var columnName = MssqlNamingHelper.MakeMssqlIdentifier(parentNkCol.ColumnName);
+                    if (!usedAliases.Contains(columnName))
                     {
-                        selectColumns.Add(
-                            $"parent.{MssqlNamingHelper.MakeMssqlIdentifier(parentNkCol.ColumnName)} AS {aliasName}"
+                        selectColumns.Add($"parent.{columnName}");
+                        usedAliases.Add(columnName);
+                    }
+                    else
+                    {
+                        Console.WriteLine(
+                            $"INFO: Column name collision detected in view {viewName}: '{columnName}' from parent '{parentTableName}' already exists. Skipping duplicate."
                         );
-                        usedAliases.Add(aliasName);
                     }
                 }
 
@@ -1873,23 +1875,24 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
                 if (grandparentTable != null)
                 {
-                    // Add grandparent's natural key columns with simple prefix (just grandparentTable_columnName)
+                    // Add grandparent's natural key columns without prefix
                     foreach (
                         var grandparentNkCol in grandparentTable.Columns.Where(c =>
                             c.IsNaturalKey && !c.IsParentReference
                         )
                     )
                     {
-                        // Use simple prefix: grandparentTable_columnName (matches parent view naming)
-                        var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
-                            $"{grandparentTableName}_{grandparentNkCol.ColumnName}"
-                        );
-                        if (!usedAliases.Contains(aliasName))
+                        var columnName = MssqlNamingHelper.MakeMssqlIdentifier(grandparentNkCol.ColumnName);
+                        if (!usedAliases.Contains(columnName))
                         {
-                            selectColumns.Add(
-                                $"{ancestorAlias}.{MssqlNamingHelper.MakeMssqlIdentifier(grandparentNkCol.ColumnName)} AS {aliasName}"
+                            selectColumns.Add($"{ancestorAlias}.{columnName}");
+                            usedAliases.Add(columnName);
+                        }
+                        else
+                        {
+                            Console.WriteLine(
+                                $"INFO: Column name collision detected: '{columnName}' from ancestor '{grandparentTableName}' already exists. Skipping duplicate."
                             );
-                            usedAliases.Add(aliasName);
                         }
                     }
 
@@ -1993,15 +1996,16 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     {
                         processedRefs.Add(referencedResource);
 
-                        // Include parent's surrogate key column
+                        // Include parent's surrogate key column (only if not already included as natural key)
+                        var baseColumnName = MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName);
                         var parentFkAlias = MssqlNamingHelper.MakeMssqlIdentifier(
                             $"{parentPrefix}_{column.ColumnName}"
                         );
+
+                        // Check if the base column is not included (as parent natural key)
                         if (!usedAliases.Contains(parentFkAlias))
                         {
-                            selectColumns.Add(
-                                $"{parentAlias}.{MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName)} AS {parentFkAlias}"
-                            );
+                            selectColumns.Add($"{parentAlias}.{baseColumnName} AS {parentFkAlias}");
                             usedAliases.Add(parentFkAlias);
                         }
 
