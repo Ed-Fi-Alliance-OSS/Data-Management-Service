@@ -1631,9 +1631,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     }
                     else
                     {
-                        Console.WriteLine(
-                            $"INFO: Column name collision detected in view {viewName}: '{columnName}' from parent '{parentTableName}' already exists. Skipping duplicate."
-                        );
+                        // Skip duplicate - column already exists
                     }
                 }
 
@@ -1890,9 +1888,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         }
                         else
                         {
-                            Console.WriteLine(
-                                $"INFO: Column name collision detected: '{columnName}' from ancestor '{grandparentTableName}' already exists. Skipping duplicate."
-                            );
+                            // Skip duplicate - column already exists
                         }
                     }
 
@@ -2002,8 +1998,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                             $"{parentPrefix}_{column.ColumnName}"
                         );
 
-                        // Check if the base column is not included (as parent natural key)
-                        if (!usedAliases.Contains(parentFkAlias))
+                        // Check if the base column is already included (as parent natural key)
+                        if (usedAliases.Contains(baseColumnName))
+                        {
+                            // Skip duplicate - column already exists as natural key
+                        }
+                        else if (!usedAliases.Contains(parentFkAlias))
                         {
                             selectColumns.Add($"{parentAlias}.{baseColumnName} AS {parentFkAlias}");
                             usedAliases.Add(parentFkAlias);
