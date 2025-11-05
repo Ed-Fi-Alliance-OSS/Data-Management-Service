@@ -1631,9 +1631,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     }
                     else
                     {
-                        Console.WriteLine(
-                            $"INFO: Column name collision detected in view {viewName}: '{columnName}' from parent '{parentTableName}' already exists. Skipping duplicate."
-                        );
+                        // Skip duplicate - column already exists
                     }
                 }
 
@@ -1890,9 +1888,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         }
                         else
                         {
-                            Console.WriteLine(
-                                $"INFO: Column name collision detected: '{columnName}' from ancestor '{grandparentTableName}' already exists. Skipping duplicate."
-                            );
+                            // Skip duplicate - column already exists
                         }
                     }
 
@@ -1996,15 +1992,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     {
                         processedRefs.Add(referencedResource);
 
-                        // Include parent's surrogate key column
+                        // Include parent's surrogate key column (only if not already included as natural key)
+                        var baseColumnName = MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName);
                         var parentFkAlias = MssqlNamingHelper.MakeMssqlIdentifier(
                             $"{parentPrefix}_{column.ColumnName}"
                         );
-                        if (!usedAliases.Contains(parentFkAlias))
+
+                        // Check if the base column is already included (as parent natural key)
+                        if (usedAliases.Contains(baseColumnName))
                         {
-                            selectColumns.Add(
-                                $"{parentAlias}.{MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName)} AS {parentFkAlias}"
-                            );
+                            // Skip duplicate - column already exists as natural key
+                        }
+                        else if (!usedAliases.Contains(parentFkAlias))
+                        {
+                            selectColumns.Add($"{parentAlias}.{baseColumnName} AS {parentFkAlias}");
                             usedAliases.Add(parentFkAlias);
                         }
 

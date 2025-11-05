@@ -1628,9 +1628,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     }
                     else
                     {
-                        Console.WriteLine(
-                            $"INFO: Column name collision detected in view {viewName}: '{columnName}' from parent '{parentTableName}' already exists. Skipping duplicate."
-                        );
+                        // Skip duplicate - column already exists
                     }
                 }
 
@@ -1888,9 +1886,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         }
                         else
                         {
-                            Console.WriteLine(
-                                $"INFO: Column name collision detected: '{columnName}' from ancestor '{grandparentTableName}' already exists. Skipping duplicate."
-                            );
+                            // Skip duplicate - column already exists
                         }
                     }
 
@@ -1994,15 +1990,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     {
                         processedRefs.Add(referencedResource);
 
-                        // Include parent's surrogate key column
+                        // Include parent's surrogate key column (only if not already included as natural key)
+                        var baseColumnName = PgsqlNamingHelper.MakePgsqlIdentifier(column.ColumnName);
                         var parentColumnAlias = PgsqlNamingHelper.MakePgsqlIdentifier(
                             $"{parentPrefix}_{column.ColumnName}"
                         );
-                        if (!usedAliases.Contains(parentColumnAlias))
+
+                        // Check if the base column is already included (as parent natural key)
+                        if (usedAliases.Contains(baseColumnName))
                         {
-                            selectColumns.Add(
-                                $"{parentAlias}.{PgsqlNamingHelper.MakePgsqlIdentifier(column.ColumnName)} AS {parentColumnAlias}"
-                            );
+                            // Skip duplicate - column already exists as natural key
+                        }
+                        else if (!usedAliases.Contains(parentColumnAlias))
+                        {
+                            selectColumns.Add($"{parentAlias}.{baseColumnName} AS {parentColumnAlias}");
                             usedAliases.Add(parentColumnAlias);
                         }
 
