@@ -25,28 +25,28 @@ This document outlines the steps to move the Data Management Service to a scoped
    - Both methods must flip `HasActiveTransaction` back to false after executing so the middleware can detect whether a commit is still pending.
    - Ensure `DisposeAsync`/`Dispose` clean up `Transaction` and `Connection`. Wrap in try/catch and log failures so the middleware can still throw if needed.
 
-3. **Register session in DI**
+3. **Register session factory in DI**
    - Leave the PostgreSQL repositories registered as singletons so their caches and pipeline wiring stay valid.
-   - Expose a scoped `IDbSession` in Core (e.g., `DmsCoreServiceExtensions`) that resolves the singleton `NpgsqlDataSource`, reads the configured isolation level, and creates a new `DbSession` per request scope.
-   - Provide an `IDbSessionAccessor` (or use `IHttpContextAccessor` equivalent) if pipeline steps need to resolve the current session after `UnitOfWorkMiddleware` attaches it.
-   - Ensure any background singletons (e.g., `DbHealthCheck`) continue to open their own transient connections via `NpgsqlDataSource` and do not consume the request-scoped session.
+   - Add an `IDbSessionFactory` implementation (backend-specific) that wraps `NpgsqlDataSource`, honors the configured isolation level, and produces new `DbSession` instances on demand.
+   - Register the factory as a singleton in `PostgresqlServiceExtensions`; the middleware and any other callers obtain sessions exclusively through this factory.
+   - Ensure background singletons (e.g., `DbHealthCheck`) continue to open their own transient connections via `NpgsqlDataSource` and do not consume sessions meant for API requests.
 
 4. **Add request middleware for lifetime management**
-   - Implement `UnitOfWorkMiddleware` as a DMS Core pipeline step (`IPipelineStep` in `src/dms/core/EdFi.DataManagementService.Core/Middleware`) and register it via Core DI so `ApiService` can `GetRequiredService<UnitOfWorkMiddleware>()`.
+   - Implement `UnitOfWorkMiddleware` as a DMS Core pipeline step (`IPipelineStep` in `src/dms/core/EdFi.DataManagementService.Core/Middleware`). The middleware must remain stateless between requests.
    - The middleware should:
-     1. Resolve `IDbSession` from scoped services.
-     2. Attach the session to the current `RequestInfo` instance.
-     3. Invoke `await next()` inside a try block.
-     4. If `next` completes without exception and `session.HasActiveTransaction` is true, call `CommitAsync`; otherwise do nothing (repositories already rolled back).
-     5. On exception, call `RollbackAsync` (safe no-op if the repository already rolled back) and rethrow.
-     6. Dispose the session once processing completes (the middleware owns the per-request lifetime) and clear `RequestInfo.DbSession` in a `finally` block.
-   - Append the middleware to the end of `GetCommonInitialSteps()` in `ApiService` (`src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`) so all pipelines (upsert, query, delete, etc.) execute within the unit of work after authentication/logging. Resolve it from `_serviceProvider` (e.g., `_serviceProvider.GetRequiredService<UnitOfWorkMiddleware>()`) so constructor-injected services are honored. After `next()` returns, the middleware should check `session.HasActiveTransaction`; if true, call `CommitAsync`, otherwise no-op (the repository already rolled back).
+     1. Resolve an `IDbSessionFactory` from DI in its constructor.
+     2. In `Execute`, create a fresh session by calling `var session = await _sessionFactory.CreateAsync(requestInfo.FrontendRequest.TraceId);`.
+     3. Attach the session to the current `RequestInfo`.
+     4. Invoke `await next()` inside a try block.
+     5. If `next` completes without exception and `session.HasActiveTransaction` is true, call `CommitAsync`; otherwise do nothing.
+     6. On exception, call `RollbackAsync` (harmless if no transaction began) and rethrow.
+     7. In a `finally`, clear `RequestInfo.DbSession` and dispose the session (`await session.DisposeAsync()`).
+   - Append the middleware to the end of `GetCommonInitialSteps()` in `ApiService` (`src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`) by resolving it from `_serviceProvider` (e.g., `_serviceProvider.GetRequiredService<UnitOfWorkMiddleware>()`). Because the middleware remains stateless and obtains its session per `Execute`, constructing it at pipeline-build time is safe.
    - Wiring checklist:
-     1. **Session factory in backend** — In `PostgresqlServiceExtensions.AddPostgresqlDatastore`, keep every repository as a singleton, and add `services.AddSingleton<IDbSessionFactory>(sp => new DbSessionFactory(sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<IOptions<DatabaseOptions>>(), sp.GetRequiredService<ILoggerFactory>()));`. The factory encapsulates backend-specific knowledge (connection pool, isolation level, logging) and exposes `Create()` for new sessions.
-     2. **Scoped session in core** — In `DmsCoreServiceExtensions`, register `services.AddScoped<IDbSession>(sp => sp.GetRequiredService<IDbSessionFactory>().Create());` so each request scope gets its own `DbSession` while backend singletons still rely on the shared data source.
-     3. **Middleware registration** — Also in `DmsCoreServiceExtensions`, add `services.AddTransient<UnitOfWorkMiddleware>();`. Give the middleware a constructor that accepts `IDbSession`, `ILogger<UnitOfWorkMiddleware>`, and any required accessors for updating `RequestInfo`.
-     4. **Pipeline usage** — Update `ApiService.GetCommonInitialSteps()` to append the middleware via `_serviceProvider.GetRequiredService<UnitOfWorkMiddleware>()`. Other steps can continue to be constructed with `new` because they have no additional dependencies.
-     5. **Middleware execution** — Inside the middleware, once `await next()` returns, call `CommitAsync` only when `session.HasActiveTransaction` is true; otherwise assume the repository rolled back already. Always dispose the session before returning.
+    1. **Session factory in backend** — In `PostgresqlServiceExtensions.AddPostgresqlDatastore`, keep every repository as a singleton and register `services.AddSingleton<IDbSessionFactory>(sp => new DbSessionFactory(sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<IOptions<DatabaseOptions>>(), sp.GetRequiredService<ILoggerFactory>()));`. The factory encapsulates backend-specific knowledge (connection pool, isolation level, logging) and exposes `Task<IDbSession> CreateAsync(TraceId traceId)` for new sessions.
+    2. **Middleware registration** — In `DmsCoreServiceExtensions`, register `services.AddTransient<UnitOfWorkMiddleware>();`. The middleware constructor should accept only singleton-safe dependencies (e.g., `IDbSessionFactory`, `ILogger<UnitOfWorkMiddleware>`).
+    3. **Pipeline usage** — Update `ApiService.GetCommonInitialSteps()` to append the middleware via `_serviceProvider.GetRequiredService<UnitOfWorkMiddleware>()`. Other steps can continue to be constructed with `new` because they have no additional dependencies.
+    4. **Middleware execution** — Inside the middleware, once `await next()` returns, call `CommitAsync` only when `session.HasActiveTransaction` is true; otherwise assume the repository rolled back already. Always dispose the session before returning.
 
 ---
 
@@ -63,7 +63,7 @@ This document outlines the steps to move the Data Management Service to a scoped
    - Mirror the same signature change in the backing operation interfaces (`IUpsertDocument`, `IUpdateDocumentById`, `IDeleteDocumentById`, `IGetDocumentById`, `IQueryDocument`) so the repository can forward the session.
    - Leave `IAuthorizationRepository` on the current pattern for now; it will be reworked separately.
    - Use `await dbSession.OpenConnectionAsync()` / `await dbSession.BeginTransactionAsync()` within each method; this keeps connection ownership centralized in the session.
-   - For read-heavy paths, prefer a read-only transaction helper on the session (e.g., `await dbSession.EnsureReadOnlyTransactionAsync()` before the first authorization or data query) so authorization checks and the resource payload share the same snapshot.
+   - For read-heavy paths, open the transaction once per request (e.g., call `await dbSession.BeginTransactionAsync()` before the first authorization or data query) so authorization checks and the resource payload share the same snapshot. If a lightweight helper (such as `EnsureReadOnlyTransactionAsync`) is added to `IDbSession`, use it here.
    - On any failure path (e.g., `UpsertFailureWriteConflict`, foreign-key violations, optimistic-lock failures), explicitly call `await dbSession.RollbackAsync()` before returning so the transaction is clean for Polly retries and `HasActiveTransaction` is cleared. Let the middleware commit only when the repository leaves an active transaction after a success path.
 
 3. **Operations (`UpsertDocument`, `DeleteDocumentById`, etc.)**
