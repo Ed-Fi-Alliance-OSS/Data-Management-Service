@@ -14,6 +14,7 @@ This document outlines the steps to move the Data Management Service to a scoped
      - `NpgsqlTransaction? Transaction { get; }`
      - `bool HasActiveTransaction { get; }` (true between `BeginTransactionAsync` and either `CommitAsync` or `RollbackAsync`)
      - `Task CommitAsync()`, `Task RollbackAsync()`
+     - `ValueTask DisposeAsync()` (or simply derive `IDbSession` from `IAsyncDisposable`; keep `IDisposable` if synchronous disposal remains useful for tests)
    - Implement lazy connection opening—only hit the pool when a handler actually needs the database.
    - Define a companion `IDbSessionFactory` interface in Core (e.g., `src/dms/core/EdFi.DataManagementService.Core/Backend/IDbSessionFactory.cs`):
      ```csharp
@@ -34,7 +35,7 @@ This document outlines the steps to move the Data Management Service to a scoped
      - `Transaction = await connection.BeginTransactionAsync(_isolationLevel)`
    - `CommitAsync`/`RollbackAsync` should no-op if no transaction was started.
    - Both methods must flip `HasActiveTransaction` back to false after executing so the middleware can detect whether a commit is still pending.
-   - Ensure `DisposeAsync`/`Dispose` clean up `Transaction` and `Connection`. Wrap in try/catch and log failures so the middleware can still throw if needed.
+   - Implement `IAsyncDisposable` (and `IDisposable` if needed for legacy code). Ensure `DisposeAsync`/`Dispose` clean up `Transaction` and `Connection`. Wrap in try/catch and log failures so the middleware can still throw if needed.
 
 3. **Register session factory in DI**
    - Leave the PostgreSQL repositories registered as singletons so their caches and pipeline wiring stay valid.
@@ -51,7 +52,7 @@ This document outlines the steps to move the Data Management Service to a scoped
      4. Invoke `await next()` inside a try block.
      5. If `next` completes without exception and `session.HasActiveTransaction` is true, call `CommitAsync`; otherwise do nothing.
      6. On exception, call `RollbackAsync` (harmless if no transaction began) and rethrow.
-     7. In a `finally`, clear `RequestInfo.DbSession` and dispose the session (`await session.DisposeAsync()`).
+     7. In a `finally`, clear `RequestInfo.DbSession` and dispose the session (call `await session.DisposeAsync()` because the interface now guarantees async disposal).
    - Append the middleware to the end of `GetCommonInitialSteps()` in `ApiService` (`src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`) by resolving it from `_serviceProvider` (e.g., `_serviceProvider.GetRequiredService<UnitOfWorkMiddleware>()`). Because the middleware remains stateless and obtains its session per `Execute`, constructing it at pipeline-build time is safe.
    - Wiring checklist:
     1. **Session factory in backend** — In `PostgresqlServiceExtensions.AddPostgresqlDatastore`, keep every repository as a singleton and register `services.AddSingleton<IDbSessionFactory>(sp => new DbSessionFactory(sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<IOptions<DatabaseOptions>>(), sp.GetRequiredService<ILoggerFactory>()));`. The factory encapsulates backend-specific knowledge (connection pool, isolation level, logging) and exposes `Task<IDbSession> CreateAsync(TraceId traceId)` for new sessions.
@@ -66,17 +67,18 @@ This document outlines the steps to move the Data Management Service to a scoped
 1. **Flow the session through `RequestInfo`**
    - Extend `RequestInfo` (`src/dms/core/EdFi.DataManagementService.Core/Pipeline/RequestInfo.cs`) with an `IDbSession` property (default null).
    - `UnitOfWorkMiddleware` sets this property before invoking `next()` and clears it during disposal so downstream steps always see the current session.
-   - Update pipeline handlers (`UpsertHandler`, `UpdateByIdHandler`, `DeleteByIdHandler`, query handler, authorization handlers, etc.) to pass `requestInfo.DbSession` to backend interfaces.
+   - Update pipeline handlers (`UpsertHandler`, `UpdateByIdHandler`, `DeleteByIdHandler`, `QueryRequestHandler`, `GetByIdHandler`, authorization handlers, etc.) so every call into the backend now forwards `requestInfo.DbSession`. Capture the full list of call sites (Core handlers, batch helpers, CMS pipelines if applicable) before editing to avoid leaving stragglers that still invoke the old signatures.
 
 2. **PostgresqlDocumentStoreRepository**
    - Keep the repository registered as a singleton; do not inject `IDbSession` directly.
-   - Update `IDocumentStoreRepository`, `IQueryHandler`, and companion interfaces so each operation accepts an `IDbSession` parameter supplied by handlers (e.g., `UpsertDocument(IDbSession session, IUpsertRequest request)`, `GetDocumentById(IDbSession session, IGetRequest request)`). This change cascades through every handler (`UpsertHandler`, `UpdateByIdHandler`, `DeleteByIdHandler`, `QueryRequestHandler`), the resilience wrappers, and all unit tests that mock these interfaces; note each location so nothing is missed during implementation.
-   - Call out the ripple explicitly: every consumer of the shared interfaces (`Core.External`, both API front-ends, unit/integration tests, alternative datastore implementations, and mocks/fakes under `*.Tests`) must be updated in the same change. Keep a checklist of assemblies to touch so nothing is left compiling against the old signatures.
+   - Update `IDocumentStoreRepository`, `IQueryHandler`, and companion interfaces (`src/dms/core/EdFi.DataManagementService.Core/External/Interface`) so each operation accepts an `IDbSession` parameter supplied by handlers (e.g., `UpsertDocument(IDbSession session, IUpsertRequest request)`, `GetDocumentById(IDbSession session, IGetRequest request)`). This change cascades through every handler (`UpsertHandler`, `UpdateByIdHandler`, `DeleteByIdHandler`, `QueryRequestHandler`, `GetByIdHandler`), the resilience wrappers, scheduler/batch helpers, and all unit tests that mock these interfaces; note each location so nothing is missed during implementation.
+   - Call out the ripple explicitly: every consumer of the shared interfaces (`Core.External`, both API front-ends, CMS pipelines, unit/integration tests, alternative datastore implementations, and mocks/fakes under `*.Tests`) must be updated in the same change. Maintain a checklist of assemblies/namespaces to touch so nothing is left compiling against the old signatures.
    - Mirror the same signature change in the backing operation interfaces (`IUpsertDocument`, `IUpdateDocumentById`, `IDeleteDocumentById`, `IGetDocumentById`, `IQueryDocument`) so the repository can forward the session.
    - Leave `IAuthorizationRepository` on the current pattern for now; it will be reworked separately.
    - Use `await dbSession.OpenConnectionAsync()` / `await dbSession.BeginTransactionAsync()` within each method; this keeps connection ownership centralized in the session.
    - For read-heavy paths, open the transaction once per request (e.g., call `await dbSession.BeginTransactionAsync()` before the first authorization or data query) so authorization checks and the resource payload share the same snapshot. If a lightweight helper (such as `EnsureReadOnlyTransactionAsync`) is added to `IDbSession`, use it here.
-   - On any failure path (e.g., `UpsertFailureWriteConflict`, foreign-key violations, optimistic-lock failures), explicitly call `await dbSession.RollbackAsync()` before returning so the transaction is clean for Polly retries and `HasActiveTransaction` is cleared. Let the middleware commit only when the repository leaves an active transaction after a success path.
+   - On any failure path (e.g., `UpsertFailureWriteConflict`, foreign-key violations, optimistic-lock failures), explicitly call `await dbSession.RollbackAsync()` before returning so the transaction is clean for Polly retries and `HasActiveTransaction` is cleared. Remove only the success-path commits—`CommitAsync` should never appear inside a repository once the middleware owns the final commit—and allow the middleware to commit the unit of work when `HasActiveTransaction` is still true after the method returns a success result.
+   - If a repository method throws and the resilience pipeline retries, the middleware will re-enter the handler with the same session. The retry logic must invoke `await dbSession.RollbackAsync()` (if `HasActiveTransaction` is true) before retrying so the session returns to a clean state. Add guard clauses in the handlers or middleware to ensure we never attempt a new `BeginTransactionAsync` while the previous attempt’s transaction is still active.
 
 3. **Operations (`UpsertDocument`, `DeleteDocumentById`, etc.)**
    - Continue to accept `NpgsqlConnection` / `NpgsqlTransaction` parameters; the repository supplies them via the new session.
