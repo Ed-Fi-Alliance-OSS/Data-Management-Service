@@ -54,7 +54,7 @@ This document outlines the steps to move the Data Management Service to a scoped
 1. **Flow the session through `RequestInfo`**
    - Extend `RequestInfo` (`src/dms/core/EdFi.DataManagementService.Core/Pipeline/RequestInfo.cs`) with an `IDbSession` property (default null).
    - `UnitOfWorkMiddleware` sets this property before invoking `next()` and clears it during disposal so downstream steps always see the current session.
-   - Update pipeline handlers (`UpsertHandler`, `UpdateByIdHandler`, `DeleteByIdHandler`, query handler, etc.) to pass `requestInfo.DbSession` to backend interfaces.
+   - Update pipeline handlers (`UpsertHandler`, `UpdateByIdHandler`, `DeleteByIdHandler`, query handler, authorization handlers, etc.) to pass `requestInfo.DbSession` to backend interfaces.
 
 2. **PostgresqlDocumentStoreRepository**
    - Keep the repository registered as a singleton; do not inject `IDbSession` directly.
@@ -62,7 +62,7 @@ This document outlines the steps to move the Data Management Service to a scoped
    - Mirror the same signature change in the backing operation interfaces (`IUpsertDocument`, `IUpdateDocumentById`, `IDeleteDocumentById`, `IGetDocumentById`, `IQueryDocument`) so the repository can forward the session.
    - Leave `IAuthorizationRepository` on the current pattern for now; it will be reworked separately.
    - Use `await dbSession.OpenConnectionAsync()` / `await dbSession.BeginTransactionAsync()` within each method.
-   - Guard for read-only operations (GET/query) by only starting a transaction when necessary.
+   - For read-heavy paths, prefer a read-only transaction helper on the session (e.g., `await dbSession.EnsureReadOnlyTransactionAsync()` before the first authorization or data query) so authorization checks and the resource payload share the same snapshot.
    - On any failure path (e.g., `UpsertFailureWriteConflict`, foreign-key violations, optimistic-lock failures), explicitly `await transaction.RollbackAsync()` before returning so the transaction is clean for Polly retries. Let the middleware commit only when the repository leaves an active transaction after a success path.
 
 3. **Operations (`UpsertDocument`, `DeleteDocumentById`, etc.)**
@@ -81,7 +81,7 @@ This document outlines the steps to move the Data Management Service to a scoped
 
 ---
 
-## 3. Connection Lifecycle & Middleware Ordering
+## 3. Connection Lifecycle, Authorization Reads, & Middleware Ordering
 
 1. **Ensure middleware order**
    - Register `UnitOfWorkMiddleware` after authentication and correlation ID middleware so request context is available.
@@ -90,6 +90,14 @@ This document outlines the steps to move the Data Management Service to a scoped
 2. **Disable Auto Reset**
    - With `NoResetOnClose=true` already applied via `NpgsqlDataSourceBuilder`, validate that the middleware disposes the session at end of request to avoid leaking state.
    - For now, we rely on the fact that the service does not issue per-request `SET` commands.
+
+3. **Authorization repositories**
+   - The current authorization repository opens standalone connections; add TODO comments noting that it should consume `IDbSession` once the rewrite lands so authorization checks and data queries share the same snapshot.
+   - When that rewrite happens, mirror the document repository approach: accept the session, reuse the shared transaction, and avoid committing or rolling back independently.
+
+4. **Read-only transactions**
+   - Extend `IDbSession` with a way to request a read-only transaction (e.g., `BeginTransactionAsync(TransactionUsage.Read)` or `EnsureReadOnlyTransactionAsync()`).
+   - Handlers that perform GETs should call the read-only path before the first authorization lookup or data query so every statement in the request observes the same snapshot.
 
 ---
 
