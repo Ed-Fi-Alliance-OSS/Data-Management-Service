@@ -26,7 +26,8 @@ This document outlines the steps to move the Data Management Service to a scoped
      ```
      This keeps the factory contract backend-neutral while allowing implementations to include trace IDs in connection telemetry.
 
-2. **Implement `DbSession` (scoped lifetime)**
+2. **Implement `DbSession` (per-request, factory-created)**
+   - `DbSession` is a disposable object produced by the factory for each request; it is not registered in DI on its own.
    - Constructor accepts `NpgsqlDataSource`, `IsolationLevel`, `ILogger`.
    - On first call to `BeginTransactionAsync`:
      - Open connection via `_dataSource.OpenConnectionAsync()`
