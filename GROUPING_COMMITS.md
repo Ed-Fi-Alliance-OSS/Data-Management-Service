@@ -11,8 +11,8 @@ This document outlines the steps to move the Data Management Service to a scoped
      - `Task<NpgsqlConnection> OpenConnectionAsync()`
      - `Task<NpgsqlTransaction> BeginTransactionAsync()`
      - `NpgsqlConnection Connection { get; }`
-     - `NpgsqlTransaction? Transaction { get; }`
-     - `void MarkForRollback()`, `bool ShouldRollback { get; }`
+    - `NpgsqlTransaction? Transaction { get; }`
+    - `bool HasActiveTransaction { get; }`
      - `Task CommitAsync()`, `Task RollbackAsync()`
    - Implement lazy connection opening—only hit the pool when a handler actually needs the database.
 
@@ -36,16 +36,16 @@ This document outlines the steps to move the Data Management Service to a scoped
      1. Resolve `IDbSession` from scoped services.
      2. Attach the session to the current `RequestInfo` instance.
      3. Invoke `await next()` inside a try block.
-     4. If `next` completes without exception and a transaction exists, call `CommitAsync`.
-     5. On exception, call `RollbackAsync` and rethrow.
+     4. If `next` completes without exception and `session.HasActiveTransaction` is true, call `CommitAsync`; otherwise do nothing (repositories already rolled back).
+     5. On exception, call `RollbackAsync` (safe no-op if the repository already rolled back) and rethrow.
      6. Dispose the session once processing completes (the middleware owns the per-request lifetime).
-   - Append the middleware to the end of `GetCommonInitialSteps()` in `ApiService` (`src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`) so all pipelines (upsert, query, delete, etc.) execute within the unit of work after authentication/logging. Resolve it from `_serviceProvider` (e.g., `_serviceProvider.GetRequiredService<UnitOfWorkMiddleware>()`) so constructor-injected services are honored. The middleware should inspect `IDbSession.ShouldRollback` after `next()` returns—if true, call `RollbackAsync` instead of `CommitAsync`.
+   - Append the middleware to the end of `GetCommonInitialSteps()` in `ApiService` (`src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`) so all pipelines (upsert, query, delete, etc.) execute within the unit of work after authentication/logging. Resolve it from `_serviceProvider` (e.g., `_serviceProvider.GetRequiredService<UnitOfWorkMiddleware>()`) so constructor-injected services are honored. After `next()` returns, the middleware should check `session.HasActiveTransaction`; if true, call `CommitAsync`, otherwise no-op (the repository already rolled back).
    - Wiring checklist:
      1. **Session factory in backend** — In `PostgresqlServiceExtensions.AddPostgresqlDatastore`, keep every repository as a singleton, and add `services.AddSingleton<IDbSessionFactory>(sp => new DbSessionFactory(sp.GetRequiredService<NpgsqlDataSource>(), sp.GetRequiredService<IOptions<DatabaseOptions>>(), sp.GetRequiredService<ILoggerFactory>()));`. The factory encapsulates backend-specific knowledge (connection pool, isolation level, logging) and exposes `Create()` for new sessions.
      2. **Scoped session in core** — In `DmsCoreServiceExtensions`, register `services.AddScoped<IDbSession>(sp => sp.GetRequiredService<IDbSessionFactory>().Create());` so each request scope gets its own `DbSession` while backend singletons still rely on the shared data source.
      3. **Middleware registration** — Also in `DmsCoreServiceExtensions`, add `services.AddTransient<UnitOfWorkMiddleware>();`. Give the middleware a constructor that accepts `IDbSession`, `ILogger<UnitOfWorkMiddleware>`, and any required accessors for updating `RequestInfo`.
      4. **Pipeline usage** — Update `ApiService.GetCommonInitialSteps()` to append the middleware via `_serviceProvider.GetRequiredService<UnitOfWorkMiddleware>()`. Other steps can continue to be constructed with `new` because they have no additional dependencies.
-     5. **Middleware execution** — Inside the middleware, once `await next()` returns, inspect `IDbSession.ShouldRollback`; call `RollbackAsync` if true, otherwise `CommitAsync`, then dispose the session before returning.
+     5. **Middleware execution** — Inside the middleware, once `await next()` returns, call `CommitAsync` only when `session.HasActiveTransaction` is true; otherwise assume the repository rolled back already. Always dispose the session before returning.
 
 ---
 
@@ -61,9 +61,9 @@ This document outlines the steps to move the Data Management Service to a scoped
    - Update `IDocumentStoreRepository`, `IQueryHandler`, and companion interfaces so each operation accepts an `IDbSession` parameter supplied by handlers (e.g., `UpsertDocument(IDbSession session, IUpsertRequest request)`, `GetDocumentById(IDbSession session, IGetRequest request)`).
    - Mirror the same signature change in the backing operation interfaces (`IUpsertDocument`, `IUpdateDocumentById`, `IDeleteDocumentById`, `IGetDocumentById`, `IQueryDocument`) so the repository can forward the session.
    - Leave `IAuthorizationRepository` on the current pattern for now; it will be reworked separately.
-   - Use `await dbSession.OpenConnectionAsync()` / `await dbSession.BeginTransactionAsync()` within each method, and remove explicit commit/rollback logic—the middleware now owns transaction boundaries.
+   - Use `await dbSession.OpenConnectionAsync()` / `await dbSession.BeginTransactionAsync()` within each method.
    - Guard for read-only operations (GET/query) by only starting a transaction when necessary.
-   - When returning a failure result (e.g., `UpsertFailureIdentityConflict`, `DeleteFailureReference`), call `dbSession.MarkForRollback()` before returning so the middleware knows to roll back.
+   - On any failure path (e.g., `UpsertFailureWriteConflict`, foreign-key violations, optimistic-lock failures), explicitly `await transaction.RollbackAsync()` before returning so the transaction is clean for Polly retries. Let the middleware commit only when the repository leaves an active transaction after a success path.
 
 3. **Operations (`UpsertDocument`, `DeleteDocumentById`, etc.)**
    - Continue to accept `NpgsqlConnection` / `NpgsqlTransaction` parameters; the repository supplies them via the new session.
@@ -75,7 +75,7 @@ This document outlines the steps to move the Data Management Service to a scoped
 
 5. **Unit tests / integration tests**
    - Update pipeline tests to assert that `UnitOfWorkMiddleware` is appended to `GetCommonInitialSteps()` and that it populates `RequestInfo.DbSession`.
-   - Add coverage verifying that failure paths correctly call `MarkForRollback()` and that `UnitOfWorkMiddleware` commits only when `ShouldRollback` is false.
+   - Add coverage verifying that failure paths explicitly roll back and that `UnitOfWorkMiddleware` commits only when `HasActiveTransaction` is true.
    - Adjust repository tests to supply a fake `IDbSession` (or a wrapper exposing a real connection/transaction).
    - Add middleware coverage that verifies commit-on-success and rollback-on-exception behaviors.
 
