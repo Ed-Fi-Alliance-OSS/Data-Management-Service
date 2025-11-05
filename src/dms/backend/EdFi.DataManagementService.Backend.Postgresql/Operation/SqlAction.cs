@@ -525,11 +525,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        if (!command.IsPrepared)
-        {
-            await command.PrepareAsync();
-        }
-
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!await reader.ReadAsync())
@@ -589,11 +584,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = dedupedPartitionKeys },
             },
         };
-
-        if (!command.IsPrepared)
-        {
-            await command.PrepareAsync();
-        }
 
         List<Guid> invalid = [];
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
