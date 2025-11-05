@@ -54,8 +54,7 @@ if (-not (Test-Path $projectFile)) {
 # Check PostgreSQL connectivity
 Write-Host "`nChecking PostgreSQL connectivity..." -ForegroundColor Yellow
 try {
-    $env:PGPASSWORD = "postgres"
-    $pgCheck = & psql -h localhost -p 5432 -U postgres -d edfi_datamanagementservice -c "SELECT 1" 2>&1
+    $pgCheck = & pg_isready -h localhost -p 5432 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "Cannot connect to PostgreSQL"
     }
@@ -65,16 +64,11 @@ catch {
     Write-Error @"
 Cannot connect to PostgreSQL on localhost:5432
 Please ensure:
-1. PostgreSQL is running
-2. Database 'edfi_datamanagementservice' exists
-3. User 'postgres' with password 'postgres' has access
+1. PostgreSQL is running on localhost:5432
 
 Error: $_
 "@
     exit 1
-}
-finally {
-    $env:PGPASSWORD = $null
 }
 
 # Check CMS connectivity
@@ -119,6 +113,8 @@ if (-not $NoBuild) {
 
 # Set environment variables
 $env:ASPNETCORE_ENVIRONMENT = "Development"
+# Override connection string with password via environment variable (ASP.NET Core configuration)
+$env:ConnectionStrings__DatabaseConnection = "host=localhost;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
 
 Write-Host @"
 
@@ -130,6 +126,7 @@ Configuration:
   • Database:       PostgreSQL (localhost:5432/edfi_datamanagementservice)
   • Query Handler:  PostgreSQL
   • Authentication: CMS at http://localhost:8081
+  • Password:       Set via ConnectionStrings__DatabaseConnection environment variable
   • Endpoints:
     - Health:       http://localhost:$Port/health
     - Metadata:     http://localhost:$Port/metadata
@@ -151,4 +148,5 @@ try {
 finally {
     Pop-Location
     $env:ASPNETCORE_ENVIRONMENT = $null
+    $env:ConnectionStrings__DatabaseConnection = $null
 }

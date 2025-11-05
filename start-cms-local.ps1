@@ -54,8 +54,7 @@ if (-not (Test-Path $projectFile)) {
 # Check PostgreSQL connectivity
 Write-Host "`nChecking PostgreSQL connectivity..." -ForegroundColor Yellow
 try {
-    $env:PGPASSWORD = "postgres"
-    $pgCheck = & psql -h localhost -p 5432 -U postgres -d edfi_configurationservice -c "SELECT 1" 2>&1
+    $pgCheck = & pg_isready -h localhost -p 5432 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "Cannot connect to PostgreSQL"
     }
@@ -65,22 +64,17 @@ catch {
     Write-Error @"
 Cannot connect to PostgreSQL on localhost:5432
 Please ensure:
-1. PostgreSQL is running
-2. Database 'edfi_configurationservice' exists
-3. User 'postgres' with password 'postgres' has access
+1. PostgreSQL is running on localhost:5432
 
 Error: $_
 "@
     exit 1
 }
-finally {
-    $env:PGPASSWORD = $null
-}
 
 # Check and initialize OpenIddict keys if needed
 Write-Host "Checking OpenIddict initialization..." -ForegroundColor Yellow
 try {
-    $env:PGPASSWORD = "postgres"
+    $env:PGPASSWORD = "abcdefgh1!"
     $keyCheck = & psql -h localhost -p 5432 -U postgres -d edfi_configurationservice -t -c "SELECT COUNT(*) FROM dmscs.OpenIddictKey WHERE IsActive = TRUE;" 2>&1
 
     if ($LASTEXITCODE -eq 0 -and $keyCheck.Trim() -eq "0") {
@@ -143,6 +137,7 @@ if (-not $NoBuild) {
 
 # Set environment variables
 $env:ASPNETCORE_ENVIRONMENT = "Development"
+$env:PGPASSWORD = "abcdefgh1!"
 
 Write-Host @"
 
@@ -153,6 +148,7 @@ Configuration:
   • Port:           $Port
   • Database:       PostgreSQL (localhost:5432/edfi_configurationservice)
   • Identity:       Self-contained (OpenIddict)
+  • Password:       Set via PGPASSWORD environment variable
   • Endpoints:
     - Health:       http://localhost:$Port/health
     - Token:        http://localhost:$Port/connect/token
@@ -174,4 +170,5 @@ try {
 finally {
     Pop-Location
     $env:ASPNETCORE_ENVIRONMENT = $null
+    $env:PGPASSWORD = $null
 }
