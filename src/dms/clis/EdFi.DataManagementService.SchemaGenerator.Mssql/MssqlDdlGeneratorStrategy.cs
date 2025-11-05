@@ -1631,7 +1631,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     }
                     else
                     {
-                        // Skip duplicate - column already exists
+                        Console.WriteLine(
+                            $"INFO: Column name collision detected in view for {table.BaseName}: {columnName} already exists, skipping parent natural key"
+                        );
                     }
                 }
 
@@ -1888,7 +1890,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         }
                         else
                         {
-                            // Skip duplicate - column already exists
+                            Console.WriteLine(
+                                $"INFO: Column name collision detected in ancestor resolution for {grandparentTableName}: {columnName} already exists, skipping"
+                            );
                         }
                     }
 
@@ -2001,7 +2005,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         // Check if the base column is already included (as parent natural key)
                         if (usedAliases.Contains(baseColumnName))
                         {
-                            // Skip duplicate - column already exists as natural key
+                            Console.WriteLine(
+                                $"INFO: Skipping cross-reference {parentFkAlias} - base column {baseColumnName} already exists as natural key"
+                            );
                         }
                         else if (!usedAliases.Contains(parentFkAlias))
                         {
