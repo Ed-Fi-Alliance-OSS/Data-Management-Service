@@ -15,6 +15,16 @@ This document outlines the steps to move the Data Management Service to a scoped
      - `bool HasActiveTransaction { get; }` (true between `BeginTransactionAsync` and either `CommitAsync` or `RollbackAsync`)
      - `Task CommitAsync()`, `Task RollbackAsync()`
    - Implement lazy connection opening—only hit the pool when a handler actually needs the database.
+   - Define a companion `IDbSessionFactory` interface in Core (e.g., `src/dms/core/EdFi.DataManagementService.Core/Backend/IDbSessionFactory.cs`):
+     ```csharp
+     namespace EdFi.DataManagementService.Core.Backend;
+
+     public interface IDbSessionFactory
+     {
+         Task<IDbSession> CreateAsync(TraceId traceId, CancellationToken cancellationToken = default);
+     }
+     ```
+     This keeps the factory contract backend-neutral while allowing implementations to include trace IDs in connection telemetry.
 
 2. **Implement `DbSession` (scoped lifetime)**
    - Constructor accepts `NpgsqlDataSource`, `IsolationLevel`, `ILogger`.
@@ -59,7 +69,7 @@ This document outlines the steps to move the Data Management Service to a scoped
 
 2. **PostgresqlDocumentStoreRepository**
    - Keep the repository registered as a singleton; do not inject `IDbSession` directly.
-   - Update `IDocumentStoreRepository`, `IQueryHandler`, and companion interfaces so each operation accepts an `IDbSession` parameter supplied by handlers (e.g., `UpsertDocument(IDbSession session, IUpsertRequest request)`, `GetDocumentById(IDbSession session, IGetRequest request)`).
+   - Update `IDocumentStoreRepository`, `IQueryHandler`, and companion interfaces so each operation accepts an `IDbSession` parameter supplied by handlers (e.g., `UpsertDocument(IDbSession session, IUpsertRequest request)`, `GetDocumentById(IDbSession session, IGetRequest request)`). This change cascades through every handler (`UpsertHandler`, `UpdateByIdHandler`, `DeleteByIdHandler`, `QueryRequestHandler`), the resilience wrappers, and all unit tests that mock these interfaces; note each location so nothing is missed during implementation.
    - Mirror the same signature change in the backing operation interfaces (`IUpsertDocument`, `IUpdateDocumentById`, `IDeleteDocumentById`, `IGetDocumentById`, `IQueryDocument`) so the repository can forward the session.
    - Leave `IAuthorizationRepository` on the current pattern for now; it will be reworked separately.
    - Use `await dbSession.OpenConnectionAsync()` / `await dbSession.BeginTransactionAsync()` within each method; this keeps connection ownership centralized in the session.
