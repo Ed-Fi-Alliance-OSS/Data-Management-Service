@@ -58,7 +58,9 @@ This document outlines the steps to move the Data Management Service to a scoped
 
 2. **PostgresqlDocumentStoreRepository**
    - Keep the repository registered as a singleton; do not inject `IDbSession` directly.
-   - Update `IDocumentStoreRepository`, `IQueryHandler`, and companion interfaces so each operation accepts an `IDbSession` parameter supplied by handlers. Refactor the repository implementation accordingly.
+   - Update `IDocumentStoreRepository`, `IQueryHandler`, and companion interfaces so each operation accepts an `IDbSession` parameter supplied by handlers (e.g., `UpsertDocument(IDbSession session, IUpsertRequest request)`, `GetDocumentById(IDbSession session, IGetRequest request)`).
+   - Mirror the same signature change in the backing operation interfaces (`IUpsertDocument`, `IUpdateDocumentById`, `IDeleteDocumentById`, `IGetDocumentById`, `IQueryDocument`) so the repository can forward the session.
+   - Leave `IAuthorizationRepository` on the current pattern for now; it will be reworked separately.
    - Use `await dbSession.OpenConnectionAsync()` / `await dbSession.BeginTransactionAsync()` within each method, and remove explicit commit/rollback logic—the middleware now owns transaction boundaries.
    - Guard for read-only operations (GET/query) by only starting a transaction when necessary.
    - When returning a failure result (e.g., `UpsertFailureIdentityConflict`, `DeleteFailureReference`), call `dbSession.MarkForRollback()` before returning so the middleware knows to roll back.
