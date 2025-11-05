@@ -30,38 +30,43 @@ This document outlines the steps to move the Data Management Service to a scoped
    - Ensure any background singletons (e.g., `DbHealthCheck`) still create their own transient connections via `NpgsqlDataSource` and do not consume the scoped session.
 
 4. **Add request middleware for lifetime management**
-   - Build a middleware (e.g., `UnitOfWorkMiddleware`) that:
-     1. Resolves `IDbSession` from scoped services.
-     2. Invokes `await next()` inside a try block.
-     3. If `next` completes without exception and a transaction exists, call `CommitAsync`.
-     4. On exception, call `RollbackAsync` and rethrow.
-   - Register middleware early in the pipeline (after authentication but before handler execution) so every route benefits.
+   - Implement `UnitOfWorkMiddleware` as a DMS Core pipeline step (`IPipelineStep` in `src/dms/core/EdFi.DataManagementService.Core/Middleware`).
+   - The middleware should:
+     1. Resolve `IDbSession` from scoped services.
+     2. Attach the session to the current `RequestInfo` instance.
+     3. Invoke `await next()` inside a try block.
+     4. If `next` completes without exception and a transaction exists, call `CommitAsync`.
+     5. On exception, call `RollbackAsync` and rethrow.
+     6. Dispose the session once processing completes (the middleware owns the per-request lifetime).
+   - Append the middleware to the end of `GetCommonInitialSteps()` in `ApiService` (`src/dms/core/EdFi.DataManagementService.Core/ApiService.cs`) so all pipelines (upsert, query, delete, etc.) execute within the unit of work after authentication/logging.
 
 ---
 
 ## 2. Refactor Repositories to Use the Session
 
-1. **PostgresqlDocumentStoreRepository**
-   - Inject `IDbSession` instead of `NpgsqlDataSource`.
-   - Replace manual `OpenConnectionAsync` / `BeginTransactionAsync` calls with:
-     ```csharp
-     var connection = await _session.OpenConnectionAsync();
-     var transaction = await _session.BeginTransactionAsync();
-     ```
-   - Remove explicit commit/rollback logic—middleware handles it. Return result values only.
-   - Guard for operations that do not need writes (e.g., pure GET): they can avoid calling `BeginTransactionAsync`, keeping the session read-only.
+1. **Flow the session through `RequestInfo`**
+   - Extend `RequestInfo` (`src/dms/core/EdFi.DataManagementService.Core/Pipeline/RequestInfo.cs`) with an `IDbSession` property (default null).
+   - `UnitOfWorkMiddleware` sets this property before invoking `next()` and clears it during disposal so downstream steps always see the current session.
+   - Update pipeline handlers (`UpsertHandler`, `UpdateByIdHandler`, `DeleteByIdHandler`, query handler, etc.) to pass `requestInfo.DbSession` to backend interfaces.
 
-2. **Operations (`UpsertDocument`, `DeleteDocumentById`, etc.)**
-   - Ensure they accept an `IDbSession` instance or they use the connection/transaction passed in from repository. If the repository no longer passes a transaction parameter, adjust signatures accordingly.
-   - Remove all `await transaction.SaveAsync("beforeDelete")` / `RollbackAsync("beforeDelete")` in `DeleteDocumentById`. The scoped session will ensure that a failure before commit automatically rolls back.
+2. **PostgresqlDocumentStoreRepository**
+   - Keep the repository registered as a singleton; do not inject `IDbSession` directly.
+   - Update method signatures (`UpsertDocument`, `GetDocumentById`, `UpdateDocumentById`, `DeleteDocumentById`, `QueryDocuments`) to accept an `IDbSession` parameter supplied by handlers.
+   - Use `await dbSession.OpenConnectionAsync()` / `await dbSession.BeginTransactionAsync()` within each method, and remove explicit commit/rollback logic—the middleware now owns transaction boundaries.
+   - Guard for read-only operations (GET/query) by only starting a transaction when necessary.
 
-3. **`SqlAction` changes**
+3. **Operations (`UpsertDocument`, `DeleteDocumentById`, etc.)**
+   - Continue to accept `NpgsqlConnection` / `NpgsqlTransaction` parameters; the repository supplies them via the new session.
+   - Remove per-method commit/rollback or savepoint usage that assumed direct transaction control. Allow the middleware to manage error recovery unless a true nested transaction is required.
+
+4. **`SqlAction` changes**
    - Confirm all methods accept `NpgsqlConnection` / `NpgsqlTransaction`. With session in place, the repository will continue to pass the active objects—no signature changes needed.
    - Verify no helper method tries to dispose the connection/transaction.
 
-4. **Unit tests / integration tests**
-   - Update tests to use scoped session. Where tests previously passed a fake `NpgsqlConnection`, switch to a fake `IDbSession` or create a test implementation that wraps a real connection and transaction.
-   - Add coverage for middleware: confirm it commits on success and rolls back on exception.
+5. **Unit tests / integration tests**
+   - Update pipeline tests to assert that `UnitOfWorkMiddleware` is appended to `GetCommonInitialSteps()` and that it populates `RequestInfo.DbSession`.
+   - Adjust repository tests to supply a fake `IDbSession` (or a wrapper exposing a real connection/transaction).
+   - Add middleware coverage that verifies commit-on-success and rollback-on-exception behaviors.
 
 ---
 
