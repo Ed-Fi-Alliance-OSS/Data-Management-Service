@@ -40,27 +40,6 @@ public record Document(
     /// </summary>
     JsonElement EdfiDoc,
     /// <summary>
-    /// The security elements extracted from the document
-    /// </summary>
-    JsonElement SecurityElements,
-    /// <summary>
-    /// Array of EducationOrganizationIds through StudentSchoolAssociation
-    /// </summary>
-    JsonElement? StudentSchoolAuthorizationEdOrgIds,
-    /// <summary>
-    /// Array of EducationOrganizationIds through StudentEducationOrganizationResponsibilityAssociation
-    /// </summary>
-    JsonElement? StudentEdOrgResponsibilityAuthorizationIds,
-    /// <summary>
-    /// Array of EducationOrganizationIds through StudentContactAssociation
-    /// </summary>
-    JsonElement? ContactStudentSchoolAuthorizationEdOrgIds,
-    /// <summary>
-    /// Array of EducationOrganizationIds through StaffEducationOrganizationEmploymentAssociation
-    /// or StaffEducationOrganizationAssignmentAssociation
-    /// </summary>
-    JsonElement? StaffEducationOrganizationAuthorizationEdOrgIds,
-    /// <summary>
     /// The correlation id of the last insert or update
     /// </summary>
     string LastModifiedTraceId,

@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
-using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -959,66 +958,6 @@ public class UpdateTests : DatabaseTest
                 );
 
                 await CreateUpsert().Upsert(xyzUpsertRequest, Connection!, Transaction!);
-            }
-
-            [Test]
-            public async Task It_should_cascade_the_security_elements_on_update()
-            {
-                IUpdateRequest locationUpdateRequest = CreateUpdateRequest(
-                    "Location",
-                    _locationUuid,
-                    Guid.NewGuid(),
-                    """
-                    {
-                        "schoolReference": {
-                            "schoolId": "111"
-                        }
-                    }
-                    """,
-                    allowIdentityUpdates: true,
-                    documentIdentityElements:
-                    [
-                        new DocumentIdentityElement(new JsonPath("$.schoolReference.schoolId"), "111"),
-                    ],
-                    documentSecurityElements: new DocumentSecurityElements(
-                        [],
-                        [
-                            new EducationOrganizationSecurityElement(
-                                new MetaEdPropertyFullName("SchoolId"),
-                                new EducationOrganizationId(111)
-                            ),
-                        ],
-                        [],
-                        [],
-                        []
-                    )
-                );
-
-                await CreateUpdate().UpdateById(locationUpdateRequest, Connection!, Transaction!);
-
-                DocumentSummary? xyzSummary = await CreateSqlAction()
-                    .FindDocumentEdfiDocByDocumentUuid(
-                        new DocumentUuid(_xyzUuid),
-                        "XYZ",
-                        PartitionUtility.PartitionKeyFor(new DocumentUuid(_xyzUuid)),
-                        Connection!,
-                        Transaction!,
-                        new TraceId()
-                    );
-
-                xyzSummary!.SecurityElements.Should().NotBeNull();
-                xyzSummary
-                    .SecurityElements.GetProperty("EducationOrganization")
-                    .GetArrayLength()
-                    .Should()
-                    .Be(1);
-
-                xyzSummary
-                    .SecurityElements.GetProperty("EducationOrganization")[0]
-                    .GetProperty("Id")
-                    .GetString()
-                    .Should()
-                    .Be("111");
             }
         }
     }

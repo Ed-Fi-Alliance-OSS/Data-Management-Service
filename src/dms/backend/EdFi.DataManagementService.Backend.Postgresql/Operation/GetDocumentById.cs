@@ -18,7 +18,7 @@ public interface IGetDocumentById
     public Task<GetResult> GetById(
         IGetRequest getRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 }
 
@@ -32,7 +32,7 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
     public async Task<GetResult> GetById(
         IGetRequest getRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         _logger.LogDebug("Entering GetDocumentById.GetById - {TraceId}", getRequest.TraceId.Value);
@@ -51,27 +51,6 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
             if (documentSummary == null)
             {
                 return new GetResult.GetFailureNotExists();
-            }
-
-            var securityElements = documentSummary.SecurityElements.ToDocumentSecurityElements()!;
-
-            ResourceAuthorizationResult getAuthorizationResult =
-                await getRequest.ResourceAuthorizationHandler.Authorize(
-                    securityElements,
-                    OperationType.Get,
-                    getRequest.TraceId
-                );
-
-            if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
-            {
-                if (notAuthorized is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorizedWithHint)
-                {
-                    return new GetResult.GetFailureNotAuthorized(
-                        notAuthorizedWithHint.ErrorMessages,
-                        notAuthorizedWithHint.Hints
-                    );
-                }
-                return new GetResult.GetFailureNotAuthorized(notAuthorized.ErrorMessages);
             }
 
             return new GetResult.GetSuccess(

@@ -12,7 +12,7 @@ BEGIN
         WHERE table_schema = 'dms' AND table_name = 'reference' AND constraint_name = 'fk_reference_referencedalias'
     ) THEN
         ALTER TABLE dms.Reference
-        ADD CONSTRAINT FK_Reference_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, ReferentialId)
-        REFERENCES dms.Alias (ReferentialPartitionKey, ReferentialId) ON DELETE RESTRICT ON UPDATE CASCADE;
+        ADD CONSTRAINT FK_Reference_ReferencedAlias FOREIGN KEY (ReferentialPartitionKey, AliasId)
+        REFERENCES dms.Alias (ReferentialPartitionKey, Id) ON DELETE RESTRICT ON UPDATE CASCADE;
     END IF;
 END$$;

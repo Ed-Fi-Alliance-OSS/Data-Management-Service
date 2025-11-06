@@ -24,7 +24,7 @@ public interface ISqlAction
         string resourceName,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         TraceId traceId
     );
 
@@ -108,6 +108,14 @@ public interface ISqlAction
         TraceId traceId
     );
 
+    public Task<Guid[]> FindInvalidReferences(
+        Guid[] referentialIds,
+        short[] referentialPartitionKeys,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
+
     public Task<int> DeleteDocumentByDocumentUuid(
         PartitionKey documentPartitionKey,
         DocumentUuid documentUuid,
@@ -166,31 +174,31 @@ public interface ISqlAction
     public Task<long[]> GetAncestorEducationOrganizationIds(
         long[] educationOrganizationIds,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<JsonElement?> GetStudentSchoolAuthorizationEducationOrganizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<JsonElement?> GetStudentEdOrgResponsibilityAuthorizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
         string contactUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<JsonElement?> GetStaffEducationOrganizationAuthorizationEdOrgIds(
         string staffUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<int> InsertStudentSecurableDocument(

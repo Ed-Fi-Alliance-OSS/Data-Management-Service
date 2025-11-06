@@ -43,11 +43,11 @@ internal class ParsePathMiddleware(ILogger _logger) : IPipelineStep
     }
 
     /// <summary>
-    /// Check that this is a well-formed UUID v4 string
+    /// Check that this is a well-formed UUID string
     /// </summary>
     private static bool IsDocumentUuidWellFormed(string documentUuidString)
     {
-        return UtilityService.Uuid4Regex().IsMatch(documentUuidString.ToLower());
+        return UtilityService.UuidRegex().IsMatch(documentUuidString.ToLower());
     }
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)

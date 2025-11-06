@@ -57,16 +57,47 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
-        JsonElement? studentSchoolAuthorizationEducationOrganizationIds,
-        JsonElement? studentEdOrgResponsibilityAuthorizationIds,
-        JsonElement? contactStudentSchoolAuthorizationEducationOrganizationIds,
-        JsonElement? staffEducationOrganizationAuthorizationEdOrgIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
     )
     {
         short documentPartitionKey = PartitionKeyFor(upsertRequest.DocumentUuid).Value;
+
+        var hasReferences =
+            documentReferenceIds.ReferentialIds.Length > 0
+            || descriptorReferenceIds.ReferentialIds.Length > 0;
+
+        Guid[] combinedReferentialIds = [];
+        short[] combinedReferentialPartitionKeys = [];
+
+        if (hasReferences)
+        {
+            combinedReferentialIds = documentReferenceIds
+                .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
+                .ToArray();
+            combinedReferentialPartitionKeys = documentReferenceIds
+                .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
+                .ToArray();
+
+            // Early validation check to skip doomed requests before any writes. InsertReferences will check again
+            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferences(
+                combinedReferentialIds,
+                combinedReferentialPartitionKeys,
+                connection,
+                transaction,
+                traceId
+            );
+
+            if (invalidReferentialIds.Length > 0)
+            {
+                _logger.LogDebug(
+                    "Invalid references on Upsert as Insert - {TraceId}",
+                    upsertRequest.TraceId.Value
+                );
+                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
+            }
+        }
 
         // First insert into Documents
         upsertRequest.EdfiDoc["id"] = upsertRequest.DocumentUuid.Value;
@@ -79,11 +110,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 IsDescriptor: upsertRequest.ResourceInfo.IsDescriptor,
                 ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
                 EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
-                SecurityElements: upsertRequest.DocumentSecurityElements.ToJsonElement(),
-                StudentSchoolAuthorizationEdOrgIds: studentSchoolAuthorizationEducationOrganizationIds,
-                StudentEdOrgResponsibilityAuthorizationIds: studentEdOrgResponsibilityAuthorizationIds,
-                ContactStudentSchoolAuthorizationEdOrgIds: contactStudentSchoolAuthorizationEducationOrganizationIds,
-                StaffEducationOrganizationAuthorizationEdOrgIds: staffEducationOrganizationAuthorizationEdOrgIds,
                 LastModifiedTraceId: traceId.Value
             ),
             PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value,
@@ -131,21 +157,15 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
         }
 
-        if (
-            documentReferenceIds.ReferentialIds.Length > 0
-            || descriptorReferenceIds.ReferentialIds.Length > 0
-        )
+        if (hasReferences)
         {
             Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: newDocumentId,
-                    ReferentialIds: documentReferenceIds
-                        .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
-                        .ToArray(),
-                    ReferentialPartitionKeys: documentReferenceIds
-                        .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
-                        .ToArray()
+                    ReferentialIds: combinedReferentialIds,
+                    ReferentialPartitionKeys: combinedReferentialPartitionKeys,
+                    IsPureInsert: true
                 ),
                 connection,
                 transaction,
@@ -184,6 +204,41 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     {
         // Update the EdfiDoc of the Document
         upsertRequest.EdfiDoc["id"] = documentUuid;
+
+        var hasReferences =
+            documentReferenceIds.ReferentialIds.Length > 0
+            || descriptorReferenceIds.ReferentialIds.Length > 0;
+
+        Guid[] combinedReferentialIds = [];
+        short[] combinedReferentialPartitionKeys = [];
+
+        if (hasReferences)
+        {
+            combinedReferentialIds = documentReferenceIds
+                .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
+                .ToArray();
+            combinedReferentialPartitionKeys = documentReferenceIds
+                .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
+                .ToArray();
+
+            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferences(
+                combinedReferentialIds,
+                combinedReferentialPartitionKeys,
+                connection,
+                transaction,
+                traceId
+            );
+
+            if (invalidReferentialIds.Length > 0)
+            {
+                _logger.LogDebug(
+                    "Invalid references on Upsert as Update - {TraceId}",
+                    upsertRequest.TraceId.Value
+                );
+                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
+            }
+        }
+
         await _sqlAction.UpdateDocumentEdfiDoc(
             documentPartitionKey,
             documentUuid,
@@ -198,21 +253,14 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             traceId
         );
 
-        if (
-            documentReferenceIds.ReferentialIds.Length > 0
-            || descriptorReferenceIds.ReferentialIds.Length > 0
-        )
+        if (hasReferences)
         {
             Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                 new(
                     ParentDocumentPartitionKey: documentPartitionKey,
                     ParentDocumentId: documentId,
-                    ReferentialIds: documentReferenceIds
-                        .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
-                        .ToArray(),
-                    ReferentialPartitionKeys: documentReferenceIds
-                        .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
-                        .ToArray()
+                    ReferentialIds: combinedReferentialIds,
+                    ReferentialPartitionKeys: combinedReferentialPartitionKeys
                 ),
                 connection,
                 transaction,
@@ -357,10 +405,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     upsertRequest,
                     documentReferenceIds,
                     descriptorReferenceIds,
-                    studentSchoolAuthorizationEdOrgIds,
-                    studentEdOrgResponsibilityAuthorizationIds,
-                    contactStudentSchoolAuthorizationEdOrgIds,
-                    staffEducationOrganizationAuthorizationEdOrgIds,
                     connection,
                     transaction,
                     upsertRequest.TraceId
