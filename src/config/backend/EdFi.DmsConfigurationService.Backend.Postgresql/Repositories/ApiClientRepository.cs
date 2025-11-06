@@ -30,8 +30,8 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid)
-                VALUES (@ApplicationId, @ClientId, @ClientUuid)
+                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved)
+                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved)
                 RETURNING Id;
                 """;
 
@@ -42,6 +42,8 @@ public class ApiClientRepository(
                     command.ApplicationId,
                     clientCommand.ClientId,
                     clientCommand.ClientUuid,
+                    command.Name,
+                    command.IsApproved,
                 }
             );
 
@@ -91,7 +93,7 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, acd.DmsInstanceId
+                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved, acd.DmsInstanceId
                 FROM (SELECT * FROM dmscs.ApiClient ORDER BY Id LIMIT @Limit OFFSET @Offset) AS ac
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
                 ORDER BY ac.Id;
@@ -137,7 +139,7 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, acd.DmsInstanceId
+                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved, acd.DmsInstanceId
                 FROM dmscs.ApiClient ac
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
                 WHERE ac.ClientId = @ClientId;

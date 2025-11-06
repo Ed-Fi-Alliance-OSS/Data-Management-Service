@@ -40,6 +40,8 @@ Feature: ApiClients endpoints
                           "applicationId": {applicationId},
                           "clientId": "{clientId}",
                           "clientUuid": "{clientUuid}",
+                          "name": "Test Application 01",
+                          "isApproved": true,
                           "dmsInstanceIds": [{dmsInstanceId}]
                       }]
                   """
@@ -63,6 +65,8 @@ Feature: ApiClients endpoints
                     "applicationId": {applicationId},
                     "clientId": "{clientId}",
                     "clientUuid": "{clientUuid}",
+                    "name": "Test Application 02",
+                    "isApproved": true,
                     "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
@@ -84,6 +88,8 @@ Feature: ApiClients endpoints
                   """
                   {
                    "applicationId": {applicationId},
+                   "name": "My Custom API Client",
+                   "isApproved": true,
                    "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
@@ -102,6 +108,8 @@ Feature: ApiClients endpoints
                   """
                   {
                    "applicationId": 99999,
+                   "name": "Test Client",
+                   "isApproved": true,
                    "dmsInstanceIds": []
                   }
                   """
@@ -109,15 +117,16 @@ Feature: ApiClients endpoints
               And the response body is
                   """
                   {
-                    "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-                    "title": "One or more validation errors occurred.",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
                     "status": 400,
-                    "errors": {
+                    "validationErrors": {
                         "ApplicationId": [
                             "Application with ID 99999 not found."
                         ]
                     },
-                    "traceId": "{traceId}"
+                    "errors": []
                   }
                   """
 
@@ -126,6 +135,8 @@ Feature: ApiClients endpoints
                   """
                   {
                    "applicationId": {applicationId},
+                   "name": "Test Client",
+                   "isApproved": false,
                    "dmsInstanceIds": [99999, 88888]
                   }
                   """
@@ -133,15 +144,16 @@ Feature: ApiClients endpoints
               And the response body is
                   """
                   {
-                    "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-                    "title": "One or more validation errors occurred.",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
                     "status": 400,
-                    "errors": {
+                    "validationErrors": {
                         "DmsInstanceIds": [
                             "The following DmsInstanceIds were not found in database: 99999, 88888"
                         ]
                     },
-                    "traceId": "{traceId}"
+                    "errors": []
                   }
                   """
 
@@ -150,6 +162,8 @@ Feature: ApiClients endpoints
                   """
                   {
                    "applicationId": {applicationId},
+                   "name": "Another API Client",
+                   "isApproved": true,
                    "dmsInstanceIds": []
                   }
                   """

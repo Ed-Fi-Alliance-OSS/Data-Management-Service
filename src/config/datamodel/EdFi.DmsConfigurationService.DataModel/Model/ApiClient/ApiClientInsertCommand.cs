@@ -10,6 +10,8 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 public class ApiClientInsertCommand
 {
     public required long ApplicationId { get; set; }
+    public required string Name { get; set; } = "";
+    public required bool IsApproved { get; set; }
     public long[] DmsInstanceIds { get; set; } = [];
 
     public class Validator : AbstractValidator<ApiClientInsertCommand>
@@ -17,6 +19,7 @@ public class ApiClientInsertCommand
         public Validator()
         {
             RuleFor(a => a.ApplicationId).NotEmpty().GreaterThan(0);
+            RuleFor(a => a.Name).NotEmpty().MaximumLength(50);
             RuleForEach(a => a.DmsInstanceIds).NotNull().GreaterThan(0);
         }
     }

@@ -11,5 +11,7 @@ public class ApiClientResponse
     public long ApplicationId { get; set; }
     public required string ClientId { get; set; }
     public required Guid ClientUuid { get; set; }
+    public required string Name { get; set; }
+    public required bool IsApproved { get; set; }
     public List<long> DmsInstanceIds { get; set; } = [];
 }
