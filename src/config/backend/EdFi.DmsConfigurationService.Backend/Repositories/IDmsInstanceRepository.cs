@@ -15,6 +15,7 @@ public interface IDmsInstanceRepository
     Task<DmsInstanceGetResult> GetDmsInstance(long id);
     Task<DmsInstanceUpdateResult> UpdateDmsInstance(DmsInstanceUpdateCommand command);
     Task<DmsInstanceDeleteResult> DeleteDmsInstance(long id);
+    Task<DmsInstanceIdsExistResult> GetExistingDmsInstanceIds(long[] ids);
 }
 
 public record DmsInstanceInsertResult
@@ -56,4 +57,15 @@ public record DmsInstanceDeleteResult
     public record FailureNotExists() : DmsInstanceDeleteResult();
 
     public record FailureUnknown(string FailureMessage) : DmsInstanceDeleteResult();
+}
+
+public record DmsInstanceIdsExistResult
+{
+    /// <summary>
+    /// Successfully retrieved existing DmsInstanceIds
+    /// </summary>
+    /// <param name="ExistingIds">The set of DmsInstanceIds that exist in the database</param>
+    public record Success(HashSet<long> ExistingIds) : DmsInstanceIdsExistResult();
+
+    public record FailureUnknown(string FailureMessage) : DmsInstanceIdsExistResult();
 }

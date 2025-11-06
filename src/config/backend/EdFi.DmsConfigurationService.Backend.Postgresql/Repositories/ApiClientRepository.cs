@@ -7,6 +7,7 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -18,6 +19,71 @@ public class ApiClientRepository(
     ILogger<ApiClientRepository> logger
 ) : IApiClientRepository
 {
+    public async Task<ApiClientInsertResult> InsertApiClient(
+        ApiClientInsertCommand command,
+        ApiClientCommand clientCommand
+    )
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            string sql = """
+                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid)
+                VALUES (@ApplicationId, @ClientId, @ClientUuid)
+                RETURNING Id;
+                """;
+
+            long apiClientId = await connection.ExecuteScalarAsync<long>(
+                sql,
+                new
+                {
+                    command.ApplicationId,
+                    clientCommand.ClientId,
+                    clientCommand.ClientUuid,
+                }
+            );
+
+            if (command.DmsInstanceIds.Length > 0)
+            {
+                sql = """
+                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId)
+                    VALUES (@ApiClientId, @DmsInstanceId);
+                    """;
+
+                var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
+                {
+                    ApiClientId = apiClientId,
+                    DmsInstanceId = dmsInstanceId,
+                });
+
+                await connection.ExecuteAsync(sql, dmsInstanceMappings);
+            }
+
+            await transaction.CommitAsync();
+            return new ApiClientInsertResult.Success(apiClientId);
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_application"))
+        {
+            logger.LogWarning(ex, "Application not found");
+            await transaction.RollbackAsync();
+            return new ApiClientInsertResult.FailureApplicationNotFound();
+        }
+        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_dmsinstance"))
+        {
+            logger.LogWarning(ex, "DMS instance not found");
+            await transaction.RollbackAsync();
+            return new ApiClientInsertResult.FailureDmsInstanceNotFound();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Insert ApiClient failure");
+            await transaction.RollbackAsync();
+            return new ApiClientInsertResult.FailureUnknown(ex.Message);
+        }
+    }
+
     public async Task<ApiClientQueryResult> QueryApiClient(PagingQuery query)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);

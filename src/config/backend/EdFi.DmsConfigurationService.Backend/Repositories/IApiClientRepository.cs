@@ -5,13 +5,42 @@
 
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IApiClientRepository
 {
+    Task<ApiClientInsertResult> InsertApiClient(
+        ApiClientInsertCommand command,
+        ApiClientCommand clientCommand
+    );
     Task<ApiClientQueryResult> QueryApiClient(PagingQuery query);
     Task<ApiClientGetResult> GetApiClientByClientId(string clientId);
+}
+
+public record ApiClientInsertResult
+{
+    /// <summary>
+    /// Successful insert.
+    /// </summary>
+    /// <param name="Id">The Id of the inserted record.</param>
+    public record Success(long Id) : ApiClientInsertResult();
+
+    /// <summary>
+    /// Referenced application not found exception thrown and caught
+    /// </summary>
+    public record FailureApplicationNotFound() : ApiClientInsertResult();
+
+    /// <summary>
+    /// Referenced DMS instance not found exception thrown and caught
+    /// </summary>
+    public record FailureDmsInstanceNotFound() : ApiClientInsertResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApiClientInsertResult();
 }
 
 public record ApiClientQueryResult
