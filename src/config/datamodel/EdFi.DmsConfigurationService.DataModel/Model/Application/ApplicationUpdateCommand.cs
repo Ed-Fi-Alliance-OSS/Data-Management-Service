@@ -29,8 +29,8 @@ public class ApplicationUpdateCommand
                 .Matches(new Regex(ValidationConstants.ClaimSetNameNoWhiteSpaceRegex))
                 .When(m => !string.IsNullOrEmpty(m.ClaimSetName))
                 .WithMessage(ValidationConstants.ClaimSetNameNoWhiteSpaceMessage);
-            RuleForEach(a => a.EducationOrganizationIds).NotNull().GreaterThan(0);
-            RuleForEach(a => a.DmsInstanceIds).NotNull().GreaterThan(0);
+            RuleForEach(a => a.EducationOrganizationIds).GreaterThan(0);
+            RuleForEach(a => a.DmsInstanceIds).GreaterThan(0);
         }
     }
 }

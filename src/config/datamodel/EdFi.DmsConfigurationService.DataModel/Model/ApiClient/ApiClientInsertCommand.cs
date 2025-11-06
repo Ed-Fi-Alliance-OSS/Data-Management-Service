@@ -20,7 +20,6 @@ public class ApiClientInsertCommand
         {
             RuleFor(a => a.ApplicationId).NotEmpty().GreaterThan(0);
             RuleFor(a => a.Name).NotEmpty().MaximumLength(50);
-            RuleForEach(a => a.DmsInstanceIds).NotNull().GreaterThan(0);
         }
     }
 }

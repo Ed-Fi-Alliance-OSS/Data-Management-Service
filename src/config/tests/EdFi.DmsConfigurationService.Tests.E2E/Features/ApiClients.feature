@@ -104,13 +104,21 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 05 Verify error handling when posting apiClient with non-existent application
+            Given a POST request is made to "/v2/dmsInstances" with
+                  """
+                    {
+                        "instanceType": "Test",
+                        "instanceName": "Test DMS Instance 2",
+                        "connectionString": "Server=test2;Database=TestDb2;"
+                    }
+                  """
              When a POST request is made to "/v2/apiClients" with
                   """
                   {
                    "applicationId": 99999,
                    "name": "Test Client",
                    "isApproved": true,
-                   "dmsInstanceIds": []
+                   "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
              Then it should respond with 400
@@ -157,7 +165,7 @@ Feature: ApiClients endpoints
                   }
                   """
 
-        Scenario: 07 Ensure clients can POST apiClient with empty DmsInstanceIds
+        Scenario: 07 Ensure clients can not POST apiClient with empty DmsInstanceIds
              When a POST request is made to "/v2/apiClients" with
                   """
                   {
@@ -167,12 +175,19 @@ Feature: ApiClients endpoints
                    "dmsInstanceIds": []
                   }
                   """
-             Then it should respond with 201
+             Then it should respond with 400
               And the response body is
                   """
                   {
-                    "id": {id},
-                    "key": "{key}",
-                    "secret": "{secret}"
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                        "DmsInstanceIds": [
+                            "The following DmsInstanceIds were not found in database: 99999, 88888"
+                        ]
+                    },
+                    "errors": []
                   }
                   """
