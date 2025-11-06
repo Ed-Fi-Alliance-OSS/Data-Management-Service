@@ -52,9 +52,8 @@ public static class WebApplicationBuilderExtensions
             .AddValidatorsFromAssembly(
                 Assembly.Load("Edfi.DmsConfigurationService.DataModel"),
                 ServiceLifetime.Transient
-            );
-        // Removed .AddFluentValidationAutoValidation() because we use manual validation with GuardAsync
-        // which properly integrates with our GlobalExceptionHandler
+            )
+            .AddFluentValidationAutoValidation();
 
         ValidatorOptions.Global.DisplayNameResolver = (type, memberInfo, expression) =>
             memberInfo

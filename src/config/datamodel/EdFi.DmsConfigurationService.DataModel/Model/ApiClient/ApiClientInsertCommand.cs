@@ -20,6 +20,9 @@ public class ApiClientInsertCommand
         {
             RuleFor(a => a.ApplicationId).NotEmpty().GreaterThan(0);
             RuleFor(a => a.Name).NotEmpty().MaximumLength(50);
+            RuleFor(a => a.DmsInstanceIds)
+                .NotEmpty()
+                .WithMessage("DmsInstanceIds cannot be empty. At least one DMS Instance is required.");
         }
     }
 }

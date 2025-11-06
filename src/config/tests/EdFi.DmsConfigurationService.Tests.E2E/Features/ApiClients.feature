@@ -76,7 +76,16 @@ Feature: ApiClients endpoints
              Then it should respond with 404
 
         Scenario: 04 Ensure clients can POST a new apiClient successfully
-            Given a POST request is made to "/v2/dmsInstances" with
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 04",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/dmsInstances" with
                   """
                     {
                         "instanceType": "Test",
@@ -139,6 +148,15 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 06 Verify error handling when posting apiClient with non-existent DmsInstanceIds
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 06",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
              When a POST request is made to "/v2/apiClients" with
                   """
                   {
@@ -166,6 +184,15 @@ Feature: ApiClients endpoints
                   """
 
         Scenario: 07 Ensure clients can not POST apiClient with empty DmsInstanceIds
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 07",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
              When a POST request is made to "/v2/apiClients" with
                   """
                   {
@@ -185,7 +212,7 @@ Feature: ApiClients endpoints
                     "status": 400,
                     "validationErrors": {
                         "DmsInstanceIds": [
-                            "The following DmsInstanceIds were not found in database: 99999, 88888"
+                            "DmsInstanceIds cannot be empty. At least one DMS Instance is required."
                         ]
                     },
                     "errors": []
