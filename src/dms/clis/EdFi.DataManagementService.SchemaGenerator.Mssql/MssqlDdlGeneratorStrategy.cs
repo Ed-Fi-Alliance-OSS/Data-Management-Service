@@ -249,7 +249,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             }
 
             // PASS 3: Generate natural key resolution views
-            if (!options.SkipUnionViews) // Reuse this flag for view generation control
+            if (!options.SkipNaturalKeyViews)
             {
                 var naturalKeyViewTemplatePath = Path.Combine(
                     AppContext.BaseDirectory,
@@ -2120,190 +2120,70 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             );
         }
 
-        public string? GenerateInferredForeignKeys(ApiSchema apiSchema, DdlGenerationOptions options)
+        /// <summary>
+        /// Generates only descriptor foreign key constraints for SQL Server.
+        /// </summary>
+        public string? GenerateDescriptorForeignKeys(ApiSchema apiSchema, DdlGenerationOptions options)
         {
-            try
+            if (apiSchema.ProjectSchema?.ResourceSchemas == null)
             {
-                var templatePath = Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory,
-                    "Templates",
-                    "mssql-inferred-fk.hbs"
-                );
-                if (!File.Exists(templatePath))
-                {
-                    Console.Error.WriteLine($"Template not found: {templatePath}");
-                    return null;
-                }
-
-                var templateContent = File.ReadAllText(templatePath);
-                var template = Handlebars.Compile(templateContent);
-
-                var tableMap = BuildInferredFkTableMetadata(apiSchema, options);
-                var fkStatements = new List<string>();
-
-                foreach (var tableMeta in tableMap.Values.OrderBy(t => t.BaseName))
-                {
-                    var tableFks = GenerateInferredForeignKeysForTable(tableMeta, tableMap, template);
-                    if (tableFks != null)
-                    {
-                        fkStatements.Add(tableFks);
-                    }
-                }
-
-                return fkStatements.Count > 0 ? string.Join("\n\n", fkStatements) : null;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"Error generating inferred foreign keys: {ex.Message}");
-                Console.Error.WriteLine($"Stack trace: {ex.StackTrace}");
                 return null;
             }
-        }
 
-        private Dictionary<string, InferredFkTableMetadata> BuildInferredFkTableMetadata(
-            ApiSchema apiSchema,
-            DdlGenerationOptions options
-        )
-        {
-            var result = new Dictionary<string, InferredFkTableMetadata>(StringComparer.OrdinalIgnoreCase);
+            var sb = new StringBuilder();
+            sb.AppendLine("-- =====================================================");
+            sb.AppendLine("-- Descriptor Foreign Key Constraints Generator (SQL Server)");
+            sb.AppendLine("-- This script scans all tables and creates FK constraints");
+            sb.AppendLine("-- for descriptor columns only.");
+            sb.AppendLine("-- =====================================================");
+            sb.AppendLine();
 
-            // Process all resource schemas
-            foreach (var kvp in apiSchema.ProjectSchema!.ResourceSchemas!)
+            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas)
             {
                 var resourceSchema = kvp.Value;
-                if (resourceSchema.FlatteningMetadata?.Table != null)
+                var table = resourceSchema.FlatteningMetadata?.Table;
+                if (table == null)
                 {
-                    // Skip extensions if not requested
-                    if (
-                        !options.IncludeExtensions && resourceSchema.FlatteningMetadata.Table.IsExtensionTable
-                    )
-                    {
-                        continue;
-                    }
+                    continue;
+                }
+                var originalSchemaName = GetOriginalSchemaName(
+                    apiSchema.ProjectSchema,
+                    resourceSchema,
+                    options
+                );
+                var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema)
+                    ? originalSchemaName
+                    : options.ResolveSchemaName(null);
+                var tableName = DetermineTableName(
+                    table.BaseName,
+                    originalSchemaName,
+                    resourceSchema,
+                    options
+                );
 
-                    ProcessInferredFkTableHierarchy(
-                        resourceSchema.FlatteningMetadata.Table,
-                        resourceSchema,
-                        apiSchema.ProjectSchema,
-                        options,
-                        result
+                foreach (
+                    var descriptorCol in table.Columns.Where(c =>
+                        string.Equals(c.ColumnType, "descriptor", StringComparison.OrdinalIgnoreCase)
+                    )
+                )
+                {
+                    var descriptorTable = tableName.StartsWith("edfi_", StringComparison.OrdinalIgnoreCase)
+                        ? $"[{finalSchemaName}].[edfi_Descriptor]"
+                        : $"[{finalSchemaName}].[Descriptor]";
+                    var constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
+                        $"FK_{table.BaseName}_{descriptorCol.ColumnName}_Descriptor"
                     );
+                    sb.AppendLine(
+                        $"ALTER TABLE [{finalSchemaName}].[{tableName}] ADD CONSTRAINT {constraintName}"
+                    );
+                    sb.AppendLine(
+                        $"    FOREIGN KEY ([{descriptorCol.ColumnName}]) REFERENCES {descriptorTable}(Id);"
+                    );
+                    sb.AppendLine();
                 }
             }
 
-            return result;
-        }
-
-        private void ProcessInferredFkTableHierarchy(
-            TableMetadata table,
-            ResourceSchema resourceSchema,
-            ProjectSchema projectSchema,
-            DdlGenerationOptions options,
-            Dictionary<string, InferredFkTableMetadata> result
-        )
-        {
-            // Skip descriptor/document tables - they have explicit FKs in main DDL
-            if (
-                table.BaseName.EndsWith("Descriptor", StringComparison.OrdinalIgnoreCase)
-                || table.BaseName.EndsWith("Document", StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                return;
-            }
-
-            // Get the original (logical) schema name for prefixing logic
-            var originalSchemaName = GetOriginalSchemaName(projectSchema, resourceSchema, options);
-            var schemaName = DetermineSchemaName(projectSchema, resourceSchema, options);
-            var tableName = DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options);
-
-            // Extract potential FK columns (ending in "_Id", not parent refs, not Document/Descriptor refs)
-            var fkCandidateColumns =
-                table
-                    .Columns?.Where(c =>
-                        !c.IsParentReference
-                        && !string.IsNullOrEmpty(c.ColumnName)
-                        && c.ColumnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase)
-                        && !c.ColumnName.EndsWith("Document_Id", StringComparison.OrdinalIgnoreCase)
-                        && !c.ColumnName.EndsWith("Descriptor_Id", StringComparison.OrdinalIgnoreCase)
-                    )
-                    .Select(c => new InferredFkColumnInfo
-                    {
-                        ColumnName = c.ColumnName!,
-                        BaseTableName = c.ColumnName!.Replace("_Id", "", StringComparison.OrdinalIgnoreCase),
-                    })
-                    .ToList() ?? new List<InferredFkColumnInfo>();
-
-            // Check if this table has an "Id" column that's a natural key (unique constraint)
-            // OR if the table has at least one natural key column (which forms a unique constraint)
-            var hasIdConstraint = table.Columns?.Any(c => c.IsNaturalKey) ?? false;
-
-            result[table.BaseName] = new InferredFkTableMetadata
-            {
-                TableName = tableName,
-                SchemaName = schemaName,
-                BaseName = table.BaseName,
-                PotentialFkColumns = fkCandidateColumns,
-                HasIdUniqueConstraint = hasIdConstraint,
-            };
-
-            // Recursively process child tables
-            foreach (var childTable in table.ChildTables ?? Enumerable.Empty<TableMetadata>())
-            {
-                ProcessInferredFkTableHierarchy(childTable, resourceSchema, projectSchema, options, result);
-            }
-        }
-
-        private string? GenerateInferredForeignKeysForTable(
-            InferredFkTableMetadata sourceMeta,
-            Dictionary<string, InferredFkTableMetadata> tableMap,
-            HandlebarsTemplate<object, object> template
-        )
-        {
-            var fkStatements = new List<string>();
-
-            foreach (var column in sourceMeta.PotentialFkColumns)
-            {
-                // Try to find matching target table by BaseName
-                if (tableMap.TryGetValue(column.BaseTableName, out var target))
-                {
-                    // Only create FK if target has unique constraint on natural keys
-                    if (target.HasIdUniqueConstraint)
-                    {
-                        var constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
-                            $"FK_{sourceMeta.TableName}_{column.ColumnName.Replace("_Id", "")}"
-                        );
-
-                        var data = new
-                        {
-                            constraintName,
-                            sourceSchemaName = sourceMeta.SchemaName,
-                            sourceTableName = sourceMeta.TableName,
-                            sourceColumnName = column.ColumnName,
-                            targetSchemaName = target.SchemaName,
-                            targetTableName = target.TableName,
-                        };
-
-                        fkStatements.Add(template(data));
-                    }
-                }
-            }
-
-            return fkStatements.Count > 0 ? string.Join("\n\n", fkStatements) : null;
-        }
-
-        private class InferredFkTableMetadata
-        {
-            public string SchemaName { get; set; } = string.Empty;
-            public string TableName { get; set; } = string.Empty;
-            public string BaseName { get; set; } = string.Empty;
-            public List<InferredFkColumnInfo> PotentialFkColumns { get; set; } = new();
-            public bool HasIdUniqueConstraint { get; set; }
-        }
-
-        private class InferredFkColumnInfo
-        {
-            public string ColumnName { get; set; } = string.Empty;
-            public string BaseTableName { get; set; } = string.Empty;
+            return sb.ToString();
         }
     }
 }

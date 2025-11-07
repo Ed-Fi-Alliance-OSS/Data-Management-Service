@@ -57,14 +57,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
             bool includeExtensions = config.GetValue<bool>("SchemaGenerator:IncludeExtensions");
             bool skipUnionViews = config.GetValue<bool>("SchemaGenerator:SkipUnionViews");
             bool usePrefixedTableNames = config.GetValue<bool>("SchemaGenerator:UsePrefixedTableNames", true);
-            bool generateInferredFks = config.GetValue<bool>(
-                "SchemaGenerator:GenerateInferredForeignKeys",
-                true
-            );
-            bool separateInferredFks = config.GetValue<bool>(
-                "SchemaGenerator:SeparateInferredForeignKeys",
-                false
-            );
+            bool skipDescriptorFk = config.GetValue<bool>("SchemaGenerator:SkipDescriptorFk", false);
 
             string? schemaUrl = null;
 
@@ -125,14 +118,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     case "--use-prefixed-names":
                     case "--prefixed-tables":
                         usePrefixedTableNames = true;
-                        break;
-                    case "--infer-fks":
-                    case "--generate-inferred-fks":
-                        generateInferredFks = true;
-                        break;
-                    case "--separate-inferred-fks":
-                    case "--separate-fks":
-                        separateInferredFks = true;
                         break;
                 }
             }
@@ -207,15 +192,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                 }
 
                 logger.LogInformation(
-                    "Starting DDL generation. Input: {Input}, Output: {Output}, Provider: {Provider}, Extensions: {Extensions}, SkipUnionViews: {SkipUnionViews}, UsePrefixedTableNames: {UsePrefixedTableNames}, GenerateInferredFks: {GenerateInferredFks}, SeparateInferredFks: {SeparateInferredFks}",
+                    "Starting DDL generation. Input: {Input}, Output: {Output}, Provider: {Provider}, Extensions: {Extensions}, SkipUnionViews: {SkipUnionViews}, UsePrefixedTableNames: {UsePrefixedTableNames}",
                     inputFilePath,
                     outputDirectory,
                     databaseProvider,
                     includeExtensions,
                     skipUnionViews,
-                    usePrefixedTableNames,
-                    generateInferredFks,
-                    separateInferredFks
+                    usePrefixedTableNames
                 );
 
                 var loader = serviceProvider.GetRequiredService<ApiSchemaLoader>();
@@ -254,7 +237,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     IncludeExtensions = includeExtensions,
                     SkipUnionViews = skipUnionViews,
                     UsePrefixedTableNames = usePrefixedTableNames,
-                    SeparateInferredFks = separateInferredFks,
                 };
 
                 if (databaseProvider is "pgsql" or "postgresql" or "all")
@@ -265,70 +247,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     if (pgsql != null)
                     {
                         pgsql.GenerateDdl(apiSchema, outputDirectory, options);
-
-                        // Handle inferred foreign keys if requested
-                        if (generateInferredFks)
-                        {
-                            logger.LogInformation("Generating inferred foreign keys for PostgreSQL...");
-                            try
-                            {
-                                var fkScript = pgsql.GenerateInferredForeignKeys(apiSchema, options);
-                                if (!string.IsNullOrEmpty(fkScript))
-                                {
-                                    if (separateInferredFks)
-                                    {
-                                        // Separate file mode: rename main file with 01_ prefix and create 02_ FK file
-                                        var mainOutputPath = Path.Combine(
-                                            outputDirectory,
-                                            "01_EdFi-DMS-Database-Schema-PostgreSQL.sql"
-                                        );
-                                        var fkOutputPath = Path.Combine(
-                                            outputDirectory,
-                                            "02_EdFi-DMS-Inferred-ForeignKeys-PostgreSQL.sql"
-                                        );
-
-                                        // Rename main file if it exists without prefix
-                                        var oldMainPath = Path.Combine(
-                                            outputDirectory,
-                                            "EdFi-DMS-Database-Schema-PostgreSQL.sql"
-                                        );
-                                        if (File.Exists(oldMainPath))
-                                        {
-                                            File.Move(oldMainPath, mainOutputPath, true);
-                                        }
-
-                                        File.WriteAllText(fkOutputPath, fkScript);
-                                        logger.LogInformation(
-                                            "Inferred foreign keys generated in separate file: {Output}",
-                                            fkOutputPath
-                                        );
-                                    }
-                                    else
-                                    {
-                                        // Integrated mode: append to main DDL file
-                                        var mainOutputPath = Path.Combine(
-                                            outputDirectory,
-                                            "EdFi-DMS-Database-Schema-PostgreSQL.sql"
-                                        );
-                                        if (File.Exists(mainOutputPath))
-                                        {
-                                            File.AppendAllText(mainOutputPath, "\n\n" + fkScript);
-                                            logger.LogInformation(
-                                                "Inferred foreign keys appended to main DDL file: {Output}",
-                                                mainOutputPath
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.LogError(
-                                    ex,
-                                    "Failed to generate inferred foreign keys for PostgreSQL"
-                                );
-                            }
-                        }
                     }
 
                     logger.LogInformation("PostgreSQL DDL generation completed");
@@ -342,70 +260,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
                     if (mssql != null)
                     {
                         mssql.GenerateDdl(apiSchema, outputDirectory, options);
-
-                        // Handle inferred foreign keys if requested
-                        if (generateInferredFks)
-                        {
-                            logger.LogInformation("Generating inferred foreign keys for SQL Server...");
-                            try
-                            {
-                                var fkScript = mssql.GenerateInferredForeignKeys(apiSchema, options);
-                                if (!string.IsNullOrEmpty(fkScript))
-                                {
-                                    if (separateInferredFks)
-                                    {
-                                        // Separate file mode: rename main file with 01_ prefix and create 02_ FK file
-                                        var mainOutputPath = Path.Combine(
-                                            outputDirectory,
-                                            "01_EdFi-DMS-Database-Schema-SQLServer.sql"
-                                        );
-                                        var fkOutputPath = Path.Combine(
-                                            outputDirectory,
-                                            "02_EdFi-DMS-Inferred-ForeignKeys-SQLServer.sql"
-                                        );
-
-                                        // Rename main file if it exists without prefix
-                                        var oldMainPath = Path.Combine(
-                                            outputDirectory,
-                                            "EdFi-DMS-Database-Schema-SQLServer.sql"
-                                        );
-                                        if (File.Exists(oldMainPath))
-                                        {
-                                            File.Move(oldMainPath, mainOutputPath, true);
-                                        }
-
-                                        File.WriteAllText(fkOutputPath, fkScript);
-                                        logger.LogInformation(
-                                            "Inferred foreign keys generated in separate file: {Output}",
-                                            fkOutputPath
-                                        );
-                                    }
-                                    else
-                                    {
-                                        // Integrated mode: append to main DDL file
-                                        var mainOutputPath = Path.Combine(
-                                            outputDirectory,
-                                            "EdFi-DMS-Database-Schema-SQLServer.sql"
-                                        );
-                                        if (File.Exists(mainOutputPath))
-                                        {
-                                            File.AppendAllText(mainOutputPath, "\n\n" + fkScript);
-                                            logger.LogInformation(
-                                                "Inferred foreign keys appended to main DDL file: {Output}",
-                                                mainOutputPath
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.LogError(
-                                    ex,
-                                    "Failed to generate inferred foreign keys for SQL Server"
-                                );
-                            }
-                        }
                     }
 
                     logger.LogInformation("SQL Server DDL generation completed");

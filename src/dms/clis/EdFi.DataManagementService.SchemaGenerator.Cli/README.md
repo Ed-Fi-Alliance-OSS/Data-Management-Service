@@ -197,6 +197,7 @@ EdFi.DataManagementService.SchemaGenerator.Cli \
 | `--url` | `-u` | URL to fetch the API schema JSON file | - |
 | `--extensions` | `-e` | Include extension tables in the generated DDL | `false` |
 | `--skip-union-views` | `-s` | Skip generation of union views for polymorphic references | `false` |
+| `--skip-natural-key-views` | - | Skip generation of natural key resolution views | `false` |
 | `--use-schemas` | - | Generate separate database schemas (edfi, tpdm, etc.) | `false` |
 | `--use-prefixed-names` | - | Use prefixed table names in dms schema | `true` |
 | `--infer-fks` | - | Generate inferred foreign key constraints for natural key columns | `true` |
@@ -222,6 +223,7 @@ You can configure default settings in `appsettings.json`:
     "DatabaseProvider": "all",
     "IncludeExtensions": false,
     "SkipUnionViews": false,
+    "SkipNaturalKeyViews": false,
     "UsePrefixedTableNames": true,
     "GenerateInferredForeignKeys": true,
     "SeparateInferredForeignKeys": false
@@ -320,6 +322,19 @@ on column naming conventions:
   - **Integrated** (default): FKs appended to main DDL file
   - **Separate**: FKs in separate file with `02_` prefix for controlled application
 - **Usage**: Enable with `--infer-fks`, separate with `--separate-inferred-fks`
+
+### Natural Key Resolution Views
+
+The generator creates views that expose natural keys for improved ETL compatibility:
+
+- **Purpose**: Provides natural key access to surrogate key-based tables
+- **Default**: Enabled by default (use `--skip-natural-key-views` to disable)
+- **Example**: `StudentSchoolAssociation_View` joins to `Student` and `School` tables
+  to expose `StudentUniqueId` and `SchoolId` alongside surrogate key `Student_Id`
+  and `School_Id`
+- **Coverage**: Generated for all root tables and their child collections
+- **Benefit**: Allows existing ETL processes to query using natural keys while
+  the underlying storage uses efficient surrogate keys
 
 ### Data Types
 
