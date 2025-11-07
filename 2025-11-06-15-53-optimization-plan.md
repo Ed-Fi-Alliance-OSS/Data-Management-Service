@@ -42,7 +42,7 @@ Phase 1 — Low-Risk, High-ROI (1–2 days)
 - Frontend JSON write path
   - Replace `Results.Content(JsonSerializer.Serialize(...))` with `Results.Json(frontendResponse.Body, jsonOptions)`; remove `WriteIndented`.
   - Centralize `JsonSerializerOptions` in DI (`ConfigureHttpJsonOptions`) with `Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping`, `DefaultIgnoreCondition = WhenWritingNull`, `NumberHandling = None`.
-  - Optional: enable `ResponseCompression` (Brotli/Gzip) for GET endpoints only.
+  - Enable `ResponseCompression` (Brotli/Gzip) for GET endpoints.
 - Skip reading body for GET/DELETE
   - Only parse body for POST/PUT. Refactor `FromRequest(...)` to accept `bool readBody`; call with `true` for POST/PUT and `false` otherwise.
 - Streamlined body ingestion for POST/PUT
@@ -76,7 +76,7 @@ Phase 2 — Core Pipeline Allocation Cuts (2–3 days)
   - Convert frequently allocated DTOs (e.g., `DocumentIdentity`, `DocumentSecurityElements`) to `readonly struct` where practical.
   - Emit per-step `Activity` tags for diagnostics with minimal overhead.
 - Polly/resilience tuning
-  - Ensure non-blocking fallbacks; tune retry counts/timeouts to avoid holding DB connections longer than necessary.
+  - Ensure policies are non-blocking; tune retry counts/timeouts to avoid holding DB connections longer than necessary.
 
 Expected impact
 - Additional 10–20% alloc/CPU reduction from closure removal and LINQ trimming; flatter traces and fewer short-lived objects.
@@ -85,7 +85,6 @@ Phase 3 — Streaming & JSON Zero-Copy (3–6 days)
 - Stream query responses directly from Npgsql to response
   - In `SqlAction.GetAllDocumentsByResourceName`, iterate the reader and write objects with `Utf8JsonWriter` to the response stream without materializing arrays.
   - Add a streaming `IResult` helper (e.g., `Results.Stream(async (stream, ct) => { using var writer = new Utf8JsonWriter(stream); ... })`).
-  - Keep the existing non-streaming path for small payloads; use streaming beyond size/count thresholds.
 - Optional NDJSON for very large datasets
   - Support `Accept: application/x-ndjson` to stream line-delimited JSON; eliminate array framing and reduce memory.
 - Query filter construction efficiency
@@ -133,7 +132,7 @@ Targeted Code Changes (by file)
   - src/dms/core/EdFi.DataManagementService.Core/Middleware/ProvideEducationOrganizationHierarchyMiddleware.cs — leverage precompiled paths and single-pass extraction.
   - src/dms/core/EdFi.DataManagementService.Core/Middleware/ResourceActionAuthorizationMiddleware.cs — reduce info-level logs; instrument claim-set cache hit/miss metrics.
 - Backend bridge (app side)
-  - src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Operation/SqlAction.cs — avoid `Deserialize<JsonNode>()` when streaming; for interim, keep `JsonElement` and pass through. Pool filter JSON buffers or use `jsonb_build_object`.
+  - src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/Operation/SqlAction.cs — avoid `Deserialize<JsonNode>()`; return `JsonElement` or stream directly end-to-end. Pool filter JSON buffers or use `jsonb_build_object`.
   - src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/PostgresqlDocumentStoreRepository.cs — use read-only/no transaction for read paths where safe; expose pool stats via health/diagnostics.
 
 Validation Plan
@@ -146,13 +145,12 @@ Validation Plan
   - Add a BenchmarkDotNet project for hot paths (schema validation, JSON extraction, query materialization) and publish results on net8.0.
 
 Risks & Tradeoffs
-- Changing JSON pipeline types (JsonNode → JsonElement/streaming) touches multiple layers; keep old path behind a flag and roll out incrementally.
-- Lowering log verbosity reduces observability; retain structured error logs and enable sampling toggles.
-- Response compression reduces bandwidth but costs CPU; enable for larger payloads and GETs only after measurement.
+- Changing JSON pipeline types (JsonNode → JsonElement/streaming) touches multiple layers; replace across the codebase and validate thoroughly.
+- Lowering log verbosity reduces observability; retain structured error logs.
+- Response compression reduces bandwidth but costs CPU; enable for GETs.
 
 Next Steps
-1) Implement Phase 1 (frontend JSON, GET/DELETE body skip, BodyReader, logging guards, DI cleanup) behind a feature branch; validate with counters/trace.
+1) Implement Phase 1 (frontend JSON, GET/DELETE body skip, BodyReader, logging guards, DI cleanup); validate with counters/trace.
 2) Implement Phase 2 pipeline chain and query validation/schema/JSONPath caching; rebaseline and review traces.
-3) Prototype Phase 3 streaming on a single GET endpoint; measure; then expand.
+3) Implement Phase 3 streaming across all GET endpoints; validate performance and correctness under load.
 4) Align authentication error payload types and finalize hosting/GC tuning; add BenchmarkDotNet microbenchmarks.
-
