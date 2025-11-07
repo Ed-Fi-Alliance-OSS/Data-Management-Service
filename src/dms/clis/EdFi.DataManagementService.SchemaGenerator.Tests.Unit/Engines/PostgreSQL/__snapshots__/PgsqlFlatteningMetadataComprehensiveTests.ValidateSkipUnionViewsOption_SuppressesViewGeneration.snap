@@ -40,3 +40,17 @@ BEGIN
         END IF;
 END$$;
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for School_View
+CREATE OR REPLACE VIEW dms.School_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.SchoolId
+FROM dms.edfi_School base;
+
+
+

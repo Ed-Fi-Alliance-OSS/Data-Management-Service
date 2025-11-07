@@ -101,7 +101,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
 
             // Assert
-            sql.Should().NotContain("CREATE OR REPLACE VIEW");
             sql.Should().NotContain("UNION ALL");
         }
 
