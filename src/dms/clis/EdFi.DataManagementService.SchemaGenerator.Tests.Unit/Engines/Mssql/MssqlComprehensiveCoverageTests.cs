@@ -7,6 +7,7 @@ using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 {
@@ -21,7 +22,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         [SetUp]
         public void SetUp()
         {
-            _strategy = new MssqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            _strategy = new MssqlDdlGeneratorStrategy(logger);
         }
 
         [Test]
@@ -32,7 +34,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var options = new DdlGenerationOptions
             {
                 DescriptorSchema = "descriptors",
-                DefaultSchema = "dms"
+                DefaultSchema = "dms",
             };
 
             // Act
@@ -51,10 +53,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var options = new DdlGenerationOptions
             {
                 IncludeExtensions = true,
-                SchemaMapping = new Dictionary<string, string>
-                {
-                    ["TPDM"] = "tpdm"
-                }
+                SchemaMapping = new Dictionary<string, string> { ["TPDM"] = "tpdm" },
             };
 
             // Act
@@ -114,10 +113,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             var schema = TestHelpers.GetBasicSchema();
             var options = new DdlGenerationOptions
             {
-                SchemaMapping = new Dictionary<string, string>
-                {
-                    ["EdFi"] = "edfi_custom"
-                }
+                SchemaMapping = new Dictionary<string, string> { ["EdFi"] = "edfi_custom" },
             };
 
             // Act
@@ -156,14 +152,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                             ColumnType = "decimal",
                                             Precision = "18",
                                             Scale = "2",
-                                            IsRequired = true
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            IsRequired = true,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -201,14 +197,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                             ColumnName = "Amount",
                                             ColumnType = "decimal",
                                             Scale = "4",
-                                            IsRequired = true
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            IsRequired = true,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -246,14 +242,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                             ColumnName = "Description",
                                             ColumnType = "string",
                                             MaxLength = "4000",
-                                            IsRequired = false
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            IsRequired = false,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -291,14 +287,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                                             ColumnName = "Description",
                                             ColumnType = "string",
                                             MaxLength = "5000",
-                                            IsRequired = false
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            IsRequired = false,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -327,10 +323,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var options = new DdlGenerationOptions
-            {
-                GenerateForeignKeyConstraints = false
-            };
+            var options = new DdlGenerationOptions { GenerateForeignKeyConstraints = false };
 
             // Act
             var result = _strategy.GenerateDdlString(schema, options);
@@ -345,10 +338,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithNaturalKey();
-            var options = new DdlGenerationOptions
-            {
-                GenerateNaturalKeyConstraints = false
-            };
+            var options = new DdlGenerationOptions { GenerateNaturalKeyConstraints = false };
 
             // Act
             var result = _strategy.GenerateDdlString(schema, options);
@@ -362,11 +352,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithDescriptor();
-            var options = new DdlGenerationOptions
-            {
-                DescriptorSchema = "dms",
-                DefaultSchema = "dms"
-            };
+            var options = new DdlGenerationOptions { DescriptorSchema = "dms", DefaultSchema = "dms" };
 
             // Act
             var result = _strategy.GenerateDdlString(schema, options);

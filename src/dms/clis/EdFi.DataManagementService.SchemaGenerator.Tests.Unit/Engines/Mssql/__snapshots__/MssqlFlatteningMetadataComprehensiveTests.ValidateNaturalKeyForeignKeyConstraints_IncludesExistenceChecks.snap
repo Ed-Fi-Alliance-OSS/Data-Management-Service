@@ -118,8 +118,8 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.Student_Id,
-        student.StudentUniqueId AS Student_StudentUniqueId,
+        base.Student_Id AS StudentId,
+        student.StudentUniqueId AS StudentUniqueId,
         base.GradeIdentifier
     FROM [dms].[edfi_Grade] base
     INNER JOIN [dms].[edfi_Student] student ON base.Student_Id = student.Id');

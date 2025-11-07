@@ -188,10 +188,9 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        base.Student_Id,
-        student.StudentUniqueId AS Student_StudentUniqueId,
-        base.School_Id,
-        school.SchoolId AS School_SchoolId,
+        base.Student_Id AS StudentId,
+        student.StudentUniqueId AS StudentUniqueId,
+        base.School_Id AS SchoolId,
         base.EntryDate
     FROM [dms].[edfi_StudentSchoolAssociation] base
     INNER JOIN [dms].[edfi_Student] student ON base.Student_Id = student.Id

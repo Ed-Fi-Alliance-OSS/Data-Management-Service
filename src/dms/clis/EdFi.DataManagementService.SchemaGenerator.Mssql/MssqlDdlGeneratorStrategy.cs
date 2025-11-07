@@ -5,13 +5,14 @@
 using System.Text;
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using HandlebarsDotNet;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 {
     /// <summary>
     /// SQL Server DDL generation strategy implementation.
     /// </summary>
-    public class MssqlDdlGeneratorStrategy : IDdlGeneratorStrategy
+    public class MssqlDdlGeneratorStrategy(ILogger<MssqlDdlGeneratorStrategy> _logger) : IDdlGeneratorStrategy
     {
         /// <summary>
         /// Generates SQL Server DDL scripts for the given ApiSchema metadata.
@@ -1635,6 +1636,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
         }
 
         /// <summary>
+        /// Generates a column alias from a column name.
+        /// For columns ending with _Id, converts to PascalCase (e.g., School_Id -> SchoolId).
+        /// For other columns, returns the column name as-is.
+        /// </summary>
+        private string GenerateColumnAlias(string columnName)
+        {
+            if (columnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase))
+            {
+                // Remove the "_Id" suffix and convert to PascalCase
+                var baseName = columnName.Substring(0, columnName.Length - 3);
+                return baseName + "Id";
+            }
+            return columnName;
+        }
+
+        /// <summary>
         /// Generates natural key resolution views for a table and its children.
         /// Views join to referenced tables to expose natural keys instead of surrogate keys.
         /// </summary>
@@ -1679,6 +1696,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 "ChangeVersion",
             };
 
+            // Track source columns (table.column) to avoid selecting the same column multiple times
+            var usedSourceColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             // If this is a child table, resolve parent's natural keys (exclude intermediate FK)
             if (parentTableName != null && parentTableMetadata != null)
             {
@@ -1701,15 +1721,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 )
                 {
                     var columnName = MssqlNamingHelper.MakeMssqlIdentifier(parentNkCol.ColumnName);
-                    if (!usedAliases.Contains(columnName))
+                    var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
+                        GenerateColumnAlias(parentNkCol.ColumnName)
+                    );
+                    var sourceColumn = $"parent.{columnName}";
+
+                    if (!usedSourceColumns.Contains(sourceColumn) && !usedAliases.Contains(aliasName))
                     {
-                        selectColumns.Add($"parent.{columnName}");
-                        usedAliases.Add(columnName);
+                        selectColumns.Add($"{sourceColumn} AS {aliasName}");
+                        usedAliases.Add(aliasName);
+                        usedSourceColumns.Add(sourceColumn);
                     }
                     else
                     {
-                        Console.WriteLine(
-                            $"INFO: Column name collision detected in view for {table.BaseName}: {columnName} already exists, skipping parent natural key"
+                        _logger.LogInformation(
+                            "Column name collision detected in view for {Table}: {Alias} already exists, skipping parent natural key",
+                            table.BaseName,
+                            aliasName
                         );
                     }
                 }
@@ -1726,6 +1754,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     originalSchemaName,
                     options,
                     usedAliases,
+                    usedSourceColumns,
                     resourceSchema,
                     1 // depth level starts at 1 for grandparent
                 );
@@ -1749,7 +1778,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         originalSchemaName,
                         options,
                         parentResourceSchema,
-                        usedAliases
+                        usedAliases,
+                        usedSourceColumns
                     );
                 }
             }
@@ -1798,10 +1828,16 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         )
                         {
                             var columnIdentifier = MssqlNamingHelper.MakeMssqlIdentifier(fkCol.ColumnName);
-                            if (!usedAliases.Contains(columnIdentifier))
+                            var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                GenerateColumnAlias(fkCol.ColumnName)
+                            );
+                            var sourceColumn = $"base.{columnIdentifier}";
+
+                            if (!usedSourceColumns.Contains(sourceColumn) && !usedAliases.Contains(aliasName))
                             {
-                                selectColumns.Add($"base.{columnIdentifier}");
-                                usedAliases.Add(columnIdentifier);
+                                selectColumns.Add($"{sourceColumn} AS {aliasName}");
+                                usedAliases.Add(aliasName);
+                                usedSourceColumns.Add(sourceColumn);
                             }
                         }
 
@@ -1833,15 +1869,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                 )
                             )
                             {
+                                var columnName = MssqlNamingHelper.MakeMssqlIdentifier(refNkCol.ColumnName);
                                 var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
-                                    $"{referencedResource}_{refNkCol.ColumnName}"
+                                    GenerateColumnAlias(refNkCol.ColumnName)
                                 );
-                                if (!usedAliases.Contains(aliasName))
+                                var sourceColumn = $"{refAlias}.{columnName}";
+
+                                if (
+                                    !usedSourceColumns.Contains(sourceColumn)
+                                    && !usedAliases.Contains(aliasName)
+                                )
                                 {
-                                    selectColumns.Add(
-                                        $"{refAlias}.{MssqlNamingHelper.MakeMssqlIdentifier(refNkCol.ColumnName)} AS {aliasName}"
-                                    );
+                                    selectColumns.Add($"{sourceColumn} AS {aliasName}");
                                     usedAliases.Add(aliasName);
+                                    usedSourceColumns.Add(sourceColumn);
                                 }
                             }
                         }
@@ -1851,10 +1892,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 {
                     // Include regular data columns (skip FK columns already added above)
                     var columnIdentifier = MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName);
-                    if (!usedAliases.Contains(columnIdentifier))
+                    var sourceColumn = $"base.{columnIdentifier}";
+
+                    if (!usedSourceColumns.Contains(sourceColumn) && !usedAliases.Contains(columnIdentifier))
                     {
-                        selectColumns.Add($"base.{columnIdentifier}");
+                        selectColumns.Add($"{sourceColumn}");
                         usedAliases.Add(columnIdentifier);
+                        usedSourceColumns.Add(sourceColumn);
                     }
                 }
             }
@@ -1905,6 +1949,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             string originalSchemaName,
             DdlGenerationOptions options,
             HashSet<string> usedAliases,
+            HashSet<string> usedSourceColumns,
             ResourceSchema? resourceSchema,
             int depth
         )
@@ -1960,15 +2005,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     )
                     {
                         var columnName = MssqlNamingHelper.MakeMssqlIdentifier(grandparentNkCol.ColumnName);
-                        if (!usedAliases.Contains(columnName))
+                        var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
+                            GenerateColumnAlias(grandparentNkCol.ColumnName)
+                        );
+                        var sourceColumn = $"{ancestorAlias}.{columnName}";
+
+                        if (!usedSourceColumns.Contains(sourceColumn) && !usedAliases.Contains(aliasName))
                         {
-                            selectColumns.Add($"{ancestorAlias}.{columnName}");
-                            usedAliases.Add(columnName);
+                            selectColumns.Add($"{sourceColumn} AS {aliasName}");
+                            usedAliases.Add(aliasName);
+                            usedSourceColumns.Add(sourceColumn);
                         }
                         else
                         {
-                            Console.WriteLine(
-                                $"INFO: Column name collision detected in ancestor resolution for {grandparentTableName}: {columnName} already exists, skipping"
+                            _logger.LogInformation(
+                                "Column name collision detected in ancestor resolution for {Grandparent}: {Alias} already exists, skipping",
+                                grandparentTableName,
+                                aliasName
                             );
                         }
                     }
@@ -1985,6 +2038,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         originalSchemaName,
                         options,
                         usedAliases,
+                        usedSourceColumns,
                         grandparentResourceSchema ?? resourceSchema,
                         depth + 1
                     );
@@ -2052,7 +2106,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             string originalSchemaName,
             DdlGenerationOptions options,
             ResourceSchema parentResourceSchema,
-            HashSet<string> usedAliases
+            HashSet<string> usedAliases,
+            HashSet<string> usedSourceColumns
         )
         {
             var processedRefs = new HashSet<string>();
@@ -2075,21 +2130,25 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
 
                         // Include parent's surrogate key column (only if not already included as natural key)
                         var baseColumnName = MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName);
-                        var parentFkAlias = MssqlNamingHelper.MakeMssqlIdentifier(
-                            $"{parentPrefix}_{column.ColumnName}"
+                        var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
+                            GenerateColumnAlias(column.ColumnName)
                         );
+                        var sourceColumn = $"{parentAlias}.{baseColumnName}";
 
-                        // Check if the base column is already included (as parent natural key)
-                        if (usedAliases.Contains(baseColumnName))
+                        // Check if source column is already included
+                        if (usedSourceColumns.Contains(sourceColumn))
                         {
-                            Console.WriteLine(
-                                $"INFO: Skipping cross-reference {parentFkAlias} - base column {baseColumnName} already exists as natural key"
+                            _logger.LogInformation(
+                                "Skipping cross-reference {Column} - source column {SourceColumn} already included",
+                                column.ColumnName,
+                                sourceColumn
                             );
                         }
-                        else if (!usedAliases.Contains(parentFkAlias))
+                        else if (!usedAliases.Contains(aliasName))
                         {
-                            selectColumns.Add($"{parentAlias}.{baseColumnName} AS {parentFkAlias}");
-                            usedAliases.Add(parentFkAlias);
+                            selectColumns.Add($"{sourceColumn} AS {aliasName}");
+                            usedAliases.Add(aliasName);
+                            usedSourceColumns.Add(sourceColumn);
                         }
 
                         // Find referenced resource
@@ -2119,15 +2178,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                                 )
                             )
                             {
-                                var aliasName = MssqlNamingHelper.MakeMssqlIdentifier(
-                                    $"{parentPrefix}_{referencedResource}_{refNkCol.ColumnName}"
+                                var columnName = MssqlNamingHelper.MakeMssqlIdentifier(refNkCol.ColumnName);
+                                var refAliasName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                    GenerateColumnAlias(refNkCol.ColumnName)
                                 );
-                                if (!usedAliases.Contains(aliasName))
+                                var refSourceColumn = $"{refAlias}.{columnName}";
+
+                                if (
+                                    !usedSourceColumns.Contains(refSourceColumn)
+                                    && !usedAliases.Contains(refAliasName)
+                                )
                                 {
-                                    selectColumns.Add(
-                                        $"{refAlias}.{MssqlNamingHelper.MakeMssqlIdentifier(refNkCol.ColumnName)} AS {aliasName}"
-                                    );
-                                    usedAliases.Add(aliasName);
+                                    selectColumns.Add($"{refSourceColumn} AS {refAliasName}");
+                                    usedAliases.Add(refAliasName);
+                                    usedSourceColumns.Add(refSourceColumn);
                                 }
                             }
                         }

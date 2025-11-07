@@ -206,13 +206,12 @@ BEGIN
         base.Document_Id,
         base.Document_PartitionKey,
         base.EntryDate,
-        base.Student_Id,
-        student.StudentUniqueId AS Student_StudentUniqueId,
-        base.School_Id,
-        school.SchoolId AS School_SchoolId,
-        base.GraduationPlan_Id,
-        graduationplan.GraduationPlanTypeDescriptorId AS GraduationPlan_GraduationPlanTypeDescriptorId,
-        graduationplan.GraduationSchoolYear AS GraduationPlan_GraduationSchoolYear
+        base.Student_Id AS StudentId,
+        student.StudentUniqueId AS StudentUniqueId,
+        base.School_Id AS SchoolId,
+        base.GraduationPlan_Id AS GraduationPlanId,
+        graduationplan.GraduationPlanTypeDescriptorId AS GraduationPlanTypeDescriptorId,
+        graduationplan.GraduationSchoolYear AS GraduationSchoolYear
     FROM [dms].[edfi_StudentSchoolAssociation] base
     INNER JOIN [dms].[edfi_Student] student ON base.Student_Id = student.Id
     INNER JOIN [dms].[edfi_School] school ON base.School_Id = school.Id

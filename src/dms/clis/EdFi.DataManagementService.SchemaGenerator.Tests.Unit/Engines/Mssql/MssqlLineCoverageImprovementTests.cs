@@ -8,6 +8,7 @@ using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 {
@@ -22,7 +23,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         [SetUp]
         public void SetUp()
         {
-            _strategy = new MssqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            _strategy = new MssqlDdlGeneratorStrategy(logger);
         }
 
         [Test]

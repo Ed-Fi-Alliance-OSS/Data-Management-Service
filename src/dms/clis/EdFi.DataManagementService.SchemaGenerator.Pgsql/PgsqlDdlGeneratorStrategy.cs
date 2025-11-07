@@ -6,13 +6,14 @@
 using System.Text;
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using HandlebarsDotNet;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 {
     /// <summary>
     /// PostgreSQL DDL generation strategy implementation.
     /// </summary>
-    public class PgsqlDdlGeneratorStrategy : IDdlGeneratorStrategy
+    public class PgsqlDdlGeneratorStrategy(ILogger<PgsqlDdlGeneratorStrategy> _logger) : IDdlGeneratorStrategy
     {
         /// <summary>
         /// Generates PostgreSQL DDL scripts for the given ApiSchema metadata.
@@ -1645,6 +1646,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
         }
 
         /// <summary>
+        /// Generates a column alias from a column name.
+        /// For columns ending with _Id, converts to PascalCase (e.g., School_Id -> SchoolId).
+        /// For other columns, returns the column name as-is.
+        /// </summary>
+        private string GenerateColumnAlias(string columnName)
+        {
+            if (columnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase))
+            {
+                // Remove the "_Id" suffix and convert to PascalCase
+                var baseName = columnName.Substring(0, columnName.Length - 3);
+                return baseName + "Id";
+            }
+            return columnName;
+        }
+
+        /// <summary>
         /// Generates natural key resolution views for a table and its children.
         /// Views join to referenced tables to expose natural keys instead of surrogate keys.
         /// </summary>
@@ -1686,6 +1703,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 "ChangeVersion",
             };
 
+            // Track source columns (table.column) to avoid selecting the same column multiple times
+            var usedSourceColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             // If this is a child table, resolve parent's natural keys (exclude intermediate FK)
             if (parentTableName != null && parentTableMetadata != null)
             {
@@ -1711,15 +1731,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 )
                 {
                     var columnName = PgsqlNamingHelper.MakePgsqlIdentifier(parentNkCol.ColumnName);
-                    if (!usedAliases.Contains(columnName))
+                    var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                        GenerateColumnAlias(parentNkCol.ColumnName)
+                    );
+                    var sourceColumn = $"parent.{columnName}";
+
+                    if (!usedSourceColumns.Contains(sourceColumn) && !usedAliases.Contains(aliasName))
                     {
-                        selectColumns.Add($"parent.{columnName}");
-                        usedAliases.Add(columnName);
+                        selectColumns.Add($"{sourceColumn} AS {aliasName}");
+                        usedAliases.Add(aliasName);
+                        usedSourceColumns.Add(sourceColumn);
                     }
                     else
                     {
-                        Console.WriteLine(
-                            $"INFO: Column name collision detected in view for {table.BaseName}: {columnName} already exists, skipping parent natural key"
+                        _logger.LogInformation(
+                            "Column name collision detected in view for {Table}: {Alias} already exists, skipping parent natural key",
+                            table.BaseName,
+                            aliasName
                         );
                     }
                 }
@@ -1731,6 +1759,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     selectColumns,
                     joins,
                     usedAliases,
+                    usedSourceColumns,
                     "parent",
                     parentTableName,
                     finalSchemaName,
@@ -1754,6 +1783,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         selectColumns,
                         joins,
                         usedAliases,
+                        usedSourceColumns,
                         "parent",
                         parentTableName,
                         finalSchemaName,
@@ -1808,10 +1838,16 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         )
                         {
                             var columnIdentifier = PgsqlNamingHelper.MakePgsqlIdentifier(fkCol.ColumnName);
-                            if (!usedAliases.Contains(columnIdentifier))
+                            var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                                GenerateColumnAlias(fkCol.ColumnName)
+                            );
+                            var sourceColumn = $"base.{columnIdentifier}";
+
+                            if (!usedSourceColumns.Contains(sourceColumn) && !usedAliases.Contains(aliasName))
                             {
-                                selectColumns.Add($"base.{columnIdentifier}");
-                                usedAliases.Add(columnIdentifier);
+                                selectColumns.Add($"{sourceColumn} AS {aliasName}");
+                                usedAliases.Add(aliasName);
+                                usedSourceColumns.Add(sourceColumn);
                             }
                         }
 
@@ -1841,15 +1877,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                 )
                             )
                             {
+                                var columnName = PgsqlNamingHelper.MakePgsqlIdentifier(refNkCol.ColumnName);
                                 var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
-                                    $"{referencedResource}_{refNkCol.ColumnName}"
+                                    GenerateColumnAlias(refNkCol.ColumnName)
                                 );
-                                if (!usedAliases.Contains(aliasName))
+                                var sourceColumn = $"{refAlias}.{columnName}";
+
+                                if (
+                                    !usedSourceColumns.Contains(sourceColumn)
+                                    && !usedAliases.Contains(aliasName)
+                                )
                                 {
-                                    selectColumns.Add(
-                                        $"{refAlias}.{PgsqlNamingHelper.MakePgsqlIdentifier(refNkCol.ColumnName)} AS {aliasName}"
-                                    );
+                                    selectColumns.Add($"{sourceColumn} AS {aliasName}");
                                     usedAliases.Add(aliasName);
+                                    usedSourceColumns.Add(sourceColumn);
                                 }
                             }
                         }
@@ -1859,10 +1900,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                 {
                     // Include regular data columns (skip FK columns already added above)
                     var columnIdentifier = PgsqlNamingHelper.MakePgsqlIdentifier(column.ColumnName);
-                    if (!usedAliases.Contains(columnIdentifier))
+                    var sourceColumn = $"base.{columnIdentifier}";
+
+                    if (!usedSourceColumns.Contains(sourceColumn) && !usedAliases.Contains(columnIdentifier))
                     {
-                        selectColumns.Add($"base.{columnIdentifier}");
+                        selectColumns.Add($"{sourceColumn}");
                         usedAliases.Add(columnIdentifier);
+                        usedSourceColumns.Add(sourceColumn);
                     }
                 }
             }
@@ -1908,6 +1952,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             List<string> selectColumns,
             List<string> joins,
             HashSet<string> usedAliases,
+            HashSet<string> usedSourceColumns,
             string currentAlias,
             string currentPrefix,
             string finalSchemaName,
@@ -1971,15 +2016,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     )
                     {
                         var columnName = PgsqlNamingHelper.MakePgsqlIdentifier(grandparentNkCol.ColumnName);
-                        if (!usedAliases.Contains(columnName))
+                        var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                            GenerateColumnAlias(grandparentNkCol.ColumnName)
+                        );
+                        var sourceColumn = $"{ancestorAlias}.{columnName}";
+
+                        if (!usedSourceColumns.Contains(sourceColumn) && !usedAliases.Contains(aliasName))
                         {
-                            selectColumns.Add($"{ancestorAlias}.{columnName}");
-                            usedAliases.Add(columnName);
+                            selectColumns.Add($"{sourceColumn} AS {aliasName}");
+                            usedAliases.Add(aliasName);
+                            usedSourceColumns.Add(sourceColumn);
                         }
                         else
                         {
-                            Console.WriteLine(
-                                $"INFO: Column name collision detected in ancestor resolution for {grandparentTableName}: {columnName} already exists, skipping"
+                            _logger.LogInformation(
+                                "Column name collision detected in ancestor resolution for {Grandparent}: {Alias} already exists, skipping",
+                                grandparentTableName,
+                                aliasName
                             );
                         }
                     }
@@ -1991,6 +2044,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         selectColumns,
                         joins,
                         usedAliases,
+                        usedSourceColumns,
                         ancestorAlias,
                         grandparentTableName, // Use grandparent name as new prefix for next level
                         finalSchemaName,
@@ -2058,6 +2112,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             List<string> selectColumns,
             List<string> joins,
             HashSet<string> usedAliases,
+            HashSet<string> usedSourceColumns,
             string parentAlias,
             string parentPrefix,
             string finalSchemaName,
@@ -2086,21 +2141,25 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
                         // Include parent's surrogate key column (only if not already included as natural key)
                         var baseColumnName = PgsqlNamingHelper.MakePgsqlIdentifier(column.ColumnName);
-                        var parentColumnAlias = PgsqlNamingHelper.MakePgsqlIdentifier(
-                            $"{parentPrefix}_{column.ColumnName}"
+                        var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                            GenerateColumnAlias(column.ColumnName)
                         );
+                        var sourceColumn = $"{parentAlias}.{baseColumnName}";
 
-                        // Check if the base column is already included (as parent natural key)
-                        if (usedAliases.Contains(baseColumnName))
+                        // Check if source column is already included
+                        if (usedSourceColumns.Contains(sourceColumn))
                         {
-                            Console.WriteLine(
-                                $"INFO: Skipping cross-reference {parentColumnAlias} - base column {baseColumnName} already exists as natural key"
+                            _logger.LogInformation(
+                                "Skipping cross-reference {Column} - source column {SourceColumn} already included",
+                                column.ColumnName,
+                                sourceColumn
                             );
                         }
-                        else if (!usedAliases.Contains(parentColumnAlias))
+                        else if (!usedAliases.Contains(aliasName))
                         {
-                            selectColumns.Add($"{parentAlias}.{baseColumnName} AS {parentColumnAlias}");
-                            usedAliases.Add(parentColumnAlias);
+                            selectColumns.Add($"{sourceColumn} AS {aliasName}");
+                            usedAliases.Add(aliasName);
+                            usedSourceColumns.Add(sourceColumn);
                         }
 
                         // Find referenced resource
@@ -2128,15 +2187,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                                 )
                             )
                             {
-                                var aliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
-                                    $"{parentPrefix}_{referencedResource}_{refNkCol.ColumnName}"
+                                var refColumnName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                                    refNkCol.ColumnName
                                 );
-                                if (!usedAliases.Contains(aliasName))
+                                var refAliasName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                                    GenerateColumnAlias(refNkCol.ColumnName)
+                                );
+                                var refSourceColumn = $"{refAlias}.{refColumnName}";
+
+                                if (
+                                    !usedSourceColumns.Contains(refSourceColumn)
+                                    && !usedAliases.Contains(refAliasName)
+                                )
                                 {
-                                    selectColumns.Add(
-                                        $"{refAlias}.{PgsqlNamingHelper.MakePgsqlIdentifier(refNkCol.ColumnName)} AS {aliasName}"
-                                    );
-                                    usedAliases.Add(aliasName);
+                                    selectColumns.Add($"{refSourceColumn} AS {refAliasName}");
+                                    usedAliases.Add(refAliasName);
+                                    usedSourceColumns.Add(refSourceColumn);
                                 }
                             }
                         }

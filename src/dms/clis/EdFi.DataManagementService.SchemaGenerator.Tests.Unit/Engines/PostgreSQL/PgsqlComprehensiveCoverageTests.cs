@@ -7,6 +7,7 @@ using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
@@ -21,7 +22,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         [SetUp]
         public void SetUp()
         {
-            _strategy = new PgsqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+            _strategy = new PgsqlDdlGeneratorStrategy(logger);
         }
 
         [Test]
@@ -32,7 +34,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var options = new DdlGenerationOptions
             {
                 DescriptorSchema = "descriptors",
-                DefaultSchema = "dms"
+                DefaultSchema = "dms",
             };
 
             // Act
@@ -51,10 +53,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var options = new DdlGenerationOptions
             {
                 IncludeExtensions = true,
-                SchemaMapping = new Dictionary<string, string>
-                {
-                    ["TPDM"] = "tpdm"
-                }
+                SchemaMapping = new Dictionary<string, string> { ["TPDM"] = "tpdm" },
             };
 
             // Act
@@ -94,14 +93,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             ColumnType = "decimal",
                                             Precision = "18",
                                             Scale = "2",
-                                            IsRequired = true
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            IsRequired = true,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -139,14 +138,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             ColumnName = "Amount",
                                             ColumnType = "decimal",
                                             Scale = "4",
-                                            IsRequired = true
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            IsRequired = true,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -161,10 +160,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var options = new DdlGenerationOptions
-            {
-                GenerateForeignKeyConstraints = false
-            };
+            var options = new DdlGenerationOptions { GenerateForeignKeyConstraints = false };
 
             // Act
             var result = _strategy.GenerateDdlString(schema, options);
@@ -178,10 +174,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithNaturalKey();
-            var options = new DdlGenerationOptions
-            {
-                GenerateNaturalKeyConstraints = false
-            };
+            var options = new DdlGenerationOptions { GenerateNaturalKeyConstraints = false };
 
             // Act
             var result = _strategy.GenerateDdlString(schema, options);
@@ -189,6 +182,5 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Assert
             result.Should().NotBeNull();
         }
-
     }
 }

@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 {
@@ -18,12 +19,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         [TestFixture]
         public class MssqlColumnTypeMappingTests
         {
-            private MssqlDdlGeneratorStrategy _generator;
+            private MssqlDdlGeneratorStrategy _strategy;
 
             [SetUp]
             public void SetUp()
             {
-                _generator = new MssqlDdlGeneratorStrategy();
+                var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+                _strategy = new MssqlDdlGeneratorStrategy(logger);
             }
 
             [TestCase("int64", "BIGINT")]
@@ -43,7 +45,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"[TestColumn] {expectedType}");
@@ -61,7 +63,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"[TestColumn] {expectedType}");
@@ -79,7 +81,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"[TestColumn] {expectedType}");
@@ -105,7 +107,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"[TestColumn] {expectedType}");
@@ -124,7 +126,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"[TestColumn] {expectedType}");
@@ -142,7 +144,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"[TestColumn] {expectedType}");
@@ -156,7 +158,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("[TestColumn] NVARCHAR(MAX)");
@@ -170,7 +172,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("[TestColumn] NVARCHAR(MAX)");
@@ -184,7 +186,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("[TestColumn] NVARCHAR(MAX)");
@@ -203,7 +205,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("[TestColumn] NVARCHAR(MAX)");
@@ -222,7 +224,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("[TestColumn] NVARCHAR(MAX)");
@@ -262,31 +264,39 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         [TestFixture]
         public class MssqlDescriptorResourceTests
         {
+            private MssqlDdlGeneratorStrategy _strategy;
+
+            [SetUp]
+            public void SetUp()
+            {
+                var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+                _strategy = new MssqlDdlGeneratorStrategy(logger);
+            }
+
             [Test]
-            public void MssqlGenerator_DescriptorResource_UsesDescriptorSchema()
+            public void Mssql_generator_DescriptorResource_UsesDescriptorSchema()
             {
                 // Arrange
-                var generator = new MssqlDdlGeneratorStrategy();
+
                 var schema = CreateDescriptorSchema();
                 var options = new DdlGenerationOptions { DescriptorSchema = "descriptors" };
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert
                 result.Should().Contain("[descriptors].[TestDescriptor]");
             }
 
             [Test]
-            public void MssqlGenerator_TypeResource_UsesDescriptorSchema()
+            public void Mssql_generator_TypeResource_UsesDescriptorSchema()
             {
                 // Arrange
-                var generator = new MssqlDdlGeneratorStrategy();
                 var schema = CreateTypeSchema();
                 var options = new DdlGenerationOptions { DescriptorSchema = "descriptors" };
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert
                 result.Should().Contain("[descriptors].[TestType]");
@@ -374,35 +384,44 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         [TestFixture]
         public class MssqlExtensionResourceTests
         {
+            private MssqlDdlGeneratorStrategy _strategy;
+
+            [SetUp]
+            public void SetUp()
+            {
+                var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+                _strategy = new MssqlDdlGeneratorStrategy(logger);
+            }
+
             [Test]
-            public void MssqlGenerator_ExtensionResource_WithExtractableProjectName_UsesCorrectSchema()
+            public void Mssql_generator_ExtensionResource_WithExtractableProjectName_UsesCorrectSchema()
             {
                 // Arrange
-                var generator = new MssqlDdlGeneratorStrategy();
+
                 var schema = CreateExtensionSchema("TPDMStudentExtension");
                 var options = new DdlGenerationOptions();
                 options.SchemaMapping["TPDM"] = "tpdm_ext";
                 options.IncludeExtensions = true;
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert
                 result.Should().Contain("[tpdm_ext].[TPDMStudentExtension]");
             }
 
             [Test]
-            public void MssqlGenerator_ExtensionResource_WithoutExtractableProjectName_UsesExtensionsSchema()
+            public void Mssql_generator_ExtensionResource_WithoutExtractableProjectName_UsesExtensionsSchema()
             {
                 // Arrange
-                var generator = new MssqlDdlGeneratorStrategy();
+
                 var schema = CreateExtensionSchema("SimpleExtension");
                 var options = new DdlGenerationOptions();
                 options.SchemaMapping["Extensions"] = "ext";
                 options.IncludeExtensions = true;
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert
                 result.Should().Contain("[ext].[SimpleExtension]");
@@ -412,14 +431,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             public void ExtensionProjectNameExtraction_ValidExtensionName_ReturnsProjectName()
             {
                 // Arrange
-                var generator = new MssqlDdlGeneratorStrategy();
+
                 var schema = CreateExtensionSchema("TPDMStudentExtension");
                 var options = new DdlGenerationOptions();
                 options.SchemaMapping["TPDM"] = "tpdm";
                 options.IncludeExtensions = true;
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert - Should use TPDM schema
                 result.Should().Contain("[tpdm].[TPDMStudentExtension]");
@@ -429,14 +448,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             public void ExtensionProjectNameExtraction_InvalidExtensionName_UsesExtensionsDefault()
             {
                 // Arrange - Extension name that doesn't match pattern
-                var generator = new MssqlDdlGeneratorStrategy();
+
                 var schema = CreateExtensionSchema("InvalidExtension");
                 var options = new DdlGenerationOptions();
                 options.SchemaMapping["Extensions"] = "extensions";
                 options.IncludeExtensions = true;
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert - Should use Extensions schema
                 result.Should().Contain("[extensions].[InvalidExtension]");
@@ -486,15 +505,24 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         [TestFixture]
         public class MssqlReferenceResolutionTests
         {
+            private MssqlDdlGeneratorStrategy _strategy;
+
+            [SetUp]
+            public void SetUp()
+            {
+                var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+                _strategy = new MssqlDdlGeneratorStrategy(logger);
+            }
+
             [Test]
-            public void MssqlGenerator_ResolveResourceNameFromPath_WithReferencePattern_ReturnsResourceName()
+            public void Mssql_generator_ResolveResourceNameFromPath_WithReferencePattern_ReturnsResourceName()
             {
                 // Arrange
-                var generator = new MssqlDdlGeneratorStrategy();
+
                 var schema = CreateSchemaWithReference();
 
                 // Act
-                var result = generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert - Should generate index for entity reference but NOT FK constraint
                 // Per design decision: Entity references (FromReferencePath) should NOT have FK constraints
@@ -504,14 +532,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             }
 
             [Test]
-            public void MssqlGenerator_ResolveResourceNameFromPath_EmptyPath_ReturnsEmpty()
+            public void Mssql_generator_ResolveResourceNameFromPath_EmptyPath_ReturnsEmpty()
             {
                 // Arrange
-                var generator = new MssqlDdlGeneratorStrategy();
+
                 var schema = CreateSchemaWithEmptyReference();
 
                 // Act
-                var result = generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert - Should handle empty reference gracefully
                 result.Should().NotBeNull();

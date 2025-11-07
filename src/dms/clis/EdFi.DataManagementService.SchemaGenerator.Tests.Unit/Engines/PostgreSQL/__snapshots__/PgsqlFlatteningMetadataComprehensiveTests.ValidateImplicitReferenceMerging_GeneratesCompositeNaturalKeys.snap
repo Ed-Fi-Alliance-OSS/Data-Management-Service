@@ -51,7 +51,7 @@ SELECT
     base.Document_Id,
     base.Document_PartitionKey,
     base.SectionIdentifier,
-    base.CourseOffering_Id
+    base.CourseOffering_Id AS CourseOfferingId
 FROM dms.edfi_DomainEntityName base;
 
 

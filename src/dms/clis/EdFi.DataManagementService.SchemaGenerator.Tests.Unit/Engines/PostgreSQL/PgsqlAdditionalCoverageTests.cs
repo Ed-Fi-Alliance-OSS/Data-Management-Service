@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
@@ -15,6 +16,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
     [TestFixture]
     public class PgsqlAdditionalCoverageTests
     {
+        private PgsqlDdlGeneratorStrategy _strategy;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+            _strategy = new PgsqlDdlGeneratorStrategy(logger);
+        }
+
         [Test]
         public void PgsqlGenerator_WithNullColumnMaxLength_HandlesGracefully()
         {
@@ -43,20 +53,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             ColumnName = "StringColumnNoMaxLength",
                                             ColumnType = "string",
                                             MaxLength = null, // No max length specified
-                                            IsRequired = false
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act & Assert - Should not throw exception
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
             sql.Should().Contain("TEXT"); // Default for string without max length in PostgreSQL
         }
 
@@ -89,20 +98,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             ColumnType = "decimal",
                                             Precision = "10",
                                             Scale = "2",
-                                            IsRequired = true
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("DECIMAL(10, 2) NOT NULL");
@@ -137,20 +145,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             ColumnType = "decimal",
                                             Precision = null,
                                             Scale = null,
-                                            IsRequired = false
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("DECIMAL"); // Default without explicit precision
@@ -186,15 +193,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             ColumnName = "ExtensionId",
                                             ColumnType = "int32",
                                             IsNaturalKey = true,
-                                            IsRequired = true
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var options = new DdlGenerationOptions
             {
@@ -202,13 +209,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 UsePrefixedTableNames = false,
                 SchemaMapping = new Dictionary<string, string>
                 {
-                    ["TestExtensionProject"] = "custom_extension_schema"
-                }
+                    ["TestExtensionProject"] = "custom_extension_schema",
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("CREATE SCHEMA IF NOT EXISTS extensions");
@@ -243,33 +249,32 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             ColumnName = "DescriptorId",
                                             ColumnType = "int32",
                                             IsNaturalKey = true,
-                                            IsRequired = true
+                                            IsRequired = true,
                                         },
                                         new ColumnMetadata
                                         {
                                             ColumnName = "CodeValue",
                                             ColumnType = "string",
                                             MaxLength = "50",
-                                            IsRequired = true
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = false,
                 DescriptorSchema = "descriptors",
-                DefaultSchema = "dms"
+                DefaultSchema = "dms",
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("CREATE SCHEMA IF NOT EXISTS descriptors");
@@ -304,8 +309,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             ColumnName = "ParentId",
                                             ColumnType = "int32",
                                             IsNaturalKey = true,
-                                            IsRequired = true
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -320,29 +325,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                                     ColumnName = "ChildId",
                                                     ColumnType = "int32",
                                                     IsNaturalKey = true,
-                                                    IsRequired = true
+                                                    IsRequired = true,
                                                 },
                                                 new ColumnMetadata
                                                 {
                                                     ColumnName = "ParentTable_Id",
                                                     ColumnType = "bigint",
                                                     IsParentReference = true,
-                                                    IsRequired = true
-                                                }
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("FK_ChildTable_ParentTable");
@@ -376,20 +380,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                         {
                                             ColumnName = "UnsupportedColumn",
                                             ColumnType = "unsupported_type",
-                                            IsRequired = false
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("TEXT"); // Default fallback for unsupported types
@@ -422,20 +425,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                         {
                                             ColumnName = "BigIntColumn",
                                             ColumnType = "int64",
-                                            IsRequired = true
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("BIGINT NOT NULL");
@@ -468,20 +470,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                         {
                                             ColumnName = "DateColumn",
                                             ColumnType = "date",
-                                            IsRequired = false
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("DateColumn DATE");
@@ -514,20 +515,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                         {
                                             ColumnName = "TimeColumn",
                                             ColumnType = "time",
-                                            IsRequired = false
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("TimeColumn TIME");
@@ -560,20 +560,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                         {
                                             ColumnName = "BooleanColumn",
                                             ColumnType = "boolean",
-                                            IsRequired = false
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("BooleanColumn BOOLEAN");

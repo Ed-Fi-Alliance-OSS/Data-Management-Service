@@ -128,7 +128,7 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        parent.CommunityOrganizationId,
+        parent.CommunityOrganizationId AS CommunityOrganizationId,
         base.IdentificationCode,
         base.EducationOrganizationIdentificationSystemDescriptorId
     FROM [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] base

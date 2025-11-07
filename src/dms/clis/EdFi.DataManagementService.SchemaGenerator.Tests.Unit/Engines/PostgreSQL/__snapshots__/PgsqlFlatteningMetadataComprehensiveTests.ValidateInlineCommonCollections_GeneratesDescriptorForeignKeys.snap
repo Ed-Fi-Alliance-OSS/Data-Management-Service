@@ -112,7 +112,7 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    parent.AssessmentIdentifier,
+    parent.AssessmentIdentifier AS AssessmentIdentifier,
     base.IdentificationCode,
     base.AssessmentIdentificationSystemDescriptorId
 FROM dms.edfi_AssessmentAssessmentIdentificationCode base

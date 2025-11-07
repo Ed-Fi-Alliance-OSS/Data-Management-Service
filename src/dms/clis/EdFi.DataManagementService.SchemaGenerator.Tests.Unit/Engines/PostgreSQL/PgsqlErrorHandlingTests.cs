@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
@@ -16,14 +17,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
     [TestFixture]
     public class PgsqlErrorHandlingTests
     {
+        private PgsqlDdlGeneratorStrategy _strategy;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+            _strategy = new PgsqlDdlGeneratorStrategy(logger);
+        }
+
         [Test]
         public void PgsqlGenerator_WithNullSchema_ThrowsNullReferenceException()
         {
             // Arrange
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act & Assert
-            Action act = () => generator.GenerateDdlString(null!, includeExtensions: false);
+            Action act = () => _strategy.GenerateDdlString(null!, includeExtensions: false);
             act.Should().Throw<NullReferenceException>();
         }
 
@@ -32,11 +41,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = new ApiSchema { ProjectSchema = null! };
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act & Assert
-            Action act = () => generator.GenerateDdlString(schema, includeExtensions: false);
-            act.Should().Throw<InvalidDataException>()
+            Action act = () => _strategy.GenerateDdlString(schema, includeExtensions: false);
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -45,10 +54,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = GetSchemaWithEmptyTable();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.emptytableproject_EmptyTable");
@@ -62,10 +70,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = GetSchemaWithSpecialCharacters();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.specialcharsproject_Table_With_Dashes");
@@ -76,10 +83,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = GetSchemaWithLongColumnNames();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().NotBeEmpty();
@@ -121,12 +127,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     BaseName = "EmptyTable",
                                     JsonPath = "$.EmptyTable",
                                     Columns = [], // Empty columns list
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -153,14 +159,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.Table-With-Dashes",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "Column-With-Dashes", ColumnType = "string", MaxLength = "50", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Column-With-Dashes",
+                                            ColumnType = "string",
+                                            MaxLength = "50",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -189,19 +202,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     [
                                         new ColumnMetadata
                                         {
-                                            ColumnName = "VeryLongColumnNameThatExceedsTypicalLimitsAndShouldBeHandledGracefully",
+                                            ColumnName =
+                                                "VeryLongColumnNameThatExceedsTypicalLimitsAndShouldBeHandledGracefully",
                                             ColumnType = "string",
                                             MaxLength = "100",
                                             IsNaturalKey = true,
-                                            IsRequired = true
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
     }

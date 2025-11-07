@@ -7,6 +7,7 @@ using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 {
@@ -20,7 +21,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void PgsqlGenerator_WithEmptyResourceName_HandlesGracefully()
         {
             // Arrange
-            var generator = new PgsqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+            var generator = new PgsqlDdlGeneratorStrategy(logger);
             var apiSchema = new ApiSchema
             {
                 ApiSchemaVersion = "1.0.0",
@@ -45,15 +47,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                         {
                                             ColumnName = "Id",
                                             ColumnType = "int",
-                                            IsRequired = true
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -67,7 +69,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void MssqlGenerator_WithEmptyResourceName_HandlesGracefully()
         {
             // Arrange
-            var generator = new MssqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            var generator = new MssqlDdlGeneratorStrategy(logger);
             var apiSchema = new ApiSchema
             {
                 ApiSchemaVersion = "1.0.0",
@@ -92,15 +95,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                         {
                                             ColumnName = "Id",
                                             ColumnType = "int",
-                                            IsRequired = true
-                                        }
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -114,10 +117,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void DdlGenerationOptions_WithNullSchemaMapping_InitializesCorrectly()
         {
             // Arrange & Act
-            var options = new DdlGenerationOptions
-            {
-                SchemaMapping = null!
-            };
+            var options = new DdlGenerationOptions { SchemaMapping = null! };
 
             // Assert
             options.DefaultSchema.Should().Be("dms");
@@ -127,7 +127,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void PgsqlGenerator_WithMultipleChildTables_GeneratesAllTables()
         {
             // Arrange
-            var generator = new PgsqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+            var generator = new PgsqlDdlGeneratorStrategy(logger);
             var apiSchema = new ApiSchema
             {
                 ApiSchemaVersion = "1.0.0",
@@ -153,8 +154,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             ColumnName = "ParentId",
                                             ColumnType = "int",
                                             IsRequired = true,
-                                            IsNaturalKey = true
-                                        }
+                                            IsNaturalKey = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -168,10 +169,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                                 {
                                                     ColumnName = "Child1Id",
                                                     ColumnType = "int",
-                                                    IsRequired = true
-                                                }
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
+                                            ChildTables = [],
                                         },
                                         new TableMetadata
                                         {
@@ -183,17 +184,17 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                                 {
                                                     ColumnName = "Child2Id",
                                                     ColumnType = "int",
-                                                    IsRequired = true
-                                                }
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -208,7 +209,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void MssqlGenerator_WithMultipleChildTables_GeneratesAllTables()
         {
             // Arrange
-            var generator = new MssqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            var generator = new MssqlDdlGeneratorStrategy(logger);
             var apiSchema = new ApiSchema
             {
                 ApiSchemaVersion = "1.0.0",
@@ -234,8 +236,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             ColumnName = "ParentId",
                                             ColumnType = "int",
                                             IsRequired = true,
-                                            IsNaturalKey = true
-                                        }
+                                            IsNaturalKey = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -249,10 +251,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                                 {
                                                     ColumnName = "Child1Id",
                                                     ColumnType = "int",
-                                                    IsRequired = true
-                                                }
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
+                                            ChildTables = [],
                                         },
                                         new TableMetadata
                                         {
@@ -264,17 +266,17 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                                 {
                                                     ColumnName = "Child2Id",
                                                     ColumnType = "int",
-                                                    IsRequired = true
-                                                }
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -289,7 +291,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void PgsqlGenerator_WithColumnWithoutMaxLength_UsesText()
         {
             // Arrange
-            var generator = new PgsqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+            var generator = new PgsqlDdlGeneratorStrategy(logger);
             var apiSchema = new ApiSchema
             {
                 ApiSchemaVersion = "1.0.0",
@@ -315,15 +318,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             ColumnName = "Description",
                                             ColumnType = "string",
                                             MaxLength = null,
-                                            IsRequired = false
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -337,7 +340,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         public void MssqlGenerator_WithColumnWithoutMaxLength_UsesNVarcharMax()
         {
             // Arrange
-            var generator = new MssqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            var generator = new MssqlDdlGeneratorStrategy(logger);
             var apiSchema = new ApiSchema
             {
                 ApiSchemaVersion = "1.0.0",
@@ -363,15 +367,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             ColumnName = "Description",
                                             ColumnType = "string",
                                             MaxLength = null,
-                                            IsRequired = false
-                                        }
+                                            IsRequired = false,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act

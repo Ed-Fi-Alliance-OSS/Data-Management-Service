@@ -93,7 +93,7 @@ BEGIN
         base.Document_Id,
         base.Document_PartitionKey,
         base.SchoolId,
-        base.CharterApprovalSchoolYear_Id
+        base.CharterApprovalSchoolYear_Id AS CharterApprovalSchoolYearId
     FROM [dms].[edfi_School] base');
     PRINT 'View School_View created.';
 END

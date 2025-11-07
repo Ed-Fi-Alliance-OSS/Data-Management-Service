@@ -7,6 +7,7 @@ using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 {
@@ -16,15 +17,25 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
     [TestFixture]
     public class MssqlDdlGeneratorTests
     {
+        private MssqlDdlGeneratorStrategy _strategy;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            _strategy = new MssqlDdlGeneratorStrategy(logger);
+        }
+
         [Test]
         public void GeneratesIdempotentCreateTable()
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            var _strategy = new MssqlDdlGeneratorStrategy(logger);
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should()
@@ -47,10 +58,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
@@ -62,10 +72,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("[Id] BIGINT PRIMARY KEY IDENTITY(1,1)");
@@ -81,10 +90,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE VIEW [dms].[EducationOrganizationReference] AS");
@@ -100,10 +108,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
 
             // Assert
             sql.Should().NotContain("CREATE OR ALTER VIEW");
@@ -115,10 +122,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("[dms].[testproject_School]");
@@ -136,10 +142,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             // Union views should include key columns and reference the concrete child tables
@@ -156,10 +161,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("[testproject_TestTable]");
@@ -173,10 +177,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE TABLE [dms].[testproject_TestTable]");
@@ -189,10 +192,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE NONCLUSTERED INDEX [IX_TestTable_Document]");
@@ -204,10 +206,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = TestHelpers.GetEmptySchema();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().BeEmpty();
@@ -218,10 +219,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetSchemaWithExtensionTable();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: true);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: true);
 
             // Assert
             sql.Should().Contain("[extensions].[TestExtension]");
@@ -233,10 +233,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetSchemaWithExtensionTable();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().NotContain("TestExtension");
@@ -247,10 +246,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetSchemaWithComplexConstraints();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CONSTRAINT [UQ_ComplexTable_NaturalKey]");
@@ -365,14 +363,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetEdFiSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = true, // Default behavior
             };
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("CREATE TABLE [dms].[edfi_School]");
@@ -384,11 +382,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetEdFiSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+
             var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("EXEC('CREATE SCHEMA [edfi]')");
@@ -448,11 +446,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetEdFiSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+
             var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'edfi')");
@@ -467,11 +465,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetEdFiSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+
             var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'edfi')");
@@ -486,7 +484,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetMultiSchemaApiSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = false,
@@ -494,7 +492,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             };
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("EXEC('CREATE SCHEMA [edfi]')");
@@ -508,11 +506,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetEdFiSchema();
-            var generator = new MssqlDdlGeneratorStrategy();
+
             var options = new DdlGenerationOptions { UsePrefixedTableNames = true };
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().NotContain("EXEC('CREATE SCHEMA");
