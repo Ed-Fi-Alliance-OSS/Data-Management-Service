@@ -218,3 +218,254 @@ Feature: ApiClients endpoints
                     "errors": []
                   }
                   """
+
+        Scenario: 08 Ensure clients can PUT to update an apiClient successfully
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 08",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/dmsInstances" with
+                  """
+                    {
+                        "instanceType": "Test",
+                        "instanceName": "Test DMS Instance 3",
+                        "connectionString": "Server=test3;Database=TestDb3;"
+                    }
+                  """
+              And a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Original Client Name",
+                   "isApproved": false,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a PUT request is made to "/v2/apiClients/{apiClientId}" with
+                  """
+                  {
+                   "id": {apiClientId},
+                   "applicationId": {applicationId},
+                   "name": "Updated Client Name",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             Then it should respond with 204
+
+        Scenario: 09 Verify updated apiClient has correct values
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 09",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/dmsInstances" with
+                  """
+                    {
+                        "instanceType": "Test",
+                        "instanceName": "Test DMS Instance 4",
+                        "connectionString": "Server=test4;Database=TestDb4;"
+                    }
+                  """
+              And a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Original Name",
+                   "isApproved": false,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a PUT request is made to "/v2/apiClients/{apiClientId}" with
+                  """
+                  {
+                   "id": {apiClientId},
+                   "applicationId": {applicationId},
+                   "name": "New Name After Update",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a GET request is made to "/v2/apiClients/{clientId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {apiClientId},
+                    "applicationId": {applicationId},
+                    "clientId": "{clientId}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "New Name After Update",
+                    "isApproved": true,
+                    "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+
+        Scenario: 10 Verify error handling when updating non-existent apiClient
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 10",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a PUT request is made to "/v2/apiClients/99999" with
+                  """
+                  {
+                   "id": 99999,
+                   "applicationId": {applicationId},
+                   "name": "Test Client",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             Then it should respond with 404
+
+        Scenario: 11 Verify error handling when updating apiClient with non-existent application
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 11",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Test Client 11",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a PUT request is made to "/v2/apiClients/{apiClientId}" with
+                  """
+                  {
+                   "id": {apiClientId},
+                   "applicationId": 99999,
+                   "name": "Test Client",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                        "ApplicationId": [
+                            "Application with ID 99999 not found."
+                        ]
+                    },
+                    "errors": []
+                  }
+                  """
+
+        Scenario: 12 Verify error handling when updating apiClient with non-existent DmsInstanceIds
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 12",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Test Client 12",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a PUT request is made to "/v2/apiClients/{apiClientId}" with
+                  """
+                  {
+                   "id": {apiClientId},
+                   "applicationId": {applicationId},
+                   "name": "Test Client",
+                   "isApproved": true,
+                   "dmsInstanceIds": [99999, 88888]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                        "DmsInstanceIds": [
+                            "The following DmsInstanceIds were not found in database: 99999, 88888"
+                        ]
+                    },
+                    "errors": []
+                  }
+                  """
+
+        Scenario: 13 Verify error handling when updating apiClient with empty DmsInstanceIds
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 13",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Test Client 13",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a PUT request is made to "/v2/apiClients/{apiClientId}" with
+                  """
+                  {
+                   "id": {apiClientId},
+                   "applicationId": {applicationId},
+                   "name": "Test Client",
+                   "isApproved": false,
+                   "dmsInstanceIds": []
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                        "DmsInstanceIds": [
+                            "DmsInstanceIds cannot be empty. At least one DMS Instance is required."
+                        ]
+                    },
+                    "errors": []
+                  }
+                  """

@@ -15,8 +15,10 @@ public interface IApiClientRepository
         ApiClientInsertCommand command,
         ApiClientCommand clientCommand
     );
+    Task<ApiClientUpdateResult> UpdateApiClient(ApiClientUpdateCommand command);
     Task<ApiClientQueryResult> QueryApiClient(PagingQuery query);
     Task<ApiClientGetResult> GetApiClientByClientId(string clientId);
+    Task<ApiClientGetResult> GetApiClientById(long id);
 }
 
 public record ApiClientInsertResult
@@ -76,4 +78,32 @@ public record ApiClientGetResult
     /// </summary>
     /// <param name="FailureMessage">The failure message.</param>
     public record FailureUnknown(string FailureMessage) : ApiClientGetResult();
+}
+
+public record ApiClientUpdateResult
+{
+    /// <summary>
+    /// Successful update.
+    /// </summary>
+    public record Success() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// ApiClient not found.
+    /// </summary>
+    public record FailureNotFound() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// Referenced application not found exception thrown and caught
+    /// </summary>
+    public record FailureApplicationNotFound() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// Referenced DMS instance not found exception thrown and caught
+    /// </summary>
+    public record FailureDmsInstanceNotFound() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApiClientUpdateResult();
 }
