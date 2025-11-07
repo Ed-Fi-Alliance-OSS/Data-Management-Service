@@ -1,4 +1,4 @@
-Give me more detail on the Resource document schemas problem
+## 2025-11-06-15-53 Give me more detail on the Resource document schemas problem
 
 
 • Here’s the deeper dive on the Resource document schema compilation problem.
@@ -120,6 +120,88 @@ Give me more detail on the Resource document schemas problem
 
   - Precompute compiled Insert/Update schemas at ApiSchema load (and on reload), storing them alongside ResourceSchema. This
     eliminates all per-request compilation and stringification completely.
+
+
+
+
+### Followup: What is LOH stress?
+
+
+• LOH stress = Large Object Heap pressure in .NET.
+
+  What it is
+
+  - The Large Object Heap holds objects ≥ ~85,000 bytes (mostly large strings and arrays).
+  - LOH objects are collected with Gen2 GCs and are historically not compacted by default; fragmentation accumulates.
+  - Frequent large allocations cause LOH growth, more Gen2 GCs, longer pauses, and memory spikes.
+
+  Why it hurts
+
+  - Big objects are expensive to allocate/zero; fragmentation leaves unusable free regions.
+  - More Gen2 collections increase latency (visible in p95/p99) and CPU.
+  - If allocations outpace reclamation, process working set balloons (risking OOM on constrained nodes).
+
+  How to spot it
+
+  - Counters: rising alloc-rate with frequent Gen2 GCs (System.Runtime[alloc-rate, gen-2-gc-count]) and growing gc-heap-size under steady load.
+  - Traces: GCAllocationTick events showing LargeObject allocations (dotnet-trace) and visible LOH activity in PerfView/PerfCollect.
+  - Dumps: dotnet-gcdump analyze → large types (System.String, byte[], char[]) dominating size.
+
+  Where DMS triggers LOH today
+
+  - Serializing entire JSON payloads to strings:
+      - Response: JsonSerializer.Serialize(..., WriteIndented = true) then Results.Content(...).
+      - Document validation: stringify schema JsonNode and compile every request (JsonSchema.FromText).
+      - Prune steps: ToJsonString() then JsonNode.Parse(...) loops.
+  - Building large in-memory result arrays: SQL GetAllDocumentsByResourceName → JsonNode list, then re-serialize to response.
+  - Reading bodies into strings for POST/PUT instead of streaming/Span-based readers.
+
+  Mitigations that reduce LOH pressure
+
+  - Stream JSON directly to the response with Utf8JsonWriter; avoid creating big intermediary strings.
+  - Use Results.Json (writes UTF-8 directly) and disable pretty printing.
+  - Parse with HttpRequest.BodyReader + Utf8JsonReader/JsonDocument; avoid body-as-string.
+  - Cache compiled JsonSchema per (resource, method, ReloadId) to stop per-request schema stringification/compilation.
+  - Avoid stringify+parse in pruning; mutate JsonNode (or move to JsonDocument + targeted edits) and re-evaluate.
+  - For large queries, stream rows to the response (or NDJSON) instead of materializing JsonArray.
+  - Pool buffers (ArrayPool<byte>.Shared) for transient large byte[] needs, where applicable.
+
+  Expected impact
+
+  - Lower alloc-rate, fewer Gen2 GCs, flatter memory profile under load.
+  - Reduced CPU and GC pause time → better p95/p99 latency and higher stable RPS.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+TODO:
+
+
 
     Initial GPT5-CODEX - The 15-14 plan
     codex resume 019a5aec-03a8-7921-a925-cfa6dd1ec1e6
