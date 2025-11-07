@@ -16,6 +16,7 @@ public interface IApiClientRepository
         ApiClientCommand clientCommand
     );
     Task<ApiClientUpdateResult> UpdateApiClient(ApiClientUpdateCommand command);
+    Task<ApiClientDeleteResult> DeleteApiClient(long id);
     Task<ApiClientQueryResult> QueryApiClient(PagingQuery query);
     Task<ApiClientGetResult> GetApiClientByClientId(string clientId);
     Task<ApiClientGetResult> GetApiClientById(long id);
@@ -106,4 +107,22 @@ public record ApiClientUpdateResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApiClientUpdateResult();
+}
+
+public record ApiClientDeleteResult
+{
+    /// <summary>
+    /// Successful delete.
+    /// </summary>
+    public record Success() : ApiClientDeleteResult();
+
+    /// <summary>
+    /// ApiClient not found.
+    /// </summary>
+    public record FailureNotFound() : ApiClientDeleteResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApiClientDeleteResult();
 }

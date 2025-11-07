@@ -24,6 +24,7 @@ public class ApiClientModule : IEndpointModule
     {
         endpoints.MapSecuredPost("/v2/apiClients/", InsertApiClient);
         endpoints.MapSecuredPut($"/v2/apiClients/{{id}}", UpdateApiClient);
+        endpoints.MapSecuredDelete($"/v2/apiClients/{{id}}", DeleteApiClient);
         // Limited access endpoints - accessible by service accounts for internal DMS operations
         endpoints.MapLimitedAccess("/v2/apiClients/", GetAll);
         endpoints.MapLimitedAccess("/v2/apiClients/{clientId}", GetByClientId);
@@ -399,5 +400,81 @@ public class ApiClientModule : IEndpointModule
 
         logger.LogError("Failure updating client");
         return FailureResults.Unknown(httpContext.TraceIdentifier);
+    }
+
+    private async Task<IResult> DeleteApiClient(
+        long id,
+        HttpContext httpContext,
+        IApiClientRepository apiClientRepository,
+        IIdentityProviderRepository identityProviderRepository,
+        ILogger<ApiClientModule> logger
+    )
+    {
+        logger.LogDebug("Entering DeleteApiClient for id: {Id}", SanitizeForLog(id.ToString()));
+
+        // Get the API client to retrieve the ClientUuid for identity provider deletion
+        ApiClientGetResult getResult = await apiClientRepository.GetApiClientById(id);
+        if (getResult is not ApiClientGetResult.Success getSuccess)
+        {
+            return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+        }
+
+        ApiClientResponse apiClient = getSuccess.ApiClientResponse;
+
+        // Delete from identity provider first
+        try
+        {
+            logger.LogInformation("Deleting client {clientId}", SanitizeForLog(apiClient.ClientId));
+            var clientDeleteResult = await identityProviderRepository.DeleteClientAsync(
+                apiClient.ClientUuid.ToString()
+            );
+
+            switch (clientDeleteResult)
+            {
+                case ClientDeleteResult.FailureUnknown failureUnknown:
+                    logger.LogError(
+                        "Error deleting client {clientId} {clientUuid}: {failureMessage}",
+                        SanitizeForLog(apiClient.ClientId),
+                        SanitizeForLog(apiClient.ClientUuid.ToString()),
+                        SanitizeForLog(failureUnknown.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                case ClientDeleteResult.FailureIdentityProvider failureIdentityProvider:
+                    logger.LogError(
+                        "Error deleting client from identity provider: {failureMessage}",
+                        SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
+                    );
+                    return FailureResults.BadGateway(
+                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                        httpContext.TraceIdentifier
+                    );
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                "Error deleting client {clientId} {clientUuid}: {message}",
+                SanitizeForLog(apiClient.ClientId),
+                SanitizeForLog(apiClient.ClientUuid.ToString()),
+                SanitizeForLog(ex.Message)
+            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+
+        // Delete from database
+        ApiClientDeleteResult deleteResult = await apiClientRepository.DeleteApiClient(id);
+
+        return deleteResult switch
+        {
+            ApiClientDeleteResult.Success => Results.NoContent(),
+            ApiClientDeleteResult.FailureNotFound => FailureResults.NotFound(
+                "ApiClient not found",
+                httpContext.TraceIdentifier
+            ),
+            ApiClientDeleteResult.FailureUnknown unknown => FailureResults.Unknown(
+                httpContext.TraceIdentifier
+            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
     }
 }

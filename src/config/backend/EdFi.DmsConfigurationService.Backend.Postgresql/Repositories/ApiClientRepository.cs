@@ -305,4 +305,39 @@ public class ApiClientRepository(
             return new ApiClientUpdateResult.FailureUnknown(ex.Message);
         }
     }
+
+    public async Task<ApiClientDeleteResult> DeleteApiClient(long id)
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            // Check if ApiClient exists
+            string checkSql = "SELECT COUNT(1) FROM dmscs.ApiClient WHERE Id = @Id;";
+            int exists = await connection.ExecuteScalarAsync<int>(checkSql, new { Id = id });
+            if (exists == 0)
+            {
+                await transaction.RollbackAsync();
+                return new ApiClientDeleteResult.FailureNotFound();
+            }
+
+            // Delete DMS instance mappings first (due to foreign key constraint)
+            string deleteMappingsSql = "DELETE FROM dmscs.ApiClientDmsInstance WHERE ApiClientId = @Id;";
+            await connection.ExecuteAsync(deleteMappingsSql, new { Id = id });
+
+            // Delete ApiClient record
+            string deleteSql = "DELETE FROM dmscs.ApiClient WHERE Id = @Id;";
+            await connection.ExecuteAsync(deleteSql, new { Id = id });
+
+            await transaction.CommitAsync();
+            return new ApiClientDeleteResult.Success();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Delete ApiClient failure");
+            await transaction.RollbackAsync();
+            return new ApiClientDeleteResult.FailureUnknown(ex.Message);
+        }
+    }
 }

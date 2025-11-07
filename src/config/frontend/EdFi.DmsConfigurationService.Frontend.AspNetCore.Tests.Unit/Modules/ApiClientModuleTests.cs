@@ -179,6 +179,12 @@ public class ApiClientModuleTests
 
             A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
                 .Returns(new ApiClientUpdateResult.Success());
+
+            A.CallTo(() => _apiClientRepository.DeleteApiClient(A<long>.Ignored))
+                .Returns(new ApiClientDeleteResult.Success());
+
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Returns(new ClientDeleteResult.Success());
         }
 
         [Test]
@@ -224,11 +230,14 @@ public class ApiClientModuleTests
                 )
             );
 
+            var deleteResponse = await client.DeleteAsync("/v2/apiClients/1");
+
             // Assert
             insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
             getAllResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             getByClientIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
         }
     }
 
@@ -311,6 +320,9 @@ public class ApiClientModuleTests
 
             A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
                 .Returns(new ApiClientUpdateResult.FailureNotFound());
+
+            A.CallTo(() => _apiClientRepository.DeleteApiClient(A<long>.Ignored))
+                .Returns(new ApiClientDeleteResult.FailureNotFound());
         }
 
         [Test]
@@ -352,6 +364,19 @@ public class ApiClientModuleTests
 
             // Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_returns_not_found_for_delete()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var deleteResponse = await client.DeleteAsync("/v2/apiClients/999");
+
+            // Assert
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
     }
 
@@ -449,6 +474,12 @@ public class ApiClientModuleTests
 
             A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
                 .Returns(new ApiClientUpdateResult.FailureUnknown("Database error"));
+
+            A.CallTo(() => _apiClientRepository.DeleteApiClient(A<long>.Ignored))
+                .Returns(new ApiClientDeleteResult.FailureUnknown("Database error"));
+
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .Returns(new ClientDeleteResult.Success());
         }
 
         [Test]
@@ -494,11 +525,14 @@ public class ApiClientModuleTests
                 )
             );
 
+            var deleteResponse = await client.DeleteAsync("/v2/apiClients/1");
+
             // Assert
             insertResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             getAllResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             getByIdResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         }
     }
 

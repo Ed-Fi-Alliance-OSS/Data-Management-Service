@@ -469,3 +469,61 @@ Feature: ApiClients endpoints
                     "errors": []
                   }
                   """
+
+        Scenario: 14 Ensure clients can DELETE an apiClient successfully
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 14",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Client To Delete",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a DELETE request is made to "/v2/apiClients/{apiClientId}"
+             Then it should respond with 204
+
+        Scenario: 15 Verify deleted apiClient no longer exists
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 15",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Client To Delete 2",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a DELETE request is made to "/v2/apiClients/{apiClientId}"
+             When a GET request is made to "/v2/apiClients/{clientId}"
+             Then it should respond with 404
+
+        Scenario: 16 Verify error handling when deleting non-existent apiClient
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 16",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a DELETE request is made to "/v2/apiClients/99999"
+             Then it should respond with 404
