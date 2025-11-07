@@ -21,6 +21,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
         public bool SkipUnionViews { get; set; } = false;
 
         /// <summary>
+        /// Whether to skip generating natural key resolution views.
+        /// When false (default), creates views that expose natural keys for all flattened tables.
+        /// </summary>
+        public bool SkipNaturalKeyViews { get; set; } = false;
+
+        /// <summary>
         /// Whether to use prefixed table names instead of separate schemas.
         /// When true, generates tables as dms.{schema}_{table} instead of {schema}.{table}.
         /// </summary>
@@ -42,11 +48,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
         public bool IncludeAuditColumns { get; set; } = true;
 
         /// <summary>
-        /// Whether to generate inferred foreign keys in a separate file.
-        /// When false (default), inferred FKs are appended to the main DDL file.
-        /// When true, inferred FKs are generated in a separate file with '02_' prefix.
+        /// Whether to skip generating descriptor foreign key constraints.
+        /// When false (default), descriptor FKs are generated.
+        /// When true, descriptor FK generation is skipped.
         /// </summary>
-        public bool SeparateInferredFks { get; set; } = false;
+        public bool SkipDescriptorFk { get; set; } = false;
 
         /// <summary>
         /// Schema mappings for projects. Key is project name, value is database schema name.

@@ -677,47 +677,5 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Optionally check output files exist
             Directory.GetFiles(outputDir).Should().NotBeEmpty();
         }
-
-        [Test]
-        public async Task Main_WithSeparateInferredFksFlag_ShouldReturnZero()
-        {
-            // Arrange
-            var apiSchema = CreateValidApiSchema();
-            var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(
-                inputFile,
-                JsonSerializer.Serialize(
-                    apiSchema,
-                    new JsonSerializerOptions
-                    {
-                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                        WriteIndented = true,
-                    }
-                )
-            );
-
-            var outputDir = Path.Combine(_tempDirectory, "output");
-            Directory.CreateDirectory(outputDir);
-
-            var args = new[]
-            {
-                "--input",
-                inputFile,
-                "--output",
-                outputDir,
-                "--infer-fks",
-                "--separate-inferred-fks",
-            };
-
-            // Act
-            var result = await Program.Main(args);
-
-            // Assert
-            result.Should().Be(0);
-            // Optionally check output files exist and are split
-            var files = Directory.GetFiles(outputDir);
-            files.Should().Contain(f => f.Contains("01_"));
-            files.Should().Contain(f => f.Contains("02_"));
-        }
     }
 }

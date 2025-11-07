@@ -225,7 +225,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             }
 
             // PASS 3: Generate natural key resolution views
-            if (!options.SkipUnionViews) // Reuse this flag for view generation control
+            if (!options.SkipNaturalKeyViews)
             {
                 var naturalKeyViewTemplatePath = Path.Combine(
                     AppContext.BaseDirectory,
@@ -2087,9 +2087,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
         }
 
         /// <summary>
-        /// Generates inferred foreign key constraints for PostgreSQL.
+        /// Generates only descriptor foreign key constraints for PostgreSQL.
         /// </summary>
-        public string? GenerateInferredForeignKeys(ApiSchema apiSchema, DdlGenerationOptions options)
+        public string? GenerateDescriptorForeignKeys(ApiSchema apiSchema, DdlGenerationOptions options)
         {
             if (apiSchema.ProjectSchema?.ResourceSchemas == null)
             {
@@ -2098,195 +2098,66 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
 
             var sb = new StringBuilder();
             sb.AppendLine("-- =====================================================");
-            sb.AppendLine("-- Inferred Foreign Key Constraints Generator (PostgreSQL)");
+            sb.AppendLine("-- Descriptor Foreign Key Constraints Generator (PostgreSQL)");
             sb.AppendLine("-- This script scans all tables and creates FK constraints");
-            sb.AppendLine("-- based on unique constraint patterns.");
-            sb.AppendLine("-- NOTE: This does NOT include Document or Descriptor FKs,");
-            sb.AppendLine("-- as those are already handled by the main DDL generator.");
+            sb.AppendLine("-- for descriptor columns only.");
             sb.AppendLine("-- =====================================================");
             sb.AppendLine();
 
-            // Load the Handlebars template
-            var templatePath = Path.Combine(AppContext.BaseDirectory, "Templates", "pgsql-inferred-fk.hbs");
-            if (!File.Exists(templatePath))
-            {
-                templatePath = Path.Combine(
-                    Directory.GetCurrentDirectory(),
-                    "Templates",
-                    "pgsql-inferred-fk.hbs"
-                );
-            }
-
-            var templateContent = File.ReadAllText(templatePath);
-            var template = Handlebars.Compile(templateContent);
-
-            // Build metadata about all physical tables
-            var tableMetadataMap = BuildInferredFkTableMetadata(apiSchema, options);
-
-            // Generate FK constraints for each table
-            foreach (var sourceTable in tableMetadataMap.Values)
-            {
-                GenerateInferredForeignKeysForTable(sourceTable, tableMetadataMap, sb, template, options);
-            }
-
-            return sb.ToString();
-        }
-
-        private Dictionary<string, InferredFkTableMetadata> BuildInferredFkTableMetadata(
-            ApiSchema apiSchema,
-            DdlGenerationOptions options
-        )
-        {
-            var result = new Dictionary<string, InferredFkTableMetadata>(StringComparer.OrdinalIgnoreCase);
-
-            // Process all resource schemas
-            foreach (var kvp in apiSchema.ProjectSchema!.ResourceSchemas!)
+            foreach (var kvp in apiSchema.ProjectSchema.ResourceSchemas)
             {
                 var resourceSchema = kvp.Value;
-                if (resourceSchema.FlatteningMetadata?.Table != null)
-                {
-                    // Skip extensions if not requested
-                    if (
-                        !options.IncludeExtensions && resourceSchema.FlatteningMetadata.Table.IsExtensionTable
-                    )
-                    {
-                        continue;
-                    }
-
-                    ProcessInferredFkTableHierarchy(
-                        resourceSchema.FlatteningMetadata.Table,
-                        resourceSchema,
-                        apiSchema.ProjectSchema,
-                        options,
-                        result
-                    );
-                }
-            }
-
-            return result;
-        }
-
-        private void ProcessInferredFkTableHierarchy(
-            TableMetadata table,
-            ResourceSchema resourceSchema,
-            ProjectSchema projectSchema,
-            DdlGenerationOptions options,
-            Dictionary<string, InferredFkTableMetadata> result
-        )
-        {
-            // Skip descriptor/document tables - they have explicit FKs in main DDL
-            if (
-                table.BaseName.EndsWith("Descriptor", StringComparison.OrdinalIgnoreCase)
-                || table.BaseName.EndsWith("Document", StringComparison.OrdinalIgnoreCase)
-            )
-            {
-                return;
-            }
-
-            // Get the original (logical) schema name for prefixing logic
-            var originalSchemaName = GetOriginalSchemaName(projectSchema, resourceSchema, options);
-            var schemaName = DetermineSchemaName(projectSchema, resourceSchema, options);
-            var tableName = DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options);
-
-            // Extract columns that could be FK candidates (ending with _Id)
-            var fkCandidateColumns =
-                table
-                    .Columns?.Where(c =>
-                        !c.IsParentReference
-                        && !string.IsNullOrEmpty(c.ColumnName)
-                        && c.ColumnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase)
-                        && !c.ColumnName.EndsWith("Document_Id", StringComparison.OrdinalIgnoreCase)
-                        && !c.ColumnName.EndsWith("Descriptor_Id", StringComparison.OrdinalIgnoreCase)
-                    )
-                    .Select(c => new InferredFkColumnInfo
-                    {
-                        ColumnName = c.ColumnName!,
-                        ReferencedTableBaseName = c.ColumnName!.Substring(0, c.ColumnName.Length - 3),
-                    })
-                    .ToList() ?? new List<InferredFkColumnInfo>();
-
-            // Check if this table has an "Id" column that's a natural key (unique constraint)
-            // OR if the table has at least one natural key column (which forms a unique constraint)
-            var hasIdConstraint = table.Columns?.Any(c => c.IsNaturalKey) ?? false;
-
-            var metadata = new InferredFkTableMetadata
-            {
-                TableName = tableName,
-                BaseName = table.BaseName,
-                SchemaName = schemaName,
-                FkCandidateColumns = fkCandidateColumns,
-                HasIdUniqueConstraint = hasIdConstraint,
-            };
-
-            result[table.BaseName] = metadata;
-
-            // Recursively process child tables
-            foreach (var childTable in table.ChildTables ?? Enumerable.Empty<TableMetadata>())
-            {
-                ProcessInferredFkTableHierarchy(childTable, resourceSchema, projectSchema, options, result);
-            }
-        }
-
-        private void GenerateInferredForeignKeysForTable(
-            InferredFkTableMetadata sourceTable,
-            Dictionary<string, InferredFkTableMetadata> allTables,
-            StringBuilder sb,
-            HandlebarsTemplate<object, object> template,
-            DdlGenerationOptions options
-        )
-        {
-            sb.AppendLine($"-- Foreign Keys for {sourceTable.SchemaName}.{sourceTable.TableName}");
-            sb.AppendLine();
-
-            foreach (var column in sourceTable.FkCandidateColumns)
-            {
-                // Skip Document and Descriptor references - handled by main DDL generator
-                if (
-                    column.ReferencedTableBaseName.Equals("Document", StringComparison.OrdinalIgnoreCase)
-                    || column.ReferencedTableBaseName.Equals("Descriptor", StringComparison.OrdinalIgnoreCase)
-                )
+                var table = resourceSchema.FlatteningMetadata?.Table;
+                if (table == null)
                 {
                     continue;
                 }
+                var originalSchemaName = GetOriginalSchemaName(
+                    apiSchema.ProjectSchema,
+                    resourceSchema,
+                    options
+                );
+                var finalSchemaName = ShouldUseSeparateSchema(originalSchemaName, options, resourceSchema)
+                    ? originalSchemaName
+                    : options.ResolveSchemaName(null);
+                var tableName = DetermineTableName(
+                    table.BaseName,
+                    originalSchemaName,
+                    resourceSchema,
+                    options
+                );
 
-                // Look for a matching table
-                if (allTables.TryGetValue(column.ReferencedTableBaseName, out var targetTable))
+                foreach (
+                    var descriptorCol in table.Columns.Where(c =>
+                        string.Equals(c.ColumnType, "descriptor", StringComparison.OrdinalIgnoreCase)
+                    )
+                )
                 {
-                    // Only create FK if target table has an Id unique constraint
-                    if (targetTable.HasIdUniqueConstraint)
-                    {
-                        var constraintName =
-                            $"FK_{sourceTable.TableName}_{column.ReferencedTableBaseName}".ToLower();
-
-                        var templateData = new
-                        {
-                            constraintName,
-                            sourceSchemaName = sourceTable.SchemaName,
-                            sourceTableName = sourceTable.TableName.ToLower(),
-                            sourceColumnName = column.ColumnName.ToLower(),
-                            targetSchemaName = targetTable.SchemaName,
-                            targetTableName = targetTable.TableName.ToLower(),
-                        };
-
-                        sb.Append(template(templateData));
-                    }
+                    var descriptorTable = tableName.StartsWith("edfi_", StringComparison.OrdinalIgnoreCase)
+                        ? "dms.edfi_descriptor"
+                        : "dms.descriptor";
+                    var constraintName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                        $"FK_{table.BaseName}_{descriptorCol.ColumnName}_Descriptor"
+                    );
+                    sb.AppendLine($"DO $$");
+                    sb.AppendLine($"BEGIN");
+                    sb.AppendLine(
+                        $"        IF NOT EXISTS (\n            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('{constraintName}')\n        ) THEN"
+                    );
+                    sb.AppendLine(
+                        $"            ALTER TABLE {finalSchemaName}.{tableName} ADD CONSTRAINT {constraintName}"
+                    );
+                    sb.AppendLine(
+                        $"                FOREIGN KEY ({PgsqlNamingHelper.MakePgsqlIdentifier(descriptorCol.ColumnName)})"
+                    );
+                    sb.AppendLine($"                REFERENCES {descriptorTable}(Id);");
+                    sb.AppendLine($"        END IF;");
+                    sb.AppendLine($"END$$;");
+                    sb.AppendLine();
                 }
             }
-        }
 
-        private class InferredFkTableMetadata
-        {
-            public string TableName { get; set; } = string.Empty;
-            public string BaseName { get; set; } = string.Empty;
-            public string SchemaName { get; set; } = string.Empty;
-            public List<InferredFkColumnInfo> FkCandidateColumns { get; set; } = new();
-            public bool HasIdUniqueConstraint { get; set; }
-        }
-
-        private class InferredFkColumnInfo
-        {
-            public string ColumnName { get; set; } = string.Empty;
-            public string ReferencedTableBaseName { get; set; } = string.Empty;
+            return sb.ToString();
         }
     }
 }
