@@ -1,0 +1,10 @@
+﻿-- =====================================================
+-- Inferred Foreign Key Constraints Generator (PostgreSQL)
+-- This script scans all tables and creates FK constraints
+-- based on unique constraint patterns.
+-- NOTE: This does NOT include Document or Descriptor FKs,
+-- as those are already handled by the main DDL generator.
+-- =====================================================
+
+-- Foreign Keys for dms.edfi_Assessment
+

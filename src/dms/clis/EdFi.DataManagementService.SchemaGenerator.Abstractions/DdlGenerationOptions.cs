@@ -42,17 +42,25 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
         public bool IncludeAuditColumns { get; set; } = true;
 
         /// <summary>
+        /// Whether to generate inferred foreign keys in a separate file.
+        /// When false (default), inferred FKs are appended to the main DDL file.
+        /// When true, inferred FKs are generated in a separate file with '02_' prefix.
+        /// </summary>
+        public bool SeparateInferredFks { get; set; } = false;
+
+        /// <summary>
         /// Schema mappings for projects. Key is project name, value is database schema name.
         /// If not specified, defaults to 'dms' for all projects.
         /// </summary>
-        public Dictionary<string, string> SchemaMapping { get; set; } = new()
-        {
-            ["EdFi"] = "edfi",
-            ["ed-fi"] = "edfi",  // Handle both variations of Ed-Fi naming
-            ["Sample"] = "sample",
-            ["TPDM"] = "tpdm",
-            ["Extensions"] = "extensions"
-        };
+        public Dictionary<string, string> SchemaMapping { get; set; } =
+            new()
+            {
+                ["EdFi"] = "edfi",
+                ["ed-fi"] = "edfi", // Handle both variations of Ed-Fi naming
+                ["Sample"] = "sample",
+                ["TPDM"] = "tpdm",
+                ["Extensions"] = "extensions",
+            };
 
         /// <summary>
         /// Default schema name to use when project is not found in SchemaMapping.
@@ -90,7 +98,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
 
             // Try case-insensitive match
             var key = SchemaMapping.Keys.FirstOrDefault(k =>
-                string.Equals(k, projectName, StringComparison.OrdinalIgnoreCase));
+                string.Equals(k, projectName, StringComparison.OrdinalIgnoreCase)
+            );
 
             if (key != null)
             {
@@ -98,8 +107,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
             }
 
             // Check if it's an extension project (contains "Extension" or ends with "Ext")
-            if (projectName.Contains("Extension", StringComparison.OrdinalIgnoreCase) ||
-                projectName.EndsWith("Ext", StringComparison.OrdinalIgnoreCase))
+            if (
+                projectName.Contains("Extension", StringComparison.OrdinalIgnoreCase)
+                || projectName.EndsWith("Ext", StringComparison.OrdinalIgnoreCase)
+            )
             {
                 return SchemaMapping.GetValueOrDefault("Extensions", DefaultSchema);
             }
@@ -133,7 +144,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
 
             // Try case-insensitive match
             var key = SchemaMapping.Keys.FirstOrDefault(k =>
-                string.Equals(k, projectName, StringComparison.OrdinalIgnoreCase));
+                string.Equals(k, projectName, StringComparison.OrdinalIgnoreCase)
+            );
 
             if (key != null)
             {
@@ -141,8 +153,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Abstractions
             }
 
             // Check if it's an extension project (contains "Extension" or ends with "Ext")
-            if (projectName.Contains("Extension", StringComparison.OrdinalIgnoreCase) ||
-                projectName.EndsWith("Ext", StringComparison.OrdinalIgnoreCase))
+            if (
+                projectName.Contains("Extension", StringComparison.OrdinalIgnoreCase)
+                || projectName.EndsWith("Ext", StringComparison.OrdinalIgnoreCase)
+            )
             {
                 var extensionSchema = SchemaMapping.GetValueOrDefault("Extensions", "extensions");
                 return extensionSchema + "_";

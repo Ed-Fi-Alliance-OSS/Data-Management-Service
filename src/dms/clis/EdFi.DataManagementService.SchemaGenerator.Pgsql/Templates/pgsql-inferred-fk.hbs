@@ -1,0 +1,30 @@
+-- Check if FK constraint {{constraintName}} already exists
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints tc
+        WHERE tc.constraint_name = '{{constraintName}}'
+        AND tc.table_schema = '{{sourceSchemaName}}'
+        AND tc.constraint_type = 'FOREIGN KEY'
+    ) THEN
+        -- Verify referenced table exists
+        IF EXISTS (
+            SELECT 1 FROM information_schema.tables t
+            WHERE t.table_name = '{{targetTableName}}'
+            AND t.table_schema = '{{targetSchemaName}}'
+        ) THEN
+            ALTER TABLE "{{sourceSchemaName}}"."{{sourceTableName}}"
+            ADD CONSTRAINT "{{constraintName}}"
+            FOREIGN KEY ("{{sourceColumnName}}")
+            REFERENCES "{{targetSchemaName}}"."{{targetTableName}}"("id");
+
+            RAISE NOTICE 'Created FK constraint: {{constraintName}}';
+        ELSE
+            RAISE NOTICE 'Skipped FK constraint {{constraintName}}: Referenced table does not exist';
+        END IF;
+    ELSE
+        RAISE NOTICE 'FK constraint {{constraintName}} already exists';
+    END IF;
+END $$;
+
+

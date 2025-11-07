@@ -157,6 +157,22 @@ EdFi.DataManagementService.SchemaGenerator.Cli \
   -e \
   --prefixed-tables
 
+# Generate with inferred foreign key constraints (integrated into main DDL)
+EdFi.DataManagementService.SchemaGenerator.Cli \
+  --input schema.json \
+  --output ./ddl \
+  --provider postgresql \
+  --infer-fks
+
+# Generate with inferred foreign keys in separate file
+# Creates: 01_EdFi-DMS-Database-Schema-*.sql and 02_EdFi-DMS-Inferred-ForeignKeys-*.sql
+EdFi.DataManagementService.SchemaGenerator.Cli \
+  --input schema.json \
+  --output ./ddl \
+  --provider postgresql \
+  --infer-fks \
+  --separate-inferred-fks
+
 # Skip union views for better performance using URL
 EdFi.DataManagementService.SchemaGenerator.Cli \
   --url https://<api>/schema.json \
@@ -183,6 +199,8 @@ EdFi.DataManagementService.SchemaGenerator.Cli \
 | `--skip-union-views` | `-s` | Skip generation of union views for polymorphic references | `false` |
 | `--use-schemas` | - | Generate separate database schemas (edfi, tpdm, etc.) | `false` |
 | `--use-prefixed-names` | - | Use prefixed table names in dms schema | `true` |
+| `--infer-fks` | - | Generate inferred foreign key constraints for natural key columns | `true` |
+| `--separate-inferred-fks` | - | Generate inferred FKs in separate file (requires `--infer-fks`) | `false` |
 | `--help` | `-h` | Display help information | - |
 
 ### Provider Aliases
@@ -204,7 +222,9 @@ You can configure default settings in `appsettings.json`:
     "DatabaseProvider": "all",
     "IncludeExtensions": false,
     "SkipUnionViews": false,
-    "UsePrefixedTableNames": true
+    "UsePrefixedTableNames": true,
+    "GenerateInferredForeignKeys": true,
+    "SeparateInferredForeignKeys": false
   },
   "Logging": {
     "LogFilePath": "logs/SchemaGenerator.log",
@@ -257,11 +277,21 @@ The CLI generates the following output files:
 - **Content**: Complete PostgreSQL DDL with tables, indexes, constraints, and views
 - **Features**: Optimized data types, proper constraints, decimal precision support
 
+**With Inferred FKs (Separate Mode)**:
+
+- **File 1**: `01_EdFi-DMS-Database-Schema-PostgreSQL.sql` - Main schema DDL
+- **File 2**: `02_EdFi-DMS-Inferred-ForeignKeys-PostgreSQL.sql` - Inferred FK constraints
+
 ### SQL Server
 
 - **File**: `EdFi-DMS-Database-Schema-SQLServer.sql`
 - **Content**: Complete SQL Server DDL with tables, indexes, constraints, and views
 - **Features**: MSSQL-specific data types, proper constraints, decimal precision support
+
+**With Inferred FKs (Separate Mode)**:
+
+- **File 1**: `01_EdFi-DMS-Database-Schema-SQLServer.sql` - Main schema DDL
+- **File 2**: `02_EdFi-DMS-Inferred-ForeignKeys-SQLServer.sql` - Inferred FK constraints
 
 ### Log Files
 
@@ -277,6 +307,19 @@ The CLI generates the following output files:
 - **Extension Tables**: Optional extension entity tables
 - **Descriptors**: Enumeration/lookup tables
 - **Reference Tables**: Foreign key reference validation
+
+### Inferred Foreign Keys
+
+The generator can automatically infer natural key foreign key relationships based
+on column naming conventions:
+
+- **Pattern**: Columns named `{Entity}_Id` reference `{Entity}` table's primary key
+- **Example**: `Student_Id` → `Student(id)`, `School_Id` → `School(id)`
+- **Exclusions**: `Document_Id` and `Descriptor_Id` columns are excluded from inference
+- **Modes**:
+  - **Integrated** (default): FKs appended to main DDL file
+  - **Separate**: FKs in separate file with `02_` prefix for controlled application
+- **Usage**: Enable with `--infer-fks`, separate with `--separate-inferred-fks`
 
 ### Data Types
 
