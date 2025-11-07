@@ -81,6 +81,15 @@ ELSE
     PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization already exists, skipped.';
 GO
 
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_CommunityOrganizationEducationOrganizationIdentificationCode_EducationOrganizationIdentificationSystemDescriptorId_Descriptor')
+BEGIN
+    ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_EducationOrganizationIdentificationSystemDescriptorId_Descriptor] FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptorId]) REFERENCES [dms].[edfi_Descriptor]([Id]);
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_EducationOrganizationIdentificationSystemDescriptorId_Descriptor created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_EducationOrganizationIdentificationSystemDescriptorId_Descriptor already exists, skipped.';
+GO
+
 IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document')
 BEGIN
     ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);

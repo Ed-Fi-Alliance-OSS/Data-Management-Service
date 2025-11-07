@@ -1,0 +1,74 @@
+﻿-- =====================================================
+-- Inferred Foreign Key Constraints Generator (PostgreSQL)
+-- This script scans all tables and creates FK constraints
+-- based on unique constraint patterns.
+-- NOTE: This does NOT include Document or Descriptor FKs,
+-- as those are already handled by the main DDL generator.
+-- =====================================================
+
+-- Foreign Keys for dms.edfi_Student
+
+-- Foreign Keys for dms.edfi_School
+
+-- Foreign Keys for dms.edfi_StudentSchoolAssociation
+
+-- Check if FK constraint fk_edfi_studentschoolassociation_student already exists
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints tc
+        WHERE tc.constraint_name = 'fk_edfi_studentschoolassociation_student'
+        AND tc.table_schema = 'dms'
+        AND tc.constraint_type = 'FOREIGN KEY'
+    ) THEN
+        -- Verify referenced table exists
+        IF EXISTS (
+            SELECT 1 FROM information_schema.tables t
+            WHERE t.table_name = 'edfi_student'
+            AND t.table_schema = 'dms'
+        ) THEN
+            ALTER TABLE "dms"."edfi_studentschoolassociation"
+            ADD CONSTRAINT "fk_edfi_studentschoolassociation_student"
+            FOREIGN KEY ("student_id")
+            REFERENCES "dms"."edfi_student"("id");
+
+            RAISE NOTICE 'Created FK constraint: fk_edfi_studentschoolassociation_student';
+        ELSE
+            RAISE NOTICE 'Skipped FK constraint fk_edfi_studentschoolassociation_student: Referenced table does not exist';
+        END IF;
+    ELSE
+        RAISE NOTICE 'FK constraint fk_edfi_studentschoolassociation_student already exists';
+    END IF;
+END $$;
+
+
+-- Check if FK constraint fk_edfi_studentschoolassociation_school already exists
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints tc
+        WHERE tc.constraint_name = 'fk_edfi_studentschoolassociation_school'
+        AND tc.table_schema = 'dms'
+        AND tc.constraint_type = 'FOREIGN KEY'
+    ) THEN
+        -- Verify referenced table exists
+        IF EXISTS (
+            SELECT 1 FROM information_schema.tables t
+            WHERE t.table_name = 'edfi_school'
+            AND t.table_schema = 'dms'
+        ) THEN
+            ALTER TABLE "dms"."edfi_studentschoolassociation"
+            ADD CONSTRAINT "fk_edfi_studentschoolassociation_school"
+            FOREIGN KEY ("school_id")
+            REFERENCES "dms"."edfi_school"("id");
+
+            RAISE NOTICE 'Created FK constraint: fk_edfi_studentschoolassociation_school';
+        ELSE
+            RAISE NOTICE 'Skipped FK constraint fk_edfi_studentschoolassociation_school: Referenced table does not exist';
+        END IF;
+    ELSE
+        RAISE NOTICE 'FK constraint fk_edfi_studentschoolassociation_school already exists';
+    END IF;
+END $$;
+
+

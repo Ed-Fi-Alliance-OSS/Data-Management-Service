@@ -79,36 +79,19 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
         {
             // Arrange
             var args = Array.Empty<string>();
-            var originalError = Console.Error;
-            var stringWriter = new StringWriter();
 
-            try
-            {
-                Console.SetError(stringWriter);
+            // Act
+            var result = await Program.Main(args);
 
-                // Act
-                var result = await Program.Main(args);
-
-                // Assert
-                result.Should().Be(1);
-                var output = stringWriter.ToString();
-                output.Should().Contain("Error: InputFilePath and OutputDirectory are required");
-            }
-            finally
-            {
-                Console.SetError(originalError);
-            }
+            // Assert - Should return error code 1 (logged via Serilog, not Console.Error)
+            result.Should().Be(1);
         }
 
         [Test]
         public async Task Main_WithInvalidInputFile_ShouldReturnTwo()
         {
             // Arrange
-            var args = new[]
-            {
-                "--input", "non-existent-file.json",
-                "--output", _tempDirectory
-            };
+            var args = new[] { "--input", "non-existent-file.json", "--output", _tempDirectory };
 
             // Act
             var result = await Program.Main(args);
@@ -123,20 +106,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir };
 
             // Act
             var result = await Program.Main(args);
@@ -151,21 +136,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir,
-                "--provider", "pgsql"
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir, "--provider", "pgsql" };
 
             // Act
             var result = await Program.Main(args);
@@ -180,21 +166,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "-i", inputFile,
-                "-o", outputDir,
-                "-p", "mssql"
-            };
+            var args = new[] { "-i", inputFile, "-o", outputDir, "-p", "mssql" };
 
             // Act
             var result = await Program.Main(args);
@@ -209,21 +196,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir,
-                "--extensions"
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir, "--extensions" };
 
             // Act
             var result = await Program.Main(args);
@@ -238,21 +226,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir,
-                "--skip-union-views"
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir, "--skip-union-views" };
 
             // Act
             var result = await Program.Main(args);
@@ -267,23 +256,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "-i", inputFile,
-                "-o", outputDir,
-                "-p", "all",
-                "-e",
-                "-s"
-            };
+            var args = new[] { "-i", inputFile, "-o", outputDir, "-p", "all", "-e", "-s" };
 
             // Act
             var result = await Program.Main(args);
@@ -298,21 +286,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir,
-                "--database", "pgsql"
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir, "--database", "pgsql" };
 
             // Act
             var result = await Program.Main(args);
@@ -327,59 +316,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var args = new[]
             {
-                "--input" // Missing value for input
+                "--input", // Missing value for input
             };
 
-            var originalError = Console.Error;
-            var stringWriter = new StringWriter();
+            // Act
+            var result = await Program.Main(args);
 
-            try
-            {
-                Console.SetError(stringWriter);
-
-                // Act
-                var result = await Program.Main(args);
-
-                // Assert
-                result.Should().Be(1);
-                var output = stringWriter.ToString();
-                output.Should().Contain("Error: InputFilePath and OutputDirectory are required");
-            }
-            finally
-            {
-                Console.SetError(originalError);
-            }
+            // Assert - Should return error code 1 (logged via Serilog, not Console.Error)
+            result.Should().Be(1);
         }
 
         [Test]
         public async Task Main_WithWhitespaceOnlyInputPath_ShouldReturnOne()
         {
             // Arrange
-            var args = new[]
-            {
-                "--input", "   ",
-                "--output", _tempDirectory
-            };
+            var args = new[] { "--input", "   ", "--output", _tempDirectory };
 
-            var originalError = Console.Error;
-            var stringWriter = new StringWriter();
+            // Act
+            var result = await Program.Main(args);
 
-            try
-            {
-                Console.SetError(stringWriter);
-
-                // Act
-                var result = await Program.Main(args);
-
-                // Assert
-                result.Should().Be(1);
-                var output = stringWriter.ToString();
-                output.Should().Contain("Error: InputFilePath and OutputDirectory are required");
-            }
-            finally
-            {
-                Console.SetError(originalError);
-            }
+            // Assert - Should return error code 1 (logged via Serilog, not Console.Error)
+            result.Should().Be(1);
         }
 
         [Test]
@@ -388,37 +345,25 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", "   "
-            };
+            var args = new[] { "--input", inputFile, "--output", "   " };
 
-            var originalError = Console.Error;
-            var stringWriter = new StringWriter();
+            // Act
+            var result = await Program.Main(args);
 
-            try
-            {
-                Console.SetError(stringWriter);
-
-                // Act
-                var result = await Program.Main(args);
-
-                // Assert
-                result.Should().Be(1);
-                var output = stringWriter.ToString();
-                output.Should().Contain("Error: InputFilePath and OutputDirectory are required");
-            }
-            finally
-            {
-                Console.SetError(originalError);
-            }
+            // Assert - Should return error code 1 (logged via Serilog, not Console.Error)
+            result.Should().Be(1);
         }
 
         [Test]
@@ -431,11 +376,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir };
 
             // Act
             var result = await Program.Main(args);
@@ -474,15 +415,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
                                             ColumnName = "Id",
                                             ColumnType = "int",
                                             IsRequired = true,
-                                            IsNaturalKey = true
-                                        }
+                                            IsNaturalKey = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
 
@@ -492,41 +433,36 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
             var args = new[]
             {
-                "--input", inputFile,
-                "--url", "https://example.com/schema.json",
-                "--output", outputDir
+                "--input",
+                inputFile,
+                "--url",
+                "https://example.com/schema.json",
+                "--output",
+                outputDir,
             };
 
-            var originalError = Console.Error;
-            var stringWriter = new StringWriter();
+            // Act
+            var result = await Program.Main(args);
 
-            try
-            {
-                Console.SetError(stringWriter);
-
-                // Act
-                var result = await Program.Main(args);
-
-                // Assert
-                result.Should().Be(1);
-                var output = stringWriter.ToString();
-                output.Should().Contain("Both --input and --url cannot be specified");
-            }
-            finally
-            {
-                Console.SetError(originalError);
-            }
+            // Assert
+            result.Should().Be(1); // Should return error code 1 (logged via Serilog, not Console.Error)
         }
 
         [Test]
@@ -538,8 +474,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 
             var args = new[]
             {
-                "--url", "https://example.com/invalid-url-that-does-not-exist-for-testing.json",
-                "--output", outputDir
+                "--url",
+                "https://example.com/invalid-url-that-does-not-exist-for-testing.json",
+                "--output",
+                outputDir,
             };
 
             // Act
@@ -556,21 +494,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir,
-                "--database", "postgresql"
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir, "--database", "postgresql" };
 
             // Act
             var result = await Program.Main(args);
@@ -585,21 +524,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir,
-                "--use-schemas"
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir, "--use-schemas" };
 
             // Act
             var result = await Program.Main(args);
@@ -614,21 +554,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir,
-                "--use-prefixed-names"
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir, "--use-prefixed-names" };
 
             // Act
             var result = await Program.Main(args);
@@ -643,21 +584,22 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
-            var args = new[]
-            {
-                "--input", inputFile,
-                "--output", outputDir,
-                "--provider", "all"
-            };
+            var args = new[] { "--input", inputFile, "--output", outputDir, "--provider", "all" };
 
             // Act
             var result = await Program.Main(args);
@@ -672,21 +614,29 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
             // Arrange
             var apiSchema = CreateValidApiSchema();
             var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
-            File.WriteAllText(inputFile, JsonSerializer.Serialize(apiSchema, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = true
-            }));
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
 
             var outputDir = Path.Combine(_tempDirectory, "output");
             Directory.CreateDirectory(outputDir);
 
             var args = new[]
             {
-                "--input", inputFile,
-                "--output", outputDir,
+                "--input",
+                inputFile,
+                "--output",
+                outputDir,
                 "--extensions",
-                "--skip-union-views"
+                "--skip-union-views",
             };
 
             // Act
@@ -694,6 +644,80 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared
 
             // Assert
             result.Should().Be(0);
+        }
+
+        [Test]
+        public async Task Main_WithInferFksFlag_ShouldReturnZero()
+        {
+            // Arrange
+            var apiSchema = CreateValidApiSchema();
+            var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
+
+            var outputDir = Path.Combine(_tempDirectory, "output");
+            Directory.CreateDirectory(outputDir);
+
+            var args = new[] { "--input", inputFile, "--output", outputDir, "--infer-fks" };
+
+            // Act
+            var result = await Program.Main(args);
+
+            // Assert
+            result.Should().Be(0);
+            // Optionally check output files exist
+            Directory.GetFiles(outputDir).Should().NotBeEmpty();
+        }
+
+        [Test]
+        public async Task Main_WithSeparateInferredFksFlag_ShouldReturnZero()
+        {
+            // Arrange
+            var apiSchema = CreateValidApiSchema();
+            var inputFile = Path.Combine(_tempDirectory, "test-schema.json");
+            File.WriteAllText(
+                inputFile,
+                JsonSerializer.Serialize(
+                    apiSchema,
+                    new JsonSerializerOptions
+                    {
+                        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                        WriteIndented = true,
+                    }
+                )
+            );
+
+            var outputDir = Path.Combine(_tempDirectory, "output");
+            Directory.CreateDirectory(outputDir);
+
+            var args = new[]
+            {
+                "--input",
+                inputFile,
+                "--output",
+                outputDir,
+                "--infer-fks",
+                "--separate-inferred-fks",
+            };
+
+            // Act
+            var result = await Program.Main(args);
+
+            // Assert
+            result.Should().Be(0);
+            // Optionally check output files exist and are split
+            var files = Directory.GetFiles(outputDir);
+            files.Should().Contain(f => f.Contains("01_"));
+            files.Should().Contain(f => f.Contains("02_"));
         }
     }
 }

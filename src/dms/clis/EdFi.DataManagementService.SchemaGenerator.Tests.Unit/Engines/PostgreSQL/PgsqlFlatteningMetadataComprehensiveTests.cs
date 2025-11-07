@@ -2264,5 +2264,263 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Assert - Verify StudentSchoolAssociation_View resolves all natural keys
             Snapshot.Match(sql);
         }
+
+        /// <summary>
+        /// Validates that inferred foreign keys are generated correctly for tables with natural key columns
+        /// that reference other tables (e.g., Student_Id -> Student, School_Id -> School).
+        /// </summary>
+        [Test]
+        public void ValidateInferredForeignKeys_BasicScenario()
+        {
+            // Arrange
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["Student"] = new ResourceSchema
+                        {
+                            ResourceName = "Student",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Student",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "guid",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.id",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                        ["School"] = new ResourceSchema
+                        {
+                            ResourceName = "School",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "School",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "guid",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.id",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                        ["StudentSchoolAssociation"] = new ResourceSchema
+                        {
+                            ResourceName = "StudentSchoolAssociation",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "StudentSchoolAssociation",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Student_Id",
+                                            ColumnType = "guid",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.studentReference.id",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "School_Id",
+                                            ColumnType = "guid",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.schoolReference.id",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true, DefaultSchema = "dms" };
+
+            // Act
+            var inferredFks = generator.GenerateInferredForeignKeys(schema, options);
+
+            // Assert
+            Snapshot.Match(inferredFks);
+        }
+
+        /// <summary>
+        /// Validates that inferred foreign keys use lowercase identifiers for PostgreSQL compatibility.
+        /// </summary>
+        [Test]
+        public void ValidateInferredForeignKeys_UsesLowercaseIdentifiers()
+        {
+            // Arrange
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["Assessment"] = new ResourceSchema
+                        {
+                            ResourceName = "Assessment",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Assessment",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "guid",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.id",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                        ["StudentAssessment"] = new ResourceSchema
+                        {
+                            ResourceName = "StudentAssessment",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "StudentAssessment",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Assessment_Id",
+                                            ColumnType = "guid",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.assessmentReference.id",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true, DefaultSchema = "dms" };
+
+            // Act
+            var inferredFks = generator.GenerateInferredForeignKeys(schema, options);
+            Snapshot.Match(inferredFks);
+        }
+
+        /// <summary>
+        /// Validates that inferred foreign keys are NOT generated for Descriptor and Document columns.
+        /// </summary>
+        [Test]
+        public void ValidateInferredForeignKeys_ExcludesDescriptorAndDocument()
+        {
+            // Arrange
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["Assessment"] = new ResourceSchema
+                        {
+                            ResourceName = "Assessment",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Assessment",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "guid",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.id",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Document_Id",
+                                            ColumnType = "guid",
+                                            IsRequired = true,
+                                            JsonPath = "$.document.id",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "AssessmentCategoryDescriptor_Id",
+                                            ColumnType = "guid",
+                                            IsRequired = true,
+                                            JsonPath = "$.assessmentCategoryDescriptor.id",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = true, DefaultSchema = "dms" };
+
+            // Act
+            var inferredFks = generator.GenerateInferredForeignKeys(schema, options);
+
+            // Assert - Should NOT generate FKs for Document or Descriptor
+            if (inferredFks != null)
+            {
+                Snapshot.Match(inferredFks);
+            }
+        }
     }
 }
