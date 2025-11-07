@@ -7,6 +7,7 @@ using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Shared;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
@@ -16,15 +17,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
     [TestFixture]
     public class PgsqlDdlGeneratorTests
     {
+        private PgsqlDdlGeneratorStrategy _strategy;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+            _strategy = new PgsqlDdlGeneratorStrategy(logger);
+        }
+
         [Test]
         public void GeneratesIdempotentCreateTable()
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.testproject_TestTable");
@@ -43,10 +52,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
@@ -58,10 +66,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("Id BIGSERIAL PRIMARY KEY");
@@ -77,10 +84,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE OR REPLACE VIEW dms.EducationOrganizationReference AS");
@@ -95,10 +101,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
 
             // Assert
             sql.Should().NotContain("UNION ALL");
@@ -109,10 +114,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.testproject_School");
@@ -128,10 +132,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetSchemaWithPolymorphicReference();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             // Union views should include key columns and reference the concrete child tables
@@ -148,10 +151,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.testproject_TestTable");
@@ -162,10 +164,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetBasicSchema();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE INDEX IF NOT EXISTS IX_TestTable_Document");
@@ -177,10 +178,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = TestHelpers.GetEmptySchema();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().BeEmpty();
@@ -191,10 +191,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = GetSchemaWithExtensionTable();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: true);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: true);
 
             // Assert
             sql.Should().Contain("extensions.TestExtension");
@@ -206,10 +205,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = GetSchemaWithExtensionTable();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().NotContain("TestExtension");
@@ -220,10 +218,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = GetSchemaWithComplexConstraints();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CONSTRAINT UQ_ComplexTable_NaturalKey");
@@ -235,10 +232,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = GetSchemaWithVariousDataTypes();
-            var generator = new PgsqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("INTEGER NOT NULL");
@@ -416,14 +412,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = GetEdFiSchema();
-            var generator = new PgsqlDdlGeneratorStrategy();
+
             var options = new DdlGenerationOptions
             {
                 UsePrefixedTableNames = true, // Default behavior
             };
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("CREATE TABLE IF NOT EXISTS dms.edfi_School");
@@ -435,11 +431,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange
             var schema = GetEdFiSchema();
-            var generator = new PgsqlDdlGeneratorStrategy();
+
             var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("CREATE SCHEMA IF NOT EXISTS edfi");

@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
@@ -20,7 +21,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         [SetUp]
         public void SetUp()
         {
-            _strategy = new PgsqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+            _strategy = new PgsqlDdlGeneratorStrategy(logger);
         }
 
         [Test]
@@ -46,7 +48,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -56,8 +65,21 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             JsonPath = "$.Student.Addresses",
                                             Columns =
                                             [
-                                                new ColumnMetadata { ColumnName = "AddressType", ColumnType = "string", MaxLength = "50", IsNaturalKey = true, IsRequired = true },
-                                                new ColumnMetadata { ColumnName = "Street", ColumnType = "string", MaxLength = "150", IsRequired = true }
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "AddressType",
+                                                    ColumnType = "string",
+                                                    MaxLength = "50",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "Street",
+                                                    ColumnType = "string",
+                                                    MaxLength = "150",
+                                                    IsRequired = true,
+                                                },
                                             ],
                                             ChildTables =
                                             [
@@ -67,19 +89,30 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                                     JsonPath = "$.Student.Addresses.Periods",
                                                     Columns =
                                                     [
-                                                        new ColumnMetadata { ColumnName = "BeginDate", ColumnType = "date", IsNaturalKey = true, IsRequired = true },
-                                                        new ColumnMetadata { ColumnName = "EndDate", ColumnType = "date", IsRequired = false }
+                                                        new ColumnMetadata
+                                                        {
+                                                            ColumnName = "BeginDate",
+                                                            ColumnType = "date",
+                                                            IsNaturalKey = true,
+                                                            IsRequired = true,
+                                                        },
+                                                        new ColumnMetadata
+                                                        {
+                                                            ColumnName = "EndDate",
+                                                            ColumnType = "date",
+                                                            IsRequired = false,
+                                                        },
                                                     ],
-                                                    ChildTables = []
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                                    ChildTables = [],
+                                                },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -113,7 +146,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -123,17 +163,30 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             JsonPath = "$.Student.EducationOrganizations",
                                             Columns =
                                             [
-                                                new ColumnMetadata { ColumnName = "EducationOrganizationId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                                new ColumnMetadata { ColumnName = "StudentUniqueId_Parent", ColumnType = "string", MaxLength = "32", IsParentReference = true, IsRequired = true }
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "EducationOrganizationId",
+                                                    ColumnType = "int32",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "StudentUniqueId_Parent",
+                                                    ColumnType = "string",
+                                                    MaxLength = "32",
+                                                    IsParentReference = true,
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -167,15 +220,29 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.StudentSchoolAssociation",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true, FromReferencePath = "SchoolReference" }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            FromReferencePath = "SchoolReference",
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -208,16 +275,35 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.StudentSchoolAssociation",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "SchoolId", ColumnType = "int32", IsNaturalKey = true, IsRequired = true },
-                                        new ColumnMetadata { ColumnName = "EntryDate", ColumnType = "date", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "int32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "EntryDate",
+                                            ColumnType = "date",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -250,7 +336,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
                                     ChildTables =
                                     [
@@ -260,17 +353,31 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                             JsonPath = "$.Student.IdentificationCodes",
                                             Columns =
                                             [
-                                                new ColumnMetadata { ColumnName = "IdentificationCodeType", ColumnType = "string", MaxLength = "50", IsNaturalKey = true, IsRequired = true },
-                                                new ColumnMetadata { ColumnName = "AssigningOrganizationCode", ColumnType = "string", MaxLength = "50", IsNaturalKey = true, IsRequired = true }
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "IdentificationCodeType",
+                                                    ColumnType = "string",
+                                                    MaxLength = "50",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
+                                                new ColumnMetadata
+                                                {
+                                                    ColumnName = "AssigningOrganizationCode",
+                                                    ColumnType = "string",
+                                                    MaxLength = "50",
+                                                    IsNaturalKey = true,
+                                                    IsRequired = true,
+                                                },
                                             ],
-                                            ChildTables = []
-                                        }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                            ChildTables = [],
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
 
             // Act
@@ -303,19 +410,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var options = new DdlGenerationOptions
-            {
-                IncludeAuditColumns = false
-            };
+            var options = new DdlGenerationOptions { IncludeAuditColumns = false };
 
             // Act
             var result = _strategy.GenerateDdlString(schema, options);
@@ -348,19 +459,23 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
-            var options = new DdlGenerationOptions
-            {
-                UsePrefixedTableNames = false
-            };
+            var options = new DdlGenerationOptions { UsePrefixedTableNames = false };
 
             // Act
             var result = _strategy.GenerateDdlString(schema, options);
@@ -393,21 +508,25 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     JsonPath = "$.Student",
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "StudentUniqueId", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var options = new DdlGenerationOptions
             {
-                SchemaMapping = new Dictionary<string, string>
-                {
-                    ["EdFi"] = "custom_edfi_schema"
-                }
+                SchemaMapping = new Dictionary<string, string> { ["EdFi"] = "custom_edfi_schema" },
             };
 
             // Act
@@ -441,21 +560,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     IsExtensionTable = true,
                                     Columns =
                                     [
-                                        new ColumnMetadata { ColumnName = "CandidateIdentifier", ColumnType = "string", MaxLength = "32", IsNaturalKey = true, IsRequired = true }
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "CandidateIdentifier",
+                                            ColumnType = "string",
+                                            MaxLength = "32",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                        },
                                     ],
-                                    ChildTables = []
-                                }
-                            }
-                        }
-                    }
-                }
+                                    ChildTables = [],
+                                },
+                            },
+                        },
+                    },
+                },
             };
             var options = new DdlGenerationOptions
             {
                 SchemaMapping = new Dictionary<string, string>
                 {
-                    ["tpdm"] = "tpdm_schema" // lowercase mapping for uppercase project name
-                }
+                    ["tpdm"] = "tpdm_schema", // lowercase mapping for uppercase project name
+                },
             };
 
             // Act

@@ -115,7 +115,7 @@ BEGIN
         base.Id,
         base.Document_Id,
         base.Document_PartitionKey,
-        parent.ContentIdentifier,
+        parent.ContentIdentifier AS ContentIdentifier,
         base.EducationContentSuffixName
     FROM [dms].[edfi_EducationContentEducationContentSuffixName] base
     INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');

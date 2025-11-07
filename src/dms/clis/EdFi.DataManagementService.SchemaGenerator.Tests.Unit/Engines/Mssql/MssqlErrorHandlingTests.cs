@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
 {
@@ -15,14 +16,24 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
     [TestFixture]
     public class MssqlErrorHandlingTests
     {
+        private MssqlDdlGeneratorStrategy _strategy;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            _strategy = new MssqlDdlGeneratorStrategy(logger);
+        }
+
         [Test]
         public void MssqlGenerator_WithNullSchema_ThrowsNullReferenceException()
         {
             // Arrange
-            var generator = new MssqlDdlGeneratorStrategy();
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            var _strategy = new MssqlDdlGeneratorStrategy(logger);
 
             // Act & Assert
-            Action act = () => generator.GenerateDdlString(null!, includeExtensions: false);
+            Action act = () => _strategy.GenerateDdlString(null!, includeExtensions: false);
             act.Should().Throw<NullReferenceException>();
         }
 
@@ -31,10 +42,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = new ApiSchema { ProjectSchema = null! };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act & Assert
-            Action act = () => generator.GenerateDdlString(schema, includeExtensions: false);
+            Action act = () => _strategy.GenerateDdlString(schema, includeExtensions: false);
             act.Should()
                 .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
@@ -45,10 +55,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetSchemaWithEmptyTable();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("CREATE TABLE [dms].[emptytableproject_EmptyTable]");
@@ -62,10 +71,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetSchemaWithSpecialCharacters();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             // Generator sanitizes special characters (hyphens replaced with underscores) in table identifiers for MSSQL
@@ -77,10 +85,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
         {
             // Arrange
             var schema = GetSchemaWithLongColumnNames();
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().NotBeEmpty();

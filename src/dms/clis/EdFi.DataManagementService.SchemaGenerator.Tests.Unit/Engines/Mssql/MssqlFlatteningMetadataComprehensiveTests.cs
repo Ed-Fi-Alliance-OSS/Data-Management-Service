@@ -5,6 +5,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Snapshooter.NUnit;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
@@ -16,6 +17,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
     [TestFixture]
     public class MssqlFlatteningMetadataComprehensiveTests
     {
+        private MssqlDdlGeneratorStrategy _strategy;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            _strategy = new MssqlDdlGeneratorStrategy(logger);
+        }
+
         /// <summary>
         /// Validates that descriptor foreign key targets are correct for both edfi_ prefixed tables in PostgreSQL.
         /// Ensures FKs reference dms.edfi_descriptor for edfi_ tables.
@@ -60,8 +70,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-            var sqlPrefixed = generator.GenerateDdlString(schemaPrefixed, includeExtensions: false);
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            var _strategy = new MssqlDdlGeneratorStrategy(logger);
+            var sqlPrefixed = _strategy.GenerateDdlString(schemaPrefixed, includeExtensions: false);
             Snapshot.Match(sqlPrefixed);
         }
 
@@ -108,8 +119,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     },
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
-            var sqlNonPrefixed = generator.GenerateDdlString(schemaNonPrefixed, includeExtensions: false);
+
+            var sqlNonPrefixed = _strategy.GenerateDdlString(schemaNonPrefixed, includeExtensions: false);
             Snapshot.Match(sqlNonPrefixed);
         }
 
@@ -173,10 +184,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -277,10 +286,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -365,10 +372,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -428,10 +433,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -564,10 +567,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -645,10 +646,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -708,10 +707,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -797,10 +794,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -890,10 +885,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -1005,10 +998,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -1066,10 +1057,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -1209,10 +1198,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             );
 
             var schema = new ApiSchema { ProjectSchema = projectSchema! };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act - Generate DDL without skipping union views
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -1298,10 +1286,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify the table is created with polymorphic reference column
             sql.Should().NotBeEmpty();
@@ -1402,10 +1388,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().NotBeEmpty();
@@ -1536,10 +1520,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify both tables are created with their discriminator values stored
             Snapshot.Match(sql);
@@ -1631,10 +1613,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             );
 
             var schema = new ApiSchema { ProjectSchema = projectSchema! };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act - Generate DDL with union views enabled and prefixed table names (default)
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -1741,10 +1722,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             );
 
             var schema = new ApiSchema { ProjectSchema = projectSchema! };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act - Generate DDL with union views
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: false);
 
             // Assert - Verify the generated DDL matches the snapshot
             Snapshot.Match(sql);
@@ -1804,10 +1784,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             );
 
             var schema = new ApiSchema { ProjectSchema = projectSchema! };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act - Generate DDL with union views disabled
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false, skipUnionViews: true);
 
             // Assert - Verify no union view is created
             Snapshot.Match(sql);
@@ -1885,11 +1864,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
             var options = new DdlGenerationOptions { IncludeAuditColumns = true };
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert - Root table (Student) has all required columns
             Snapshot.Match(sql);
@@ -1979,10 +1957,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify School_View is created with natural key from SchoolYear
             Snapshot.Match(sql);
@@ -2105,10 +2081,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify Section_View has NO duplicate Location_School_Id column
             Snapshot.Match(sql);
@@ -2263,10 +2237,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert - Verify StudentSchoolAssociation_View resolves all natural keys
             Snapshot.Match(sql);
@@ -2332,10 +2304,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             Snapshot.Match(sql);
         }
@@ -2452,10 +2422,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             Snapshot.Match(sql);
         }
@@ -2513,10 +2481,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             Snapshot.Match(sql);
         }
@@ -2600,10 +2566,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 },
             };
 
-            var generator = new MssqlDdlGeneratorStrategy();
-
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             Snapshot.Match(sql);
         }

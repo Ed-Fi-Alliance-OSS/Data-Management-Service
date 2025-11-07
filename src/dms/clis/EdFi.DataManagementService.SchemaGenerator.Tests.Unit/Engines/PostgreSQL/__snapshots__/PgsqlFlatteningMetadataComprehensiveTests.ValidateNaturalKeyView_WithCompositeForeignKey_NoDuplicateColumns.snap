@@ -127,9 +127,10 @@ SELECT
     base.Document_Id,
     base.Document_PartitionKey,
     base.SectionIdentifier,
-    base.Location_School_Id,
-    base.Location_Location_Id,
-    location.ClassroomIdentificationCode AS Location_ClassroomIdentificationCode
+    base.Location_School_Id AS Location_SchoolId,
+    base.Location_Location_Id AS Location_LocationId,
+    location.School_Id AS SchoolId,
+    location.ClassroomIdentificationCode AS ClassroomIdentificationCode
 FROM dms.edfi_Section base
     INNER JOIN dms.edfi_Location location ON base.Location_Location_Id = location.Id;
 
@@ -141,8 +142,7 @@ SELECT
     base.Id,
     base.Document_Id,
     base.Document_PartitionKey,
-    base.School_Id,
-    school.SchoolId AS School_SchoolId,
+    base.School_Id AS SchoolId,
     base.ClassroomIdentificationCode
 FROM dms.edfi_Location base
     INNER JOIN dms.edfi_School school ON base.School_Id = school.Id;

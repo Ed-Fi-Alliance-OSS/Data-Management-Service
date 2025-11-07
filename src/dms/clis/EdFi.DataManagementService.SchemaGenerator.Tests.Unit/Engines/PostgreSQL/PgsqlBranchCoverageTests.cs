@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Pgsql;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreSQL
 {
@@ -18,12 +19,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         [TestFixture]
         public class PgsqlColumnTypeMappingTests
         {
-            private PgsqlDdlGeneratorStrategy _generator;
+            private PgsqlDdlGeneratorStrategy _strategy;
 
             [SetUp]
             public void SetUp()
             {
-                _generator = new PgsqlDdlGeneratorStrategy();
+                var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+                _strategy = new PgsqlDdlGeneratorStrategy(logger);
             }
 
             [TestCase("int64", "BIGINT")]
@@ -43,7 +45,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"TestColumn {expectedType}");
@@ -61,7 +63,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"TestColumn {expectedType}");
@@ -78,7 +80,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"TestColumn {expectedType}");
@@ -103,7 +105,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"TestColumn {expectedType}");
@@ -122,7 +124,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"TestColumn {expectedType}");
@@ -140,7 +142,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain($"TestColumn {expectedType}");
@@ -154,7 +156,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("TestColumn TEXT");
@@ -168,7 +170,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("TestColumn TEXT");
@@ -182,7 +184,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("TestColumn TEXT");
@@ -201,7 +203,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("TestColumn TEXT");
@@ -220,7 +222,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 var schema = CreateTestSchema(column);
 
                 // Act
-                var result = _generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert
                 result.Should().Contain("TestColumn TEXT");
@@ -260,16 +262,25 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         [TestFixture]
         public class PgsqlDescriptorResourceTests
         {
+            private PgsqlDdlGeneratorStrategy _strategy;
+
+            [SetUp]
+            public void SetUp()
+            {
+                var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+                _strategy = new PgsqlDdlGeneratorStrategy(logger);
+            }
+
             [Test]
             public void PgsqlGenerator_DescriptorResource_UsesDescriptorSchema()
             {
                 // Arrange
-                var generator = new PgsqlDdlGeneratorStrategy();
+
                 var schema = CreateDescriptorSchema();
                 var options = new DdlGenerationOptions { DescriptorSchema = "descriptors" };
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert
                 result.Should().Contain("descriptors.TestDescriptor");
@@ -279,12 +290,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             public void PgsqlGenerator_TypeResource_UsesDescriptorSchema()
             {
                 // Arrange
-                var generator = new PgsqlDdlGeneratorStrategy();
+
                 var schema = CreateTypeSchema();
                 var options = new DdlGenerationOptions { DescriptorSchema = "descriptors" };
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert
                 result.Should().Contain("descriptors.TestType");
@@ -372,18 +383,27 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         [TestFixture]
         public class PgsqlExtensionResourceTests
         {
+            private PgsqlDdlGeneratorStrategy _strategy;
+
+            [SetUp]
+            public void SetUp()
+            {
+                var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+                _strategy = new PgsqlDdlGeneratorStrategy(logger);
+            }
+
             [Test]
             public void PgsqlGenerator_ExtensionResource_WithExtractableProjectName_UsesCorrectSchema()
             {
                 // Arrange
-                var generator = new PgsqlDdlGeneratorStrategy();
+
                 var schema = CreateExtensionSchema("TPDMStudentExtension");
                 var options = new DdlGenerationOptions();
                 options.SchemaMapping["TPDM"] = "tpdm_ext";
                 options.IncludeExtensions = true;
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert
                 result.Should().Contain("tpdm_ext.TPDMStudentExtension");
@@ -393,14 +413,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             public void PgsqlGenerator_ExtensionResource_WithoutExtractableProjectName_UsesExtensionsSchema()
             {
                 // Arrange
-                var generator = new PgsqlDdlGeneratorStrategy();
+
                 var schema = CreateExtensionSchema("SimpleExtension");
                 var options = new DdlGenerationOptions();
                 options.SchemaMapping["Extensions"] = "ext";
                 options.IncludeExtensions = true;
 
                 // Act
-                var result = generator.GenerateDdlString(schema, options);
+                var result = _strategy.GenerateDdlString(schema, options);
 
                 // Assert
                 result.Should().Contain("ext.SimpleExtension");
@@ -450,15 +470,24 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         [TestFixture]
         public class PgsqlReferenceResolutionTests
         {
+            private PgsqlDdlGeneratorStrategy _strategy;
+
+            [SetUp]
+            public void SetUp()
+            {
+                var logger = LoggerFactory.Create(builder => { }).CreateLogger<PgsqlDdlGeneratorStrategy>();
+                _strategy = new PgsqlDdlGeneratorStrategy(logger);
+            }
+
             [Test]
             public void PgsqlGenerator_ResolveResourceNameFromPath_WithReferencePattern_ReturnsResourceName()
             {
                 // Arrange
-                var generator = new PgsqlDdlGeneratorStrategy();
+
                 var schema = CreateSchemaWithReference();
 
                 // Act
-                var result = generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert - Should NOT generate FK constraint or index for entity reference
                 // Per design decision: Entity references (FromReferencePath) should NOT have FK constraints or indexes
@@ -473,11 +502,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             public void PgsqlGenerator_ResolveResourceNameFromPath_EmptyPath_ReturnsEmpty()
             {
                 // Arrange
-                var generator = new PgsqlDdlGeneratorStrategy();
+
                 var schema = CreateSchemaWithEmptyReference();
 
                 // Act
-                var result = generator.GenerateDdlString(schema, false, false);
+                var result = _strategy.GenerateDdlString(schema, false, false);
 
                 // Assert - Should handle empty reference gracefully
                 result.Should().NotBeNull();

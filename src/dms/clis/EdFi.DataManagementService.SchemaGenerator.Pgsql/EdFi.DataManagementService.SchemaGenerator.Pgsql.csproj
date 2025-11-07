@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Handlebars.Net" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
   <ItemGroup>

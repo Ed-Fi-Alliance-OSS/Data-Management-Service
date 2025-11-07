@@ -177,13 +177,12 @@ EdFi.DataManagementService.SchemaGenerator.Cli \
 |--------|-------|-------------|---------|
 | `--input` | `-i` | **(Required)** Path to the input API schema JSON file | - |
 | `--output` | `-o` | **(Required)** Directory where DDL scripts will be generated | - |
-| `--provider` | `-p` | Database provider: `pgsql`/`postgresql`, `mssql`, or `all` | `all` |
+| `--provider` / `--database` | `-p` | Database provider: `pgsql`/`postgresql`, `mssql`, or `all` | `all` |
 | `--url` | `-u` | URL to fetch the API schema JSON file | - |
 | `--extensions` | `-e` | Include extension tables in the generated DDL | `false` |
 | `--skip-union-views` | `-s` | Skip generation of union views for polymorphic references | `false` |
-| `--skip-natural-key-views` | - | Skip generation of natural key resolution views | `false` |
-| `--use-schemas` | - | Generate separate database schemas (edfi, tpdm, etc.) | `false` |
-| `--use-prefixed-names` | - | Use prefixed table names in dms schema | `true` |
+| `--use-schemas` / `--separate-schemas` | - | Generate separate database schemas (edfi, tpdm, etc.) — toggles prefixed table names off | `false` |
+| `--use-prefixed-names` / `--prefixed-tables` | - | Use prefixed table names in dms schema (default behavior) | `true` |
 | `--help` | `-h` | Display help information | - |
 
 ### Provider Aliases
@@ -192,6 +191,8 @@ EdFi.DataManagementService.SchemaGenerator.Cli \
 - **SQL Server**: Use `mssql`
 - **All Platforms**: Use `all` (default)
 
+Note: The CLI does not currently expose a dedicated command-line flag for disabling natural-key view generation. If you need to disable natural-key views or other advanced options (for example `SkipNaturalKeyViews` or `SkipDescriptorFk`), set them in `appsettings.json` or via environment variables (see Configuration Precedence).
+
 ## Configuration File
 
 You can configure default settings in `appsettings.json`:
@@ -199,13 +200,14 @@ You can configure default settings in `appsettings.json`:
 ```json
 {
   "SchemaGenerator": {
-    "InputFilePath": "path/to/schema.json",
-    "SchemaUrl": "https://<api>/schema.json",
-    "OutputDirectory": "path/to/output",
+    "InputFilePath": null,
+    "SchemaUrl": null,
+    "OutputDirectory": null,
     "DatabaseProvider": "all",
     "IncludeExtensions": false,
     "SkipUnionViews": false,
     "SkipNaturalKeyViews": false,
+    "SkipDescriptorFk": false,
     "UsePrefixedTableNames": true
   },
   "Logging": {

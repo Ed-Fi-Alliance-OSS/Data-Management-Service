@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.SchemaGenerator.Abstractions;
 using EdFi.DataManagementService.SchemaGenerator.Mssql;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Snapshooter.NUnit;
 
 namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
@@ -16,6 +17,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
     [TestFixture]
     public class MssqlAdditionalCoverageTests
     {
+        private MssqlDdlGeneratorStrategy _strategy;
+
+        [SetUp]
+        public void SetUp()
+        {
+            var logger = LoggerFactory.Create(builder => { }).CreateLogger<MssqlDdlGeneratorStrategy>();
+            _strategy = new MssqlDdlGeneratorStrategy(logger);
+        }
+
         [Test]
         public void MssqlGenerator_WithNullColumnMaxLength_HandlesGracefully()
         {
@@ -54,10 +64,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     },
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act & Assert - Should not throw exception
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
             Snapshot.Match(sql);
         }
 
@@ -100,10 +109,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     },
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("DECIMAL(10, 2) NOT NULL");
@@ -148,10 +156,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     },
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("DECIMAL"); // Default without explicit precision
@@ -206,10 +213,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     ["TestExtensionProject"] = "custom_extension_schema",
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("EXEC('CREATE SCHEMA [extensions]')");
@@ -267,10 +273,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                 DescriptorSchema = "descriptors",
                 DefaultSchema = "dms",
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, options);
+            var sql = _strategy.GenerateDdlString(schema, options);
 
             // Assert
             sql.Should().Contain("EXEC('CREATE SCHEMA [descriptors]')");
@@ -340,10 +345,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     },
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("FK_ChildTable_ParentTable");
@@ -387,10 +391,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     },
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("NVARCHAR(MAX)"); // Default fallback for unsupported types
@@ -433,10 +436,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     },
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("BIGINT NOT NULL");
@@ -479,10 +481,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     },
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("[DateColumn] DATE");
@@ -525,10 +526,9 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
                     },
                 },
             };
-            var generator = new MssqlDdlGeneratorStrategy();
 
             // Act
-            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
 
             // Assert
             sql.Should().Contain("[TimeColumn] TIME");

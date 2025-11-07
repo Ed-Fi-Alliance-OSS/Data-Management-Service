@@ -65,7 +65,7 @@ SELECT
     base.Document_Id,
     base.Document_PartitionKey,
     base.StudentUniqueId,
-    base.SchoolId,
+    base.SchoolId AS SchoolId,
     base.EntryDate,
     base.EntryGradeLevelDescriptor,
     base.ExitWithdrawDate
