@@ -320,9 +320,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Cli
             Console.WriteLine(
                 "  --use-prefixed-names, --prefixed-tables Use prefixed table names in dms schema (default)"
             );
-            Console.WriteLine(
-                "  --infer-fks, --generate-inferred-fks    Generate script to infer and create foreign keys based on unique constraints"
-            );
             Console.WriteLine();
         }
 

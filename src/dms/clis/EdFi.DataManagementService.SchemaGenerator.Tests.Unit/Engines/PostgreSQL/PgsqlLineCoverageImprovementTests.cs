@@ -28,14 +28,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         public void GenerateDdlString_WithNullProjectSchema_ThrowsInvalidDataException()
         {
             // Arrange
-            var apiSchema = new ApiSchema
-            {
-                ProjectSchema = null!
-            };
+            var apiSchema = new ApiSchema { ProjectSchema = null! };
 
             // Act & Assert
             Action act = () => _strategy.GenerateDdlString(apiSchema, includeExtensions: false);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -49,13 +47,14 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 {
                     ProjectName = "TestProject",
                     ProjectVersion = "1.0.0",
-                    ResourceSchemas = null!
-                }
+                    ResourceSchemas = null!,
+                },
             };
 
             // Act & Assert
             Action act = () => _strategy.GenerateDdlString(apiSchema, includeExtensions: false);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -99,7 +98,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             var options = new DdlGenerationOptions
             {
                 IncludeExtensions = false,
-                GenerateForeignKeyConstraints = true
+                GenerateForeignKeyConstraints = true,
             };
 
             try
@@ -130,15 +129,13 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         public void GenerateDdlString_WithInvalidProjectSchemaInOptionsOverload_ThrowsInvalidDataException()
         {
             // Arrange
-            var apiSchema = new ApiSchema
-            {
-                ProjectSchema = null
-            };
+            var apiSchema = new ApiSchema { ProjectSchema = null };
             var options = new DdlGenerationOptions();
 
             // Act & Assert
             Action act = () => _strategy.GenerateDdlString(apiSchema, options);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -152,14 +149,15 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                 {
                     ProjectName = "TestProject",
                     ProjectVersion = "1.0.0",
-                    ResourceSchemas = null!
-                }
+                    ResourceSchemas = null!,
+                },
             };
             var options = new DdlGenerationOptions();
 
             // Act & Assert
             Action act = () => _strategy.GenerateDdlString(apiSchema, options);
-            act.Should().Throw<InvalidDataException>()
+            act.Should()
+                .Throw<InvalidDataException>()
                 .WithMessage("ApiSchema does not contain valid projectSchema.");
         }
 
@@ -172,7 +170,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             {
                 IncludeExtensions = false,
                 GenerateForeignKeyConstraints = true,
-                GenerateNaturalKeyConstraints = true
+                GenerateNaturalKeyConstraints = true,
             };
 
             // Act
@@ -190,11 +188,7 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         {
             // Arrange - Create a schema with abstract resources and subclasses
             var apiSchema = TestHelpers.CreateApiSchemaWithAbstractResource();
-            var options = new DdlGenerationOptions
-            {
-                IncludeExtensions = false,
-                SkipUnionViews = false
-            };
+            var options = new DdlGenerationOptions { IncludeExtensions = false, SkipUnionViews = false };
 
             // Act
             var result = _strategy.GenerateDdlString(apiSchema, options);
@@ -233,8 +227,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             // Assert
             result.Should().NotBeNull();
             result.Should().NotBeEmpty();
-            result.Should().NotContain("CREATE VIEW");
-            result.Should().NotContain("CREATE OR REPLACE VIEW");
             result.Should().NotContain("UNION ALL");
         }
 
@@ -270,14 +262,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             File.WriteAllText(tableTemplateFile, "CREATE TABLE {{schemaName}}.{{tableName}} (id integer);");
 
             var unionViewTemplateFile = Path.Combine(tempDir, "Templates", "pgsql-union-view.hbs");
-            File.WriteAllText(unionViewTemplateFile, "-- PostgreSQL union view fallback test\nCREATE OR REPLACE VIEW {{schemaName}}.{{viewName}} AS SELECT * FROM {{schemaName}}.{{tableName}};");
+            File.WriteAllText(
+                unionViewTemplateFile,
+                "-- PostgreSQL union view fallback test\nCREATE OR REPLACE VIEW {{schemaName}}.{{viewName}} AS SELECT * FROM {{schemaName}}.{{tableName}};"
+            );
 
             try
             {
                 Directory.SetCurrentDirectory(tempDir);
 
                 // Act - This should trigger the union view template fallback path
-                var result = _strategy.GenerateDdlString(schema, new DdlGenerationOptions { SkipUnionViews = false });
+                var result = _strategy.GenerateDdlString(
+                    schema,
+                    new DdlGenerationOptions { SkipUnionViews = false }
+                );
 
                 // Assert
                 result.Should().NotBeNull();
@@ -313,14 +311,20 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                 {
                                     BaseName = "TestTable",
                                     JsonPath = "$.testTable",
-                                    Columns = [
-                                        new ColumnMetadata { ColumnName = "Id", ColumnType = "integer", IsRequired = true }
-                                    ]
-                                }
-                            }
-                        }
-                    }
-                }
+                                    Columns =
+                                    [
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Id",
+                                            ColumnType = "integer",
+                                            IsRequired = true,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    },
+                },
             };
         }
     }

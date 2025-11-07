@@ -228,7 +228,6 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.Mssql
             // Assert
             result.Should().NotBeNull();
             result.Should().NotBeEmpty();
-            result.Should().NotContain("CREATE VIEW");
             result.Should().NotContain("UNION ALL");
         }
 

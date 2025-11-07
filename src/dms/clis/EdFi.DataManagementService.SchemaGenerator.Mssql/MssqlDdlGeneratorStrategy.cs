@@ -192,7 +192,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     originalSchemaName,
                     options,
                     resourceSchema,
-                    fkConstraintsToAdd
+                    fkConstraintsToAdd,
+                    apiSchema.ProjectSchema
                 );
             }
 
@@ -621,7 +622,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             string originalSchemaName,
             DdlGenerationOptions options,
             ResourceSchema? resourceSchema,
-            List<(string tableName, string schemaName, object fkConstraint)> fkConstraintsToAdd
+            List<(string tableName, string schemaName, object fkConstraint)> fkConstraintsToAdd,
+            ProjectSchema? projectSchema = null
         )
         {
             var tableName = MssqlNamingHelper.MakeMssqlIdentifier(
@@ -734,6 +736,50 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                         }
                     )
                 );
+            }
+
+            // Add FK constraints for natural key columns that follow the pattern <TableName>_Id
+            // These are natural keys that reference other tables (similar to view joins)
+            if (projectSchema != null)
+            {
+                var naturalKeyReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (
+                    var column in table.Columns.Where(c =>
+                        c.IsNaturalKey
+                        && !c.IsParentReference
+                        && c.ColumnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase)
+                    )
+                )
+                {
+                    // Extract potential table name from column name (e.g., School_Id -> School)
+                    var potentialTableName = column.ColumnName.Substring(0, column.ColumnName.Length - 3);
+
+                    // Check if this table exists in the project schema
+                    var referencedTableExists = projectSchema.ResourceSchemas.Values.Any(rs =>
+                        string.Equals(rs.ResourceName, potentialTableName, StringComparison.OrdinalIgnoreCase)
+                    );
+
+                    if (referencedTableExists && !naturalKeyReferences.Contains(potentialTableName))
+                    {
+                        naturalKeyReferences.Add(potentialTableName);
+                        fkConstraintsToAdd.Add(
+                            (
+                                tableName,
+                                finalSchemaName,
+                                new
+                                {
+                                    constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                        $"FK_{table.BaseName}_{potentialTableName}"
+                                    ),
+                                    column = MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName),
+                                    parentTable = $"[{finalSchemaName}].[{MssqlNamingHelper.MakeMssqlIdentifier(DetermineTableName(potentialTableName, originalSchemaName, null, options))}]",
+                                    parentColumn = "Id",
+                                    cascade = false, // Use NO ACTION to prevent accidental data loss
+                                }
+                            )
+                        );
+                    }
+                }
             }
 
             // REMOVED: Cross-resource FK constraints (fromReferencePath)
@@ -949,7 +995,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                     originalSchemaName,
                     options,
                     resourceSchema,
-                    fkConstraintsToAdd
+                    fkConstraintsToAdd,
+                    projectSchema
                 );
             }
         }

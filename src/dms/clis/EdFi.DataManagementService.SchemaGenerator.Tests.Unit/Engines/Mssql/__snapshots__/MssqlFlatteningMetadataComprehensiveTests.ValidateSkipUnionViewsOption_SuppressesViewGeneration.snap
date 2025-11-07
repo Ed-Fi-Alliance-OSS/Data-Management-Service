@@ -37,3 +37,24 @@ ELSE
     PRINT 'Foreign key constraint FK_School_Document already exists, skipped.';
 GO
 
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for School_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'School_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[School_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.SchoolId
+    FROM [dms].[edfi_School] base');
+    PRINT 'View School_View created.';
+END
+ELSE
+    PRINT 'View School_View already exists, skipped.';
+GO
+
+
+

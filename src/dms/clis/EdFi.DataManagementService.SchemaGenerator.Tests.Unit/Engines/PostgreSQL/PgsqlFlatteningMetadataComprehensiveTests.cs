@@ -2266,11 +2266,79 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         }
 
         /// <summary>
-        /// Validates that inferred foreign keys are generated correctly for tables with natural key columns
-        /// that reference other tables (e.g., Student_Id -> Student, School_Id -> School).
+        /// Validates that descriptor foreign key constraints are generated for descriptor columns.
+        /// Tests that descriptor columns reference dms.edfi_descriptor table.
         /// </summary>
         [Test]
-        public void ValidateInferredForeignKeys_BasicScenario()
+        public void ValidateDescriptorForeignKeyConstraints_GeneratesCorrectConstraints()
+        {
+            // Arrange
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["Assessment"] = new ResourceSchema
+                        {
+                            ResourceName = "Assessment",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Assessment",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "AssessmentIdentifier",
+                                            ColumnType = "string",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.assessmentIdentifier",
+                                            MaxLength = "60",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "AssessmentCategoryDescriptorId",
+                                            ColumnType = "descriptor",
+                                            IsRequired = true,
+                                            JsonPath = "$.assessmentCategoryDescriptor",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "AdaptiveAssessmentDescriptorId",
+                                            ColumnType = "descriptor",
+                                            IsRequired = false,
+                                            JsonPath = "$.adaptiveAssessmentDescriptor",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            var generator = new PgsqlDdlGeneratorStrategy();
+
+            // Act
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
+
+            Snapshot.Match(sql);
+        }
+
+        /// <summary>
+        /// Validates that natural key foreign key constraints are generated for columns ending in _Id.
+        /// Tests that Student_Id and School_Id columns get FK constraints to their respective tables.
+        /// </summary>
+        [Test]
+        public void ValidateNaturalKeyForeignKeyConstraints_GeneratesCorrectConstraints()
         {
             // Arrange
             var schema = new ApiSchema
@@ -2295,11 +2363,12 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     {
                                         new ColumnMetadata
                                         {
-                                            ColumnName = "Id",
-                                            ColumnType = "guid",
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
                                             IsNaturalKey = true,
                                             IsRequired = true,
-                                            JsonPath = "$.id",
+                                            JsonPath = "$.studentUniqueId",
+                                            MaxLength = "32",
                                         },
                                     },
                                     ChildTables = new List<TableMetadata>(),
@@ -2319,11 +2388,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                     {
                                         new ColumnMetadata
                                         {
-                                            ColumnName = "Id",
-                                            ColumnType = "guid",
+                                            ColumnName = "SchoolId",
+                                            ColumnType = "integer",
                                             IsNaturalKey = true,
                                             IsRequired = true,
-                                            JsonPath = "$.id",
+                                            JsonPath = "$.schoolId",
                                         },
                                     },
                                     ChildTables = new List<TableMetadata>(),
@@ -2344,18 +2413,28 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                                         new ColumnMetadata
                                         {
                                             ColumnName = "Student_Id",
-                                            ColumnType = "guid",
+                                            ColumnType = "bigint",
                                             IsNaturalKey = true,
                                             IsRequired = true,
-                                            JsonPath = "$.studentReference.id",
+                                            FromReferencePath = "StudentReference",
+                                            JsonPath = "$.studentReference",
                                         },
                                         new ColumnMetadata
                                         {
                                             ColumnName = "School_Id",
-                                            ColumnType = "guid",
+                                            ColumnType = "bigint",
                                             IsNaturalKey = true,
                                             IsRequired = true,
-                                            JsonPath = "$.schoolReference.id",
+                                            FromReferencePath = "SchoolReference",
+                                            JsonPath = "$.schoolReference",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "EntryDate",
+                                            ColumnType = "date",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.entryDate",
                                         },
                                     },
                                     ChildTables = new List<TableMetadata>(),
@@ -2367,20 +2446,18 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             };
 
             var generator = new PgsqlDdlGeneratorStrategy();
-            var options = new DdlGenerationOptions { UsePrefixedTableNames = true, DefaultSchema = "dms" };
 
             // Act
-            var inferredFks = generator.GenerateInferredForeignKeys(schema, options);
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-            // Assert
-            Snapshot.Match(inferredFks);
+            Snapshot.Match(sql);
         }
 
         /// <summary>
-        /// Validates that inferred foreign keys use lowercase identifiers for PostgreSQL compatibility.
+        /// Validates that natural key FK constraints are NOT generated for columns that don't match existing tables.
         /// </summary>
         [Test]
-        public void ValidateInferredForeignKeys_UsesLowercaseIdentifiers()
+        public void ValidateNaturalKeyForeignKeyConstraints_OnlyForExistingTables()
         {
             // Arrange
             var schema = new ApiSchema
@@ -2392,48 +2469,33 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
                     IsExtensionProject = false,
                     ResourceSchemas = new Dictionary<string, ResourceSchema>
                     {
-                        ["Assessment"] = new ResourceSchema
+                        ["Student"] = new ResourceSchema
                         {
-                            ResourceName = "Assessment",
+                            ResourceName = "Student",
                             FlatteningMetadata = new FlatteningMetadata
                             {
                                 Table = new TableMetadata
                                 {
-                                    BaseName = "Assessment",
+                                    BaseName = "Student",
                                     JsonPath = "$",
                                     Columns = new List<ColumnMetadata>
                                     {
                                         new ColumnMetadata
                                         {
-                                            ColumnName = "Id",
-                                            ColumnType = "guid",
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
                                             IsNaturalKey = true,
                                             IsRequired = true,
-                                            JsonPath = "$.id",
+                                            JsonPath = "$.studentUniqueId",
+                                            MaxLength = "32",
                                         },
-                                    },
-                                    ChildTables = new List<TableMetadata>(),
-                                },
-                            },
-                        },
-                        ["StudentAssessment"] = new ResourceSchema
-                        {
-                            ResourceName = "StudentAssessment",
-                            FlatteningMetadata = new FlatteningMetadata
-                            {
-                                Table = new TableMetadata
-                                {
-                                    BaseName = "StudentAssessment",
-                                    JsonPath = "$",
-                                    Columns = new List<ColumnMetadata>
-                                    {
                                         new ColumnMetadata
                                         {
-                                            ColumnName = "Assessment_Id",
-                                            ColumnType = "guid",
+                                            ColumnName = "NonExistentTable_Id",
+                                            ColumnType = "bigint",
                                             IsNaturalKey = true,
-                                            IsRequired = true,
-                                            JsonPath = "$.assessmentReference.id",
+                                            IsRequired = false,
+                                            JsonPath = "$.nonExistentTableReference.id",
                                         },
                                     },
                                     ChildTables = new List<TableMetadata>(),
@@ -2445,82 +2507,11 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
             };
 
             var generator = new PgsqlDdlGeneratorStrategy();
-            var options = new DdlGenerationOptions { UsePrefixedTableNames = true, DefaultSchema = "dms" };
 
             // Act
-            var inferredFks = generator.GenerateInferredForeignKeys(schema, options);
-            Snapshot.Match(inferredFks);
-        }
+            var sql = generator.GenerateDdlString(schema, includeExtensions: false);
 
-        /// <summary>
-        /// Validates that inferred foreign keys are NOT generated for Descriptor and Document columns.
-        /// </summary>
-        [Test]
-        public void ValidateInferredForeignKeys_ExcludesDescriptorAndDocument()
-        {
-            // Arrange
-            var schema = new ApiSchema
-            {
-                ProjectSchema = new ProjectSchema
-                {
-                    ProjectName = "EdFi",
-                    ProjectVersion = "1.0.0",
-                    IsExtensionProject = false,
-                    ResourceSchemas = new Dictionary<string, ResourceSchema>
-                    {
-                        ["Assessment"] = new ResourceSchema
-                        {
-                            ResourceName = "Assessment",
-                            FlatteningMetadata = new FlatteningMetadata
-                            {
-                                Table = new TableMetadata
-                                {
-                                    BaseName = "Assessment",
-                                    JsonPath = "$",
-                                    Columns = new List<ColumnMetadata>
-                                    {
-                                        new ColumnMetadata
-                                        {
-                                            ColumnName = "Id",
-                                            ColumnType = "guid",
-                                            IsNaturalKey = true,
-                                            IsRequired = true,
-                                            JsonPath = "$.id",
-                                        },
-                                        new ColumnMetadata
-                                        {
-                                            ColumnName = "Document_Id",
-                                            ColumnType = "guid",
-                                            IsRequired = true,
-                                            JsonPath = "$.document.id",
-                                        },
-                                        new ColumnMetadata
-                                        {
-                                            ColumnName = "AssessmentCategoryDescriptor_Id",
-                                            ColumnType = "guid",
-                                            IsRequired = true,
-                                            JsonPath = "$.assessmentCategoryDescriptor.id",
-                                        },
-                                    },
-                                    ChildTables = new List<TableMetadata>(),
-                                },
-                            },
-                        },
-                    },
-                },
-            };
-
-            var generator = new PgsqlDdlGeneratorStrategy();
-            var options = new DdlGenerationOptions { UsePrefixedTableNames = true, DefaultSchema = "dms" };
-
-            // Act
-            var inferredFks = generator.GenerateInferredForeignKeys(schema, options);
-
-            // Assert - Should NOT generate FKs for Document or Descriptor
-            if (inferredFks != null)
-            {
-                Snapshot.Match(inferredFks);
-            }
+            Snapshot.Match(sql);
         }
     }
 }

@@ -157,22 +157,6 @@ EdFi.DataManagementService.SchemaGenerator.Cli \
   -e \
   --prefixed-tables
 
-# Generate with inferred foreign key constraints (integrated into main DDL)
-EdFi.DataManagementService.SchemaGenerator.Cli \
-  --input schema.json \
-  --output ./ddl \
-  --provider postgresql \
-  --infer-fks
-
-# Generate with inferred foreign keys in separate file
-# Creates: 01_EdFi-DMS-Database-Schema-*.sql and 02_EdFi-DMS-Inferred-ForeignKeys-*.sql
-EdFi.DataManagementService.SchemaGenerator.Cli \
-  --input schema.json \
-  --output ./ddl \
-  --provider postgresql \
-  --infer-fks \
-  --separate-inferred-fks
-
 # Skip union views for better performance using URL
 EdFi.DataManagementService.SchemaGenerator.Cli \
   --url https://<api>/schema.json \
@@ -200,8 +184,6 @@ EdFi.DataManagementService.SchemaGenerator.Cli \
 | `--skip-natural-key-views` | - | Skip generation of natural key resolution views | `false` |
 | `--use-schemas` | - | Generate separate database schemas (edfi, tpdm, etc.) | `false` |
 | `--use-prefixed-names` | - | Use prefixed table names in dms schema | `true` |
-| `--infer-fks` | - | Generate inferred foreign key constraints for natural key columns | `true` |
-| `--separate-inferred-fks` | - | Generate inferred FKs in separate file (requires `--infer-fks`) | `false` |
 | `--help` | `-h` | Display help information | - |
 
 ### Provider Aliases
@@ -224,9 +206,7 @@ You can configure default settings in `appsettings.json`:
     "IncludeExtensions": false,
     "SkipUnionViews": false,
     "SkipNaturalKeyViews": false,
-    "UsePrefixedTableNames": true,
-    "GenerateInferredForeignKeys": true,
-    "SeparateInferredForeignKeys": false
+    "UsePrefixedTableNames": true
   },
   "Logging": {
     "LogFilePath": "logs/SchemaGenerator.log",
@@ -277,23 +257,13 @@ The CLI generates the following output files:
 
 - **File**: `EdFi-DMS-Database-Schema-PostgreSQL.sql`
 - **Content**: Complete PostgreSQL DDL with tables, indexes, constraints, and views
-- **Features**: Optimized data types, proper constraints, decimal precision support
-
-**With Inferred FKs (Separate Mode)**:
-
-- **File 1**: `01_EdFi-DMS-Database-Schema-PostgreSQL.sql` - Main schema DDL
-- **File 2**: `02_EdFi-DMS-Inferred-ForeignKeys-PostgreSQL.sql` - Inferred FK constraints
+- **Features**: Optimized data types, proper constraints, decimal precision support, automatic FK generation
 
 ### SQL Server
 
 - **File**: `EdFi-DMS-Database-Schema-SQLServer.sql`
 - **Content**: Complete SQL Server DDL with tables, indexes, constraints, and views
-- **Features**: MSSQL-specific data types, proper constraints, decimal precision support
-
-**With Inferred FKs (Separate Mode)**:
-
-- **File 1**: `01_EdFi-DMS-Database-Schema-SQLServer.sql` - Main schema DDL
-- **File 2**: `02_EdFi-DMS-Inferred-ForeignKeys-SQLServer.sql` - Inferred FK constraints
+- **Features**: MSSQL-specific data types, proper constraints, decimal precision support, automatic FK generation
 
 ### Log Files
 
@@ -310,18 +280,73 @@ The CLI generates the following output files:
 - **Descriptors**: Enumeration/lookup tables
 - **Reference Tables**: Foreign key reference validation
 
-### Inferred Foreign Keys
+### Foreign Key Constraints
 
-The generator can automatically infer natural key foreign key relationships based
-on column naming conventions:
+The generator automatically creates foreign key constraints for:
+
+#### Descriptor Foreign Keys
+
+All columns ending with `Descriptor_Id` automatically receive foreign key constraints
+to the `dms.edfi_descriptor` table:
+
+```sql
+-- PostgreSQL example
+ALTER TABLE dms.edfi_absenceeventcategorytype
+  ADD CONSTRAINT fk_absenceeventcategorytype_descriptor 
+  FOREIGN KEY (absenceeventcategorytypedescriptor_id) 
+  REFERENCES dms.edfi_descriptor(id);
+```
+
+#### Natural Key Foreign Keys
+
+Columns in natural keys (unique constraints) that follow the `{TableName}_Id` pattern
+automatically receive foreign key constraints to the referenced table's primary key,
+provided the referenced table exists in the schema:
 
 - **Pattern**: Columns named `{Entity}_Id` reference `{Entity}` table's primary key
 - **Example**: `Student_Id` → `Student(id)`, `School_Id` → `School(id)`
-- **Exclusions**: `Document_Id` and `Descriptor_Id` columns are excluded from inference
-- **Modes**:
-  - **Integrated** (default): FKs appended to main DDL file
-  - **Separate**: FKs in separate file with `02_` prefix for controlled application
-- **Usage**: Enable with `--infer-fks`, separate with `--separate-inferred-fks`
+- **Validation**: Foreign keys are only created if the referenced table exists
+- **Idempotency**: Uses database-specific idempotent syntax to safely re-run scripts
+- **Cascade**: Uses `NO ACTION` (RESTRICT in PostgreSQL) to prevent accidental data loss
+
+**PostgreSQL Example:**
+
+```sql
+-- Natural key FK constraint with idempotency check
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint 
+    WHERE conname = 'fk_studentschoolassociation_student_id'
+  ) THEN
+    ALTER TABLE dms.edfi_studentschoolassociation
+      ADD CONSTRAINT fk_studentschoolassociation_student_id
+      FOREIGN KEY (student_id)
+      REFERENCES dms.edfi_student(id)
+      ON DELETE RESTRICT;
+  END IF;
+END $$;
+```
+
+**SQL Server Example:**
+
+```sql
+-- Natural key FK constraint with idempotency check
+IF NOT EXISTS (
+  SELECT * FROM sys.foreign_keys 
+  WHERE name = 'fk_studentschoolassociation_student_id'
+)
+BEGIN
+  ALTER TABLE dms.edfi_studentschoolassociation
+    ADD CONSTRAINT fk_studentschoolassociation_student_id
+    FOREIGN KEY (student_id)
+    REFERENCES dms.edfi_student(id)
+    ON DELETE NO ACTION;
+END;
+```
+
+These constraints are generated inline during table creation and ensure referential
+integrity for both descriptor lookups and natural key references.
 
 ### Natural Key Resolution Views
 

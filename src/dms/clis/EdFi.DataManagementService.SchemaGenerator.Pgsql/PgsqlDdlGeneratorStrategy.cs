@@ -190,7 +190,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         originalSchemaName,
                         options,
                         resourceSchema,
-                        fkConstraintsToAdd
+                        fkConstraintsToAdd,
+                        apiSchema.ProjectSchema
                     );
                 }
             }
@@ -597,7 +598,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             string originalSchemaName,
             DdlGenerationOptions options,
             ResourceSchema? resourceSchema,
-            List<(string tableName, string schemaName, object fkConstraint)> fkConstraintsToAdd
+            List<(string tableName, string schemaName, object fkConstraint)> fkConstraintsToAdd,
+            ProjectSchema? projectSchema = null
         )
         {
             var tableName = DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options);
@@ -700,6 +702,51 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         }
                     )
                 );
+            }
+
+            // Add FK constraints for natural key columns that follow the pattern <TableName>_Id
+            // These are natural keys that reference other tables (similar to view joins)
+            if (projectSchema != null)
+            {
+                var naturalKeyReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (
+                    var column in table.Columns.Where(c =>
+                        c.IsNaturalKey
+                        && !c.IsParentReference
+                        && c.ColumnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase)
+                        && string.IsNullOrEmpty(c.FromReferencePath)
+                    )
+                ) // Only if not already handled by cross-resource refs
+                {
+                    // Extract potential table name from column name (e.g., School_Id -> School)
+                    var potentialTableName = column.ColumnName.Substring(0, column.ColumnName.Length - 3);
+
+                    // Check if this table exists in the project schema
+                    var referencedTableExists = projectSchema.ResourceSchemas.Values.Any(rs =>
+                        string.Equals(rs.ResourceName, potentialTableName, StringComparison.OrdinalIgnoreCase)
+                    );
+
+                    if (referencedTableExists && !naturalKeyReferences.Contains(potentialTableName))
+                    {
+                        naturalKeyReferences.Add(potentialTableName);
+                        fkConstraintsToAdd.Add(
+                            (
+                                tableName,
+                                finalSchemaName,
+                                new
+                                {
+                                    constraintName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                                        $"FK_{table.BaseName}_{potentialTableName}"
+                                    ),
+                                    column = PgsqlNamingHelper.MakePgsqlIdentifier(column.ColumnName),
+                                    parentTable = $"{finalSchemaName}.{DetermineTableName(potentialTableName, originalSchemaName, null, options)}",
+                                    parentColumn = "Id",
+                                    cascade = false, // Use RESTRICT to prevent accidental data loss
+                                }
+                            )
+                        );
+                    }
+                }
             }
 
             // Store Document FK constraint for later generation (FIXED: no double parentheses)
@@ -839,7 +886,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     originalSchemaName,
                     options,
                     resourceSchema,
-                    fkConstraintsToAdd
+                    fkConstraintsToAdd,
+                    projectSchema
                 );
             }
         }
@@ -852,7 +900,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
             List<string>? parentPkColumns,
             string originalSchemaName,
             DdlGenerationOptions options,
-            ResourceSchema? resourceSchema = null
+            ResourceSchema? resourceSchema = null,
+            ProjectSchema? projectSchema = null
         )
         {
             var tableName = DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options);
@@ -943,6 +992,46 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                         cascade = false, // Use RESTRICT for cross-resource FKs to prevent accidental data loss
                     }
                 );
+            }
+
+            // 2.5. FK for natural key columns that follow the pattern <TableName>_Id
+            // These are natural keys that reference other tables (similar to view joins)
+            if (projectSchema != null)
+            {
+                var naturalKeyReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (
+                    var column in table.Columns.Where(c =>
+                        c.IsNaturalKey
+                        && !c.IsParentReference
+                        && c.ColumnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase)
+                    )
+                )
+                {
+                    // Extract potential table name from column name (e.g., School_Id -> School)
+                    var potentialTableName = column.ColumnName.Substring(0, column.ColumnName.Length - 3);
+
+                    // Check if this table exists in the project schema
+                    var referencedTableExists = projectSchema.ResourceSchemas.Values.Any(rs =>
+                        string.Equals(rs.ResourceName, potentialTableName, StringComparison.OrdinalIgnoreCase)
+                    );
+
+                    if (referencedTableExists && !naturalKeyReferences.Contains(potentialTableName))
+                    {
+                        naturalKeyReferences.Add(potentialTableName);
+                        fkColumns.Add(
+                            new
+                            {
+                                constraintName = PgsqlNamingHelper.MakePgsqlIdentifier(
+                                    $"FK_{table.BaseName}_{potentialTableName}"
+                                ),
+                                column = PgsqlNamingHelper.MakePgsqlIdentifier(column.ColumnName),
+                                parentTable = $"{finalSchemaName}.{DetermineTableName(potentialTableName, originalSchemaName, null, options)}",
+                                parentColumn = "Id",
+                                cascade = false, // Use RESTRICT to prevent accidental data loss
+                            }
+                        );
+                    }
+                }
             }
 
             // 3. FK to Document table (all tables) - FIXED: no double parentheses
@@ -1121,7 +1210,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Pgsql
                     null,
                     originalSchemaName,
                     options,
-                    resourceSchema
+                    resourceSchema,
+                    projectSchema
                 );
             }
         }
