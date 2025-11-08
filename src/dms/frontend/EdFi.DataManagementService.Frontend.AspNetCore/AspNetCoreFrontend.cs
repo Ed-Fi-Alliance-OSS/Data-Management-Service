@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IO;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -20,22 +23,12 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore;
 /// </summary>
 public static class AspNetCoreFrontend
 {
-    /// <summary>
-    /// Takes an HttpRequest and returns a deserialized request body
-    /// </summary>
-    private static async Task<string?> ExtractJsonBodyFrom(HttpRequest request)
-    {
-        using Stream body = request.Body;
-        using StreamReader bodyReader = new(body);
-        var requestBodyString = await bodyReader.ReadToEndAsync();
-
-        if (string.IsNullOrEmpty(requestBodyString))
+    internal static JsonSerializerOptions SharedSerializerOptions { get; } =
+        new()
         {
-            return null;
-        }
-
-        return requestBodyString;
-    }
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        };
 
     /// <summary>
     /// Takes an HttpRequest and returns a deserialized, not null or empty request Headers
@@ -85,18 +78,20 @@ public static class AspNetCoreFrontend
     /// <summary>
     /// Converts an AspNetCore HttpRequest to a DMS FrontendRequest
     /// </summary>
-    private static async Task<FrontendRequest> FromRequest(
-        HttpRequest HttpRequest,
+    private static FrontendRequest FromRequest(
+        HttpRequest httpRequest,
         string dmsPath,
-        IOptions<AppSettings> options
+        IOptions<AppSettings> options,
+        bool includeBody
     )
     {
         return new(
-            Body: await ExtractJsonBodyFrom(HttpRequest),
-            Headers: ExtractHeadersFrom(HttpRequest),
+            Body: null,
+            Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
-            QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
-            TraceId: ExtractTraceIdFrom(HttpRequest, options)
+            QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
+            TraceId: ExtractTraceIdFrom(httpRequest, options),
+            BodyStream: includeBody ? httpRequest.Body : null
         );
     }
 
@@ -124,23 +119,21 @@ public static class AspNetCoreFrontend
             httpContext.Response.Headers.Append(header.Key, header.Value);
         }
 
-        IResult result = Results.Content(
-            statusCode: frontendResponse.StatusCode,
-            content: frontendResponse.Body == null
-                ? null
-                : JsonSerializer.Serialize(
-                    frontendResponse.Body,
-                    new JsonSerializerOptions()
-                    {
-                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                        WriteIndented = true,
-                    }
-                ),
-            contentType: frontendResponse.ContentType,
-            contentEncoding: System.Text.Encoding.UTF8
-        );
+        if (frontendResponse is IStreamableFrontendResponse streamableFrontendResponse)
+        {
+            return new StreamResult(
+                frontendResponse.StatusCode,
+                frontendResponse.ContentType,
+                streamableFrontendResponse.WriteBodyAsync
+            );
+        }
 
-        return result;
+        return Results.Json(
+            data: frontendResponse.Body,
+            options: SharedSerializerOptions,
+            contentType: frontendResponse.ContentType,
+            statusCode: frontendResponse.StatusCode
+        );
     }
 
     /// <summary>
@@ -157,7 +150,7 @@ public static class AspNetCoreFrontend
     )
     {
         return ToResult(
-            await apiService.Upsert(await FromRequest(httpContext.Request, dmsPath, options)),
+            await apiService.Upsert(FromRequest(httpContext.Request, dmsPath, options, includeBody: true)),
             httpContext,
             dmsPath
         );
@@ -174,7 +167,7 @@ public static class AspNetCoreFrontend
     )
     {
         return ToResult(
-            await apiService.Get(await FromRequest(httpContext.Request, dmsPath, options)),
+            await apiService.Get(FromRequest(httpContext.Request, dmsPath, options, includeBody: false)),
             httpContext,
             dmsPath
         );
@@ -191,7 +184,9 @@ public static class AspNetCoreFrontend
     )
     {
         return ToResult(
-            await apiService.UpdateById(await FromRequest(httpContext.Request, dmsPath, options)),
+            await apiService.UpdateById(
+                FromRequest(httpContext.Request, dmsPath, options, includeBody: true)
+            ),
             httpContext,
             dmsPath
         );
@@ -208,9 +203,30 @@ public static class AspNetCoreFrontend
     )
     {
         return ToResult(
-            await apiService.DeleteById(await FromRequest(httpContext.Request, dmsPath, options)),
+            await apiService.DeleteById(
+                FromRequest(httpContext.Request, dmsPath, options, includeBody: false)
+            ),
             httpContext,
             dmsPath
         );
+    }
+
+    private sealed class StreamResult(
+        int statusCode,
+        string? contentType,
+        Func<Stream, CancellationToken, Task> writer
+    ) : IResult
+    {
+        public async Task ExecuteAsync(HttpContext httpContext)
+        {
+            httpContext.Response.StatusCode = statusCode;
+
+            if (!string.IsNullOrWhiteSpace(contentType))
+            {
+                httpContext.Response.ContentType = contentType;
+            }
+
+            await writer(httpContext.Response.Body, httpContext.RequestAborted);
+        }
     }
 }

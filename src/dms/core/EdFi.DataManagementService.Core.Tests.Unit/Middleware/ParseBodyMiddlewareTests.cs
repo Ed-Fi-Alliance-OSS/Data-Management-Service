@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IO;
+using System.Text;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -144,6 +146,38 @@ public class ParseBodyMiddlewareTests
         public void It_returns_error_message_body()
         {
             _requestInfo.FrontendResponse.Body?.ToJsonString().Should().Contain("Data validation failed.");
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Stream_Body : ParseBodyMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var jsonBody = """{"name":"streamed"}""";
+            var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(jsonBody));
+            var frontEndRequest = new FrontendRequest(
+                Path: "ed-fi/stream",
+                Body: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("trace"),
+                BodyStream: stream
+            );
+
+            _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST);
+            await Middleware().Execute(_requestInfo, () => Task.CompletedTask);
+        }
+
+        [Test]
+        public void It_parses_body_and_clears_stream_reference()
+        {
+            _requestInfo.ParsedBody.Should().NotBeNull();
+            _requestInfo.FrontendRequest.Body.Should().BeNull();
+            _requestInfo.FrontendRequest.BodyStream.Should().BeNull();
         }
     }
 }

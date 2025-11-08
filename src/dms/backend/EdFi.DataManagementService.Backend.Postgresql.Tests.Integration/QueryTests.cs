@@ -3,7 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IO;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -15,6 +19,14 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 public class QueryTests : DatabaseTest
 {
     private static readonly string _defaultResourceName = "DefaultResourceName";
+
+    protected static async Task<JsonArray> ReadDocumentsAsync(QueryResult.QuerySuccess success)
+    {
+        await using var buffer = new MemoryStream();
+        await success.StreamWriter(buffer, CancellationToken.None);
+        buffer.Position = 0;
+        return JsonNode.Parse(buffer.ToArray())?.AsArray() ?? new JsonArray();
+    }
 
     [TestFixture]
     public class Given_an_upsert_of_a_new_document : QueryTests
@@ -49,8 +61,7 @@ public class QueryTests : DatabaseTest
                 searchParameters,
                 paginationParameters
             );
-            _queryResult = await CreateQueryDocument()
-                .QueryDocuments(queryRequest, Connection!, Transaction!);
+            _queryResult = await CreateQueryDocument().QueryDocuments(queryRequest);
         }
 
         [Test]
@@ -68,10 +79,11 @@ public class QueryTests : DatabaseTest
         }
 
         [Test]
-        public void It_should_be_found_by_query()
+        public async Task It_should_be_found_by_query()
         {
             _queryResult!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_queryResult! as QueryResult.QuerySuccess)!.EdfiDocs.Count.Should().Be(1);
+            JsonArray docs = await ReadDocumentsAsync((_queryResult as QueryResult.QuerySuccess)!);
+            docs.Count.Should().Be(1);
         }
 
         [Test]
@@ -112,15 +124,15 @@ public class QueryTests : DatabaseTest
                 searchParameters,
                 paginationParameters
             );
-            _queryResults = await CreateQueryDocument()
-                .QueryDocuments(queryRequest, Connection!, Transaction!);
+            _queryResults = await CreateQueryDocument().QueryDocuments(queryRequest);
         }
 
         [Test]
-        public void It_should_be_found_by_query()
+        public async Task It_should_be_found_by_query()
         {
             _queryResults!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_queryResults! as QueryResult.QuerySuccess)!.EdfiDocs.Count.Should().Be(3);
+            JsonArray docs = await ReadDocumentsAsync((_queryResults as QueryResult.QuerySuccess)!);
+            docs.Count.Should().Be(3);
         }
 
         [Test]
@@ -174,38 +186,36 @@ public class QueryTests : DatabaseTest
                 searchParameters,
                 paginationParameters
             );
-            _queryResults1 = await CreateQueryDocument()
-                .QueryDocuments(queryRequest, Connection!, Transaction!);
+            _queryResults1 = await CreateQueryDocument().QueryDocuments(queryRequest);
 
             IQueryRequest queryRequest2 = CreateQueryRequest(
                 "ResourceName2",
                 searchParameters,
                 paginationParameters
             );
-            _queryResults2 = await CreateQueryDocument()
-                .QueryDocuments(queryRequest2, Connection!, Transaction!);
+            _queryResults2 = await CreateQueryDocument().QueryDocuments(queryRequest2);
         }
 
         [Test]
-        public void It_should_find_3_documents_for_resourcename1()
+        public async Task It_should_find_3_documents_for_resourcename1()
         {
             _queryResults1!.Should().BeOfType<QueryResult.QuerySuccess>();
             QueryResult.QuerySuccess success = (_queryResults1! as QueryResult.QuerySuccess)!;
-            JsonNode[] edfiDocs = success.EdfiDocs.ToArray()!;
-            edfiDocs.Length.Should().Be(3);
-            edfiDocs[0].ToJsonString().Should().NotContain("\"abc\":4");
-            edfiDocs[1].ToJsonString().Should().NotContain("\"abc\":4");
-            edfiDocs[2].ToJsonString().Should().NotContain("\"abc\":4");
+            JsonArray edfiDocs = await ReadDocumentsAsync(success);
+            edfiDocs.Count.Should().Be(3);
+            edfiDocs[0]!.ToJsonString().Should().NotContain("\"abc\":4");
+            edfiDocs[1]!.ToJsonString().Should().NotContain("\"abc\":4");
+            edfiDocs[2]!.ToJsonString().Should().NotContain("\"abc\":4");
         }
 
         [Test]
-        public void It_should_find_1_document_for_resourcename2()
+        public async Task It_should_find_1_document_for_resourcename2()
         {
             _queryResults2!.Should().BeOfType<QueryResult.QuerySuccess>();
             QueryResult.QuerySuccess success = (_queryResults2! as QueryResult.QuerySuccess)!;
-            JsonNode[] edfiDocs = success.EdfiDocs.ToArray()!;
-            edfiDocs.Length.Should().Be(1);
-            edfiDocs[0].ToJsonString().Should().Contain("\"abc\":4");
+            JsonArray edfiDocs = await ReadDocumentsAsync(success);
+            edfiDocs.Count.Should().Be(1);
+            edfiDocs[0]!.ToJsonString().Should().Contain("\"abc\":4");
         }
 
         [Test]

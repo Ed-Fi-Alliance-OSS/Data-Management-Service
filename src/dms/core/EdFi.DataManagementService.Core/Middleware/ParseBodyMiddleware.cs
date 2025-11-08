@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -55,7 +57,7 @@ namespace EdFi.DataManagementService.Core.Middleware
 
             try
             {
-                if (string.IsNullOrWhiteSpace(requestInfo.FrontendRequest.Body))
+                if (!HasReadableBody(requestInfo))
                 {
                     requestInfo.FrontendResponse = new FrontendResponse(
                         StatusCode: 400,
@@ -68,11 +70,16 @@ namespace EdFi.DataManagementService.Core.Middleware
                     return;
                 }
 
-                JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
+                JsonNode? body = await ParseBodyAsync(requestInfo);
 
                 Trace.Assert(body != null, "Unable to parse JSON");
 
                 requestInfo.ParsedBody = body;
+                requestInfo.FrontendRequest = requestInfo.FrontendRequest with
+                {
+                    Body = null,
+                    BodyStream = null,
+                };
             }
             catch (Exception ex)
             {
@@ -92,6 +99,29 @@ namespace EdFi.DataManagementService.Core.Middleware
             }
 
             await next();
+        }
+
+        private static bool HasReadableBody(RequestInfo requestInfo) =>
+            requestInfo.FrontendRequest.BodyStream != null
+            || !string.IsNullOrWhiteSpace(requestInfo.FrontendRequest.Body);
+
+        private static async Task<JsonNode?> ParseBodyAsync(RequestInfo requestInfo)
+        {
+            if (requestInfo.FrontendRequest.BodyStream != null)
+            {
+                var parsed = await JsonSerializer.DeserializeAsync<JsonNode>(
+                    requestInfo.FrontendRequest.BodyStream,
+                    cancellationToken: CancellationToken.None
+                );
+                return parsed;
+            }
+
+            if (!string.IsNullOrWhiteSpace(requestInfo.FrontendRequest.Body))
+            {
+                return JsonNode.Parse(requestInfo.FrontendRequest.Body);
+            }
+
+            return null;
         }
     }
 }

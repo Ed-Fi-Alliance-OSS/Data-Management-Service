@@ -48,9 +48,10 @@ internal class QueryRequestHandler(
 
         requestInfo.FrontendResponse = queryResult switch
         {
-            QuerySuccess success => new FrontendResponse(
+            QuerySuccess success => new StreamingFrontendResponse(
                 StatusCode: 200,
-                Body: success.EdfiDocs,
+                WriteBodyAsync: (stream, cancellationToken) =>
+                    success.StreamWriter(stream, cancellationToken),
                 Headers: requestInfo.PaginationParameters.TotalCount
                     ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                     : []
@@ -61,7 +62,7 @@ internal class QueryRequestHandler(
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            _ => new(
+            _ => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError("Unknown QueryResult", requestInfo.FrontendRequest.TraceId),
                 Headers: []

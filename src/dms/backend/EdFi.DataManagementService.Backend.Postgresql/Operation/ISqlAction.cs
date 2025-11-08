@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using System.Text.Json.Nodes;
+using System.Threading;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -36,12 +36,14 @@ public interface ISqlAction
         TraceId traceId
     );
 
-    public Task<JsonArray> GetAllDocumentsByResourceName(
+    public Task WriteAllDocumentsByResourceNameAsync(
         string resourceName,
         IQueryRequest queryRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        TraceId traceId
+        TraceId traceId,
+        Utf8JsonWriter writer,
+        CancellationToken cancellationToken
     );
 
     public Task<int> GetTotalDocumentsForResourceName(

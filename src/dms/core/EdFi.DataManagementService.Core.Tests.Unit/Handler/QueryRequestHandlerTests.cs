@@ -3,7 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IO;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -39,7 +43,15 @@ public class QueryRequestHandlerTests
 
             public override Task<QueryResult> QueryDocuments(IQueryRequest queryRequest)
             {
-                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess([], 0));
+                QueryResult.QueryStreamWriter writer = (stream, cancellationToken) =>
+                {
+                    using var jsonWriter = new Utf8JsonWriter(stream);
+                    ResponseBody.WriteTo(jsonWriter);
+                    jsonWriter.Flush();
+                    return Task.CompletedTask;
+                };
+
+                return Task.FromResult<QueryResult>(new QueryResult.QuerySuccess(writer, 0));
             }
         }
 
@@ -53,13 +65,19 @@ public class QueryRequestHandlerTests
         }
 
         [Test]
-        public void It_has_the_correct_response()
+        public async Task It_has_the_correct_response()
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(200);
-            _requestInfo
-                .FrontendResponse.Body?.ToJsonString()
-                .Should()
-                .Be(Repository.ResponseBody.ToJsonString());
+            var streamingResponse = _requestInfo
+                .FrontendResponse.Should()
+                .BeOfType<StreamingFrontendResponse>()
+                .Subject;
+
+            await using var buffer = new MemoryStream();
+            await streamingResponse.WriteBodyAsync(buffer, CancellationToken.None);
+            buffer.Position = 0;
+            var parsed = JsonNode.Parse(buffer.ToArray());
+            parsed!.ToJsonString().Should().Be(Repository.ResponseBody.ToJsonString());
         }
     }
 

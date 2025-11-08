@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IO;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.External.Frontend;
@@ -31,5 +32,9 @@ public record FrontendRequest(
     /// <summary>
     /// A request identifier provided by the frontend service, used for log tracing
     /// </summary>
-    TraceId TraceId
+    TraceId TraceId,
+    /// <summary>
+    /// Raw request body stream when supplied by the frontend.
+    /// </summary>
+    Stream? BodyStream = null
 );

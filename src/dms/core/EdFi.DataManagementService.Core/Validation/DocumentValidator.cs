@@ -23,15 +23,30 @@ internal interface IDocumentValidator
     (string[], Dictionary<string, string[]>) Validate(RequestInfo requestInfo);
 }
 
-internal class DocumentValidator() : IDocumentValidator
+internal class DocumentValidator(ICompiledSchemaCache schemaCache) : IDocumentValidator
 {
+    private readonly ICompiledSchemaCache _schemaCache = schemaCache;
     private readonly HashSet<string> trimmableProperties = new HashSet<string>
     {
         "codeValue",
         "shortDescription",
     };
 
-    private static JsonSchema GetSchema(ResourceSchema resourceSchema, RequestMethod method)
+    private static readonly EvaluationOptions ValidatorEvaluationOptions = new()
+    {
+        OutputFormat = OutputFormat.List,
+        RequireFormatValidation = true,
+    };
+
+    private JsonSchema GetSchema(RequestInfo requestInfo) =>
+        _schemaCache.GetOrAdd(
+            requestInfo.ResourceSchema.ResourceName,
+            requestInfo.Method,
+            requestInfo.ApiSchemaReloadId,
+            () => CompileSchema(requestInfo.ResourceSchema, requestInfo.Method)
+        );
+
+    private static JsonSchema CompileSchema(ResourceSchema resourceSchema, RequestMethod method)
     {
         JsonNode jsonSchemaForResource = resourceSchema.JsonSchemaForRequestMethod(method);
         string stringifiedJsonSchema = JsonSerializer.Serialize(jsonSchemaForResource);
@@ -40,14 +55,8 @@ internal class DocumentValidator() : IDocumentValidator
 
     public (string[], Dictionary<string, string[]>) Validate(RequestInfo requestInfo)
     {
-        EvaluationOptions validatorEvaluationOptions = new()
-        {
-            OutputFormat = OutputFormat.List,
-            RequireFormatValidation = true,
-        };
-
-        var resourceSchemaValidator = GetSchema(requestInfo.ResourceSchema, requestInfo.Method);
-        var results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, validatorEvaluationOptions);
+        var resourceSchemaValidator = GetSchema(requestInfo);
+        var results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, ValidatorEvaluationOptions);
 
         var overpostPruneResult = PruneOverpostedData(requestInfo.ParsedBody, results);
 
@@ -57,7 +66,7 @@ internal class DocumentValidator() : IDocumentValidator
             requestInfo.ParsedBody = pruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
-            results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, validatorEvaluationOptions);
+            results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, ValidatorEvaluationOptions);
         }
 
         var nullPruneResult = PruneNullData(requestInfo.ParsedBody, results);
@@ -68,7 +77,7 @@ internal class DocumentValidator() : IDocumentValidator
             requestInfo.ParsedBody = nullPruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
-            results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, validatorEvaluationOptions);
+            results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, ValidatorEvaluationOptions);
         }
 
         var whitespacePruneResult = PruneCodeValueWhitespaceData(requestInfo.ParsedBody, results);
@@ -79,7 +88,7 @@ internal class DocumentValidator() : IDocumentValidator
             requestInfo.ParsedBody = whitespacePruned.prunedDocumentBody;
 
             // Now re-evaluate the pruned body
-            results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, validatorEvaluationOptions);
+            results = resourceSchemaValidator.Evaluate(requestInfo.ParsedBody, ValidatorEvaluationOptions);
         }
 
         return (new List<string>().ToArray(), ValidationErrorsFrom(results));
@@ -103,16 +112,16 @@ internal class DocumentValidator() : IDocumentValidator
                 return new PruneResult.NotPruned();
             }
 
+            bool modified = false;
+
             foreach (var additionalProperty in additionalProperties)
             {
                 JsonObject jsonObject = documentBody.AsObject();
-                var prunedJsonObject = jsonObject.RemoveProperty([.. additionalProperty.InstanceLocation]);
-                var prunedDocumentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
-                Trace.Assert(prunedDocumentBody != null, "Unexpected null after parsing pruned object");
-                documentBody = prunedDocumentBody;
+                jsonObject.RemoveProperty([.. additionalProperty.InstanceLocation]);
+                modified = true;
             }
 
-            return new PruneResult.Pruned(documentBody);
+            return modified ? new PruneResult.Pruned(documentBody) : new PruneResult.NotPruned();
         }
 
         bool IsEmptyArray(JsonNode documentBody, JsonPointer instanceLocation)
@@ -151,16 +160,16 @@ internal class DocumentValidator() : IDocumentValidator
                 return new PruneResult.NotPruned();
             }
 
+            bool modified = false;
+
             foreach (var nullProperty in nullProperties)
             {
                 JsonObject jsonObject = documentBody.AsObject();
-                var prunedJsonObject = jsonObject.RemoveProperty([.. nullProperty.InstanceLocation]);
-                var prunedDocumentBody = JsonNode.Parse(prunedJsonObject.ToJsonString());
-                Trace.Assert(prunedDocumentBody != null, "Unexpected null after parsing pruned object");
-                documentBody = prunedDocumentBody;
+                jsonObject.RemoveProperty([.. nullProperty.InstanceLocation]);
+                modified = true;
             }
 
-            return new PruneResult.Pruned(documentBody);
+            return modified ? new PruneResult.Pruned(documentBody) : new PruneResult.NotPruned();
         }
 
         PruneResult PruneCodeValueWhitespaceData(JsonNode? documentBody, EvaluationResults evaluationResults)

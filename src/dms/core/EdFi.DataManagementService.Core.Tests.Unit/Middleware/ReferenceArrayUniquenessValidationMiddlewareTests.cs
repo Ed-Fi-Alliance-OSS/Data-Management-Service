@@ -74,11 +74,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
                 ?? new JsonObject()
         );
 
-        var body = JsonNode.Parse(requestInfo.FrontendRequest.Body!);
-        if (body != null)
-        {
-            requestInfo.ParsedBody = body;
-        }
+        requestInfo.ParsedBody = JsonNode.Parse(jsonBody)!;
 
         await BuildResourceInfo().Execute(requestInfo, NullNext);
         await ExtractDocument().Execute(requestInfo, NullNext);

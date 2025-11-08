@@ -172,21 +172,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var connection = await _dataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
-
-            QueryResult result = await _queryDocument.QueryDocuments(queryRequest, connection, transaction);
-
-            switch (result)
-            {
-                case QueryResult.QuerySuccess:
-                    await transaction.CommitAsync();
-                    break;
-                default:
-                    await transaction.RollbackAsync();
-                    break;
-            }
-            return result;
+            return await _queryDocument.QueryDocuments(queryRequest);
         }
         catch (Exception ex)
         {

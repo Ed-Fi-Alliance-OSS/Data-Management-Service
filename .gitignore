@@ -460,3 +460,5 @@ perf-dms-document-alias-only/backups/
 perf-dms-document-alias-only/data/out/
 perf-dms-reference-table-direct-load/venv/
 perf-dms-document-alias-only/venv/
+
+telemetry/

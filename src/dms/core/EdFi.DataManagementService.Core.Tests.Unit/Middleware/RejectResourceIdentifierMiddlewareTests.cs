@@ -40,7 +40,10 @@ public class RejectResourceIdentifierMiddlewareTests
                 QueryParameters: [],
                 TraceId: new TraceId("")
             );
-            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            _requestInfo = new(frontendRequest, RequestMethod.POST)
+            {
+                ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontendRequest.Body!)!,
+            };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -84,7 +87,10 @@ public class RejectResourceIdentifierMiddlewareTests
                 QueryParameters: [],
                 TraceId: new TraceId("")
             );
-            _requestInfo = new(frontendRequest, RequestMethod.POST);
+            _requestInfo = new(frontendRequest, RequestMethod.POST)
+            {
+                ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontendRequest.Body!)!,
+            };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 

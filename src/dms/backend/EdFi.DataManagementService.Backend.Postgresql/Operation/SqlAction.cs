@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -191,14 +192,16 @@ public partial class SqlAction() : ISqlAction
     }
 
     /// <summary>
-    /// Returns an array of Documents from the database corresponding to the given ResourceName
+    /// Streams documents from the database corresponding to the given ResourceName to the supplied writer.
     /// </summary>
-    public async Task<JsonArray> GetAllDocumentsByResourceName(
+    public async Task WriteAllDocumentsByResourceNameAsync(
         string resourceName,
         IQueryRequest queryRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        TraceId traceId
+        TraceId traceId,
+        Utf8JsonWriter writer,
+        CancellationToken cancellationToken
     )
     {
         var andConditions = new List<string> { "ResourceName = $1" };
@@ -225,21 +228,13 @@ public partial class SqlAction() : ISqlAction
         );
         command.Parameters.AddRange(parameters.ToArray());
 
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-        var documents = new List<JsonNode>();
-
-        while (await reader.ReadAsync())
+        while (await reader.ReadAsync(cancellationToken))
         {
-            JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
-
-            if (edfiDoc != null)
-            {
-                documents.Add(edfiDoc);
-            }
+            JsonElement edfiDoc = await reader.GetFieldValueAsync<JsonElement>(0, cancellationToken);
+            edfiDoc.WriteTo(writer);
         }
-
-        return new(documents.ToArray());
     }
 
     /// <summary>
