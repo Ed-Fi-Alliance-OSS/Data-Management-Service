@@ -462,3 +462,4 @@ perf-dms-reference-table-direct-load/venv/
 perf-dms-document-alias-only/venv/
 
 telemetry/
+!eng/telemetry/
