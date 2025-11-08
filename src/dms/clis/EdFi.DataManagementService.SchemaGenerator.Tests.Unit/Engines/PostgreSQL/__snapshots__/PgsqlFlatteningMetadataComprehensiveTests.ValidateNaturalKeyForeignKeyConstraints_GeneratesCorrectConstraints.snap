@@ -108,6 +108,28 @@ END$$;
 DO $$
 BEGIN
         IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentSchoolAssociation_Student')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentSchoolAssociation ADD CONSTRAINT FK_StudentSchoolAssociation_Student
+                FOREIGN KEY (Student_Id)
+                REFERENCES dms.edfi_Student(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentSchoolAssociation_School')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentSchoolAssociation ADD CONSTRAINT FK_StudentSchoolAssociation_School
+                FOREIGN KEY (School_Id)
+                REFERENCES dms.edfi_School(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
             SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentSchoolAssociation_Document')
         ) THEN
             ALTER TABLE dms.edfi_StudentSchoolAssociation ADD CONSTRAINT FK_StudentSchoolAssociation_Document

@@ -739,28 +739,46 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 );
             }
 
-            // Add FK constraints for natural key columns that follow the pattern <TableName>_Id
-            // These are natural keys that reference other tables (similar to view joins)
+            // Add FK constraints for columns that follow the pattern <TableName>_Id
+            // These reference other tables (similar to view joins)
             if (projectSchema != null)
             {
                 var naturalKeyReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (
                     var column in table.Columns.Where(c =>
-                        c.IsNaturalKey
-                        && !c.IsParentReference
+                        !c.IsParentReference
                         && c.ColumnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase)
+                        && string.IsNullOrEmpty(c.FromReferencePath)
                     )
                 )
                 {
                     // Extract potential table name from column name (e.g., School_Id -> School)
-                    var potentialTableName = column.ColumnName.Substring(0, column.ColumnName.Length - 3);
+                    // For prefixed columns like Participating_EducationOrganization_Id or BalanceSheet_BalanceSheetDimension_Id,
+                    // extract the rightmost segment (the actual table name)
+                    var columnNameWithoutId = column.ColumnName.Substring(0, column.ColumnName.Length - 3);
 
-                    // Check if this table exists in the project schema
-                    var referencedTableExists = projectSchema.ResourceSchemas.Values.Any(rs =>
+                    // Find the rightmost segment after the last underscore (this is the potential table name)
+                    var lastUnderscoreIndex = columnNameWithoutId.LastIndexOf('_');
+                    var potentialTableName =
+                        lastUnderscoreIndex >= 0
+                            ? columnNameWithoutId.Substring(lastUnderscoreIndex + 1)
+                            : columnNameWithoutId;
+
+                    // Check if this table exists in the project schema AND has a table (not just abstract/view)
+                    var referencedResource = projectSchema.ResourceSchemas.Values.FirstOrDefault(rs =>
                         string.Equals(rs.ResourceName, potentialTableName, StringComparison.OrdinalIgnoreCase)
                     );
 
-                    if (referencedTableExists && !naturalKeyReferences.Contains(potentialTableName))
+                    // Skip if this is an abstract resource (generates view, not table)
+                    bool isAbstractResource = projectSchema.AbstractResources.ContainsKey(potentialTableName);
+
+                    // Only create FK if the referenced resource exists, has a physical table, and is not abstract
+                    if (
+                        referencedResource != null
+                        && referencedResource.FlatteningMetadata?.Table != null
+                        && !isAbstractResource
+                        && !naturalKeyReferences.Contains(potentialTableName)
+                    )
                     {
                         naturalKeyReferences.Add(potentialTableName);
                         fkConstraintsToAdd.Add(
@@ -783,28 +801,44 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 }
             }
 
-            // REMOVED: Cross-resource FK constraints (fromReferencePath)
-            // Design decision: Only generate FK constraints for parent-child relationships (IsParentReference)
-            // Entity-to-entity references are maintained through application logic and Document/Alias tables
-            // foreach (var (columnName, referencedResource) in crossResourceReferences)
-            // {
-            //     fkConstraintsToAdd.Add(
-            //         (
-            //             tableName,
-            //             finalSchemaName,
-            //             new
-            //             {
-            //                 constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
-            //                     $"FK_{table.BaseName}_{referencedResource}"
-            //                 ),
-            //                 column = columnName,
-            //                 parentTable = $"[{finalSchemaName}].[{DetermineTableName(referencedResource, originalSchemaName, null, options)}]",
-            //                 parentColumn = "Id",
-            //                 cascade = false,
-            //             }
-            //         )
-            //     );
-            // }
+            // Add FK constraints for cross-resource references (fromReferencePath)
+            // Skip abstract resources (they generate views, not tables)
+            foreach (var (columnName, referencedResource) in crossResourceReferences)
+            {
+                // Check if this resource exists and has a physical table
+                var referencedResourceSchema = projectSchema?.ResourceSchemas.Values.FirstOrDefault(rs =>
+                    string.Equals(rs.ResourceName, referencedResource, StringComparison.OrdinalIgnoreCase)
+                );
+
+                // Check if this is an abstract resource (generates view, not table)
+                bool isAbstractResource =
+                    projectSchema?.AbstractResources.ContainsKey(referencedResource) ?? false;
+
+                // Only create FK if the referenced resource exists, has a physical table, and is not abstract
+                if (
+                    referencedResourceSchema != null
+                    && referencedResourceSchema.FlatteningMetadata?.Table != null
+                    && !isAbstractResource
+                )
+                {
+                    fkConstraintsToAdd.Add(
+                        (
+                            tableName,
+                            finalSchemaName,
+                            new
+                            {
+                                constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                    $"FK_{table.BaseName}_{referencedResource}"
+                                ),
+                                column = columnName,
+                                parentTable = $"[{finalSchemaName}].[{DetermineTableName(referencedResource, originalSchemaName, null, options)}]",
+                                parentColumn = "Id",
+                                cascade = false,
+                            }
+                        )
+                    );
+                }
+            }
 
             // Store Document FK constraint for later generation (FIXED: no double parentheses)
             // For child tables, use NO ACTION to avoid multiple cascade paths in SQL Server
@@ -1010,7 +1044,8 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             List<string>? parentPkColumns,
             string originalSchemaName,
             DdlGenerationOptions options,
-            ResourceSchema? resourceSchema = null
+            ResourceSchema? resourceSchema = null,
+            ProjectSchema? projectSchema = null
         )
         {
             var tableName = DetermineTableName(table.BaseName, originalSchemaName, resourceSchema, options);
@@ -1098,20 +1133,101 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
             }
 
             // 2. FK to cross-resource references
+            // Skip abstract resources (they generate views, not tables)
             foreach (var (columnName, referencedResource) in crossResourceReferences)
             {
-                fkColumns.Add(
-                    new
-                    {
-                        constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
-                            $"FK_{table.BaseName}_{referencedResource}"
-                        ),
-                        column = columnName,
-                        parentTable = $"[{finalSchemaName}].[{DetermineTableName(referencedResource, originalSchemaName, null, options)}]",
-                        parentColumn = "[Id]",
-                        cascade = false, // Use RESTRICT for cross-resource FKs to prevent accidental data loss
-                    }
+                // Check if this resource exists and has a physical table
+                var referencedResourceSchema = projectSchema?.ResourceSchemas.Values.FirstOrDefault(rs =>
+                    string.Equals(rs.ResourceName, referencedResource, StringComparison.OrdinalIgnoreCase)
                 );
+
+                // Check if this is an abstract resource (generates view, not table)
+                bool isAbstractResource =
+                    projectSchema?.AbstractResources.ContainsKey(referencedResource) ?? false;
+
+                // Only create FK if the referenced resource exists, has a physical table, and is not abstract
+                if (
+                    referencedResourceSchema != null
+                    && referencedResourceSchema.FlatteningMetadata?.Table != null
+                    && !isAbstractResource
+                )
+                {
+                    fkColumns.Add(
+                        new
+                        {
+                            constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                $"FK_{table.BaseName}_{referencedResource}"
+                            ),
+                            column = columnName,
+                            parentTable = $"[{finalSchemaName}].[{DetermineTableName(referencedResource, originalSchemaName, null, options)}]",
+                            parentColumn = "[Id]",
+                            cascade = false, // Use RESTRICT for cross-resource FKs to prevent accidental data loss
+                        }
+                    );
+                }
+            }
+
+            // 2b. FK constraints for natural key columns that follow the pattern <TableName>_Id
+            // (only if not already handled by cross-resource references)
+            if (projectSchema != null)
+            {
+                var existingFkResources = crossResourceReferences
+                    .Select(cr => cr.referencedResource)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var naturalKeyReferences = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (
+                    var column in (table.Columns ?? System.Linq.Enumerable.Empty<ColumnMetadata>()).Where(c =>
+                        !c.IsParentReference
+                        && c.ColumnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase)
+                        && string.IsNullOrEmpty(c.FromReferencePath)
+                    )
+                )
+                {
+                    // Extract potential table name from column name (e.g., School_Id -> School)
+                    // For prefixed columns like Participating_EducationOrganization_Id or BalanceSheet_BalanceSheetDimension_Id,
+                    // extract the rightmost segment (the actual table name)
+                    var columnNameWithoutId = column.ColumnName.Substring(0, column.ColumnName.Length - 3);
+
+                    // Find the rightmost segment after the last underscore (this is the potential table name)
+                    var lastUnderscoreIndex = columnNameWithoutId.LastIndexOf('_');
+                    var potentialTableName =
+                        lastUnderscoreIndex >= 0
+                            ? columnNameWithoutId.Substring(lastUnderscoreIndex + 1)
+                            : columnNameWithoutId;
+
+                    // Check if this table exists in the project schema AND has a table (not just abstract/view)
+                    var referencedResource = projectSchema.ResourceSchemas.Values.FirstOrDefault(rs =>
+                        string.Equals(rs.ResourceName, potentialTableName, StringComparison.OrdinalIgnoreCase)
+                    );
+
+                    // Skip if this is an abstract resource (generates view, not table)
+                    bool isAbstractResource = projectSchema.AbstractResources.ContainsKey(potentialTableName);
+
+                    // Only create FK if the referenced resource exists, has a physical table, is not abstract, and not already handled
+                    if (
+                        referencedResource != null
+                        && referencedResource.FlatteningMetadata?.Table != null
+                        && !isAbstractResource
+                        && !naturalKeyReferences.Contains(potentialTableName)
+                        && !existingFkResources.Contains(potentialTableName)
+                    )
+                    {
+                        naturalKeyReferences.Add(potentialTableName);
+                        fkColumns.Add(
+                            new
+                            {
+                                constraintName = MssqlNamingHelper.MakeMssqlIdentifier(
+                                    $"FK_{table.BaseName}_{potentialTableName}"
+                                ),
+                                column = MssqlNamingHelper.MakeMssqlIdentifier(column.ColumnName),
+                                parentTable = $"[{finalSchemaName}].[{MssqlNamingHelper.MakeMssqlIdentifier(DetermineTableName(potentialTableName, originalSchemaName, null, options))}]",
+                                parentColumn = "[Id]",
+                                cascade = false,
+                            }
+                        );
+                    }
+                }
             }
 
             // 3. FK to Document table (all tables) - FIXED: no double parentheses
