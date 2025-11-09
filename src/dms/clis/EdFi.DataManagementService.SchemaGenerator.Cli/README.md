@@ -379,8 +379,8 @@ The generator creates views that expose natural keys for improved ETL compatibil
 
 ### Views
 
-- **Union Views**: Polymorphic reference resolution (optional)
-- **Descriptor Views**: Lookup table convenience views
+-- **Union Views**: Polymorphic reference resolution (optional)
+-- **Natural Key Resolution Views**: Expose natural keys for ETL compatibility (default, can be disabled)
 
 ## Integration Examples
 
