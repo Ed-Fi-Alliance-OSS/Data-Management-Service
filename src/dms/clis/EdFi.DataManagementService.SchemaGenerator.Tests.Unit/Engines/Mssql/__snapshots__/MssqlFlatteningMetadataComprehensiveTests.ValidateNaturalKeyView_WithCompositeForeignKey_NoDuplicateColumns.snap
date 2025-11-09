@@ -20,11 +20,11 @@ END
 ELSE
     PRINT 'Table edfi_Section already exists, skipped.';
 
-IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Section_Location_School' AND object_id = OBJECT_ID('[dms].[edfi_Section]'))
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Section_School' AND object_id = OBJECT_ID('[dms].[edfi_Section]'))
 BEGIN
-    CREATE NONCLUSTERED INDEX [IX_Section_Location_School]
+    CREATE NONCLUSTERED INDEX [IX_Section_School]
         ON [dms].[edfi_Section]([Location_School_Id]);
-    PRINT 'Index IX_Section_Location_School created.';
+    PRINT 'Index IX_Section_School created.';
 END
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Section_Location' AND object_id = OBJECT_ID('[dms].[edfi_Section]'))
 BEGIN
@@ -103,6 +103,15 @@ END
 
 -- Foreign Key Constraints
 
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Section_School')
+BEGIN
+    ALTER TABLE [dms].[edfi_Section] ADD CONSTRAINT [FK_Section_School] FOREIGN KEY ([Location_School_Id]) REFERENCES [dms].[edfi_School]([Id]);
+    PRINT 'Foreign key constraint FK_Section_School created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Section_School already exists, skipped.';
+GO
+
 IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Section_Location')
 BEGIN
     ALTER TABLE [dms].[edfi_Section] ADD CONSTRAINT [FK_Section_Location] FOREIGN KEY ([Location_Location_Id]) REFERENCES [dms].[edfi_Location]([Id]);
@@ -161,10 +170,11 @@ BEGIN
         base.Document_PartitionKey,
         base.SectionIdentifier,
         base.Location_School_Id AS Location_SchoolId,
+        school.SchoolId AS SchoolId,
         base.Location_Location_Id AS Location_LocationId,
-        location.School_Id AS SchoolId,
         location.ClassroomIdentificationCode AS ClassroomIdentificationCode
     FROM [dms].[edfi_Section] base
+    INNER JOIN [dms].[edfi_School] school ON base.Location_School_Id = school.Id
     INNER JOIN [dms].[edfi_Location] location ON base.Location_Location_Id = location.Id');
     PRINT 'View Section_View created.';
 END

@@ -1074,7 +1074,10 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 .Select(c =>
                 {
                     // Track cross-resource references
-                    if (!string.IsNullOrEmpty(c.FromReferencePath) && c.ColumnName.EndsWith("Id"))
+                    if (
+                        !string.IsNullOrEmpty(c.FromReferencePath)
+                        && c.ColumnName.EndsWith("_Id", StringComparison.OrdinalIgnoreCase)
+                    )
                     {
                         var referencedResource = ResolveResourceNameFromPath(c.FromReferencePath);
                         if (!string.IsNullOrEmpty(referencedResource))
@@ -1447,14 +1450,18 @@ namespace EdFi.DataManagementService.SchemaGenerator.Mssql
                 return string.Empty;
             }
 
+            // Handle dotted paths (e.g., "LearningStandardGrade.LearningStandard") by extracting the last segment
+            var lastDotIndex = referencePath.LastIndexOf('.');
+            var resourceName = lastDotIndex >= 0 ? referencePath.Substring(lastDotIndex + 1) : referencePath;
+
             // Remove "Reference" suffix if present
-            if (referencePath.EndsWith("Reference", StringComparison.OrdinalIgnoreCase))
+            if (resourceName.EndsWith("Reference", StringComparison.OrdinalIgnoreCase))
             {
-                return referencePath.Substring(0, referencePath.Length - "Reference".Length);
+                return resourceName.Substring(0, resourceName.Length - "Reference".Length);
             }
 
-            // Otherwise, assume the path itself is the resource name
-            return referencePath;
+            // Otherwise, return the extracted resource name
+            return resourceName;
         }
 
         /// <summary>

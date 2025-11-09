@@ -53,11 +53,11 @@ BEGIN
         ON [dms].[edfi_EducationContentDerivativeSourceEducationContent]([EducationContent_Id]);
     PRINT 'Index IX_EducationContentDerivativeSourceEducationContent_EducationContent created.';
 END
-IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EducationContentDerivativeSourceEducationContent_LearningResourceChoice_LearningResource_DerivativeSourceEducationCo_72c05e26' AND object_id = OBJECT_ID('[dms].[edfi_EducationContentDerivativeSourceEducationContent]'))
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EducationContentDerivativeSourceEducationContent_EducationContent' AND object_id = OBJECT_ID('[dms].[edfi_EducationContentDerivativeSourceEducationContent]'))
 BEGIN
-    CREATE NONCLUSTERED INDEX [IX_EducationContentDerivativeSourceEducationContent_LearningResourceChoice_LearningResource_DerivativeSourceEducationCo_72c05e26]
+    CREATE NONCLUSTERED INDEX [IX_EducationContentDerivativeSourceEducationContent_EducationContent]
         ON [dms].[edfi_EducationContentDerivativeSourceEducationContent]([DerivativeSource_EducationContent_Id]);
-    PRINT 'Index IX_EducationContentDerivativeSourceEducationContent_LearningResourceChoice_LearningResource_DerivativeSourceEducationCo_72c05e26 created.';
+    PRINT 'Index IX_EducationContentDerivativeSourceEducationContent_EducationContent created.';
 END
 IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_EducationContentDerivativeSourceEducationContent_Document' AND object_id = OBJECT_ID('[dms].[edfi_EducationContentDerivativeSourceEducationContent]'))
 BEGIN
@@ -127,6 +127,15 @@ ELSE
     PRINT 'Foreign key constraint FK_EducationContentDerivativeSourceEducationContent_EducationContent already exists, skipped.';
 GO
 
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_EducationContentDerivativeSourceEducationContent_EducationContent')
+BEGIN
+    ALTER TABLE [dms].[edfi_EducationContentDerivativeSourceEducationContent] ADD CONSTRAINT [FK_EducationContentDerivativeSourceEducationContent_EducationContent] FOREIGN KEY ([DerivativeSource_EducationContent_Id]) REFERENCES [dms].[edfi_EducationContent]([Id]);
+    PRINT 'Foreign key constraint FK_EducationContentDerivativeSourceEducationContent_EducationContent created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_EducationContentDerivativeSourceEducationContent_EducationContent already exists, skipped.';
+GO
+
 IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_EducationContentDerivativeSourceEducationContent_Document')
 BEGIN
     ALTER TABLE [dms].[edfi_EducationContentDerivativeSourceEducationContent] ADD CONSTRAINT [FK_EducationContentDerivativeSourceEducationContent_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
@@ -190,7 +199,8 @@ BEGIN
         parent.ContentIdentifier AS ContentIdentifier,
         base.DerivativeSource_EducationContent_Id AS DerivativeSource_EducationContentId
     FROM [dms].[edfi_EducationContentDerivativeSourceEducationContent] base
-    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id');
+    INNER JOIN [dms].[edfi_EducationContent] parent ON base.EducationContent_Id = parent.Id
+    INNER JOIN [dms].[edfi_EducationContent] educationcontent ON base.DerivativeSource_EducationContent_Id = educationcontent.Id');
     PRINT 'View EducationContentDerivativeSourceEducationContent_View created.';
 END
 ELSE
