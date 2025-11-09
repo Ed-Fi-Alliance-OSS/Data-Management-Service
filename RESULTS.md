@@ -639,7 +639,254 @@ Key metrics (300 samples @ 1 Hz)
   more requests in, shortening transactions) will give you a much bigger payoff than removing Polly.
 
 
+## 2025-11-08-22-28 Running dual 20 client load tests
 
+Full suite captured under higher load, then analyzed counters + trace with I/O providers.
+
+  Run Summary
+
+  - Command: INCLUDE_IO=1 TAKE_FULL_DUMP=1 run-suite (5m counters, 60s CPU trace @+60s)
+  - Counters: telemetry/dotnet-counters-20251108223236.json
+  - Trace: telemetry/dotnet-trace-cpu-sampling-20251108223336.nettrace
+  - Full dump: telemetry/dms-full-20251108223737.dmp
+
+  Metrics Summary
+
+  - RPS min/avg/max: 2890 / 3239.47 / 3462
+  - CPU avg/max: 19.70% / 21.30%
+  - GC time avg/max: 0.10% / 2%
+  - GC Heap MB avg/max: 450.18 / 709.61
+  - Working Set MB avg: 1121.56
+  - CurrentRequests max: 39
+  - ThreadPool Queue Length max: 16
+  - Lock Contention (approx sum/sec): 1111
+  - Exceptions (approx sum/sec): 40
+  - Gen GC counts (sum of 1s rates): Gen0=305, Gen1=68, Gen2=0
+  - Efficiency: CPU per 1k RPS ≈ 6.08%
+
+  Interpretation
+
+  - Not CPU-bound: ~20% CPU at ~3.2k RPS. Room to grow on CPU.
+  - GC pressure is low: near-zero gen2s, sub-2% time-in-GC; heap peak ~710 MB.
+  - Some bursty queuing: ThreadPool queue length spike to 16; CurrentRequests up to 39.
+  - No failures: Failed Requests total 0 across window.
+
+  Trace Evidence (I/O providers included)
+
+  - Top inclusive still dominated by waits (ThreadPool/Semaphore), consistent with I/O-bound workload.
+  - DB I/O visible in hot path:
+      - NpgsqlCommand+<ExecuteReader>.MoveNext() — 6.02% inclusive
+      - NpgsqlWriteBuffer+<Flush>.MoveNext() — 5.27% inclusive
+  - Sockets/TLS exclusive CPU present:
+      - Sockets!Interop+Sys.Send — 4.19% exclusive
+      - Sockets!Interop+Sys.Receive — 0.56% exclusive
+      - Security!Interop+Ssl.SslWrite/SslRead — ~1.37% exclusive combined
+  - Pipeline/middleware inclusive frames (low exclusive): JwtAuthenticationMiddleware, Request/Response logging, RateLimiting,
+    ResponseCompression, Validation.
+
+  Assessment
+
+  - Bottleneck is external I/O (DB/network), not CPU or GC.
+  - Under higher load, moderate queueing appears (ThreadPool and in-flight requests). This likely tracks back to I/O
+    concurrency limits (connections, DB throughput, or upstream dependencies).
+  - Logging/auth/compression show up but with minimal exclusive CPU; not primary blockers.
+
+  Recommendations (Prioritized)
+
+  - Increase I/O concurrency safely
+      - Npgsql pooling/multiplexing:
+          - Use NpgsqlDataSourceBuilder with Multiplexing=true, tune Max Pool Size to match expected concurrent requests (and
+            DB limits), consider Min Pool Size.
+          - Favor prepared/parameterized commands; cache prepared statements for hot queries.
+      - Http/OpenSearch client:
+          - Use a singleton HttpClient with a tuned SocketsHttpHandler:
+              - MaxConnectionsPerServer aligned to expected concurrency.
+              - PooledConnectionLifetime (e.g., 2–5 min) to avoid long-lived stale connections.
+              - Ensure keep-alive and HTTP/1.1 vs HTTP/2 settings match OpenSearch/Kafka endpoints.
+  - Reduce initial thread starvation
+      - Set ThreadPool minimum threads at startup (e.g., ThreadPool.SetMinThreads(Environment.ProcessorCount * 2, ... )) to
+        cover bursty load while staying below CPU saturation.
+  - Validate DB/index efficiency
+      - Review slow/most frequent queries; ensure critical filters have matching indexes; project only required columns.
+      - If possible, add timing around Npgsql calls to pinpoint tables/queries contributing to latency.
+  - Tune pipeline overhead
+      - Request/response logging: ensure bodies aren’t logged for hot endpoints or large payloads; use sampling.
+      - ResponseCompression: keep enabled, but ensure min-size avoids small payload compression overhead.
+      - JWT validation: cache authority/JWKS; ensure token validation runs async and avoid repetitive string comparisons where
+        possible.
+  - Visibility for latency attribution
+      - Keep using INCLUDE_IO=1 traces to correlate request spans with HttpClient/Npgsql timings (PerfView/speedscope).
+      - Consider lightweight OpenTelemetry traces for critical endpoints to get true wait-time breakdown (Kestrel → Auth → DB
+        → OpenSearch).
+
+  Artifacts
+
+  - Counters: telemetry/dotnet-counters-20251108223236.json
+  - Trace (I/O providers on): telemetry/dotnet-trace-cpu-sampling-20251108223336.nettrace
+  - Full dump: telemetry/dms-full-20251108223737.dmp
+
+  Optional next steps
+
+  - GC-verbose 60s to confirm pause times under peak: bash eng/telemetry/collect-trace.sh --pid <PID> --profile gc-verbose
+    --duration 00:01:00
+  - Add counters for request queue if available in your runtime; current file didn’t expose Hosting queue length names.
+  - If you want, I can open the trace and produce a short call tree snapshot highlighting the exact endpoints/handlers most
+    associated with Npgsql and sockets time.
+
+
+>› What is the request throughput?
+• - Throughput (avg): 3,239.47 requests/sec
+  - Range: 2,890 – 3,462 requests/sec
+  - Total processed (≈5 min window): ~971,840 requests
+  - Measurement window: 2025-11-08T22:32:38 to 22:37:37
+  - Source: Microsoft.AspNetCore.Hosting “Request Rate (Count / 1 sec)” in telemetry/dotnet-counters-20251108223236.json
+
+
+
+### How many concurrent requests were there, and how many were waiting and how long?
+
+
+• Here’s what the latest 5-minute run shows from counters.
+
+  - Concurrent requests
+      - Average in-flight: 24.71
+      - Range: 7–39 concurrent
+      - Source: Microsoft.AspNetCore.Hosting “Current Requests”
+  - Waiting requests and how long
+      - Request queue length counters (Kestrel/Hosting) weren’t emitted in this run, so there’s no direct “requests waiting in queue”
+        value in the counters file.
+      - ThreadPool queue length (proxy for CPU thread waiting):
+          - Avg: 1.39, Max: 16, Non-zero in 157/300 seconds
+          - Source: System.Runtime “ThreadPool Queue Length”
+      - End-to-end time estimate via Little’s Law (W = L/λ) using per-second samples:
+          - Average sojourn time: 7.7 ms
+          - p95 sojourn time: 10.7 ms
+          - Min/Max across the window: 2.1–12.6 ms
+          - L = Current Requests; λ = Request Rate (RPS)
+          - This is a good approximation of average request time in system; it is not pure “queue wait” time, but reflects total time
+            (service + any queuing).
+
+  Notes
+
+  - No explicit “Request Queue Length” counter was present in telemetry/dotnet-counters-20251108223236.json. If you want true request
+    queue depth, we can:
+      - Add an ASP.NET Core middleware to record queueing before the app pipeline (timestamp at accept vs start).
+      - Or enable Kestrel queue metrics if available in your hosting configuration/runtime.
+  - Given CPU ~20% and the above latencies, the system looks I/O-bound with moderate threadpool queuing, not CPU-bound.
+
+
+ ### Open the trace and tell me where the hotspots are
+
+
+ Here’s where the time goes in the latest high‑load capture. I opened the new CPU trace and summarized hotspots, and correlated with
+  counters.
+
+  Inputs
+
+  - Counters: telemetry/dotnet-counters-20251108223236.json
+  - Trace (CPU + I/O providers): telemetry/dotnet-trace-cpu-sampling-20251108223336.nettrace
+  - Full dump: telemetry/dms-full-20251108223737.dmp
+
+  Throughput/Resource
+
+  - RPS min/avg/max: 2890 / 3239.47 / 3462
+  - CPU avg/max: 19.70% / 21.30%
+  - GC time avg/max: 0.10% / 2%; Gen2 sum: 0
+  - GC Heap MB avg/max: 450.18 / 709.61; Working Set MB avg: 1121.56
+  - ThreadPool queue length max: 16; CurrentRequests max: 39
+
+  Hotspots (Inclusive)
+
+  - Thread wait/dispatch:
+      - WorkerThreadStart → semaphores/waits dominate inclusive time (wait‑heavy, I/O‑bound).
+      - ThreadPoolWorkQueue.Dispatch present; queue length spikes confirm bursts.
+  - DMS pipeline (low exclusive, but on hot path):
+      - JwtAuthenticationMiddleware, ValidateEndpointMiddleware, BuildResourceInfoMiddleware, CoreExceptionLoggingMiddleware,
+        RequestResponseLoggingMiddleware, RateLimitingMiddleware, ResponseCompressionMiddleware, ApiSchemaValidationMiddleware,
+        EndpointMiddleware, ParseBody/Path/Validation/Coercion middlewares.
+      - Each ~4–7% inclusive; exclusive near zero → most time spent downstream (I/O/awaits).
+  - Database (Npgsql) I/O:
+      - NpgsqlCommand.<ExecuteReader>.MoveNext(): 6.02% inclusive
+      - NpgsqlWriteBuffer.<Flush>.MoveNext(): 5.27% inclusive
+      - NpgsqlConnector.<ReadMessageLong>.MoveNext(), ReadBuffer.EnsureLong, DataReader.NextResult: ~3.8% each inclusive
+      - Indicates query/read/send/flush are significant contributors.
+  - Sockets/TLS (network path):
+      - Socket.SendAsync and DoOperationSend: ~4.19% inclusive each
+      - SslStream.WriteSingleChunk appears in inclusive; TLS read/write ~1–1.5% exclusive combined
+
+  Hotspots (Exclusive CPU)
+
+  - Waits (kernel waits show as exclusive in sampling):
+      - LowLevelLifoSemaphore.WaitNative: 52.91% exclusive
+      - WaitHandle.WaitOneNoCheck: 11.89% exclusive
+      - ManualResetEventSlim.Wait: 2.97% exclusive
+      - These reflect threads parked waiting on I/O/synchronization — consistent with an I/O‑bound service.
+  - Network and crypto:
+      - Sockets!Interop.Sys.Send: 4.19% exclusive
+      - Sockets!Interop.Sys.Receive: 0.56% exclusive
+      - Security!Interop.SslWrite/SslRead: ~1.37% exclusive
+  - Misc hotspots (smaller):
+      - CompareInfo.Compare (string ops), JsonHelpers.SelectNodeFromPath, SHA256.HashData (token/ETag hashing), small allocations copies
+
+  Diagnosis
+
+  - The service is I/O‑bound at this load, not CPU/GC‑bound:
+      - CPU ~20% with ~3.2k RPS; GC time ~0%, Gen2=0 → GC not limiting.
+      - High inclusive time in Npgsql read/write and sockets send; exclusive CPU dominated by kernel waits → threads spend time awaiting
+        DB/network.
+      - ThreadPool queue length spikes to 16 suggest bursts outpacing available I/O concurrency temporarily.
+
+  Action Plan (latency + throughput)
+
+  - Database path (highest leverage)
+      - Ensure connection pool sizing matches concurrency and DB capacity (e.g., Npgsql Max Pool Size ~ 2–4x CPU, validate with
+        Postgres).
+      - Enable Npgsql multiplexing for simple queries (DataSourceBuilder with Multiplexing=true) to reduce per‑request connection
+        pressure.
+      - Prepare/cached statements for hot queries; project only required columns; add/verify indexes for frequent filters.
+      - Batch reads/writes where semantics allow; avoid chatty round trips.
+  - Network/OpenSearch path
+      - HttpClient/SocketsHttpHandler singleton with tuned limits:
+          - MaxConnectionsPerServer tuned to match concurrency.
+          - PooledConnectionLifetime (e.g., 2–5m) to recycle long‑lived connections.
+      - OpenSearch queries: restrict fields, page sizes; use search_after/scroll for large sets; avoid costly re‑scoring.
+  - Pipeline overhead
+      - Logging middleware: sample or reduce body logging on hot endpoints; avoid sync I/O; ensure buffering is minimized.
+      - Response compression: keep threshold high enough to skip tiny payloads.
+      - JWT/auth: cache JWKS/authority; avoid repetitive heavy string ops.
+  - ThreadPool readiness
+      - Pre‑warm minimum threads (e.g., SetMinThreads(2×CPU, ...)) to reduce initial queue spikes under burst loads without
+        overcommitting CPU.
+
+  Next telemetry (targeted)
+
+  - DB focus: 60s trace with I/O providers (kept), plus Postgres slow query log to correlate (duration/plan/index use).
+  - Lock/contention visibility: if contention rises, add runtime contention events to the trace for stacks (I can wire a “contention
+    profile” if you want deeper lock stacks).
+  - Per‑stage timings: add OTEL Activities or lightweight timing around DMS pipeline steps, Npgsql calls, and OpenSearch calls to get
+    explicit wait breakdowns per request.
+
+  If you want, I can:
+
+  - Run a 60s gc-verbose capture to confirm pauses remain negligible at this load.
+  - Produce a quick endpoints/middleware attribution by sampling call stacks deeper (PerfView export), and call out the heaviest
+    endpoints/paths driving Npgsql time.
+
+### How many active concurrent requests were there
+
+• - Estimated concurrency (Little’s Law): L = λ × W
+      - Avg RPS (λ): 3239.47
+      - Avg latency (W): 7.6 ms (derived from counters)
+      - Concurrency L ≈ 3239.47 × 0.0076 ≈ 24.7
+  - Direct counter (ground truth):
+      - Avg Current Requests: 24.71
+      - Peak Current Requests: 39
+      - Source: telemetry/dotnet-counters-20251108223236.json
+
+  Conclusion
+
+  - Active concurrent requests averaged ~25 and peaked at ~39 during the high-load run. This matches Little’s Law (concurrency ≈ RPS ×
+    latency) using the counters-derived latency and RPS.
 
 
 
