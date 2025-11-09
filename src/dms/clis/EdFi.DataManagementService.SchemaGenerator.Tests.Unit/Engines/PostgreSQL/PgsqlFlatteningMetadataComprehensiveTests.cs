@@ -2420,6 +2420,91 @@ namespace EdFi.DataManagementService.SchemaGenerator.Tests.Unit.Engines.PostgreS
         }
 
         /// <summary>
+        /// Validates that natural key FK constraints include proper existence checks for idempotency in PostgreSQL.
+        /// </summary>
+        [Test]
+        public void ValidateNaturalKeyForeignKeyConstraints_IncludesExistenceChecks()
+        {
+            // Arrange
+            var schema = new ApiSchema
+            {
+                ProjectSchema = new ProjectSchema
+                {
+                    ProjectName = "EdFi",
+                    ProjectVersion = "1.0.0",
+                    IsExtensionProject = false,
+                    ResourceSchemas = new Dictionary<string, ResourceSchema>
+                    {
+                        ["Student"] = new ResourceSchema
+                        {
+                            ResourceName = "Student",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Student",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "StudentUniqueId",
+                                            ColumnType = "string",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.studentUniqueId",
+                                            MaxLength = "32",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                        ["Grade"] = new ResourceSchema
+                        {
+                            ResourceName = "Grade",
+                            FlatteningMetadata = new FlatteningMetadata
+                            {
+                                Table = new TableMetadata
+                                {
+                                    BaseName = "Grade",
+                                    JsonPath = "$",
+                                    Columns = new List<ColumnMetadata>
+                                    {
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "Student_Id",
+                                            ColumnType = "bigint",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            FromReferencePath = "StudentReference",
+                                            JsonPath = "$.studentReference",
+                                        },
+                                        new ColumnMetadata
+                                        {
+                                            ColumnName = "GradeIdentifier",
+                                            ColumnType = "string",
+                                            IsNaturalKey = true,
+                                            IsRequired = true,
+                                            JsonPath = "$.gradeIdentifier",
+                                            MaxLength = "60",
+                                        },
+                                    },
+                                    ChildTables = new List<TableMetadata>(),
+                                },
+                            },
+                        },
+                    },
+                },
+            };
+
+            // Act
+            var sql = _strategy.GenerateDdlString(schema, includeExtensions: false);
+
+            Snapshot.Match(sql);
+        }
+
+        /// <summary>
         /// Validates that natural key FK constraints are NOT generated for columns that don't match existing tables.
         /// </summary>
         [Test]
