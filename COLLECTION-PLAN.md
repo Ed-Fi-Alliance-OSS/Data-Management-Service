@@ -22,7 +22,7 @@
 - `probe-counters.sh` — 10s validation that counter names/providers are correct
 
 **Default Counters Set**
-- System.Runtime: `cpu-usage, working-set, gc-heap-size, threadpool-thread-count, threadpool-queue-length, monitor-lock-contention-count`
+- System.Runtime: `cpu-usage, working-set, gc-heap-size, time-in-gc, allocation-rate, gen-0-gc-count, gen-1-gc-count, gen-2-gc-count, threadpool-thread-count, threadpool-queue-length, monitor-lock-contention-count, exception-count`
 - Microsoft.AspNetCore.Hosting: `requests-per-second, current-requests, failed-requests, request-queue-length`
 - Microsoft-AspNetCore-Server-Kestrel: `current-connections, total-connections, connections-per-second`
 
@@ -42,6 +42,7 @@ These are encoded in `collect-counters.sh` and can be overridden via `--counters
   - `telemetry/dotnet-trace-cpu-sampling-YYYYMMDDhhmmss.nettrace`
   - Optional (`TAKE_GCDUMP=1`): `telemetry/dms-YYYYMMDDhhmmss.gcdump`
   - Optional (`TAKE_FULL_DUMP=1` or `TAKE_DUMP_TYPE=full|heap|triage`): `telemetry/dms-<type>-YYYYMMDDhhmmss.dmp`
+  - Optional include I/O providers: prefix with `INCLUDE_IO=1` to add System.Net.Http/System.Net.Sockets/Npgsql to the trace.
 
 **Targeted Deep Dives**
 - GC focus (if gen2/LOH growth or high GC time):
@@ -49,7 +50,10 @@ These are encoded in `collect-counters.sh` and can be overridden via `--counters
   - `bash eng/telemetry/collect-gcdump.sh --pid <PID>`
 - CPU spikes or thread pool starvation:
   - `bash eng/telemetry/collect-trace.sh --pid <PID> --profile cpu-sampling --duration 00:01:00`
-— Full forensic snapshot (pauses process):
+- I/O wait attribution (HTTP, Sockets, Npgsql):
+  - `bash eng/telemetry/collect-trace.sh --pid <PID> --profile cpu-sampling --duration 00:01:00 --include-io`
+  - Or custom providers: `--providers System.Net.Http,System.Net.Sockets,Npgsql`
+- Full forensic snapshot (pauses process):
   - `bash eng/telemetry/collect-dump.sh --pid <PID>` (defaults to `--type full`)
   - Or with suite at end: `TAKE_FULL_DUMP=1 bash eng/telemetry/run-suite.sh ...`
 
@@ -64,6 +68,8 @@ These are encoded in `collect-counters.sh` and can be overridden via `--counters
   - RPS: `jq -r '.Events[] | select(.name=="Request Rate (Count / 1 sec)") | [.timestamp,.value] | @csv' telemetry/dotnet-counters-*.json`
   - CPU: `jq -r '.Events[] | select(.provider=="System.Runtime" and .name=="CPU Usage (%)") | [.timestamp,.value] | @csv' telemetry/dotnet-counters-*.json`
   - Queue length: `jq -r '.Events[] | select(.name=="ThreadPool Queue Length") | [.timestamp,.value] | @csv' telemetry/dotnet-counters-*.json`
+  - GC time: `jq -r '.Events[] | select(.name|test("Time in GC")) | [.timestamp,.value] | @csv' telemetry/dotnet-counters-*.json`
+  - Allocation rate: `jq -r '.Events[] | select(.name|test("Allocation Rate")) | [.timestamp,.value] | @csv' telemetry/dotnet-counters-*.json`
 - Trace: open `.nettrace` in speedscope.app or PerfView for stacks; use GCStats for pauses and allocation rates.
 - GCDump: open with Visual Studio or `dotnet-gcdump analyze` for heap types and sizes.
 

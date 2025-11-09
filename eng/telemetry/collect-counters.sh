@@ -22,7 +22,7 @@ USAGE
 PID=""
 DURATION="00:05:00"
 OUTFILE=""
-COUNTERS_DEFAULT='System.Runtime[cpu-usage,working-set,gc-heap-size,threadpool-thread-count,threadpool-queue-length,monitor-lock-contention-count],EventCounters\Microsoft.AspNetCore.Hosting[requests-per-second,current-requests,failed-requests,request-queue-length],EventCounters\Microsoft-AspNetCore-Server-Kestrel[current-connections,total-connections,connections-per-second]'
+COUNTERS_DEFAULT='System.Runtime[cpu-usage,working-set,gc-heap-size,time-in-gc,allocation-rate,gen-0-gc-count,gen-1-gc-count,gen-2-gc-count,threadpool-thread-count,threadpool-queue-length,monitor-lock-contention-count,exception-count],EventCounters\Microsoft.AspNetCore.Hosting[requests-per-second,current-requests,failed-requests,request-queue-length],EventCounters\\Microsoft-AspNetCore-Server-Kestrel[current-connections,total-connections,connections-per-second]'
 COUNTERS_SPEC="$COUNTERS_DEFAULT"
 
 while [[ $# -gt 0 ]]; do

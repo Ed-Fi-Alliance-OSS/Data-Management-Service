@@ -70,7 +70,11 @@ log "Sleeping $TRACE_OFFSET seconds before starting trace"
 sleep "$TRACE_OFFSET"
 
 log "Starting trace ($TRACE_PROFILE for $TRACE_DURATION)"
-"$SCRIPT_DIR/collect-trace.sh" --pid "$PID" --profile "$TRACE_PROFILE" --duration "$TRACE_DURATION"
+if [[ "${INCLUDE_IO:-0}" == "1" ]]; then
+  "$SCRIPT_DIR/collect-trace.sh" --pid "$PID" --profile "$TRACE_PROFILE" --duration "$TRACE_DURATION" --include-io
+else
+  "$SCRIPT_DIR/collect-trace.sh" --pid "$PID" --profile "$TRACE_PROFILE" --duration "$TRACE_DURATION"
+fi
 
 log "Waiting for counters to finish (pid=$COUNTERS_PID)"
 wait "$COUNTERS_PID"
