@@ -1,12 +1,12 @@
-# Context-Based Routing for Segmented Datastores in DMS Deployments
+# Database Segmentation Strategy in DMS Deployments  
 
 ## Overview
 
-The Ed-Fi Data Management Service (DMS) supports explicit data segmentation
-through context-based routing using **route qualifiers**. This approach allows
-API requests to include contextual values (such as school year, district ID, or
-other identifiers) in the URL path, enabling the same API client to access
-multiple DMS instances with a single set of credentials.
+In large-scale Ed-Fi deployments, storing all data in a single database can lead
+to performance bottlenecks, operational complexity, and compliance challenges.
+Database segmentation—splitting data into multiple databases based on criteria
+such as school year or district—addresses these issues by improving scalability,
+isolation, and flexibility.
 
 ## Database Segmentation Strategy
 
@@ -85,10 +85,17 @@ Consider these factors when selecting your segmentation approach:
 - **Operational model** - Who manages credentials, and how often do they change?
 - **Data retention** - How long must historical data remain accessible?
 
-For most regional or multi-district deployments, **explicit segmentation** with
-district and year routing provides the best balance of flexibility and manageability.
+The following section discusses explicit segmentation in detail.
 
-## Key Concept
+## Context-Based Routing for Segmented Datastores
+
+The Ed-Fi Data Management Service (DMS) supports explicit data segmentation
+through context-based routing using route qualifiers. This approach allows
+API requests to include contextual values (such as school year, district ID, or
+other identifiers) in the URL path, enabling the same API client to access
+multiple DMS instances with a single set of credentials.
+
+### Key Concept
 
 Context-based routing enables a single DMS deployment to serve multiple isolated
 data instances, each identified by one or more route qualifiers. For example:
@@ -104,7 +111,7 @@ The primary benefit is allowing the same API client credentials to access multip
 segregated databases based on URL context, without requiring separate
 authentication for each instance.
 
-## Configuration Overview
+### Configuration Overview
 
 To enable context-based routing, administrators use the **DMS Configuration Service**
 to:
@@ -115,7 +122,7 @@ to:
    key-value pairs
 3. **Configure Applications** - Grant applications access to multiple instances
 
-## URL Pattern
+### URL Pattern
 
 When context-based routing is configured, API requests follow this pattern:
 
@@ -132,7 +139,7 @@ http://{host}:{port}/{qualifier1}/{qualifier2}/.../data/ed-fi/{resource}
 The order and number of route qualifiers must match the context keys defined for
 your instances.
 
-## Configuration Steps
+### Configuration Steps
 
 ### Step 1: Authenticate with Configuration Service
 
@@ -231,7 +238,7 @@ Content-Type: application/json
 
 The response will include `key` and `secret` fields for API authentication.
 
-## Using Context-Based Routing
+### Using Context-Based Routing
 
 ### Authentication
 
@@ -328,7 +335,7 @@ Route requests based on both district and school year:
 - `GET /255901/2025/data/ed-fi/students` → Routes to `edfi_dms_d255901_sy2025`
 - `GET /255902/2024/data/ed-fi/students` → Routes to `edfi_dms_d255902_sy2024`
 
-## Error Handling
+### Error Handling
 
 ### No Instance Found (404)
 
@@ -358,7 +365,7 @@ Authorization: bearer {token}
 Response: 404 Not Found or 400 Bad Request
 ```
 
-## Important Notes
+### Important Notes
 
 - **All context keys must match**: If an instance has multiple route contexts
   (e.g., districtId and schoolYear), the request URL must provide values for all
@@ -372,23 +379,23 @@ Response: 404 Not Found or 400 Bad Request
 - **No default instance**: Unlike single-instance deployments, there is no
  default database when using context-based routing. Route qualifiers are always required.
 
-## Viewing Configuration
+### Viewing Configuration
 
-### List All DMS Instances
+#### List All DMS Instances
 
 ```http
 GET http://localhost:8081/v2/dmsInstances?offset=0&limit=25
 Authorization: bearer {config_token}
 ```
 
-### List All Route Contexts
+#### List All Route Contexts
 
 ```http
 GET http://localhost:8081/v2/dmsInstanceRouteContexts?offset=0&limit=25
 Authorization: bearer {config_token}
 ```
 
-### Get Specific Instance
+#### Get Specific Instance
 
 ```http
 GET http://localhost:8081/v2/dmsInstances/{instanceId}
@@ -405,18 +412,3 @@ If you're migrating from the Ed-Fi ODS/API platform that used `OdsContextRouteTe
 | `dbo.OdsInstances` table | `POST /v2/dmsInstances` endpoint |
 | `dbo.OdsInstanceContext` table | `POST /v2/dmsInstanceRouteContexts` endpoint |
 | ASP.NET route template syntax | Standard URL path segments |
-
-## Summary
-
-Context-based routing in DMS provides a powerful way to segment data while
-maintaining a unified API surface. By configuring instances and route contexts
-through the Configuration Service, you can:
-
-- Support multiple districts with a single API deployment
-- Maintain year-over-year historical data in separate databases
-- Use flexible multi-dimensional routing (district + year, or other combinations)
-- Grant applications access to multiple instances with a single credential
-
-This approach is ideal for regional deployments and for organizations that
-require strict data segmentation, while making the segmentation explicit to the
-API client through the API routes.
