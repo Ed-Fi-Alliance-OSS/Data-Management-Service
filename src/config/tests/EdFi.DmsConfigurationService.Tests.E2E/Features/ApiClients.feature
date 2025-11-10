@@ -527,3 +527,53 @@ Feature: ApiClients endpoints
                   """
              When a DELETE request is made to "/v2/apiClients/99999"
              Then it should respond with 404
+
+        Scenario: 17 Ensure clients can reset credentials for an apiClient
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 17",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Test Client for Reset",
+                   "isApproved": true,
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a PUT request is made to "/v2/apiClients/{apiClientId}/reset-credential" with
+                  """
+                  {}
+                  """
+             Then it should respond with 200
+              And the response body has key and secret
+              And the response body is
+                  """
+                  {
+                    "id": {apiClientId},
+                    "key": "{key}",
+                    "secret": "{secret}"
+                  }
+                  """
+
+        Scenario: 18 Verify error handling when resetting credentials for non-existent apiClient
+            Given a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Test Application 18",
+                   "claimSetName": "TestClaim01",
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a PUT request is made to "/v2/apiClients/99999/reset-credential" with
+                  """
+                  {}
+                  """
+             Then it should respond with 404

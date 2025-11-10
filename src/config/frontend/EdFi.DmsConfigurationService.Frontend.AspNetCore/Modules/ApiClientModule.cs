@@ -25,6 +25,7 @@ public class ApiClientModule : IEndpointModule
         endpoints.MapSecuredPost("/v2/apiClients/", InsertApiClient);
         endpoints.MapSecuredPut($"/v2/apiClients/{{id}}", UpdateApiClient);
         endpoints.MapSecuredDelete($"/v2/apiClients/{{id}}", DeleteApiClient);
+        endpoints.MapSecuredPut($"/v2/apiClients/{{id}}/reset-credential", ResetCredential);
         // Limited access endpoints - accessible by service accounts for internal DMS operations
         endpoints.MapLimitedAccess("/v2/apiClients/", GetAll);
         endpoints.MapLimitedAccess("/v2/apiClients/{clientId}", GetByClientId);
@@ -476,5 +477,71 @@ public class ApiClientModule : IEndpointModule
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
+    }
+
+    private async Task<IResult> ResetCredential(
+        long id,
+        HttpContext httpContext,
+        IApiClientRepository apiClientRepository,
+        IIdentityProviderRepository identityProviderRepository,
+        ILogger<ApiClientModule> logger
+    )
+    {
+        logger.LogDebug("Entering ResetCredential for id: {Id}", SanitizeForLog(id.ToString()));
+
+        // Get the API client to retrieve the ClientUuid and ClientId for identity provider reset
+        ApiClientGetResult getResult = await apiClientRepository.GetApiClientById(id);
+        if (getResult is not ApiClientGetResult.Success getSuccess)
+        {
+            return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+        }
+
+        ApiClientResponse apiClient = getSuccess.ApiClientResponse;
+
+        try
+        {
+            logger.LogInformation(
+                "Resetting credentials for client {clientId}",
+                SanitizeForLog(apiClient.ClientId)
+            );
+            var clientResetResult = await identityProviderRepository.ResetCredentialsAsync(
+                apiClient.ClientUuid.ToString()
+            );
+
+            return clientResetResult switch
+            {
+                ClientResetResult.Success resetSuccess => Results.Ok(
+                    new ApiClientCredentialsResponse
+                    {
+                        Id = id,
+                        Key = apiClient.ClientId,
+                        Secret = resetSuccess.ClientSecret,
+                    }
+                ),
+                ClientResetResult.FailureClientNotFound => FailureResults.NotFound(
+                    "ApiClient not found in identity provider",
+                    httpContext.TraceIdentifier
+                ),
+                ClientResetResult.FailureIdentityProvider failureIdentityProvider =>
+                    FailureResults.BadGateway(
+                        failureIdentityProvider.IdentityProviderError.FailureMessage,
+                        httpContext.TraceIdentifier
+                    ),
+                ClientResetResult.FailureUnknown failure => FailureResults.Unknown(
+                    httpContext.TraceIdentifier
+                ),
+                _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                "Error resetting client credentials {clientId} {clientUuid}: {message}",
+                SanitizeForLog(apiClient.ClientId),
+                SanitizeForLog(apiClient.ClientUuid.ToString()),
+                SanitizeForLog(ex.Message)
+            );
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
     }
 }

@@ -185,6 +185,9 @@ public class ApiClientModuleTests
 
             A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
                 .Returns(new ClientDeleteResult.Success());
+
+            A.CallTo(() => _identityProviderRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.Success("new-secret-12345"));
         }
 
         [Test]
@@ -238,6 +241,28 @@ public class ApiClientModuleTests
             getByClientIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        [Test]
+        public async Task It_returns_success_response_for_reset_credential()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var resetResponse = await client.PutAsync(
+                "/v2/apiClients/1/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            string responseContent = await resetResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseContent);
+
+            actualResponse!["id"]!.GetValue<long>().Should().Be(1);
+            actualResponse!["key"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            actualResponse!["secret"]!.GetValue<string>().Should().Be("new-secret-12345");
         }
     }
 
@@ -377,6 +402,22 @@ public class ApiClientModuleTests
 
             // Assert
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_returns_not_found_for_reset_credential()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var resetResponse = await client.PutAsync(
+                "/v2/apiClients/999/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
     }
 
@@ -964,6 +1005,135 @@ public class ApiClientModuleTests
 
             // Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        }
+    }
+
+    [TestFixture]
+    public class Given_ResetCredential_Scenarios : ApiClientModuleTests
+    {
+        [SetUp]
+        public void Setup()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<long>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client-id",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test API Client",
+                            IsApproved = true,
+                            DmsInstanceIds = [1],
+                        }
+                    )
+                );
+        }
+
+        [Test]
+        public async Task It_returns_success_when_reset_is_successful()
+        {
+            // Arrange
+            A.CallTo(() => _identityProviderRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.Success("new-secret-67890"));
+
+            using var client = SetUpClient();
+
+            // Act
+            var resetResponse = await client.PutAsync(
+                "/v2/apiClients/1/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            string responseContent = await resetResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseContent);
+
+            actualResponse!["id"]!.GetValue<long>().Should().Be(1);
+            actualResponse!["key"]!.GetValue<string>().Should().Be("test-client-id");
+            actualResponse!["secret"]!.GetValue<string>().Should().Be("new-secret-67890");
+        }
+
+        [Test]
+        public async Task It_returns_not_found_when_client_not_found_in_identity_provider()
+        {
+            // Arrange
+            A.CallTo(() => _identityProviderRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.FailureClientNotFound("Client not found"));
+
+            using var client = SetUpClient();
+
+            // Act
+            var resetResponse = await client.PutAsync(
+                "/v2/apiClients/1/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_returns_bad_gateway_when_identity_provider_fails()
+        {
+            // Arrange
+            A.CallTo(() => _identityProviderRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(
+                    new ClientResetResult.FailureIdentityProvider(
+                        new IdentityProviderError("Identity provider connection failed")
+                    )
+                );
+
+            using var client = SetUpClient();
+
+            // Act
+            var resetResponse = await client.PutAsync(
+                "/v2/apiClients/1/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+        }
+
+        [Test]
+        public async Task It_returns_internal_server_error_for_unknown_failures()
+        {
+            // Arrange
+            A.CallTo(() => _identityProviderRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.FailureUnknown("Unexpected error"));
+
+            using var client = SetUpClient();
+
+            // Act
+            var resetResponse = await client.PutAsync(
+                "/v2/apiClients/1/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        }
+
+        [Test]
+        public async Task It_returns_not_found_when_api_client_does_not_exist()
+        {
+            // Arrange
+            A.CallTo(() => _apiClientRepository.GetApiClientById(999L))
+                .Returns(new ApiClientGetResult.FailureNotFound());
+
+            using var client = SetUpClient();
+
+            // Act
+            var resetResponse = await client.PutAsync(
+                "/v2/apiClients/999/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
     }
 }
