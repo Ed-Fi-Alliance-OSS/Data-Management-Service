@@ -24,6 +24,7 @@ file.
 | ApiSchemaPath                | Specifies the directory where core and extension ApiSchema.json files are located. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages. |
 | DomainsExcludedFromOpenApi   | Comma separated list of domain names to exclude from OpenAPI documentation generation. Domains listed here will not appear in the generated OpenAPI specifications. Case insensitive. |
 | IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
+| RouteQualifierSegments | Comma separated list of route qualifier context segments as defined by `dmsInstanceRouteContexts` in Configuration Service. Example: "districtId,schoolYear" |
 
 ## DatabaseOptions
 
@@ -48,11 +49,17 @@ The `RateLimit` object should have the following parameters.
 
 ## Identity Provider Configuration
 
-For most deployments, environment variables and the setup script are sufficient, but for custom scenarios you may edit these files directly.
+For most deployments, environment variables and the setup script are sufficient,
+but for custom scenarios you may edit these files directly.
 
-By default, the configuration uses the self-contained (OpenIddict) identity provider. The `appsettings.json` files are pre-configured for self-contained endpoints, and the setup scripts will use self-contained unless you explicitly specify `keycloak` as the identity provider.
+By default, the configuration uses the self-contained (OpenIddict) identity
+provider. The `appsettings.json` files are pre-configured for self-contained
+endpoints, and the setup scripts will use self-contained unless you explicitly
+specify `keycloak` as the identity provider.
 
-If you wish to use Keycloak as the identity provider, you must update the relevant environment variables or appsettings to set `IdentityProvider` to `keycloak` and configure the appropriate Keycloak endpoints.
+If you wish to use Keycloak as the identity provider, you must update the
+relevant environment variables or appsettings to set `IdentityProvider` to
+`keycloak` and configure the appropriate Keycloak endpoints.
 
 ### Relevant parameters in `appsettings.json` (Configuration Service)
 

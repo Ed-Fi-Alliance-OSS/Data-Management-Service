@@ -47,14 +47,10 @@ diagrams in Code's built-in Markdown preview tool.
    2. The DMS Configuration Service, which implements a form of the Ed-Fi
       Management API, whose specification is derived from the legacy Ed-Fi Admin
       API 2 application.
-2. Both systems rely on the open-source Keycloak identity provider for
-   authentication and OAuth 2.0 compatible token management.
-3. Both systems use PostgreSQL for online transaction processing (OLTP) data
+2. Both systems use PostgreSQL for online transaction processing (OLTP) data
    storage. All Ed-Fi Resources and Descriptors are stored together in a single
    table, called `dms.document`.
-4. The DMS uses the search database to support the "GET all" and "GET by query"
-   HTTP requests.
-5. There are also optional user interfaces for viewing data in Kafka.
+3. There are also optional user interfaces for viewing data in Kafka.
 
 ```mermaid
 C4Deployment
