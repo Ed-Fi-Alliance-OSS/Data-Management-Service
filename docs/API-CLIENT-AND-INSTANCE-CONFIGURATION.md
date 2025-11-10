@@ -136,5 +136,5 @@ Maps API clients to DMS instances they can access (many-to-many).
 
 DMS instance and route context configuration is managed through the DMS
 Configuration Service REST API. See the
-[Context-Based Routing documentation](CONTEXT-BASED-ROUTING.md) for detailed
+[Database segmentation documentation](DATABASE-SEGMENTATION-STRATEGY.md) for detailed
 configuration examples and usage patterns.
