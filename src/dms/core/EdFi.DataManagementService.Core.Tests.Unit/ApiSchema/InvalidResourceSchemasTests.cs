@@ -77,7 +77,7 @@ public class InvalidResourceSchemasTests
                 apiSchemaProvider,
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new NoClaimsClaimSetProvider(NullLogger.Instance),
-                new DocumentValidator(),
+                new DocumentValidator(new CompiledSchemaCache()),
                 new SuccessDocumentStoreRepository(NullLogger<SuccessDocumentStoreRepository>.Instance),
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
@@ -94,7 +94,8 @@ public class InvalidResourceSchemasTests
                 ),
                 apiSchemaUploadService,
                 serviceProvider,
-                A.Fake<ClaimSetsCache>()
+                A.Fake<ClaimSetsCache>(),
+                new CompiledSchemaCache()
             );
         }
 

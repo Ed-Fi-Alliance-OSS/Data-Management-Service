@@ -46,6 +46,7 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IApiSchemaProvider>(provider => provider.GetRequiredService<ApiSchemaProvider>())
             .AddSingleton<IUploadApiSchemaService, UploadApiSchemaService>()
             .AddSingleton<IApiService, ApiService>()
+            .AddSingleton<ICompiledSchemaCache, CompiledSchemaCache>()
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()

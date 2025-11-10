@@ -48,6 +48,7 @@ internal class ApiService : IApiService
     private readonly IUploadApiSchemaService _apiSchemaUploadService;
     private readonly IServiceProvider _serviceProvider;
     private readonly ClaimSetsCache _claimSetsCache;
+    private readonly ICompiledSchemaCache _compiledSchemaCache;
 
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -100,7 +101,8 @@ internal class ApiService : IApiService
         ResourceLoadOrderCalculator resourceLoadCalculator,
         IUploadApiSchemaService apiSchemaUploadService,
         IServiceProvider serviceProvider,
-        ClaimSetsCache claimSetsCache
+        ClaimSetsCache claimSetsCache,
+        ICompiledSchemaCache compiledSchemaCache
     )
     {
         _apiSchemaProvider = apiSchemaProvider;
@@ -119,6 +121,7 @@ internal class ApiService : IApiService
         _apiSchemaUploadService = apiSchemaUploadService;
         _serviceProvider = serviceProvider;
         _claimSetsCache = claimSetsCache;
+        _compiledSchemaCache = compiledSchemaCache;
 
         // Initialize VersionedLazy instances with schema version provider
         _upsertSteps = new VersionedLazy<PipelineProvider>(
@@ -173,7 +176,7 @@ internal class ApiService : IApiService
         steps.AddRange(
             [
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
                 new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
@@ -233,7 +236,7 @@ internal class ApiService : IApiService
         steps.AddRange(
             [
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
                 new ParsePathMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new BuildResourceInfoMiddleware(
@@ -261,7 +264,7 @@ internal class ApiService : IApiService
         steps.AddRange(
             [
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
                 new ParsePathMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new ProvideAuthorizationSecurableInfoMiddleware(_logger),
@@ -285,7 +288,7 @@ internal class ApiService : IApiService
         steps.AddRange(
             [
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
                 new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
@@ -344,7 +347,7 @@ internal class ApiService : IApiService
         steps.AddRange(
             [
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
                 new ParsePathMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new BuildResourceInfoMiddleware(
