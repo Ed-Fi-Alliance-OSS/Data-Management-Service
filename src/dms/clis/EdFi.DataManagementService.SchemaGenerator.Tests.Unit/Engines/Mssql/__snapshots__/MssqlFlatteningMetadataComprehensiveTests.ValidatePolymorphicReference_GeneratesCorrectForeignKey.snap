@@ -1,0 +1,83 @@
+﻿-- MSSQL CREATE TABLE edfi_StudentSchoolAssociation
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_StudentSchoolAssociation' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_StudentSchoolAssociation] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [StudentUniqueId] NVARCHAR(32) NOT NULL,
+    [SchoolId] INT NOT NULL,
+    [EntryDate] DATE NOT NULL,
+    [EntryGradeLevelDescriptor] BIGINT NOT NULL,
+    [ExitWithdrawDate] DATE,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_StudentSchoolAssociation_NaturalKey]
+        UNIQUE ([StudentUniqueId], [SchoolId], [EntryDate])
+    );
+    PRINT 'Table edfi_StudentSchoolAssociation created.';
+END
+ELSE
+    PRINT 'Table edfi_StudentSchoolAssociation already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentSchoolAssociation_School' AND object_id = OBJECT_ID('[dms].[edfi_StudentSchoolAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentSchoolAssociation_School]
+        ON [dms].[edfi_StudentSchoolAssociation]([SchoolId]);
+    PRINT 'Index IX_StudentSchoolAssociation_School created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentSchoolAssociation_Document' AND object_id = OBJECT_ID('[dms].[edfi_StudentSchoolAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentSchoolAssociation_Document]
+        ON [dms].[edfi_StudentSchoolAssociation]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_StudentSchoolAssociation_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentSchoolAssociation_EntryGradeLevelDescriptor_Descriptor')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentSchoolAssociation] ADD CONSTRAINT [FK_StudentSchoolAssociation_EntryGradeLevelDescriptor_Descriptor] FOREIGN KEY ([EntryGradeLevelDescriptor]) REFERENCES [dms].[edfi_Descriptor]([Id]);
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_EntryGradeLevelDescriptor_Descriptor created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_EntryGradeLevelDescriptor_Descriptor already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentSchoolAssociation_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentSchoolAssociation] ADD CONSTRAINT [FK_StudentSchoolAssociation_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentSchoolAssociation_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentSchoolAssociation_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentSchoolAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.StudentUniqueId,
+        base.SchoolId AS SchoolId,
+        base.EntryDate,
+        base.EntryGradeLevelDescriptor,
+        base.ExitWithdrawDate
+    FROM [dms].[edfi_StudentSchoolAssociation] base');
+    PRINT 'View StudentSchoolAssociation_View created.';
+END
+ELSE
+    PRINT 'View StudentSchoolAssociation_View already exists, skipped.';
+GO
+
+
+

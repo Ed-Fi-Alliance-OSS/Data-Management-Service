@@ -1,0 +1,193 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_EducationContent (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    ContentIdentifier VARCHAR(30) NOT NULL,
+    LearningResourceMetadataURI VARCHAR(30),
+    Description VARCHAR(30),
+    ShortDescription VARCHAR(30),
+    ContentClassDescriptorId BIGINT,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_EducationContent_Document
+    ON dms.edfi_EducationContent(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_EducationContent_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_EducationContent ADD CONSTRAINT UQ_EducationContent_NaturalKey
+            UNIQUE (ContentIdentifier);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_EducationContentDerivativeSourceEducationContent (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    EducationContent_Id BIGINT NOT NULL,
+    DerivativeSource_EducationContent_Id BIGINT,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_EducationContentDerivativeSourceEducationContent_Document
+    ON dms.edfi_EducationContentDerivativeSourceEducationContent(Document_Id, Document_PartitionKey);
+
+
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_EducationContentRequiredURI (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    EducationContent_Id BIGINT NOT NULL,
+    RequiredURI VARCHAR(30),
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_EducationContentRequiredURI_Document
+    ON dms.edfi_EducationContentRequiredURI(Document_Id, Document_PartitionKey);
+
+
+
+
+-- Foreign Key Constraints
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContent_ContentClassDescriptorId_Descriptor')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContent ADD CONSTRAINT FK_EducationContent_ContentClassDescriptorId_Descriptor
+                FOREIGN KEY (ContentClassDescriptorId)
+                REFERENCES dms.edfi_descriptor(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContent_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContent ADD CONSTRAINT FK_EducationContent_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContentDerivativeSourceEducationContent_Ed_7c8d369b')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContentDerivativeSourceEducationContent ADD CONSTRAINT FK_EducationContentDerivativeSourceEducationContent_Ed_7c8d369b
+                FOREIGN KEY (EducationContent_Id)
+                REFERENCES dms.edfi_EducationContent(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContentDerivativeSourceEducationContent_Ed_7c8d369b')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContentDerivativeSourceEducationContent ADD CONSTRAINT FK_EducationContentDerivativeSourceEducationContent_Ed_7c8d369b
+                FOREIGN KEY (DerivativeSource_EducationContent_Id)
+                REFERENCES dms.edfi_EducationContent(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContentDerivativeSourceEducationContent_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContentDerivativeSourceEducationContent ADD CONSTRAINT FK_EducationContentDerivativeSourceEducationContent_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContentRequiredURI_EducationContent')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContentRequiredURI ADD CONSTRAINT FK_EducationContentRequiredURI_EducationContent
+                FOREIGN KEY (EducationContent_Id)
+                REFERENCES dms.edfi_EducationContent(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_EducationContentRequiredURI_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_EducationContentRequiredURI ADD CONSTRAINT FK_EducationContentRequiredURI_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for EducationContent_View
+CREATE OR REPLACE VIEW dms.EducationContent_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.ContentIdentifier,
+    base.LearningResourceMetadataURI,
+    base.Description,
+    base.ShortDescription,
+    base.ContentClassDescriptorId
+FROM dms.edfi_EducationContent base;
+
+
+
+-- Natural Key Resolution View for EducationContentDerivativeSourceEducationContent_View
+CREATE OR REPLACE VIEW dms.EducationContentDerivativeSourceEducationContent_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    parent.ContentIdentifier AS ContentIdentifier,
+    base.DerivativeSource_EducationContent_Id AS DerivativeSource_EducationContentId
+FROM dms.edfi_EducationContentDerivativeSourceEducationContent base
+    INNER JOIN dms.edfi_EducationContent parent ON base.EducationContent_Id = parent.Id
+    INNER JOIN dms.edfi_EducationContent educationcontent ON base.DerivativeSource_EducationContent_Id = educationcontent.Id;
+
+
+
+-- Natural Key Resolution View for EducationContentRequiredURI_View
+CREATE OR REPLACE VIEW dms.EducationContentRequiredURI_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    parent.ContentIdentifier AS ContentIdentifier,
+    base.RequiredURI
+FROM dms.edfi_EducationContentRequiredURI base
+    INNER JOIN dms.edfi_EducationContent parent ON base.EducationContent_Id = parent.Id;
+
+
+

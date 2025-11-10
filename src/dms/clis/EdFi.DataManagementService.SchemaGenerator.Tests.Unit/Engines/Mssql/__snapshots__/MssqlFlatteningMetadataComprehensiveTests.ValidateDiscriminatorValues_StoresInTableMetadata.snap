@@ -1,0 +1,135 @@
+﻿-- MSSQL CREATE TABLE edfi_Assessment
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_Assessment' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_Assessment] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [AssessmentIdentifier] NVARCHAR(60) NOT NULL,
+    [Namespace] NVARCHAR(255) NOT NULL,
+    [AssessmentTitle] NVARCHAR(100) NOT NULL,
+    [AssessmentCategoryDescriptor] BIGINT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_Assessment_NaturalKey]
+        UNIQUE ([AssessmentIdentifier], [Namespace])
+    );
+    PRINT 'Table edfi_Assessment created.';
+END
+ELSE
+    PRINT 'Table edfi_Assessment already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Assessment_Document' AND object_id = OBJECT_ID('[dms].[edfi_Assessment]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Assessment_Document]
+        ON [dms].[edfi_Assessment]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_Assessment_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_ObjectiveAssessment
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_ObjectiveAssessment' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_ObjectiveAssessment] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [AssessmentIdentifier] NVARCHAR(60) NOT NULL,
+    [IdentificationCode] NVARCHAR(60) NOT NULL,
+    [Namespace] NVARCHAR(255) NOT NULL,
+    [Description] NVARCHAR(1024),
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_ObjectiveAssessment_NaturalKey]
+        UNIQUE ([AssessmentIdentifier], [IdentificationCode], [Namespace])
+    );
+    PRINT 'Table edfi_ObjectiveAssessment created.';
+END
+ELSE
+    PRINT 'Table edfi_ObjectiveAssessment already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_ObjectiveAssessment_Document' AND object_id = OBJECT_ID('[dms].[edfi_ObjectiveAssessment]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_ObjectiveAssessment_Document]
+        ON [dms].[edfi_ObjectiveAssessment]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_ObjectiveAssessment_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Assessment_AssessmentCategoryDescriptor_Descriptor')
+BEGIN
+    ALTER TABLE [dms].[edfi_Assessment] ADD CONSTRAINT [FK_Assessment_AssessmentCategoryDescriptor_Descriptor] FOREIGN KEY ([AssessmentCategoryDescriptor]) REFERENCES [dms].[edfi_Descriptor]([Id]);
+    PRINT 'Foreign key constraint FK_Assessment_AssessmentCategoryDescriptor_Descriptor created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Assessment_AssessmentCategoryDescriptor_Descriptor already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Assessment_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_Assessment] ADD CONSTRAINT [FK_Assessment_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_Assessment_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Assessment_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_ObjectiveAssessment_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_ObjectiveAssessment] ADD CONSTRAINT [FK_ObjectiveAssessment_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_ObjectiveAssessment_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_ObjectiveAssessment_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Assessment_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Assessment_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Assessment_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.AssessmentIdentifier,
+        base.Namespace,
+        base.AssessmentTitle,
+        base.AssessmentCategoryDescriptor
+    FROM [dms].[edfi_Assessment] base');
+    PRINT 'View Assessment_View created.';
+END
+ELSE
+    PRINT 'View Assessment_View already exists, skipped.';
+GO
+
+
+
+-- Natural Key Resolution View for ObjectiveAssessment_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'ObjectiveAssessment_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[ObjectiveAssessment_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.AssessmentIdentifier,
+        base.IdentificationCode,
+        base.Namespace,
+        base.Description
+    FROM [dms].[edfi_ObjectiveAssessment] base');
+    PRINT 'View ObjectiveAssessment_View created.';
+END
+ELSE
+    PRINT 'View ObjectiveAssessment_View already exists, skipped.';
+GO
+
+
+

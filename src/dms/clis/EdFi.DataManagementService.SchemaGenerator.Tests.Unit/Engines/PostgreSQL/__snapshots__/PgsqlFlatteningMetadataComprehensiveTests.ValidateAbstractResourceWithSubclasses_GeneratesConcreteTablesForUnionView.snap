@@ -1,0 +1,206 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_School (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    EducationOrganizationId INTEGER NOT NULL,
+    NameOfInstitution VARCHAR(255) NOT NULL,
+    SchoolTypeDescriptor BIGINT,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_School_Document
+    ON dms.edfi_School(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_School_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_School ADD CONSTRAINT UQ_School_NaturalKey
+            UNIQUE (EducationOrganizationId);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_LocalEducationAgency (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    EducationOrganizationId INTEGER NOT NULL,
+    NameOfInstitution VARCHAR(255) NOT NULL,
+    LocalEducationAgencyCategoryDescriptor BIGINT NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_LocalEducationAgency_Document
+    ON dms.edfi_LocalEducationAgency(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_LocalEducationAgency_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_LocalEducationAgency ADD CONSTRAINT UQ_LocalEducationAgency_NaturalKey
+            UNIQUE (EducationOrganizationId);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_StateEducationAgency (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    EducationOrganizationId INTEGER NOT NULL,
+    NameOfInstitution VARCHAR(255) NOT NULL,
+    StateEducationAgencyCategoryDescriptor BIGINT,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_StateEducationAgency_Document
+    ON dms.edfi_StateEducationAgency(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_StateEducationAgency_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_StateEducationAgency ADD CONSTRAINT UQ_StateEducationAgency_NaturalKey
+            UNIQUE (EducationOrganizationId);
+    END IF;
+END$$;
+
+
+-- Foreign Key Constraints
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_School_SchoolTypeDescriptor_Descriptor')
+        ) THEN
+            ALTER TABLE dms.edfi_School ADD CONSTRAINT FK_School_SchoolTypeDescriptor_Descriptor
+                FOREIGN KEY (SchoolTypeDescriptor)
+                REFERENCES dms.edfi_descriptor(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_School_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_School ADD CONSTRAINT FK_School_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_LocalEducationAgency_LocalEducationAgencyCategoryDe_5ddaa557')
+        ) THEN
+            ALTER TABLE dms.edfi_LocalEducationAgency ADD CONSTRAINT FK_LocalEducationAgency_LocalEducationAgencyCategoryDe_5ddaa557
+                FOREIGN KEY (LocalEducationAgencyCategoryDescriptor)
+                REFERENCES dms.edfi_descriptor(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_LocalEducationAgency_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_LocalEducationAgency ADD CONSTRAINT FK_LocalEducationAgency_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StateEducationAgency_StateEducationAgencyCategoryDe_2a459050')
+        ) THEN
+            ALTER TABLE dms.edfi_StateEducationAgency ADD CONSTRAINT FK_StateEducationAgency_StateEducationAgencyCategoryDe_2a459050
+                FOREIGN KEY (StateEducationAgencyCategoryDescriptor)
+                REFERENCES dms.edfi_descriptor(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StateEducationAgency_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_StateEducationAgency ADD CONSTRAINT FK_StateEducationAgency_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for School_View
+CREATE OR REPLACE VIEW dms.School_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.EducationOrganizationId,
+    base.NameOfInstitution,
+    base.SchoolTypeDescriptor
+FROM dms.edfi_School base;
+
+
+
+-- Natural Key Resolution View for LocalEducationAgency_View
+CREATE OR REPLACE VIEW dms.LocalEducationAgency_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.EducationOrganizationId,
+    base.NameOfInstitution,
+    base.LocalEducationAgencyCategoryDescriptor
+FROM dms.edfi_LocalEducationAgency base;
+
+
+
+-- Natural Key Resolution View for StateEducationAgency_View
+CREATE OR REPLACE VIEW dms.StateEducationAgency_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.EducationOrganizationId,
+    base.NameOfInstitution,
+    base.StateEducationAgencyCategoryDescriptor
+FROM dms.edfi_StateEducationAgency base;
+
+
+
+-- PostgreSQL Union View
+CREATE OR REPLACE VIEW dms.edfi_EducationOrganization AS
+SELECT Id, EducationOrganizationId, NameOfInstitution, 'School' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_School
+UNION ALL
+SELECT Id, EducationOrganizationId, NameOfInstitution, 'LocalEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_LocalEducationAgency
+UNION ALL
+SELECT Id, EducationOrganizationId, NameOfInstitution, 'StateEducationAgency' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.edfi_StateEducationAgency
+;
+

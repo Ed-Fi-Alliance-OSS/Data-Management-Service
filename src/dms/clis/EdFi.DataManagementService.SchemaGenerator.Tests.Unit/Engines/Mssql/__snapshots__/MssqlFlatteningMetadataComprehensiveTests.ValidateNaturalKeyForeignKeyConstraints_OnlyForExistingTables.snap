@@ -1,0 +1,62 @@
+﻿-- MSSQL CREATE TABLE edfi_Student
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_Student' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_Student] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [StudentUniqueId] NVARCHAR(32) NOT NULL,
+    [NonExistentTable_Id] BIGINT,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_Student_NaturalKey]
+        UNIQUE ([StudentUniqueId], [NonExistentTable_Id])
+    );
+    PRINT 'Table edfi_Student created.';
+END
+ELSE
+    PRINT 'Table edfi_Student already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Student_Document' AND object_id = OBJECT_ID('[dms].[edfi_Student]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Student_Document]
+        ON [dms].[edfi_Student]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_Student_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Student_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_Student] ADD CONSTRAINT [FK_Student_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_Student_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Student_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Student_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Student_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Student_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.StudentUniqueId,
+        base.NonExistentTable_Id
+    FROM [dms].[edfi_Student] base');
+    PRINT 'View Student_View created.';
+END
+ELSE
+    PRINT 'View Student_View already exists, skipped.';
+GO
+
+
+

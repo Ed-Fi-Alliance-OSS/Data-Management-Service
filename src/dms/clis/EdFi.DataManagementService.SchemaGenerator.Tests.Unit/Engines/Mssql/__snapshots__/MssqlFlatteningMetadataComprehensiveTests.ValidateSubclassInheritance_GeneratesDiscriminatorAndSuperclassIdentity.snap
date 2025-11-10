@@ -1,0 +1,143 @@
+﻿-- MSSQL CREATE TABLE edfi_CommunityOrganization
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_CommunityOrganization' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_CommunityOrganization] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [CommunityOrganizationId] INT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_CommunityOrganization_NaturalKey]
+        UNIQUE ([CommunityOrganizationId])
+    );
+    PRINT 'Table edfi_CommunityOrganization created.';
+END
+ELSE
+    PRINT 'Table edfi_CommunityOrganization already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_CommunityOrganization_Document' AND object_id = OBJECT_ID('[dms].[edfi_CommunityOrganization]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_CommunityOrganization_Document]
+        ON [dms].[edfi_CommunityOrganization]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_CommunityOrganization_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_CommunityOrganizationEducationOrganizationIdentificationCode
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_CommunityOrganizationEducationOrganizationIdentificationCode' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [CommunityOrganization_Id] BIGINT NOT NULL,
+    [IdentificationCode] NVARCHAR(30) NOT NULL,
+    [EducationOrganizationIdentificationSystemDescriptorId] BIGINT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_CommunityOrganizationEducationOrganizationIdentificationCode_Identity]
+        UNIQUE ([CommunityOrganization_Id], [EducationOrganizationIdentificationSystemDescriptorId])
+    );
+    PRINT 'Table edfi_CommunityOrganizationEducationOrganizationIdentificationCode created.';
+END
+ELSE
+    PRINT 'Table edfi_CommunityOrganizationEducationOrganizationIdentificationCode already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization' AND object_id = OBJECT_ID('[dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization]
+        ON [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]([CommunityOrganization_Id]);
+    PRINT 'Index IX_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_CommunityOrganizationEducationOrganizationIdentificationCode_Document' AND object_id = OBJECT_ID('[dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_CommunityOrganizationEducationOrganizationIdentificationCode_Document]
+        ON [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_CommunityOrganizationEducationOrganizationIdentificationCode_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_CommunityOrganization_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_CommunityOrganization] ADD CONSTRAINT [FK_CommunityOrganization_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_CommunityOrganization_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_CommunityOrganization_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization')
+BEGIN
+    ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization] FOREIGN KEY ([CommunityOrganization_Id]) REFERENCES [dms].[edfi_CommunityOrganization]([Id]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_CommunityOrganization already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_CommunityOrganizationEducationOrganizationIdentificationCode_EducationOrganizationIdentificationSystemDescriptorId_Descriptor')
+BEGIN
+    ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_EducationOrganizationIdentificationSystemDescriptorId_Descriptor] FOREIGN KEY ([EducationOrganizationIdentificationSystemDescriptorId]) REFERENCES [dms].[edfi_Descriptor]([Id]);
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_EducationOrganizationIdentificationSystemDescriptorId_Descriptor created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_EducationOrganizationIdentificationSystemDescriptorId_Descriptor already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] ADD CONSTRAINT [FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_CommunityOrganizationEducationOrganizationIdentificationCode_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for CommunityOrganization_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'CommunityOrganization_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[CommunityOrganization_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.CommunityOrganizationId
+    FROM [dms].[edfi_CommunityOrganization] base');
+    PRINT 'View CommunityOrganization_View created.';
+END
+ELSE
+    PRINT 'View CommunityOrganization_View already exists, skipped.';
+GO
+
+
+
+-- Natural Key Resolution View for CommunityOrganizationEducationOrganizationIdentificationCode_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'CommunityOrganizationEducationOrganizationIdentificationCode_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[CommunityOrganizationEducationOrganizationIdentificationCode_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        parent.CommunityOrganizationId AS CommunityOrganizationId,
+        base.IdentificationCode,
+        base.EducationOrganizationIdentificationSystemDescriptorId
+    FROM [dms].[edfi_CommunityOrganizationEducationOrganizationIdentificationCode] base
+    INNER JOIN [dms].[edfi_CommunityOrganization] parent ON base.CommunityOrganization_Id = parent.Id');
+    PRINT 'View CommunityOrganizationEducationOrganizationIdentificationCode_View created.';
+END
+ELSE
+    PRINT 'View CommunityOrganizationEducationOrganizationIdentificationCode_View already exists, skipped.';
+GO
+
+
+

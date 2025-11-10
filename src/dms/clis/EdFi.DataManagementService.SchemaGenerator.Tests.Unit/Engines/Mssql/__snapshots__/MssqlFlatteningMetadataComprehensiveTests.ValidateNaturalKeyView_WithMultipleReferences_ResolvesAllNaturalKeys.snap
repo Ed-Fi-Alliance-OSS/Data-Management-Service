@@ -1,0 +1,290 @@
+﻿-- MSSQL CREATE TABLE edfi_StudentSchoolAssociation
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_StudentSchoolAssociation' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_StudentSchoolAssociation] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [EntryDate] DATE NOT NULL,
+    [Student_Id] BIGINT NOT NULL,
+    [School_Id] BIGINT NOT NULL,
+    [GraduationPlan_Id] BIGINT,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_StudentSchoolAssociation_NaturalKey]
+        UNIQUE ([EntryDate], [Student_Id], [School_Id])
+    );
+    PRINT 'Table edfi_StudentSchoolAssociation created.';
+END
+ELSE
+    PRINT 'Table edfi_StudentSchoolAssociation already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentSchoolAssociation_Student' AND object_id = OBJECT_ID('[dms].[edfi_StudentSchoolAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentSchoolAssociation_Student]
+        ON [dms].[edfi_StudentSchoolAssociation]([Student_Id]);
+    PRINT 'Index IX_StudentSchoolAssociation_Student created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentSchoolAssociation_School' AND object_id = OBJECT_ID('[dms].[edfi_StudentSchoolAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentSchoolAssociation_School]
+        ON [dms].[edfi_StudentSchoolAssociation]([School_Id]);
+    PRINT 'Index IX_StudentSchoolAssociation_School created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentSchoolAssociation_GraduationPlan' AND object_id = OBJECT_ID('[dms].[edfi_StudentSchoolAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentSchoolAssociation_GraduationPlan]
+        ON [dms].[edfi_StudentSchoolAssociation]([GraduationPlan_Id]);
+    PRINT 'Index IX_StudentSchoolAssociation_GraduationPlan created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentSchoolAssociation_Document' AND object_id = OBJECT_ID('[dms].[edfi_StudentSchoolAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentSchoolAssociation_Document]
+        ON [dms].[edfi_StudentSchoolAssociation]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_StudentSchoolAssociation_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_Student
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_Student' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_Student] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [StudentUniqueId] NVARCHAR(32) NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_Student_NaturalKey]
+        UNIQUE ([StudentUniqueId])
+    );
+    PRINT 'Table edfi_Student created.';
+END
+ELSE
+    PRINT 'Table edfi_Student already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Student_Document' AND object_id = OBJECT_ID('[dms].[edfi_Student]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Student_Document]
+        ON [dms].[edfi_Student]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_Student_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_School
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_School' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_School] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [SchoolId] INT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_School_NaturalKey]
+        UNIQUE ([SchoolId])
+    );
+    PRINT 'Table edfi_School created.';
+END
+ELSE
+    PRINT 'Table edfi_School already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_School_Document' AND object_id = OBJECT_ID('[dms].[edfi_School]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_School_Document]
+        ON [dms].[edfi_School]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_School_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_GraduationPlan
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_GraduationPlan' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_GraduationPlan] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [GraduationPlanTypeDescriptorId] BIGINT NOT NULL,
+    [GraduationSchoolYear] INT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_GraduationPlan_NaturalKey]
+        UNIQUE ([GraduationPlanTypeDescriptorId], [GraduationSchoolYear])
+    );
+    PRINT 'Table edfi_GraduationPlan created.';
+END
+ELSE
+    PRINT 'Table edfi_GraduationPlan already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_GraduationPlan_Document' AND object_id = OBJECT_ID('[dms].[edfi_GraduationPlan]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_GraduationPlan_Document]
+        ON [dms].[edfi_GraduationPlan]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_GraduationPlan_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentSchoolAssociation_Student')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentSchoolAssociation] ADD CONSTRAINT [FK_StudentSchoolAssociation_Student] FOREIGN KEY ([Student_Id]) REFERENCES [dms].[edfi_Student]([Id]);
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_Student created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_Student already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentSchoolAssociation_School')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentSchoolAssociation] ADD CONSTRAINT [FK_StudentSchoolAssociation_School] FOREIGN KEY ([School_Id]) REFERENCES [dms].[edfi_School]([Id]);
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_School created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_School already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentSchoolAssociation_GraduationPlan')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentSchoolAssociation] ADD CONSTRAINT [FK_StudentSchoolAssociation_GraduationPlan] FOREIGN KEY ([GraduationPlan_Id]) REFERENCES [dms].[edfi_GraduationPlan]([Id]);
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_GraduationPlan created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_GraduationPlan already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentSchoolAssociation_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentSchoolAssociation] ADD CONSTRAINT [FK_StudentSchoolAssociation_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentSchoolAssociation_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Student_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_Student] ADD CONSTRAINT [FK_Student_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_Student_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Student_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_School_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_School] ADD CONSTRAINT [FK_School_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_School_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_School_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_GraduationPlan_GraduationPlanTypeDescriptorId_Descriptor')
+BEGIN
+    ALTER TABLE [dms].[edfi_GraduationPlan] ADD CONSTRAINT [FK_GraduationPlan_GraduationPlanTypeDescriptorId_Descriptor] FOREIGN KEY ([GraduationPlanTypeDescriptorId]) REFERENCES [dms].[edfi_Descriptor]([Id]);
+    PRINT 'Foreign key constraint FK_GraduationPlan_GraduationPlanTypeDescriptorId_Descriptor created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_GraduationPlan_GraduationPlanTypeDescriptorId_Descriptor already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_GraduationPlan_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_GraduationPlan] ADD CONSTRAINT [FK_GraduationPlan_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_GraduationPlan_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_GraduationPlan_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentSchoolAssociation_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentSchoolAssociation_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentSchoolAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.EntryDate,
+        base.Student_Id AS StudentId,
+        student.StudentUniqueId AS StudentUniqueId,
+        base.School_Id AS SchoolId,
+        base.GraduationPlan_Id AS GraduationPlanId,
+        graduationplan.GraduationPlanTypeDescriptorId AS GraduationPlanTypeDescriptorId,
+        graduationplan.GraduationSchoolYear AS GraduationSchoolYear
+    FROM [dms].[edfi_StudentSchoolAssociation] base
+    INNER JOIN [dms].[edfi_Student] student ON base.Student_Id = student.Id
+    INNER JOIN [dms].[edfi_School] school ON base.School_Id = school.Id
+    INNER JOIN [dms].[edfi_GraduationPlan] graduationplan ON base.GraduationPlan_Id = graduationplan.Id');
+    PRINT 'View StudentSchoolAssociation_View created.';
+END
+ELSE
+    PRINT 'View StudentSchoolAssociation_View already exists, skipped.';
+GO
+
+
+
+-- Natural Key Resolution View for Student_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Student_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Student_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.StudentUniqueId
+    FROM [dms].[edfi_Student] base');
+    PRINT 'View Student_View created.';
+END
+ELSE
+    PRINT 'View Student_View already exists, skipped.';
+GO
+
+
+
+-- Natural Key Resolution View for School_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'School_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[School_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.SchoolId
+    FROM [dms].[edfi_School] base');
+    PRINT 'View School_View created.';
+END
+ELSE
+    PRINT 'View School_View already exists, skipped.';
+GO
+
+
+
+-- Natural Key Resolution View for GraduationPlan_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'GraduationPlan_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[GraduationPlan_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.GraduationPlanTypeDescriptorId,
+        base.GraduationSchoolYear
+    FROM [dms].[edfi_GraduationPlan] base');
+    PRINT 'View GraduationPlan_View created.';
+END
+ELSE
+    PRINT 'View GraduationPlan_View already exists, skipped.';
+GO
+
+
+

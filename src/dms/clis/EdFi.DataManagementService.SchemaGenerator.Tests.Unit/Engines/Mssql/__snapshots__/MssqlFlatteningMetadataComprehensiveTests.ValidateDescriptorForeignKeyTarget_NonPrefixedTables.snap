@@ -1,0 +1,66 @@
+﻿-- MSSQL CREATE TABLE edfi_otherItem
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_otherItem' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_otherItem] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [SomeDescriptorId] BIGINT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+    );
+    PRINT 'Table edfi_otherItem created.';
+END
+ELSE
+    PRINT 'Table edfi_otherItem already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_otherItem_Document' AND object_id = OBJECT_ID('[dms].[edfi_otherItem]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_otherItem_Document]
+        ON [dms].[edfi_otherItem]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_otherItem_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_otherItem_SomeDescriptorId_Descriptor')
+BEGIN
+    ALTER TABLE [dms].[edfi_otherItem] ADD CONSTRAINT [FK_otherItem_SomeDescriptorId_Descriptor] FOREIGN KEY ([SomeDescriptorId]) REFERENCES [dms].[edfi_Descriptor]([Id]);
+    PRINT 'Foreign key constraint FK_otherItem_SomeDescriptorId_Descriptor created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_otherItem_SomeDescriptorId_Descriptor already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_otherItem_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_otherItem] ADD CONSTRAINT [FK_otherItem_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_otherItem_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_otherItem_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for otherItem_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'otherItem_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[otherItem_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.SomeDescriptorId
+    FROM [dms].[edfi_otherItem] base');
+    PRINT 'View otherItem_View created.';
+END
+ELSE
+    PRINT 'View otherItem_View already exists, skipped.';
+GO
+
+
+

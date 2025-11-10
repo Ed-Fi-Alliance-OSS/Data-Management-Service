@@ -1,0 +1,122 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_Assessment (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    AssessmentIdentifier INTEGER NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_Assessment_Document
+    ON dms.edfi_Assessment(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_Assessment_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_Assessment ADD CONSTRAINT UQ_Assessment_NaturalKey
+            UNIQUE (AssessmentIdentifier);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_AssessmentAssessmentIdentificationCode (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    Assessment_Id BIGINT NOT NULL,
+    IdentificationCode VARCHAR(30) NOT NULL,
+    AssessmentIdentificationSystemDescriptorId BIGINT NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_AssessmentAssessmentIdentificationCode_Document
+    ON dms.edfi_AssessmentAssessmentIdentificationCode(Document_Id, Document_PartitionKey);
+
+
+
+
+-- Foreign Key Constraints
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_Assessment_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_Assessment ADD CONSTRAINT FK_Assessment_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_AssessmentAssessmentIdentificationCode_Assessment')
+        ) THEN
+            ALTER TABLE dms.edfi_AssessmentAssessmentIdentificationCode ADD CONSTRAINT FK_AssessmentAssessmentIdentificationCode_Assessment
+                FOREIGN KEY (Assessment_Id)
+                REFERENCES dms.edfi_Assessment(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_AssessmentAssessmentIdentificationCode_AssessmentId_a7baca49')
+        ) THEN
+            ALTER TABLE dms.edfi_AssessmentAssessmentIdentificationCode ADD CONSTRAINT FK_AssessmentAssessmentIdentificationCode_AssessmentId_a7baca49
+                FOREIGN KEY (AssessmentIdentificationSystemDescriptorId)
+                REFERENCES dms.edfi_descriptor(Id);
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_AssessmentAssessmentIdentificationCode_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_AssessmentAssessmentIdentificationCode ADD CONSTRAINT FK_AssessmentAssessmentIdentificationCode_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Assessment_View
+CREATE OR REPLACE VIEW dms.Assessment_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.AssessmentIdentifier
+FROM dms.edfi_Assessment base;
+
+
+
+-- Natural Key Resolution View for AssessmentAssessmentIdentificationCode_View
+CREATE OR REPLACE VIEW dms.AssessmentAssessmentIdentificationCode_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    parent.AssessmentIdentifier AS AssessmentIdentifier,
+    base.IdentificationCode,
+    base.AssessmentIdentificationSystemDescriptorId
+FROM dms.edfi_AssessmentAssessmentIdentificationCode base
+    INNER JOIN dms.edfi_Assessment parent ON base.Assessment_Id = parent.Id;
+
+
+

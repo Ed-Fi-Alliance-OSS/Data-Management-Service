@@ -1,0 +1,165 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociation (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    StudentId INTEGER NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_StudentEducationOrganizationAssociation_Document
+    ON dms.edfi_StudentEducationOrganizationAssociation(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_StudentEducationOrganizationAssociation_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_StudentEducationOrganizationAssociation ADD CONSTRAINT UQ_StudentEducationOrganizationAssociation_NaturalKey
+            UNIQUE (StudentId);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociationAddress (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    StudentEducationOrganizationAssociation_Id BIGINT NOT NULL,
+    StreetNumberName VARCHAR(30) NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_StudentEducationOrganizationAssociationAddress_Document
+    ON dms.edfi_StudentEducationOrganizationAssociationAddress(Document_Id, Document_PartitionKey);
+
+
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_StudentEducationOrganizationAssociationAddressPeriod (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    StudentEducationOrganizationAssociationAddress_Id BIGINT NOT NULL,
+    BeginDate INTEGER NOT NULL,
+    EndDate INTEGER,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_StudentEducationOrganizationAssociationAddressPerio_3a56ca03
+    ON dms.edfi_StudentEducationOrganizationAssociationAddressPeriod(Document_Id, Document_PartitionKey);
+
+
+
+
+-- Foreign Key Constraints
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociation_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociation ADD CONSTRAINT FK_StudentEducationOrganizationAssociation_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociationAddress_Stud_052fda57')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddress ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddress_Stud_052fda57
+                FOREIGN KEY (StudentEducationOrganizationAssociation_Id)
+                REFERENCES dms.edfi_StudentEducationOrganizationAssociation(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociationAddress_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddress ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddress_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociationAddressPerio_8f88f5b7')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddressPeriod ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddressPerio_8f88f5b7
+                FOREIGN KEY (StudentEducationOrganizationAssociationAddress_Id)
+                REFERENCES dms.edfi_StudentEducationOrganizationAssociationAddress(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_StudentEducationOrganizationAssociationAddressPerio_00177584')
+        ) THEN
+            ALTER TABLE dms.edfi_StudentEducationOrganizationAssociationAddressPeriod ADD CONSTRAINT FK_StudentEducationOrganizationAssociationAddressPerio_00177584
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociation_View
+CREATE OR REPLACE VIEW dms.StudentEducationOrganizationAssociation_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.StudentId
+FROM dms.edfi_StudentEducationOrganizationAssociation base;
+
+
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociationAddress_View
+CREATE OR REPLACE VIEW dms.StudentEducationOrganizationAssociationAddress_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    parent.StudentId AS StudentId,
+    base.StreetNumberName
+FROM dms.edfi_StudentEducationOrganizationAssociationAddress base
+    INNER JOIN dms.edfi_StudentEducationOrganizationAssociation parent ON base.StudentEducationOrganizationAssociation_Id = parent.Id;
+
+
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociationAddressPeriod_View
+CREATE OR REPLACE VIEW dms.StudentEducationOrganizationAssociationAddressPeriod_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    ancestor_1.StudentId AS StudentId,
+    base.BeginDate,
+    base.EndDate
+FROM dms.edfi_StudentEducationOrganizationAssociationAddressPeriod base
+    INNER JOIN dms.edfi_StudentEducationOrganizationAssociationAddress parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id
+    INNER JOIN dms.edfi_StudentEducationOrganizationAssociation ancestor_1 ON parent.StudentEducationOrganizationAssociation_Id = ancestor_1.Id;
+
+
+

@@ -1,0 +1,112 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityName (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    SectionIdentifier VARCHAR(30) NOT NULL,
+    CourseOffering_Id BIGINT NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_DomainEntityName_Document
+    ON dms.edfi_DomainEntityName(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_DomainEntityName_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_DomainEntityName ADD CONSTRAINT UQ_DomainEntityName_NaturalKey
+            UNIQUE (SectionIdentifier, CourseOffering_Id);
+    END IF;
+END$$;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityNameClassPeriod (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    DomainEntityName_Id BIGINT NOT NULL,
+    ClassPeriod_Id BIGINT NOT NULL,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_DomainEntityNameClassPeriod_Document
+    ON dms.edfi_DomainEntityNameClassPeriod(Document_Id, Document_PartitionKey);
+
+
+
+
+-- Foreign Key Constraints
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_DomainEntityName_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_DomainEntityName ADD CONSTRAINT FK_DomainEntityName_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_DomainEntityNameClassPeriod_DomainEntityName')
+        ) THEN
+            ALTER TABLE dms.edfi_DomainEntityNameClassPeriod ADD CONSTRAINT FK_DomainEntityNameClassPeriod_DomainEntityName
+                FOREIGN KEY (DomainEntityName_Id)
+                REFERENCES dms.edfi_DomainEntityName(Id) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_DomainEntityNameClassPeriod_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_DomainEntityNameClassPeriod ADD CONSTRAINT FK_DomainEntityNameClassPeriod_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for DomainEntityName_View
+CREATE OR REPLACE VIEW dms.DomainEntityName_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.SectionIdentifier,
+    base.CourseOffering_Id AS CourseOfferingId
+FROM dms.edfi_DomainEntityName base;
+
+
+
+-- Natural Key Resolution View for DomainEntityNameClassPeriod_View
+CREATE OR REPLACE VIEW dms.DomainEntityNameClassPeriod_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    parent.SectionIdentifier AS SectionIdentifier,
+    parent.CourseOffering_Id AS CourseOfferingId,
+    base.ClassPeriod_Id AS ClassPeriodId
+FROM dms.edfi_DomainEntityNameClassPeriod base
+    INNER JOIN dms.edfi_DomainEntityName parent ON base.DomainEntityName_Id = parent.Id;
+
+
+

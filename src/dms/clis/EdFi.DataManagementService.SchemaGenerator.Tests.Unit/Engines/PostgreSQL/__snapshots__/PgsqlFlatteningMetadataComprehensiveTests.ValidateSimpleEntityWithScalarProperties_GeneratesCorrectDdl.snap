@@ -1,0 +1,60 @@
+﻿CREATE SCHEMA IF NOT EXISTS dms;
+
+
+
+CREATE TABLE IF NOT EXISTS dms.edfi_DomainEntityName (
+    Id BIGSERIAL PRIMARY KEY,
+    Document_Id BIGINT NOT NULL,
+    Document_PartitionKey SMALLINT NOT NULL,
+    StringIdentity VARCHAR(30) NOT NULL,
+    RequiredIntegerProperty INTEGER NOT NULL,
+    SchoolYear INTEGER,
+    CreateDate TIMESTAMP NOT NULL,
+    LastModifiedDate TIMESTAMP NOT NULL,
+    ChangeVersion BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS IX_DomainEntityName_Document
+    ON dms.edfi_DomainEntityName(Document_Id, Document_PartitionKey);
+
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('UQ_DomainEntityName_NaturalKey')
+    ) THEN
+        ALTER TABLE dms.edfi_DomainEntityName ADD CONSTRAINT UQ_DomainEntityName_NaturalKey
+            UNIQUE (StringIdentity);
+    END IF;
+END$$;
+
+
+-- Foreign Key Constraints
+
+DO $$
+BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('FK_DomainEntityName_Document')
+        ) THEN
+            ALTER TABLE dms.edfi_DomainEntityName ADD CONSTRAINT FK_DomainEntityName_Document
+                FOREIGN KEY (Document_Id, Document_PartitionKey)
+                REFERENCES dms.Document(Id, DocumentPartitionKey) ON DELETE CASCADE;
+        END IF;
+END$$;
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for DomainEntityName_View
+CREATE OR REPLACE VIEW dms.DomainEntityName_View AS
+SELECT
+    base.Id,
+    base.Document_Id,
+    base.Document_PartitionKey,
+    base.StringIdentity,
+    base.RequiredIntegerProperty,
+    base.SchoolYear
+FROM dms.edfi_DomainEntityName base;
+
+
+

@@ -1,0 +1,204 @@
+﻿-- MSSQL CREATE TABLE edfi_StudentEducationOrganizationAssociation
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_StudentEducationOrganizationAssociation' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_StudentEducationOrganizationAssociation] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [StudentId] INT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_StudentEducationOrganizationAssociation_NaturalKey]
+        UNIQUE ([StudentId])
+    );
+    PRINT 'Table edfi_StudentEducationOrganizationAssociation created.';
+END
+ELSE
+    PRINT 'Table edfi_StudentEducationOrganizationAssociation already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentEducationOrganizationAssociation_Document' AND object_id = OBJECT_ID('[dms].[edfi_StudentEducationOrganizationAssociation]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentEducationOrganizationAssociation_Document]
+        ON [dms].[edfi_StudentEducationOrganizationAssociation]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_StudentEducationOrganizationAssociation_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_StudentEducationOrganizationAssociationAddress
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_StudentEducationOrganizationAssociationAddress' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddress] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [StudentEducationOrganizationAssociation_Id] BIGINT NOT NULL,
+    [StreetNumberName] NVARCHAR(30) NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+    );
+    PRINT 'Table edfi_StudentEducationOrganizationAssociationAddress created.';
+END
+ELSE
+    PRINT 'Table edfi_StudentEducationOrganizationAssociationAddress already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentEducationOrganizationAssociationAddress_StudentEducationOrganizationAssociation' AND object_id = OBJECT_ID('[dms].[edfi_StudentEducationOrganizationAssociationAddress]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentEducationOrganizationAssociationAddress_StudentEducationOrganizationAssociation]
+        ON [dms].[edfi_StudentEducationOrganizationAssociationAddress]([StudentEducationOrganizationAssociation_Id]);
+    PRINT 'Index IX_StudentEducationOrganizationAssociationAddress_StudentEducationOrganizationAssociation created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentEducationOrganizationAssociationAddress_Document' AND object_id = OBJECT_ID('[dms].[edfi_StudentEducationOrganizationAssociationAddress]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentEducationOrganizationAssociationAddress_Document]
+        ON [dms].[edfi_StudentEducationOrganizationAssociationAddress]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_StudentEducationOrganizationAssociationAddress_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_StudentEducationOrganizationAssociationAddressPeriod
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_StudentEducationOrganizationAssociationAddressPeriod' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [StudentEducationOrganizationAssociationAddress_Id] BIGINT NOT NULL,
+    [BeginDate] INT NOT NULL,
+    [EndDate] INT,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_StudentEducationOrganizationAssociationAddressPeriod_Identity]
+        UNIQUE ([StudentEducationOrganizationAssociationAddress_Id], [BeginDate])
+    );
+    PRINT 'Table edfi_StudentEducationOrganizationAssociationAddressPeriod created.';
+END
+ELSE
+    PRINT 'Table edfi_StudentEducationOrganizationAssociationAddressPeriod already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentEducationOrganizationAssociationAddressPeriod_StudentEducationOrganizationAssociationAddress' AND object_id = OBJECT_ID('[dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentEducationOrganizationAssociationAddressPeriod_StudentEducationOrganizationAssociationAddress]
+        ON [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod]([StudentEducationOrganizationAssociationAddress_Id]);
+    PRINT 'Index IX_StudentEducationOrganizationAssociationAddressPeriod_StudentEducationOrganizationAssociationAddress created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentEducationOrganizationAssociationAddressPeriod_Document' AND object_id = OBJECT_ID('[dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentEducationOrganizationAssociationAddressPeriod_Document]
+        ON [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_StudentEducationOrganizationAssociationAddressPeriod_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentEducationOrganizationAssociation_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentEducationOrganizationAssociation] ADD CONSTRAINT [FK_StudentEducationOrganizationAssociation_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociation_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociation_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentEducationOrganizationAssociationAddress_StudentEducationOrganizationAssociation')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddress] ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddress_StudentEducationOrganizationAssociation] FOREIGN KEY ([StudentEducationOrganizationAssociation_Id]) REFERENCES [dms].[edfi_StudentEducationOrganizationAssociation]([Id]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddress_StudentEducationOrganizationAssociation created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddress_StudentEducationOrganizationAssociation already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentEducationOrganizationAssociationAddress_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddress] ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddress_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddress_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddress_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentEducationOrganizationAssociationAddressPeriod_StudentEducationOrganizationAssociationAddress')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddressPeriod_StudentEducationOrganizationAssociationAddress] FOREIGN KEY ([StudentEducationOrganizationAssociationAddress_Id]) REFERENCES [dms].[edfi_StudentEducationOrganizationAssociationAddress]([Id]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddressPeriod_StudentEducationOrganizationAssociationAddress created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddressPeriod_StudentEducationOrganizationAssociationAddress already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentEducationOrganizationAssociationAddressPeriod_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] ADD CONSTRAINT [FK_StudentEducationOrganizationAssociationAddressPeriod_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddressPeriod_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentEducationOrganizationAssociationAddressPeriod_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociation_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentEducationOrganizationAssociation_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentEducationOrganizationAssociation_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.StudentId
+    FROM [dms].[edfi_StudentEducationOrganizationAssociation] base');
+    PRINT 'View StudentEducationOrganizationAssociation_View created.';
+END
+ELSE
+    PRINT 'View StudentEducationOrganizationAssociation_View already exists, skipped.';
+GO
+
+
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociationAddress_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentEducationOrganizationAssociationAddress_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentEducationOrganizationAssociationAddress_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        parent.StudentId AS StudentId,
+        base.StreetNumberName
+    FROM [dms].[edfi_StudentEducationOrganizationAssociationAddress] base
+    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociation] parent ON base.StudentEducationOrganizationAssociation_Id = parent.Id');
+    PRINT 'View StudentEducationOrganizationAssociationAddress_View created.';
+END
+ELSE
+    PRINT 'View StudentEducationOrganizationAssociationAddress_View already exists, skipped.';
+GO
+
+
+
+-- Natural Key Resolution View for StudentEducationOrganizationAssociationAddressPeriod_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentEducationOrganizationAssociationAddressPeriod_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentEducationOrganizationAssociationAddressPeriod_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        ancestor_1.StudentId AS StudentId,
+        base.BeginDate,
+        base.EndDate
+    FROM [dms].[edfi_StudentEducationOrganizationAssociationAddressPeriod] base
+    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociationAddress] parent ON base.StudentEducationOrganizationAssociationAddress_Id = parent.Id
+    INNER JOIN [dms].[edfi_StudentEducationOrganizationAssociation] ancestor_1 ON parent.StudentEducationOrganizationAssociation_Id = ancestor_1.Id');
+    PRINT 'View StudentEducationOrganizationAssociationAddressPeriod_View created.';
+END
+ELSE
+    PRINT 'View StudentEducationOrganizationAssociationAddressPeriod_View already exists, skipped.';
+GO
+
+
+

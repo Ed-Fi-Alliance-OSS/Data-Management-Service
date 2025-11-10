@@ -1,0 +1,30 @@
+-- Check if FK constraint {{constraintName}} already exists
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys fk
+    INNER JOIN sys.schemas s ON fk.schema_id = s.schema_id
+    WHERE fk.name = '{{constraintName}}'
+    AND s.name = '{{sourceSchemaName}}'
+)
+BEGIN
+    -- Verify referenced table exists
+    IF EXISTS (
+        SELECT 1 FROM sys.tables t
+        INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+        WHERE t.name = '{{targetTableName}}'
+        AND s.name = '{{targetSchemaName}}'
+    )
+    BEGIN
+        ALTER TABLE [{{sourceSchemaName}}].[{{sourceTableName}}]
+        ADD CONSTRAINT [{{constraintName}}]
+        FOREIGN KEY ([{{sourceColumnName}}])
+        REFERENCES [{{targetSchemaName}}].[{{targetTableName}}]([Id]);
+
+        PRINT 'Created FK constraint: {{constraintName}}';
+    END
+    ELSE
+        PRINT 'Skipped FK constraint {{constraintName}}: Referenced table does not exist';
+END
+ELSE
+    PRINT 'FK constraint {{constraintName}} already exists';
+GO
+

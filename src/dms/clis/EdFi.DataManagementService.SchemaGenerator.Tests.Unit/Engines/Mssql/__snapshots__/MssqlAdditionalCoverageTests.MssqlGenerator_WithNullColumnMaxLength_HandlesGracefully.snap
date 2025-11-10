@@ -1,0 +1,57 @@
+﻿-- MSSQL CREATE TABLE testproject_TestTable
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'testproject_TestTable' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[testproject_TestTable] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [StringColumnNoMaxLength] NVARCHAR(MAX),
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+    );
+    PRINT 'Table testproject_TestTable created.';
+END
+ELSE
+    PRINT 'Table testproject_TestTable already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_TestTable_Document' AND object_id = OBJECT_ID('[dms].[testproject_TestTable]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_TestTable_Document]
+        ON [dms].[testproject_TestTable]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_TestTable_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_TestTable_Document')
+BEGIN
+    ALTER TABLE [dms].[testproject_TestTable] ADD CONSTRAINT [FK_TestTable_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_TestTable_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_TestTable_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for TestTable_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'TestTable_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[TestTable_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.StringColumnNoMaxLength
+    FROM [dms].[testproject_TestTable] base');
+    PRINT 'View TestTable_View created.';
+END
+ELSE
+    PRINT 'View TestTable_View already exists, skipped.';
+GO
+
+
+

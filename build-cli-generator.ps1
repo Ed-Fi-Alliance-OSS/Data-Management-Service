@@ -1,0 +1,472 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+[CmdLetBinding()]
+<#
+    .SYNOPSIS
+        Automation script for running build operations on the Schema Generator CLI from the command line.
+
+    .DESCRIPTION
+        Provides automation of the following tasks for the Ed-Fi Data Management Service Schema Generator CLI:
+
+        * Clean: runs `dotnet clean` on the Schema Generator solution
+        * Build: runs `dotnet build` with several implicit steps
+          (clean, restore, inject version information).
+        * UnitTest: executes NUnit tests in projects named `*.Tests.Unit`, which
+          do not connect to a database.
+        * Coverage: generates code coverage reports from unit test execution.
+        * Run: runs the Schema Generator CLI with provided arguments
+        * Package: builds pre-release and release NuGet packages for the Schema Generator CLI.
+        * Push: uploads a NuGet package to the NuGet feed.
+        * DockerBuild: builds a Docker image from source code
+        * DockerRun: runs the Docker image that was built from source code
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 build -Configuration Release -Version "2.0"
+
+        Overrides the default build configuration (Debug) to build in release
+        mode with assembly version 2.0.
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 unittest
+
+        Output: test results displayed in the console and saved to XML files.
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 run --input schema.json --output ./ddl --provider postgresql
+
+        Runs the Schema Generator CLI with the specified arguments.
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 package -Version "1.0.0"
+
+        Creates a NuGet package for the Schema Generator CLI.
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 dockerbuild
+
+        Builds a Docker image for the Schema Generator CLI.
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 dockerrun -InputFile "C:\temp\schema.json" -OutputFolder "C:\temp\output"
+
+        Runs the Schema Generator CLI Docker image with an input file and output folder.
+
+    .EXAMPLE
+        .\build-cli-generator.ps1 dockerrun -SchemaUrl "https://example.com/schema.json" -OutputFolder "C:\temp\output"
+
+        Runs the Schema Generator CLI Docker image with a schema URL and output folder.
+#>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'False positive')]
+param(
+    # Command to execute, defaults to "Build".
+    [string]
+    [ValidateSet("Clean", "Restore", "Build", "UnitTest", "Coverage", "Run", "Package", "Push", "DockerBuild", "DockerRun")]
+    $Command = "Build",
+
+    # Assembly and package version number for the Schema Generator CLI. The
+    # current package number is configured in the build automation tool and
+    # passed to this script.
+    [string]
+    $Version = "0.1.0",
+
+    # .NET project build configuration, defaults to "Debug". Options are: Debug, Release.
+    [string]
+    [ValidateSet("Debug", "Release")]
+    $Configuration = "Debug",
+
+    [bool]
+    $DryRun = $false,
+
+    # Ed-Fi's official NuGet package feed for package download and distribution.
+    [string]
+    $EdFiNuGetFeed = "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
+
+    # API key for accessing the feed above. Only required with the Push command.
+    [string]
+    $NuGetApiKey,
+
+    # Full path of a package file to push to the NuGet feed. Optional, only
+    # applies with the Push command. If not set, then the script looks for a
+    # NuGet package corresponding to the provided $Version.
+    [string]
+    $PackageFile,
+
+    # Only required with local builds and testing.
+    [switch]
+    $IsLocalBuild,
+
+    # Arguments to pass to the Schema Generator CLI when using the Run command
+    [string[]]
+    $CliArguments = @(),
+
+    # Path to the input file for DockerRun command
+    [string]
+    $InputFile,
+
+    # Path to the output folder for DockerRun command
+    [string]
+    $OutputFolder,
+
+    # URL to fetch the schema JSON for DockerRun command
+    [string]
+    $SchemaUrl
+)
+
+$solutionRoot = "$PSScriptRoot/src/dms/clis"
+$defaultSolution = "$solutionRoot/EdFi.DataManagementService.SchemaGenerator.sln"
+$cliProjectRoot = "$solutionRoot/EdFi.DataManagementService.SchemaGenerator.Cli"
+$projectName = "EdFi.DataManagementService.SchemaGenerator.Cli"
+$packageName = "EdFi.DataManagementService.SchemaGenerator.Cli"
+$testResults = "$PSScriptRoot/TestResults/SchemaGenerator"
+#Coverage
+$thresholdCoverage = 70
+$coverageOutputFile = "coverage.cli-generator.cobertura.xml"
+$targetDir = "coveragereport-cli-generator"
+
+$maintainers = "Ed-Fi Alliance, LLC and contributors"
+
+Import-Module -Name "$PSScriptRoot/eng/build-helpers.psm1" -Force
+
+function DotNetClean {
+    Invoke-Execute { dotnet clean $defaultSolution -c $Configuration --nologo -v minimal }
+}
+
+function Restore {
+    Invoke-Execute { dotnet restore $defaultSolution --verbosity:normal }
+}
+
+function SetSchemaGeneratorAssemblyInfo {
+    Invoke-Execute {
+        $assembly_version = $Version
+
+        Invoke-RegenerateFile "$solutionRoot/Directory.Build.props" @"
+<Project>
+    <!-- This file is generated by the build script for CLI-specific properties. -->
+    <PropertyGroup>
+        <AssemblyVersion>$assembly_version</AssemblyVersion>
+        <FileVersion>$assembly_version</FileVersion>
+        <InformationalVersion>$assembly_version</InformationalVersion>
+        <TreatWarningsAsErrors>True</TreatWarningsAsErrors>
+        <ErrorLog>results.sarif,version=2.1</ErrorLog>
+        <Product>Ed-Fi Data Management Service Schema Generator CLI</Product>
+        <Authors>$maintainers</Authors>
+        <Company>$maintainers</Company>
+        <Copyright>Copyright © ${(Get-Date).year} Ed-Fi Alliance</Copyright>
+        <VersionPrefix>$assembly_version</VersionPrefix>
+        <VersionSuffix></VersionSuffix>
+    </PropertyGroup>
+</Project>
+"@
+    }
+}
+
+function Compile {
+    Invoke-Execute {
+        dotnet build $defaultSolution -c $Configuration --nologo --no-restore
+    }
+}
+
+function PublishCli {
+    Invoke-Execute {
+        $project = "$cliProjectRoot/"
+        $outputPath = "$project/publish"
+        dotnet publish $project -c $Configuration -o $outputPath --nologo
+    }
+}
+
+function RunTests {
+    param (
+        # File search filter
+        [string]
+        $Filter
+    )
+
+    $testAssemblyPath = "$solutionRoot/$Filter/bin/$Configuration/net8.0/"
+    $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -ErrorAction SilentlyContinue |
+    Sort-Object -Property { $_.Name.Length }
+
+    if ($testAssemblies.Length -eq 0) {
+        Write-Output "no test assemblies found in $testAssemblyPath"
+        return
+    }
+
+    Write-Output "Schema Generator Tests Assemblies List"
+    Write-Output $testAssemblies
+    Write-Output "End Schema Generator Tests Assemblies List"
+
+    # Ensure test results directory exists
+    if (!(Test-Path $testResults)) {
+        New-Item -ItemType Directory -Path $testResults -Force | Out-Null
+    }
+
+    $testAssemblies | ForEach-Object {
+        Write-Output "Executing: dotnet test $($_)"
+
+        $target = $_.FullName
+
+        if ($Filter.Contains("Tests.Unit")) {
+            # For unit tests, we need to collect coverage but not check thresholds yet
+            $isLastTest = $_ -eq $testAssemblies[-1]
+
+            if ($isLastTest) {
+                # Last test: generate final reports and check thresholds
+                Invoke-Execute {
+                    coverlet $($_) `
+                        --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
+                        --threshold $thresholdCoverage `
+                        --threshold-type line `
+                        --threshold-type branch `
+                        --threshold-stat total `
+                        --format json `
+                        --format cobertura `
+                        --output $coverageOutputFile `
+                        --merge-with "coverage.cli-generator.json"
+                }
+            }
+            else {
+                # Not the last test: just collect coverage without threshold check
+                Invoke-Execute {
+                    coverlet $($_) `
+                        --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo --blame"`
+                        --format json `
+                        --output coverage.cli-generator.json `
+                        --merge-with "coverage.cli-generator.json"
+                }
+            }
+        }
+        else {
+            $fileNameNoExt = $_.Name.subString(0, $_.Name.length - 4)
+            $trx = "$testResults/$fileNameNoExt"
+
+            Invoke-Execute {
+                dotnet test $target `
+                    --no-build `
+                    --no-restore `
+                    --logger "trx;LogFileName=$trx.trx" `
+                    --logger "console" `
+                    --nologo
+            }
+        }
+    }
+}
+
+function UnitTests {
+    Invoke-Execute { RunTests -Filter "EdFi.DataManagementService.SchemaGenerator.Tests.Unit" }
+}
+
+function RunSchemaGenerator {
+    param (
+        [string[]]
+        $Arguments
+    )
+
+    $exePath = "$cliProjectRoot/bin/$Configuration/net8.0/$projectName.exe"
+
+    if (!(Test-Path $exePath)) {
+        Write-Warning "Schema Generator CLI executable not found at $exePath"
+        Write-Output "Building the CLI first..."
+        Invoke-Build
+    }
+
+    if ($Arguments.Count -eq 0) {
+        Write-Output "Running Schema Generator CLI with --help"
+        Invoke-Execute { & $exePath --help }
+    }
+    else {
+        Write-Output "Running Schema Generator CLI with arguments: $($Arguments -join ' ')"
+        Invoke-Execute { & $exePath @Arguments }
+    }
+}
+
+function RunNuGetPack {
+    param (
+        [string]
+        $ProjectPath,
+
+        [string]
+        $PackageVersion
+    )
+
+    $copyrightYear = (Get-Date).Year
+
+    dotnet pack $ProjectPath `
+        --no-build `
+        --no-restore `
+        --output $PSScriptRoot `
+        -p:PackageVersion=$PackageVersion `
+        -p:Copyright="Copyright © $copyrightYear Ed-Fi Alliance" `
+        /p:NoWarn=NU5100
+}
+
+function BuildPackage {
+    $projectPath = "$cliProjectRoot/$projectName.csproj"
+    RunNuGetPack -ProjectPath $projectPath -PackageVersion $Version
+}
+
+function Invoke-Build {
+    Invoke-Step { DotNetClean }
+    Invoke-Step { Restore }
+    Invoke-Step { Compile }
+}
+
+function Invoke-SetAssemblyInfo {
+    Write-Output "Setting Schema Generator Assembly Information"
+    Invoke-Step { SetSchemaGeneratorAssemblyInfo }
+}
+
+function Invoke-Publish {
+    Write-Output "Publishing Schema Generator CLI Version ($Version)"
+    Invoke-Step { PublishCli }
+}
+
+function Invoke-Clean {
+    Invoke-Step { DotNetClean }
+}
+
+function Invoke-TestExecution {
+    param (
+        [ValidateSet("UnitTests",
+            ErrorMessage = "Please specify a valid Test Type name from the list.",
+            IgnoreCase = $true)]
+        [string]
+        $Filter
+    )
+    switch ($Filter) {
+        UnitTests { Invoke-Step { UnitTests } }
+        Default { "Unknown Test Type" }
+    }
+}
+
+function Invoke-Coverage {
+    if (!(Test-Path $coverageOutputFile)) {
+        Write-Warning "Coverage file $coverageOutputFile not found. Run UnitTest command first."
+        return
+    }
+
+    Write-Output "Generating coverage report from $coverageOutputFile to $targetDir"
+    Invoke-Execute {
+        reportgenerator -reports:"$coverageOutputFile" -targetdir:"$targetDir" -reporttypes:Html
+    }
+}
+
+function Invoke-BuildPackage {
+    Invoke-Step { BuildPackage }
+}
+
+function PushPackage {
+    Invoke-Execute {
+        if (-not $NuGetApiKey) {
+            throw "Cannot push a NuGet package without providing an API key in the `NuGetApiKey` argument."
+        }
+
+        if (-not $EdFiNuGetFeed) {
+            throw "Cannot push a NuGet package without providing a feed in the `EdFiNuGetFeed` argument."
+        }
+
+        if (-not $PackageFile) {
+            $PackageFile = "$PSScriptRoot/$packageName.$Version.nupkg"
+        }
+
+        if ($DryRun) {
+            Write-Info "Dry run enabled, not pushing package."
+        }
+        else {
+            Write-Info ("Pushing $PackageFile to $EdFiNuGetFeed")
+            dotnet nuget push $PackageFile --api-key $NuGetApiKey --source $EdFiNuGetFeed
+        }
+    }
+}
+
+function Invoke-PushPackage {
+    Invoke-Step { PushPackage }
+}
+
+function Invoke-Restore {
+    Invoke-Step { Restore }
+}
+
+function Invoke-Run {
+    Invoke-Step { RunSchemaGenerator -Arguments $CliArguments }
+}
+
+$dockerTagBase = "local"
+$dockerTagCLI = "$($dockerTagBase)/cli-generator"
+
+function DockerBuild {
+    Invoke-Execute {
+        Push-Location eng/docker-compose/
+        try {
+            Write-Info "Building Docker image for Schema Generator CLI..."
+            docker-compose -f cli-generator.yml build
+            Write-Info "Docker image built successfully: $dockerTagCLI"
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
+function DockerRun {
+    Invoke-Execute {
+        Push-Location eng/docker-compose/
+        try {
+            Write-Info "Running Schema Generator CLI using docker-compose script..."
+
+            # Build parameters hashtable for the run-cli-generator.ps1 script
+            $scriptParams = @{}
+
+            if (-not [string]::IsNullOrWhiteSpace($InputFile)) {
+                $scriptParams['InputFile'] = $InputFile
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($SchemaUrl)) {
+                $scriptParams['SchemaUrl'] = $SchemaUrl
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($OutputFolder)) {
+                $scriptParams['OutputFolder'] = $OutputFolder
+            }
+
+            if ($CliArguments.Count -gt 0) {
+                $scriptParams['CliArguments'] = $CliArguments
+            }
+
+            # Call the existing run-cli-generator.ps1 script with the parameters
+            & .\run-cli-generator.ps1 @scriptParams
+        }
+        finally {
+            Pop-Location
+        }
+    }
+}
+
+Invoke-Main {
+    if ($IsLocalBuild) {
+        $nugetExePath = Install-NugetCli
+        Set-Alias nuget $nugetExePath -Scope Global -Verbose
+    }
+
+    switch ($Command) {
+        Clean { Invoke-Clean }
+        Restore { Invoke-Restore }
+        Build {
+            Invoke-SetAssemblyInfo
+            Invoke-Build
+        }
+        UnitTest { Invoke-TestExecution UnitTests }
+        Coverage { Invoke-Coverage }
+        Run { Invoke-Run }
+        Package {
+            Invoke-SetAssemblyInfo
+            Invoke-Build
+            Invoke-BuildPackage
+        }
+        Push { Invoke-PushPackage }
+        DockerBuild { Invoke-Step { DockerBuild } }
+        DockerRun { Invoke-Step { DockerRun } }
+        default { throw "Command '$Command' is not recognized" }
+    }
+}

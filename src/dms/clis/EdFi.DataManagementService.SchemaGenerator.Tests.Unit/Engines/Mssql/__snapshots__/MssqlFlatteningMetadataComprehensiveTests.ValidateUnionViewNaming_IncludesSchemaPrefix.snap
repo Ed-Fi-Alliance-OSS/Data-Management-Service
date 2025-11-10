@@ -1,0 +1,132 @@
+﻿-- MSSQL CREATE TABLE edfi_School
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_School' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_School] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [SchoolId] INT NOT NULL,
+    [NameOfInstitution] NVARCHAR(255) NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_School_NaturalKey]
+        UNIQUE ([SchoolId])
+    );
+    PRINT 'Table edfi_School created.';
+END
+ELSE
+    PRINT 'Table edfi_School already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_School_Document' AND object_id = OBJECT_ID('[dms].[edfi_School]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_School_Document]
+        ON [dms].[edfi_School]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_School_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_LocalEducationAgency
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_LocalEducationAgency' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_LocalEducationAgency] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [LocalEducationAgencyId] INT NOT NULL,
+    [NameOfInstitution] NVARCHAR(255) NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_LocalEducationAgency_NaturalKey]
+        UNIQUE ([LocalEducationAgencyId])
+    );
+    PRINT 'Table edfi_LocalEducationAgency created.';
+END
+ELSE
+    PRINT 'Table edfi_LocalEducationAgency already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_LocalEducationAgency_Document' AND object_id = OBJECT_ID('[dms].[edfi_LocalEducationAgency]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_LocalEducationAgency_Document]
+        ON [dms].[edfi_LocalEducationAgency]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_LocalEducationAgency_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_School_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_School] ADD CONSTRAINT [FK_School_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_School_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_School_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_LocalEducationAgency_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_LocalEducationAgency] ADD CONSTRAINT [FK_LocalEducationAgency_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_LocalEducationAgency_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_LocalEducationAgency_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for School_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'School_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[School_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.SchoolId,
+        base.NameOfInstitution
+    FROM [dms].[edfi_School] base');
+    PRINT 'View School_View created.';
+END
+ELSE
+    PRINT 'View School_View already exists, skipped.';
+GO
+
+
+
+-- Natural Key Resolution View for LocalEducationAgency_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'LocalEducationAgency_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[LocalEducationAgency_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.LocalEducationAgencyId,
+        base.NameOfInstitution
+    FROM [dms].[edfi_LocalEducationAgency] base');
+    PRINT 'View LocalEducationAgency_View created.';
+END
+ELSE
+    PRINT 'View LocalEducationAgency_View already exists, skipped.';
+GO
+
+
+
+-- SQL Server Union View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'edfi_EducationOrganization' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[edfi_EducationOrganization] AS
+SELECT Id, NameOfInstitution, ''School'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_School]
+UNION ALL
+SELECT Id, NameOfInstitution, ''LocalEducationAgency'' AS Discriminator, Document_Id, Document_PartitionKey, CreateDate, LastModifiedDate, ChangeVersion FROM dms.[edfi_LocalEducationAgency]
+');
+    PRINT 'View edfi_EducationOrganization created.';
+END
+ELSE
+    PRINT 'View edfi_EducationOrganization already exists, skipped.';
+
+

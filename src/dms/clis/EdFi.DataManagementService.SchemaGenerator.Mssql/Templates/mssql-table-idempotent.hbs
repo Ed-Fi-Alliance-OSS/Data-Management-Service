@@ -1,0 +1,36 @@
+-- MSSQL CREATE TABLE {{tableName}}
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = '{{tableName}}' AND SCHEMA_NAME(schema_id) = '{{schemaName}}')
+BEGIN
+    CREATE TABLE [{{schemaName}}].[{{tableName}}] (
+    {{#if hasId}}[{{id}}] BIGINT PRIMARY KEY IDENTITY(1,1),{{/if}}
+{{#if hasDocumentColumns}}    [{{documentId}}] BIGINT NOT NULL,
+    [{{documentPartitionKey}}] SMALLINT NOT NULL,
+{{/if}}{{#each columns}}    [{{name}}] {{type}}{{#if isRequired}} NOT NULL{{/if}}{{#unless @last}},{{/unless}}
+{{/each}}{{#if fkColumns}},
+{{/if}}{{#each fkColumns}}    CONSTRAINT [{{constraintName}}]
+        FOREIGN KEY ([{{column}}])
+        REFERENCES {{parentTable}}({{parentColumn}}){{#if cascade}} ON DELETE CASCADE{{/if}}{{#unless @last}},{{/unless}}
+{{/each}}{{#if uniqueConstraints}},
+{{/if}}{{#each uniqueConstraints}}    CONSTRAINT [{{constraintName}}]
+        UNIQUE ({{#each columns}}[{{this}}]{{#unless @last}}, {{/unless}}{{/each}}){{#unless @last}},{{/unless}}
+{{/each}}
+{{#if checkConstraint}},
+{{/if}}{{#if checkConstraint}}    CONSTRAINT [{{checkConstraint.constraintName}}]
+    CHECK ({{checkConstraint.expression}})
+{{/if}}
+    );
+    PRINT 'Table {{tableName}} created.';
+END
+ELSE
+    PRINT 'Table {{tableName}} already exists, skipped.';
+
+{{#if indexes}}
+{{#each indexes}}
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = '{{indexName}}' AND object_id = OBJECT_ID('[{{../schemaName}}].[{{tableName}}]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [{{indexName}}]
+        ON [{{../schemaName}}].[{{tableName}}]({{#each columns}}[{{this}}]{{#unless @last}}, {{/unless}}{{/each}});
+    PRINT 'Index {{indexName}} created.';
+END
+{{/each}}
+{{/if}}

@@ -1,0 +1,13 @@
+-- SQL Server Union View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = '{{viewName}}' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[{{viewName}}] AS
+{{#each selectStatements}}
+{{#if @first}}{{else}}UNION ALL
+{{/if}}{{{this}}}
+{{/each}}');
+    PRINT 'View {{viewName}} created.';
+END
+ELSE
+    PRINT 'View {{viewName}} already exists, skipped.';
+

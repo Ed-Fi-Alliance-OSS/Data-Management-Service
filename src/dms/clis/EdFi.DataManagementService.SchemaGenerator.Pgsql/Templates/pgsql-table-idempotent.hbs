@@ -1,0 +1,55 @@
+
+
+CREATE TABLE IF NOT EXISTS {{schemaName}}.{{tableName}} (
+    {{#if hasId}}{{id}} BIGSERIAL PRIMARY KEY,{{/if}}
+{{#if hasDocumentColumns}}    {{documentId}} BIGINT NOT NULL,
+    {{documentPartitionKey}} SMALLINT NOT NULL,
+{{/if}}{{#each columns}}    {{name}} {{type}}{{#if isRequired}} NOT NULL{{/if}}{{#unless @last}},{{/unless}}
+{{/each}}
+);
+{{#if checkConstraint}}
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('{{checkConstraint.constraintName}}')
+    ) THEN
+        ALTER TABLE {{schemaName}}.{{tableName}} ADD CONSTRAINT {{checkConstraint.constraintName}} CHECK ({{checkConstraint.expression}});
+    END IF;
+END$$;
+{{/if}}
+
+{{#if indexes}}
+{{#each indexes}}
+CREATE INDEX IF NOT EXISTS {{indexName}}
+    ON {{../schemaName}}.{{tableName}}({{#each columns}}{{this}}{{#unless @last}}, {{/unless}}{{/each}});
+{{/each}}
+{{/if}}
+
+{{#if fkColumns}}
+{{#each fkColumns}}
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('{{constraintName}}')
+    ) THEN
+        ALTER TABLE {{../schemaName}}.{{../tableName}} ADD CONSTRAINT {{constraintName}}
+            FOREIGN KEY ({{column}})
+            REFERENCES {{parentTable}}({{parentColumn}}){{#if cascade}} ON DELETE CASCADE{{/if}};
+    END IF;
+END$$;
+{{/each}}
+{{/if}}
+
+{{#if uniqueConstraints}}
+{{#each uniqueConstraints}}
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE lower(conname) = lower('{{constraintName}}')
+    ) THEN
+        ALTER TABLE {{../schemaName}}.{{../tableName}} ADD CONSTRAINT {{constraintName}}
+            UNIQUE ({{#each columns}}{{this}}{{#unless @last}}, {{/unless}}{{/each}});
+    END IF;
+END$$;
+{{/each}}
+{{/if}}

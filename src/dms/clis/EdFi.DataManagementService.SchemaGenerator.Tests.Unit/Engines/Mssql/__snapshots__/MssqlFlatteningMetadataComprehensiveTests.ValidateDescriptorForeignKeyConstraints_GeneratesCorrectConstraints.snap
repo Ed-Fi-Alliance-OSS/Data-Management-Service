@@ -1,0 +1,82 @@
+﻿-- MSSQL CREATE TABLE edfi_Assessment
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_Assessment' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_Assessment] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [AssessmentIdentifier] NVARCHAR(60) NOT NULL,
+    [AssessmentCategoryDescriptorId] BIGINT NOT NULL,
+    [AdaptiveAssessmentDescriptorId] BIGINT,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_Assessment_NaturalKey]
+        UNIQUE ([AssessmentIdentifier])
+    );
+    PRINT 'Table edfi_Assessment created.';
+END
+ELSE
+    PRINT 'Table edfi_Assessment already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Assessment_Document' AND object_id = OBJECT_ID('[dms].[edfi_Assessment]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Assessment_Document]
+        ON [dms].[edfi_Assessment]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_Assessment_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Assessment_AssessmentCategoryDescriptorId_Descriptor')
+BEGIN
+    ALTER TABLE [dms].[edfi_Assessment] ADD CONSTRAINT [FK_Assessment_AssessmentCategoryDescriptorId_Descriptor] FOREIGN KEY ([AssessmentCategoryDescriptorId]) REFERENCES [dms].[edfi_Descriptor]([Id]);
+    PRINT 'Foreign key constraint FK_Assessment_AssessmentCategoryDescriptorId_Descriptor created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Assessment_AssessmentCategoryDescriptorId_Descriptor already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Assessment_AdaptiveAssessmentDescriptorId_Descriptor')
+BEGIN
+    ALTER TABLE [dms].[edfi_Assessment] ADD CONSTRAINT [FK_Assessment_AdaptiveAssessmentDescriptorId_Descriptor] FOREIGN KEY ([AdaptiveAssessmentDescriptorId]) REFERENCES [dms].[edfi_Descriptor]([Id]);
+    PRINT 'Foreign key constraint FK_Assessment_AdaptiveAssessmentDescriptorId_Descriptor created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Assessment_AdaptiveAssessmentDescriptorId_Descriptor already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Assessment_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_Assessment] ADD CONSTRAINT [FK_Assessment_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_Assessment_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Assessment_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Assessment_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Assessment_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Assessment_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.AssessmentIdentifier,
+        base.AssessmentCategoryDescriptorId,
+        base.AdaptiveAssessmentDescriptorId
+    FROM [dms].[edfi_Assessment] base');
+    PRINT 'View Assessment_View created.';
+END
+ELSE
+    PRINT 'View Assessment_View already exists, skipped.';
+GO
+
+
+

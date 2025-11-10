@@ -1,0 +1,141 @@
+﻿-- MSSQL CREATE TABLE edfi_Student
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_Student' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_Student] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [StudentUniqueId] NVARCHAR(32) NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_Student_NaturalKey]
+        UNIQUE ([StudentUniqueId])
+    );
+    PRINT 'Table edfi_Student created.';
+END
+ELSE
+    PRINT 'Table edfi_Student already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_Student_Document' AND object_id = OBJECT_ID('[dms].[edfi_Student]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_Student_Document]
+        ON [dms].[edfi_Student]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_Student_Document created.';
+END
+
+-- MSSQL CREATE TABLE edfi_StudentAddress
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'edfi_StudentAddress' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    CREATE TABLE [dms].[edfi_StudentAddress] (
+    [Id] BIGINT PRIMARY KEY IDENTITY(1,1),
+    [Document_Id] BIGINT NOT NULL,
+    [Document_PartitionKey] SMALLINT NOT NULL,
+    [Student_Id] BIGINT NOT NULL,
+    [AddressTypeDescriptorId] BIGINT NOT NULL,
+    [CreateDate] DATETIME2 NOT NULL,
+    [LastModifiedDate] DATETIME2 NOT NULL,
+    [ChangeVersion] BIGINT NOT NULL
+,
+    CONSTRAINT [UQ_StudentAddress_Identity]
+        UNIQUE ([Student_Id], [AddressTypeDescriptorId])
+    );
+    PRINT 'Table edfi_StudentAddress created.';
+END
+ELSE
+    PRINT 'Table edfi_StudentAddress already exists, skipped.';
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentAddress_Student' AND object_id = OBJECT_ID('[dms].[edfi_StudentAddress]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentAddress_Student]
+        ON [dms].[edfi_StudentAddress]([Student_Id]);
+    PRINT 'Index IX_StudentAddress_Student created.';
+END
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'IX_StudentAddress_Document' AND object_id = OBJECT_ID('[dms].[edfi_StudentAddress]'))
+BEGIN
+    CREATE NONCLUSTERED INDEX [IX_StudentAddress_Document]
+        ON [dms].[edfi_StudentAddress]([Document_Id], [Document_PartitionKey]);
+    PRINT 'Index IX_StudentAddress_Document created.';
+END
+
+
+-- Foreign Key Constraints
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Student_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_Student] ADD CONSTRAINT [FK_Student_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_Student_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_Student_Document already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentAddress_Student')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentAddress] ADD CONSTRAINT [FK_StudentAddress_Student] FOREIGN KEY ([Student_Id]) REFERENCES [dms].[edfi_Student]([Id]) ON DELETE CASCADE;
+    PRINT 'Foreign key constraint FK_StudentAddress_Student created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentAddress_Student already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentAddress_AddressTypeDescriptorId_Descriptor')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentAddress] ADD CONSTRAINT [FK_StudentAddress_AddressTypeDescriptorId_Descriptor] FOREIGN KEY ([AddressTypeDescriptorId]) REFERENCES [dms].[edfi_Descriptor]([Id]);
+    PRINT 'Foreign key constraint FK_StudentAddress_AddressTypeDescriptorId_Descriptor created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentAddress_AddressTypeDescriptorId_Descriptor already exists, skipped.';
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_StudentAddress_Document')
+BEGIN
+    ALTER TABLE [dms].[edfi_StudentAddress] ADD CONSTRAINT [FK_StudentAddress_Document] FOREIGN KEY ([Document_Id], [Document_PartitionKey]) REFERENCES [dms].[Document]([Id], [DocumentPartitionKey]);
+    PRINT 'Foreign key constraint FK_StudentAddress_Document created.';
+END
+ELSE
+    PRINT 'Foreign key constraint FK_StudentAddress_Document already exists, skipped.';
+GO
+
+
+-- Natural Key Resolution Views
+
+-- Natural Key Resolution View for Student_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'Student_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[Student_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        base.StudentUniqueId
+    FROM [dms].[edfi_Student] base');
+    PRINT 'View Student_View created.';
+END
+ELSE
+    PRINT 'View Student_View already exists, skipped.';
+GO
+
+
+
+-- Natural Key Resolution View for StudentAddress_View
+IF NOT EXISTS (SELECT * FROM sys.views WHERE name = 'StudentAddress_View' AND SCHEMA_NAME(schema_id) = 'dms')
+BEGIN
+    EXEC('CREATE VIEW [dms].[StudentAddress_View] AS
+    SELECT
+        base.Id,
+        base.Document_Id,
+        base.Document_PartitionKey,
+        parent.StudentUniqueId AS StudentUniqueId,
+        base.AddressTypeDescriptorId
+    FROM [dms].[edfi_StudentAddress] base
+    INNER JOIN [dms].[edfi_Student] parent ON base.Student_Id = parent.Id');
+    PRINT 'View StudentAddress_View created.';
+END
+ELSE
+    PRINT 'View StudentAddress_View already exists, skipped.';
+GO
+
+
+
