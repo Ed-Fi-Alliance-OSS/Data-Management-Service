@@ -15,9 +15,9 @@ public class ResourceClaim
 
     [JsonPropertyName("_defaultAuthorizationStrategiesForCrud")]
     public List<ClaimSetResourceClaimActionAuthStrategies?> DefaultAuthorizationStrategiesForCRUD { get; set; } =
-        [];
+    [];
     public List<ClaimSetResourceClaimActionAuthStrategies?> AuthorizationStrategyOverridesForCRUD { get; set; } =
-        [];
+    [];
 
     public List<ResourceClaim> Children { get; set; } = [];
 }

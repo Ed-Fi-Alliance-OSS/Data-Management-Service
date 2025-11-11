@@ -8,6 +8,7 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
+using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -17,7 +18,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 public class DmsInstanceRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<DmsInstanceRepository> logger,
-    IConnectionStringEncryptionService encryptionService
+    IConnectionStringEncryptionService encryptionService,
+    IDmsInstanceRouteContextRepository routeContextRepository
 ) : IDmsInstanceRepository
 {
     public async Task<DmsInstanceInsertResult> InsertDmsInstance(DmsInstanceInsertCommand command)
@@ -66,12 +68,45 @@ public class DmsInstanceRepository(
                 string InstanceName,
                 byte[]? ConnectionString
             )>(sql, query);
-            var instances = results.Select(row => new DmsInstanceResponse
+
+            var instancesList = results.ToList();
+            if (!instancesList.Any())
+            {
+                return new DmsInstanceQueryResult.Success([]);
+            }
+
+            // Fetch route contexts for all instances in this page
+            var instanceIds = instancesList.Select(i => i.Id).ToList();
+            var routeContextsResult = await routeContextRepository.GetInstanceRouteContextsByInstanceIds(
+                instanceIds
+            );
+
+            // Group route contexts by instance ID
+            var routeContextsByInstanceId = routeContextsResult switch
+            {
+                InstanceRouteContextQueryByInstanceIdsResult.Success success => success
+                    .DmsInstanceRouteContextResponses.GroupBy(rc => rc.InstanceId)
+                    .ToDictionary(
+                        g => g.Key,
+                        g =>
+                            g.Select(rc => new DmsInstanceRouteContextItem(
+                                    rc.Id,
+                                    rc.InstanceId,
+                                    rc.ContextKey,
+                                    rc.ContextValue
+                                ))
+                                .ToList()
+                    ),
+                _ => new Dictionary<long, List<DmsInstanceRouteContextItem>>(),
+            };
+
+            var instances = instancesList.Select(row => new DmsInstanceResponse
             {
                 Id = row.Id,
                 InstanceType = row.InstanceType,
                 InstanceName = row.InstanceName,
                 ConnectionString = encryptionService.Decrypt(row.ConnectionString),
+                DmsInstanceRouteContexts = routeContextsByInstanceId.GetValueOrDefault(row.Id, []),
             });
             return new DmsInstanceQueryResult.Success(instances);
         }
@@ -104,12 +139,27 @@ public class DmsInstanceRepository(
                 return new DmsInstanceGetResult.FailureNotFound();
             }
 
+            // Fetch route contexts for this instance
+            var routeContextsResult = await routeContextRepository.GetInstanceRouteContextsByInstance(id);
+            var routeContexts = routeContextsResult switch
+            {
+                InstanceRouteContextQueryByInstanceResult.Success success =>
+                    success.DmsInstanceRouteContextResponses.Select(rc => new DmsInstanceRouteContextItem(
+                        rc.Id,
+                        rc.InstanceId,
+                        rc.ContextKey,
+                        rc.ContextValue
+                    )),
+                _ => [],
+            };
+
             var instance = new DmsInstanceResponse
             {
                 Id = result.Value.Id,
                 InstanceType = result.Value.InstanceType,
                 InstanceName = result.Value.InstanceName,
                 ConnectionString = encryptionService.Decrypt(result.Value.ConnectionString),
+                DmsInstanceRouteContexts = routeContexts,
             };
             return new DmsInstanceGetResult.Success(instance);
         }

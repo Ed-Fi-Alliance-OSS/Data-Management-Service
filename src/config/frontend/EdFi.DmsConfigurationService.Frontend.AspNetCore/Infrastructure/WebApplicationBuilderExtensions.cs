@@ -99,7 +99,10 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddTransient<IClaimSetDataProvider, ClaimSetDataProvider>();
         webApplicationBuilder.Services.AddTransient<IClaimSetRepository, ClaimSetRepository>();
         webApplicationBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
-        webApplicationBuilder.Services.AddTransient<IDmsInstanceRouteContextRepository, DmsInstanceRouteContextRepository>();
+        webApplicationBuilder.Services.AddTransient<
+            IDmsInstanceRouteContextRepository,
+            DmsInstanceRouteContextRepository
+        >();
         webApplicationBuilder.Services.AddSingleton<IClaimsValidator, ClaimsValidator>();
         webApplicationBuilder.Services.AddSingleton<IClaimsFragmentComposer, ClaimsFragmentComposer>();
         webApplicationBuilder.Services.AddSingleton<IClaimsDataLoader, ClaimsDataLoader>();
@@ -139,7 +142,7 @@ public static class WebApplicationBuilderExtensions
             logger.Information("Injecting PostgreSQL as the primary backend datastore");
             webAppBuilder.Services.AddPostgresqlDatastore(
                 webAppBuilder.Configuration.GetSection("DatabaseSettings:DatabaseConnection").Value
-                    ?? string.Empty
+                ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
             webAppBuilder.Services.AddTransient<ITokenManager, OpenIddictTokenManager>();

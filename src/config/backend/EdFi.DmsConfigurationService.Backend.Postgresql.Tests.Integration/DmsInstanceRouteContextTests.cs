@@ -4,22 +4,22 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
-using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
-using EdFi.DmsConfigurationService.DataModel.Model;
-using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
+using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public class DmsInstanceRouteContextTests : DatabaseTest
 {
     private readonly DmsInstanceRouteContextRepository _repository = new DmsInstanceRouteContextRepository(
-            Configuration.DatabaseOptions,
-            NullLogger<DmsInstanceRouteContextRepository>.Instance
-        );
+        Configuration.DatabaseOptions,
+        NullLogger<DmsInstanceRouteContextRepository>.Instance
+    );
 
     [TestFixture]
     public class InsertTests : DmsInstanceRouteContextTests
@@ -35,13 +35,14 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceRepository>.Instance,
-                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                _repository
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
                 InstanceType = "Production",
                 InstanceName = "Test Instance",
-                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
+                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
             };
             var instanceResult = await instanceRepository.InsertDmsInstance(instanceInsert);
             instanceResult.Should().BeOfType<DmsInstanceInsertResult.Success>();
@@ -52,7 +53,7 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             {
                 InstanceId = _instanceId,
                 ContextKey = "TestKey",
-                ContextValue = "TestValue"
+                ContextValue = "TestValue",
             };
             var result = await _repository.InsertDmsInstanceRouteContext(_insertCommand);
             result.Should().BeOfType<DmsInstanceRouteContextInsertResult.Success>();
@@ -63,9 +64,13 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         [Test]
         public async Task Should_get_inserted_context_from_get_all()
         {
-            var queryResult = await _repository.QueryInstanceRouteContext(new PagingQuery { Limit = 10, Offset = 0 });
+            var queryResult = await _repository.QueryInstanceRouteContext(
+                new PagingQuery { Limit = 10, Offset = 0 }
+            );
             queryResult.Should().BeOfType<DmsInstanceRouteContextQueryResult.Success>();
-            var contexts = ((DmsInstanceRouteContextQueryResult.Success)queryResult).DmsInstanceRouteContextResponses.ToList();
+            var contexts = (
+                (DmsInstanceRouteContextQueryResult.Success)queryResult
+            ).DmsInstanceRouteContextResponses.ToList();
             contexts.Should().ContainSingle(c => c.ContextKey == "TestKey" && c.ContextValue == "TestValue");
         }
 
@@ -74,7 +79,9 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         {
             var getResult = await _repository.GetInstanceRouteContext(_id);
             getResult.Should().BeOfType<DmsInstanceRouteContextGetResult.Success>();
-            var context = ((DmsInstanceRouteContextGetResult.Success)getResult).DmsInstanceRouteContextResponse;
+            var context = (
+                (DmsInstanceRouteContextGetResult.Success)getResult
+            ).DmsInstanceRouteContextResponse;
             context.ContextKey.Should().Be("TestKey");
             context.ContextValue.Should().Be("TestValue");
         }
@@ -83,7 +90,9 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         public async Task Should_fail_on_duplicate_insert()
         {
             var resultDup = await _repository.InsertDmsInstanceRouteContext(_insertCommand);
-            resultDup.Should().BeOfType<DmsInstanceRouteContextInsertResult.FailureDuplicateDmsInstanceRouteContext>();
+            resultDup
+                .Should()
+                .BeOfType<DmsInstanceRouteContextInsertResult.FailureDuplicateDmsInstanceRouteContext>();
         }
     }
 
@@ -102,13 +111,14 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceRepository>.Instance,
-                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                _repository
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
                 InstanceType = "Production",
                 InstanceName = "Update Instance",
-                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
+                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
             };
             var instanceResult = await instanceRepository.InsertDmsInstance(instanceInsert);
             instanceResult.Should().BeOfType<DmsInstanceInsertResult.Success>();
@@ -119,7 +129,7 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             {
                 InstanceId = _instanceId,
                 ContextKey = "UpdateKey",
-                ContextValue = "InitialValue"
+                ContextValue = "InitialValue",
             };
             var insertResult = await _repository.InsertDmsInstanceRouteContext(_insertCommand);
             insertResult.Should().BeOfType<DmsInstanceRouteContextInsertResult.Success>();
@@ -130,7 +140,7 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 Id = _id,
                 InstanceId = _instanceId,
                 ContextKey = "UpdateKey",
-                ContextValue = "UpdatedValue"
+                ContextValue = "UpdatedValue",
             };
             var updateResult = await _repository.UpdateDmsInstanceRouteContext(_updateCommand);
             updateResult.Should().BeOfType<DmsInstanceRouteContextUpdateResult.Success>();
@@ -141,7 +151,9 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         {
             var getResult = await _repository.GetInstanceRouteContext(_id);
             getResult.Should().BeOfType<DmsInstanceRouteContextGetResult.Success>();
-            var context = ((DmsInstanceRouteContextGetResult.Success)getResult).DmsInstanceRouteContextResponse;
+            var context = (
+                (DmsInstanceRouteContextGetResult.Success)getResult
+            ).DmsInstanceRouteContextResponse;
             context.ContextValue.Should().Be("UpdatedValue");
         }
     }
@@ -160,13 +172,14 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceRepository>.Instance,
-                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                _repository
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
                 InstanceType = "Production",
                 InstanceName = "Delete Instance",
-                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
+                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
             };
             var instanceResult = await instanceRepository.InsertDmsInstance(instanceInsert);
             instanceResult.Should().BeOfType<DmsInstanceInsertResult.Success>();
@@ -177,7 +190,7 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             {
                 InstanceId = _instanceId,
                 ContextKey = "DeleteKey",
-                ContextValue = "DeleteValue"
+                ContextValue = "DeleteValue",
             };
             var insertResult = await _repository.InsertDmsInstanceRouteContext(_insertCommand);
             insertResult.Should().BeOfType<DmsInstanceRouteContextInsertResult.Success>();
@@ -208,13 +221,14 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceRepository>.Instance,
-                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                _repository
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
                 InstanceType = "Production",
                 InstanceName = "QueryByInstance Instance",
-                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;"
+                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
             };
             var instanceResult = await instanceRepository.InsertDmsInstance(instanceInsert);
             instanceResult.Should().BeOfType<DmsInstanceInsertResult.Success>();
@@ -225,13 +239,13 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             {
                 InstanceId = _instanceId,
                 ContextKey = "Key1",
-                ContextValue = "Value1"
+                ContextValue = "Value1",
             };
             var cmd2 = new DmsInstanceRouteContextInsertCommand
             {
                 InstanceId = _instanceId,
                 ContextKey = "Key2",
-                ContextValue = "Value2"
+                ContextValue = "Value2",
             };
             var result1 = await _repository.InsertDmsInstanceRouteContext(cmd1);
             var result2 = await _repository.InsertDmsInstanceRouteContext(cmd2);
@@ -244,7 +258,9 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         {
             var queryResult = await _repository.GetInstanceRouteContextsByInstance(_instanceId);
             queryResult.Should().BeOfType<InstanceRouteContextQueryByInstanceResult.Success>();
-            var contexts = ((InstanceRouteContextQueryByInstanceResult.Success)queryResult).DmsInstanceRouteContextResponses.ToList();
+            var contexts = (
+                (InstanceRouteContextQueryByInstanceResult.Success)queryResult
+            ).DmsInstanceRouteContextResponses.ToList();
             contexts.Should().HaveCount(2);
             contexts.Any(c => c.ContextKey == "Key1" && c.ContextValue == "Value1").Should().BeTrue();
             contexts.Any(c => c.ContextKey == "Key2" && c.ContextValue == "Value2").Should().BeTrue();

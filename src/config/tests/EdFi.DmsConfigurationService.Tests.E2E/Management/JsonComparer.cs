@@ -47,6 +47,16 @@ public class JsonComparer
 
         public bool Equals(JsonElement expected, JsonElement response)
         {
+            // Support wildcard placeholder {*} to match any value
+            if (expected.ValueKind == JsonValueKind.String)
+            {
+                var expectedString = expected.GetString();
+                if (expectedString == "{*}")
+                {
+                    return true; // Accept any value regardless of actual type
+                }
+            }
+
             if (expected.ValueKind != response.ValueKind)
             {
                 return false;

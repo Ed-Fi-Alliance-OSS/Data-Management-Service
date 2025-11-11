@@ -114,6 +114,11 @@ public class DmsInstanceModuleTests
                             InstanceType = "Production",
                             InstanceName = "Test Instance",
                             ConnectionString = "Server=localhost;Database=TestDb;",
+                            DmsInstanceRouteContexts =
+                            [
+                                new(1, 1, "contextKey1", "contextValue1"),
+                                new(2, 1, "contextKey2", "contextValue2"),
+                            ],
                         }
                     )
                 );
@@ -171,6 +176,30 @@ public class DmsInstanceModuleTests
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        [Test]
+        public async Task Should_return_dms_instance_with_route_contexts()
+        {
+            using var client = SetUpClient();
+
+            var getResponse = await client.GetAsync("/v2/dmsInstances/1");
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var responseContent = await getResponse.Content.ReadAsStringAsync();
+            var instance = JsonSerializer.Deserialize<DmsInstanceResponse>(
+                responseContent,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            );
+
+            instance.Should().NotBeNull();
+            instance!.DmsInstanceRouteContexts.Should().HaveCount(2);
+            instance
+                .DmsInstanceRouteContexts.Should()
+                .Contain(c => c.ContextKey == "contextKey1" && c.ContextValue == "contextValue1");
+            instance
+                .DmsInstanceRouteContexts.Should()
+                .Contain(c => c.ContextKey == "contextKey2" && c.ContextValue == "contextValue2");
         }
     }
 
