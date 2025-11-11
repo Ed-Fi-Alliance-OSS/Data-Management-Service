@@ -22,7 +22,6 @@ $$
 DECLARE
     reference_partition TEXT;
     current_session_id INTEGER := pg_backend_pid();
-    needs_upsert BOOLEAN := TRUE;
 BEGIN
     -- Reuse the unlogged staging table across calls, discard any leftovers from prior aborted executions.
     DELETE FROM dms.ReferenceStage
@@ -79,48 +78,44 @@ BEGIN
         -- Optimization: Detect when ReferenceStage mirrors References, meaning no reference changes
         -- so we skip the write path entirely.
 
-        IF NOT p_isPureInsert THEN
-            -- Detects when a ReferenceStage row is missing in Reference table
-            IF NOT EXISTS (
-                   SELECT 1
-                   FROM dms.ReferenceStage s
-                   LEFT JOIN dms.Reference r
-                     ON r.ParentDocumentPartitionKey = s.parentdocumentpartitionkey
-                    AND r.ParentDocumentId = s.parentdocumentid
-                    AND r.AliasId = s.aliasid
-                   WHERE s.SessionId = current_session_id
-                     AND s.aliasid IS NOT NULL
-                     AND (
-                         r.AliasId IS NULL
-                      OR r.ReferentialPartitionKey IS DISTINCT FROM s.referentialpartitionkey
-                      OR r.ReferencedDocumentId IS DISTINCT FROM s.referenceddocumentid
-                      OR r.ReferencedDocumentPartitionKey IS DISTINCT FROM s.referenceddocumentpartitionkey
-                   )
+        -- Detects when a ReferenceStage row is missing in Reference table
+        IF NOT EXISTS (
+               SELECT 1
+               FROM dms.ReferenceStage s
+               LEFT JOIN dms.Reference r
+                 ON r.ParentDocumentPartitionKey = s.parentdocumentpartitionkey
+                AND r.ParentDocumentId = s.parentdocumentid
+                AND r.AliasId = s.aliasid
+               WHERE s.SessionId = current_session_id
+                 AND s.aliasid IS NOT NULL
+                 AND (
+                     r.AliasId IS NULL
+                  OR r.ReferentialPartitionKey IS DISTINCT FROM s.referentialpartitionkey
+                  OR r.ReferencedDocumentId IS DISTINCT FROM s.referenceddocumentid
+                  OR r.ReferencedDocumentPartitionKey IS DISTINCT FROM s.referenceddocumentpartitionkey
                )
-               -- Detects when a Reference table row is missing in ReferenceStage
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM dms.Reference r
-                   WHERE r.ParentDocumentPartitionKey = p_parentDocumentPartitionKey
-                     AND r.ParentDocumentId = p_parentDocumentId
-                     AND NOT EXISTS (
-                         SELECT 1
-                         FROM dms.ReferenceStage s
-                         WHERE s.SessionId = current_session_id
-                           AND s.parentdocumentpartitionkey = r.ParentDocumentPartitionKey
-                           AND s.parentdocumentid = r.ParentDocumentId
-                           AND s.aliasid = r.AliasId
-                           AND s.referentialpartitionkey = r.ReferentialPartitionKey
-                           AND s.referenceddocumentid = r.ReferencedDocumentId
-                           AND s.referenceddocumentpartitionkey = r.ReferencedDocumentPartitionKey
-                     )
-               )
-            THEN
-                needs_upsert := FALSE;
-            END IF;
-        END IF;
-
-        IF needs_upsert THEN
+           )
+           -- Detects when a Reference table row is missing in ReferenceStage
+           AND NOT EXISTS (
+               SELECT 1
+               FROM dms.Reference r
+               WHERE r.ParentDocumentPartitionKey = p_parentDocumentPartitionKey
+                 AND r.ParentDocumentId = p_parentDocumentId
+                 AND NOT EXISTS (
+                     SELECT 1
+                     FROM dms.ReferenceStage s
+                     WHERE s.SessionId = current_session_id
+                       AND s.parentdocumentpartitionkey = r.ParentDocumentPartitionKey
+                       AND s.parentdocumentid = r.ParentDocumentId
+                       AND s.aliasid = r.AliasId
+                       AND s.referentialpartitionkey = r.ReferentialPartitionKey
+                       AND s.referenceddocumentid = r.ReferencedDocumentId
+                       AND s.referenceddocumentpartitionkey = r.ReferencedDocumentPartitionKey
+                 )
+           )
+        THEN
+            NULL;
+        ELSE
             -- Perform the reference upsert
             INSERT INTO dms.Reference AS target (
                 ParentDocumentId,
@@ -183,7 +178,6 @@ BEGIN
                 )
                 USING p_parentDocumentId, p_parentDocumentPartitionKey, current_session_id;
             END IF;
-        END IF;
         END IF;
     END IF;
 
