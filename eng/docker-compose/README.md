@@ -316,6 +316,95 @@ cd eng/docker-compose
 pwsh teardown-local-dms.ps1
 ```
 
+## Kafka Topic-Per-Instance Architecture
+
+For E2E testing and production deployments that require strict data isolation, DMS supports topic-per-instance architecture where each instance publishes to its own dedicated Kafka topic.
+
+### Overview
+
+**Standard Setup:**
+- All instances → Single topic: `edfi.dms.document`
+
+**Topic-Per-Instance Setup:**
+- Instance 1 → Topic: `edfi.dms.1.document`
+- Instance 2 → Topic: `edfi.dms.2.document`
+- Instance 3 → Topic: `edfi.dms.3.document`
+
+This architecture is critical for:
+- **FERPA Compliance**: Prevents cross-instance data leakage
+- **Multi-tenant Isolation**: Each tenant/district has isolated message streams
+- **Selective Consumption**: Consumers can subscribe to specific instances
+
+### Automated Setup for E2E Tests
+
+The Instance Management E2E tests automatically configure topic-per-instance via the build script:
+
+```powershell
+.\build-dms.ps1 InstanceE2ETest -Configuration Release
+```
+
+The build script:
+1. Creates test databases for each instance
+2. Creates PostgreSQL publications for CDC
+3. Configures instance-specific Debezium connectors
+4. Runs E2E tests with Kafka validation
+
+### Manual Setup for Development
+
+#### 1. Create PostgreSQL Publications
+
+Each instance database needs its own publication for Debezium:
+
+```powershell
+# Instance 1
+docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "CREATE PUBLICATION to_debezium_instance_1 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
+
+# Instance 2
+docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025 -c "CREATE PUBLICATION to_debezium_instance_2 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
+
+# Instance 3
+docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024 -c "CREATE PUBLICATION to_debezium_instance_3 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;"
+```
+
+#### 2. Configure Debezium Connectors
+
+Use the automated setup script (from `eng/docker-compose` directory):
+
+```powershell
+$instances = @(
+    @{ InstanceId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
+    @{ InstanceId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
+    @{ InstanceId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
+)
+
+.\setup-instance-kafka-connectors.ps1 -Instances $instances
+```
+
+This creates separate Debezium connectors with instance-specific topics.
+
+#### 3. Verify Topics Were Created
+
+```powershell
+docker exec dms-kafka1 /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+# Should show: edfi.dms.1.document, edfi.dms.2.document, edfi.dms.3.document
+```
+
+### Files
+
+- **`instance_connector_template.json`**: Template for instance-specific Debezium connectors
+- **`setup-instance-kafka-connectors.ps1`**: Automated script to deploy connectors
+- **`postgresql_connector.json`**: Standard single-topic connector (for reference)
+
+### Monitoring
+
+```powershell
+# Check connector status
+curl http://localhost:8083/connectors/postgresql-source-instance-1/status
+
+# View messages in Kafka UI
+# Open http://localhost:8088
+```
+
 ## Accessing Swagger UI
 
 Open your browser and go to <http://localhost:8082> Use the dropdown menu to

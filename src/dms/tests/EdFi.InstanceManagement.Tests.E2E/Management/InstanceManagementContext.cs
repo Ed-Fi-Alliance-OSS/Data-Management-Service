@@ -61,6 +61,16 @@ public class InstanceManagementContext
     public DmsApiClient? DmsClient { get; set; }
 
     /// <summary>
+    /// Kafka message collector for topic-per-instance validation
+    /// </summary>
+    public InstanceKafkaMessageCollector? KafkaCollector { get; set; }
+
+    /// <summary>
+    /// Messages collected from Kafka, grouped by instance ID
+    /// </summary>
+    public Dictionary<long, List<KafkaTestMessage>> MessagesByInstance { get; } = new();
+
+    /// <summary>
     /// Reset context for new scenario
     /// </summary>
     public void Reset()
@@ -76,5 +86,8 @@ public class InstanceManagementContext
         LastResponse = null;
         DmsClient?.Dispose();
         DmsClient = null;
+        KafkaCollector?.Dispose();
+        KafkaCollector = null;
+        MessagesByInstance.Clear();
     }
 }

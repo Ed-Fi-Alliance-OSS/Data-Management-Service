@@ -511,6 +511,87 @@ function Setup-InstanceManagementDatabases {
     # Verify schema was applied (should show tables in dms schema)
     Write-Host "`nVerifying schema deployment..." -ForegroundColor Cyan
     docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'dms';"
+
+    # Create PostgreSQL publications for Debezium CDC (one per instance for topic-per-instance)
+    Write-Host "`nCreating PostgreSQL publications for Debezium CDC..." -ForegroundColor Cyan
+
+    docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "CREATE PUBLICATION to_debezium_instance_1 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;" 2>&1 | Out-Null
+    Write-Host "Created publication: to_debezium_instance_1 (database: edfi_datamanagementservice_d255901_sy2024)" -ForegroundColor Green
+
+    docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025 -c "CREATE PUBLICATION to_debezium_instance_2 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;" 2>&1 | Out-Null
+    Write-Host "Created publication: to_debezium_instance_2 (database: edfi_datamanagementservice_d255901_sy2025)" -ForegroundColor Green
+
+    docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024 -c "CREATE PUBLICATION to_debezium_instance_3 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;" 2>&1 | Out-Null
+    Write-Host "Created publication: to_debezium_instance_3 (database: edfi_datamanagementservice_d255902_sy2024)" -ForegroundColor Green
+
+    Write-Host "PostgreSQL publications created successfully!" -ForegroundColor Green
+}
+
+function Setup-InstanceKafkaConnectors {
+    Write-Host "Setting up Kafka connectors for topic-per-instance architecture..." -ForegroundColor Cyan
+
+    # Define instance configurations matching the test databases
+    # These must align with the instance IDs that will be created in the tests
+    # For E2E tests, we use simple sequential IDs (1, 2, 3)
+    $instances = @(
+        @{ InstanceId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
+        @{ InstanceId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
+        @{ InstanceId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
+    )
+
+    $connectorSetupScript = "$solutionRoot/../eng/docker-compose/setup-instance-kafka-connectors.ps1"
+
+    if (-not (Test-Path $connectorSetupScript)) {
+        Write-Host "WARNING: Kafka connector setup script not found at: $connectorSetupScript" -ForegroundColor Yellow
+        Write-Host "Skipping Kafka connector configuration. Topic-per-instance tests may fail." -ForegroundColor Yellow
+        return
+    }
+
+    # Determine environment file path (look for .env.e2e or .env.routeContext.e2e)
+    $possibleEnvFiles = @(
+        "$solutionRoot/../eng/docker-compose/.env.routeContext.e2e",
+        "$solutionRoot/../eng/docker-compose/.env.e2e",
+        "$solutionRoot/../eng/docker-compose/.env"
+    )
+
+    $envFile = $null
+    foreach ($file in $possibleEnvFiles) {
+        if (Test-Path $file) {
+            $envFile = $file
+            break
+        }
+    }
+
+    if ($null -eq $envFile) {
+        Write-Host "WARNING: Could not find environment file in docker-compose directory" -ForegroundColor Yellow
+        Write-Host "Skipping Kafka connector configuration." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host "Using environment file: $envFile" -ForegroundColor Gray
+
+    # Change to docker-compose directory to run the setup script
+    Push-Location "$solutionRoot/../eng/docker-compose"
+
+    try {
+        # Run the connector setup script
+        & $connectorSetupScript -EnvironmentFile $envFile -Instances $instances
+
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "WARNING: Kafka connector setup completed with warnings or errors" -ForegroundColor Yellow
+            Write-Host "Topic-per-instance tests may fail if connectors are not properly configured" -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "Kafka connectors configured successfully for topic-per-instance architecture!" -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Host "WARNING: Failed to setup Kafka connectors: $($_.Exception.Message)" -ForegroundColor Yellow
+        Write-Host "Topic-per-instance tests may fail" -ForegroundColor Yellow
+    }
+    finally {
+        Pop-Location
+    }
 }
 
 function RunInstanceE2E {
@@ -556,6 +637,9 @@ function InstanceE2ETests {
 
     # Create and configure test databases
     Invoke-Step { Setup-InstanceManagementDatabases }
+
+    # Setup Kafka connectors for topic-per-instance architecture
+    Invoke-Step { Setup-InstanceKafkaConnectors }
 
     # Run the instance management E2E tests
     Invoke-Step { RunInstanceE2E }
