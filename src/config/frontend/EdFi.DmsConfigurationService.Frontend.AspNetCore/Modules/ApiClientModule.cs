@@ -115,7 +115,7 @@ public class ApiClientModule : IEndpointModule
             32
         );
 
-        // Create client in identity provider
+        // Create client in identity provider FIRST (will rollback on database failure)
         var clientCreateResult = await clientRepository.CreateClientAsync(
             clientId,
             clientSecret,
@@ -332,7 +332,30 @@ public class ApiClientModule : IEndpointModule
             }
         }
 
-        // Update client in identity provider
+        // Get vendor details for rollback if needed
+        string namespacePrefixes;
+        switch (await vendorRepository.GetVendor(application.VendorId))
+        {
+            case VendorGetResult.Success success:
+                namespacePrefixes = success.VendorResponse.NamespacePrefixes;
+                break;
+            default:
+                throw new ValidationException(
+                    [new ValidationFailure("VendorId", "Reference 'VendorId' does not exist.")]
+                );
+        }
+
+        // Get original application for rollback if needed
+        ApplicationGetResult originalApplicationResult = await applicationRepository.GetApplication(
+            existingApiClient.ApplicationId
+        );
+        ApplicationResponse? originalApplication = null;
+        if (originalApplicationResult is ApplicationGetResult.Success originalAppSuccess)
+        {
+            originalApplication = originalAppSuccess.ApplicationResponse;
+        }
+
+        // Update client in identity provider FIRST
         var clientUpdateResult = await identityProviderRepository.UpdateClientAsync(
             existingApiClient.ClientUuid.ToString(),
             command.Name,
@@ -365,6 +388,7 @@ public class ApiClientModule : IEndpointModule
                     httpContext.TraceIdentifier
                 );
             case ClientUpdateResult.Success:
+                // Update database SECOND - attempt rollback if this fails
                 var repositoryResult = await apiClientRepository.UpdateApiClient(command);
 
                 switch (repositoryResult)
@@ -372,10 +396,40 @@ public class ApiClientModule : IEndpointModule
                     case ApiClientUpdateResult.Success:
                         return Results.NoContent();
                     case ApiClientUpdateResult.FailureNotFound:
+                        // Attempt to rollback identity provider changes
+                        if (originalApplication != null)
+                        {
+                            logger.LogWarning(
+                                "Database update failed for ApiClient {id}, attempting to rollback identity provider changes",
+                                id
+                            );
+                            await identityProviderRepository.UpdateClientAsync(
+                                existingApiClient.ClientUuid.ToString(),
+                                existingApiClient.Name,
+                                originalApplication.ClaimSetName,
+                                string.Join(",", originalApplication.EducationOrganizationIds),
+                                [.. existingApiClient.DmsInstanceIds]
+                            );
+                        }
                         throw new ValidationException(
                             [new ValidationFailure("Id", $"ApiClient with ID {id} not found.")]
                         );
                     case ApiClientUpdateResult.FailureApplicationNotFound:
+                        // Attempt to rollback identity provider changes
+                        if (originalApplication != null)
+                        {
+                            logger.LogWarning(
+                                "Database update failed for ApiClient {id}, attempting to rollback identity provider changes",
+                                id
+                            );
+                            await identityProviderRepository.UpdateClientAsync(
+                                existingApiClient.ClientUuid.ToString(),
+                                existingApiClient.Name,
+                                originalApplication.ClaimSetName,
+                                string.Join(",", originalApplication.EducationOrganizationIds),
+                                [.. existingApiClient.DmsInstanceIds]
+                            );
+                        }
                         throw new ValidationException(
                             [
                                 new ValidationFailure(
@@ -385,10 +439,40 @@ public class ApiClientModule : IEndpointModule
                             ]
                         );
                     case ApiClientUpdateResult.FailureDmsInstanceNotFound:
+                        // Attempt to rollback identity provider changes
+                        if (originalApplication != null)
+                        {
+                            logger.LogWarning(
+                                "Database update failed for ApiClient {id}, attempting to rollback identity provider changes",
+                                id
+                            );
+                            await identityProviderRepository.UpdateClientAsync(
+                                existingApiClient.ClientUuid.ToString(),
+                                existingApiClient.Name,
+                                originalApplication.ClaimSetName,
+                                string.Join(",", originalApplication.EducationOrganizationIds),
+                                [.. existingApiClient.DmsInstanceIds]
+                            );
+                        }
                         throw new ValidationException(
                             [new ValidationFailure("DmsInstanceId", "DMS instance does not exist.")]
                         );
                     case ApiClientUpdateResult.FailureUnknown failure:
+                        // Attempt to rollback identity provider changes
+                        if (originalApplication != null)
+                        {
+                            logger.LogWarning(
+                                "Database update failed for ApiClient {id}, attempting to rollback identity provider changes",
+                                id
+                            );
+                            await identityProviderRepository.UpdateClientAsync(
+                                existingApiClient.ClientUuid.ToString(),
+                                existingApiClient.Name,
+                                originalApplication.ClaimSetName,
+                                string.Join(",", originalApplication.EducationOrganizationIds),
+                                [.. existingApiClient.DmsInstanceIds]
+                            );
+                        }
                         logger.LogError(
                             "Failure updating client: {failure}",
                             SanitizeForLog(failure.FailureMessage)
@@ -407,7 +491,10 @@ public class ApiClientModule : IEndpointModule
         long id,
         HttpContext httpContext,
         IApiClientRepository apiClientRepository,
+        IApplicationRepository applicationRepository,
+        IVendorRepository vendorRepository,
         IIdentityProviderRepository identityProviderRepository,
+        IOptions<IdentitySettings> identitySettings,
         ILogger<ApiClientModule> logger
     )
     {
@@ -422,7 +509,24 @@ public class ApiClientModule : IEndpointModule
 
         ApiClientResponse apiClient = getSuccess.ApiClientResponse;
 
-        // Delete from identity provider first
+        // Get application and vendor details for potential rollback
+        ApplicationGetResult applicationResult = await applicationRepository.GetApplication(
+            apiClient.ApplicationId
+        );
+        ApplicationResponse? application = null;
+        string? namespacePrefixes = null;
+
+        if (applicationResult is ApplicationGetResult.Success applicationSuccess)
+        {
+            application = applicationSuccess.ApplicationResponse;
+            var vendorResult = await vendorRepository.GetVendor(application.VendorId);
+            if (vendorResult is VendorGetResult.Success vendorSuccess)
+            {
+                namespacePrefixes = vendorSuccess.VendorResponse.NamespacePrefixes;
+            }
+        }
+
+        // Delete from identity provider FIRST
         try
         {
             logger.LogInformation("Deleting client {clientId}", SanitizeForLog(apiClient.ClientId));
@@ -462,21 +566,69 @@ public class ApiClientModule : IEndpointModule
             return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
-        // Delete from database
+        // Delete from database SECOND - attempt rollback if this fails
         ApiClientDeleteResult deleteResult = await apiClientRepository.DeleteApiClient(id);
 
-        return deleteResult switch
+        switch (deleteResult)
         {
-            ApiClientDeleteResult.Success => Results.NoContent(),
-            ApiClientDeleteResult.FailureNotFound => FailureResults.NotFound(
-                "ApiClient not found",
-                httpContext.TraceIdentifier
-            ),
-            ApiClientDeleteResult.FailureUnknown unknown => FailureResults.Unknown(
-                httpContext.TraceIdentifier
-            ),
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-        };
+            case ApiClientDeleteResult.Success:
+                return Results.NoContent();
+            case ApiClientDeleteResult.FailureNotFound:
+            case ApiClientDeleteResult.FailureUnknown:
+                // Attempt to rollback by recreating client in identity provider
+                if (application != null && namespacePrefixes != null)
+                {
+                    logger.LogError(
+                        "Database delete failed for ApiClient {id} after identity provider deletion succeeded. Attempting to recreate client in identity provider.",
+                        id
+                    );
+                    try
+                    {
+                        await identityProviderRepository.CreateClientAsync(
+                            apiClient.ClientId,
+                            "ROLLBACK_PLACEHOLDER_SECRET", // Cannot recover original secret
+                            identitySettings.Value.ClientRole,
+                            application.ApplicationName,
+                            application.ClaimSetName,
+                            namespacePrefixes,
+                            string.Join(",", application.EducationOrganizationIds),
+                            [.. apiClient.DmsInstanceIds]
+                        );
+                        logger.LogWarning(
+                            "Successfully recreated client {clientId} in identity provider after database delete failure. CLIENT SECRET HAS BEEN CHANGED - manual intervention required.",
+                            SanitizeForLog(apiClient.ClientId)
+                        );
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        logger.LogCritical(
+                            "CRITICAL: Failed to rollback identity provider after database delete failure for ApiClient {id}. Client {clientId} exists in identity provider but not in database. Manual cleanup required. Error: {error}",
+                            id,
+                            SanitizeForLog(apiClient.ClientId),
+                            SanitizeForLog(rollbackEx.Message)
+                        );
+                    }
+                }
+                else
+                {
+                    logger.LogCritical(
+                        "CRITICAL: Database delete failed for ApiClient {id} after identity provider deletion succeeded. Cannot rollback - missing application or vendor data. Client {clientId} deleted from identity provider but still in database. Manual cleanup required.",
+                        id,
+                        SanitizeForLog(apiClient.ClientId)
+                    );
+                }
+
+                return deleteResult is ApiClientDeleteResult.FailureNotFound
+                    ? FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier)
+                    : FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                logger.LogCritical(
+                    "CRITICAL: Unexpected delete result for ApiClient {id} after identity provider deletion. Client {clientId} may be in inconsistent state.",
+                    id,
+                    SanitizeForLog(apiClient.ClientId)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
     }
 
     private async Task<IResult> ResetCredential(
