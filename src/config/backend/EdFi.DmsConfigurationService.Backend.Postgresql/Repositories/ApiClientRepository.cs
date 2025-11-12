@@ -44,7 +44,8 @@ public class ApiClientRepository(
                     clientCommand.ClientUuid,
                     command.Name,
                     command.IsApproved,
-                }
+                },
+                transaction
             );
 
             if (command.DmsInstanceIds.Length > 0)
@@ -60,7 +61,7 @@ public class ApiClientRepository(
                     DmsInstanceId = dmsInstanceId,
                 });
 
-                await connection.ExecuteAsync(sql, dmsInstanceMappings);
+                await connection.ExecuteAsync(sql, dmsInstanceMappings, transaction);
             }
 
             await transaction.CommitAsync();
@@ -237,7 +238,7 @@ public class ApiClientRepository(
         {
             // Check if ApiClient exists
             string checkSql = "SELECT COUNT(1) FROM dmscs.ApiClient WHERE Id = @Id;";
-            int exists = await connection.ExecuteScalarAsync<int>(checkSql, new { command.Id });
+            int exists = await connection.ExecuteScalarAsync<int>(checkSql, new { command.Id }, transaction);
             if (exists == 0)
             {
                 await transaction.RollbackAsync();
@@ -259,12 +260,13 @@ public class ApiClientRepository(
                     command.ApplicationId,
                     command.Name,
                     command.IsApproved,
-                }
+                },
+                transaction
             );
 
             // Delete existing DMS instance mappings
             string deleteSql = "DELETE FROM dmscs.ApiClientDmsInstance WHERE ApiClientId = @Id;";
-            await connection.ExecuteAsync(deleteSql, new { command.Id });
+            await connection.ExecuteAsync(deleteSql, new { command.Id }, transaction);
 
             // Insert new DMS instance mappings
             if (command.DmsInstanceIds.Length > 0)
@@ -280,7 +282,7 @@ public class ApiClientRepository(
                     DmsInstanceId = dmsInstanceId,
                 });
 
-                await connection.ExecuteAsync(insertSql, dmsInstanceMappings);
+                await connection.ExecuteAsync(insertSql, dmsInstanceMappings, transaction);
             }
 
             await transaction.CommitAsync();
@@ -315,7 +317,7 @@ public class ApiClientRepository(
         {
             // Check if ApiClient exists
             string checkSql = "SELECT COUNT(1) FROM dmscs.ApiClient WHERE Id = @Id;";
-            int exists = await connection.ExecuteScalarAsync<int>(checkSql, new { Id = id });
+            int exists = await connection.ExecuteScalarAsync<int>(checkSql, new { Id = id }, transaction);
             if (exists == 0)
             {
                 await transaction.RollbackAsync();
@@ -324,11 +326,11 @@ public class ApiClientRepository(
 
             // Delete DMS instance mappings first (due to foreign key constraint)
             string deleteMappingsSql = "DELETE FROM dmscs.ApiClientDmsInstance WHERE ApiClientId = @Id;";
-            await connection.ExecuteAsync(deleteMappingsSql, new { Id = id });
+            await connection.ExecuteAsync(deleteMappingsSql, new { Id = id }, transaction);
 
             // Delete ApiClient record
             string deleteSql = "DELETE FROM dmscs.ApiClient WHERE Id = @Id;";
-            await connection.ExecuteAsync(deleteSql, new { Id = id });
+            await connection.ExecuteAsync(deleteSql, new { Id = id }, transaction);
 
             await transaction.CommitAsync();
             return new ApiClientDeleteResult.Success();
