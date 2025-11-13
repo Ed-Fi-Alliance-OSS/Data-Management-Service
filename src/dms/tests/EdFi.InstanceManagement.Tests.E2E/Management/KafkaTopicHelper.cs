@@ -27,8 +27,6 @@ public static class KafkaTopicHelper
         ILogger? logger = null
     )
     {
-        var result = new TopicIsolationValidationResult { TargetInstanceId = targetInstanceId };
-
         var messagesList = allMessages.ToList();
         var targetInstanceMessages = messagesList.Where(m => m.InstanceId == targetInstanceId).ToList();
 
@@ -36,9 +34,13 @@ public static class KafkaTopicHelper
             .Where(m => m.InstanceId != targetInstanceId && ContainsInstanceSpecificData(m, targetInstanceId))
             .ToList();
 
-        result.MessageCountForTargetInstance = targetInstanceMessages.Count;
-        result.LeakedMessages = leakedMessages;
-        result.IsIsolated = !leakedMessages.Any();
+        var result = new TopicIsolationValidationResult
+        {
+            TargetInstanceId = targetInstanceId,
+            MessageCountForTargetInstance = targetInstanceMessages.Count,
+            LeakedMessages = leakedMessages,
+            IsIsolated = !leakedMessages.Any(),
+        };
 
         if (!result.IsIsolated && logger != null)
         {

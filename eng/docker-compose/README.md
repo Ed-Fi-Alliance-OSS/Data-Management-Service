@@ -239,9 +239,9 @@ Key testing steps:
 
 1. **Get Config Service Token** - Authenticates with the configuration service
 2. **Create DMS Instances** - Sets up 3 instances with different route contexts:
-   - Instance 1: District 255901, School Year 2024
-   - Instance 2: District 255901, School Year 2025
-   - Instance 3: District 255902, School Year 2024
+   * Instance 1: District 255901, School Year 2024
+   * Instance 2: District 255901, School Year 2025
+   * Instance 3: District 255902, School Year 2024
 3. **Create Application** - Creates an app associated with all instances
 4. **Get DMS Token** - Authenticates with DMS using app credentials
 5. **Test Routing** - Creates descriptors via different routes and verifies they go to the correct database
@@ -265,35 +265,38 @@ docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d25590
 
 When you make requests to:
 
-- `/255901/2024/data/ed-fi/contentClassDescriptors` → Routes to `edfi_datamanagementservice_d255901_sy2024`
-- `/255901/2025/data/ed-fi/contentClassDescriptors` → Routes to `edfi_datamanagementservice_d255901_sy2025`
-- `/255902/2024/data/ed-fi/contentClassDescriptors` → Routes to `edfi_datamanagementservice_d255902_sy2024`
+* `/255901/2024/data/ed-fi/contentClassDescriptors` → Routes to `edfi_datamanagementservice_d255901_sy2024`
+* `/255901/2025/data/ed-fi/contentClassDescriptors` → Routes to `edfi_datamanagementservice_d255901_sy2025`
+* `/255902/2024/data/ed-fi/contentClassDescriptors` → Routes to `edfi_datamanagementservice_d255902_sy2024`
 
 ### Troubleshooting
 
 **Route qualifiers not being parsed:**
 
-- Check that `ROUTE_QUALIFIER_SEGMENTS` is set correctly in the `.env` file (comma-separated format)
-- Verify the environment variable in the container: `docker exec docker-compose-dms-1 printenv | grep ROUTE`
-- Verify the DMS logs: `docker logs docker-compose-dms-1`
+* Check that `ROUTE_QUALIFIER_SEGMENTS` is set correctly in the `.env` file (comma-separated format)
+* Verify the environment variable in the container: `docker exec docker-compose-dms-1 printenv | grep ROUTE`
+* Verify the DMS logs: `docker logs docker-compose-dms-1`
 
 **404 - No database instance found or "No candidates found for the request path":**
 
-- **Most common cause**: DMS container needs to be restarted after creating instances in the Configuration Service
-- Verify DMS loaded all instances by checking the logs:
+* **Most common cause**: DMS container needs to be restarted after creating instances in the Configuration Service
+* Verify DMS loaded all instances by checking the logs:
+
   ```powershell
   docker logs docker-compose-dms-1 | grep "Successfully fetched"
   # Should show: "Successfully fetched 4 DMS instances" (or your expected count)
   ```
-- Verify route contexts are created correctly in the Configuration Service
-- Check that the application is associated with the instances
-- Verify the JWT token includes the correct `dms_instance_ids` claim
+
+* Verify route contexts are created correctly in the Configuration Service
+
+* Check that the application is associated with the instances
+* Verify the JWT token includes the correct `dms_instance_ids` claim
 
 **Connection errors:**
 
-- Ensure all databases are created
-- Verify schema is deployed to each database
-- Check PostgreSQL is running: `docker ps | grep postgresql`
+* Ensure all databases are created
+* Verify schema is deployed to each database
+* Check PostgreSQL is running: `docker ps | grep postgresql`
 
 **Check DMS logs:**
 
@@ -318,22 +321,27 @@ pwsh teardown-local-dms.ps1
 
 ## Kafka Topic-Per-Instance Architecture
 
-For E2E testing and production deployments that require strict data isolation, DMS supports topic-per-instance architecture where each instance publishes to its own dedicated Kafka topic.
+For E2E testing and production deployments that require strict data isolation,
+DMS supports topic-per-instance architecture where each instance publishes to
+its own dedicated Kafka topic.
 
 ### Overview
 
 **Standard Setup:**
-- All instances → Single topic: `edfi.dms.document`
+
+* All instances → Single topic: `edfi.dms.document`
 
 **Topic-Per-Instance Setup:**
-- Instance 1 → Topic: `edfi.dms.1.document`
-- Instance 2 → Topic: `edfi.dms.2.document`
-- Instance 3 → Topic: `edfi.dms.3.document`
+
+* Instance 1 → Topic: `edfi.dms.1.document`
+* Instance 2 → Topic: `edfi.dms.2.document`
+* Instance 3 → Topic: `edfi.dms.3.document`
 
 This architecture is critical for:
-- **FERPA Compliance**: Prevents cross-instance data leakage
-- **Multi-tenant Isolation**: Each tenant/district has isolated message streams
-- **Selective Consumption**: Consumers can subscribe to specific instances
+
+* **FERPA Compliance**: Prevents cross-instance data leakage
+* **Multi-tenant Isolation**: Each tenant/district has isolated message streams
+* **Selective Consumption**: Consumers can subscribe to specific instances
 
 ### Automated Setup for E2E Tests
 
@@ -344,6 +352,7 @@ The Instance Management E2E tests automatically configure topic-per-instance via
 ```
 
 The build script:
+
 1. Creates test databases for each instance
 2. Creates PostgreSQL publications for CDC
 3. Configures instance-specific Debezium connectors
@@ -391,9 +400,9 @@ docker exec dms-kafka1 /opt/kafka/bin/kafka-topics.sh --list --bootstrap-server 
 
 ### Files
 
-- **`instance_connector_template.json`**: Template for instance-specific Debezium connectors
-- **`setup-instance-kafka-connectors.ps1`**: Automated script to deploy connectors
-- **`postgresql_connector.json`**: Standard single-topic connector (for reference)
+* **`instance_connector_template.json`**: Template for instance-specific Debezium connectors
+* **`setup-instance-kafka-connectors.ps1`**: Automated script to deploy connectors
+* **`postgresql_connector.json`**: Standard single-topic connector (for reference)
 
 ### Monitoring
 

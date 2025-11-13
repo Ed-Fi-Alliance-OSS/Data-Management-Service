@@ -372,8 +372,6 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
                 context.InstanceIds.Select(id => (long)id)
             );
 
-            var availableTopics = metadata.Topics.Select(t => t.Topic).ToList();
-
             foreach (var expectedTopic in expectedTopics)
             {
                 _logger.LogInformation("Checking for topic: {Topic}", SanitizeForLog(expectedTopic));
@@ -425,7 +423,9 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
     /// For now, returns the first instance ID from context as a placeholder.
     /// In production, this would parse the route qualifier and look up the corresponding instance.
     /// </summary>
+#pragma warning disable S1172 // Unused method parameter - TODO: Implement proper route qualifier parsing
     private long GetInstanceIdFromRouteQualifier(string routeQualifier)
+#pragma warning restore S1172
     {
         // For initial implementation, assume instance IDs are in order and use index
         // In a real implementation, you'd need to map route qualifiers to instance IDs
