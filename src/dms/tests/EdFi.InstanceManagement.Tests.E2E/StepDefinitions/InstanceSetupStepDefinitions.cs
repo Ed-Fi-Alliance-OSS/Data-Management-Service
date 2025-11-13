@@ -150,6 +150,7 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
             )
         );
         context.InstanceIds.Add(instance1.Id);
+        context.RouteQualifierToInstanceId["255901/2024"] = instance1.Id;
         await _configClient.CreateRouteContextAsync(
             new RouteContextRequest(instance1.Id, "districtId", "255901")
         );
@@ -166,6 +167,7 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
             )
         );
         context.InstanceIds.Add(instance2.Id);
+        context.RouteQualifierToInstanceId["255901/2025"] = instance2.Id;
         await _configClient.CreateRouteContextAsync(
             new RouteContextRequest(instance2.Id, "districtId", "255901")
         );
@@ -182,6 +184,7 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
             )
         );
         context.InstanceIds.Add(instance3.Id);
+        context.RouteQualifierToInstanceId["255902/2024"] = instance3.Id;
         await _configClient.CreateRouteContextAsync(
             new RouteContextRequest(instance3.Id, "districtId", "255902")
         );

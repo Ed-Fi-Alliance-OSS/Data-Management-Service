@@ -419,26 +419,20 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
     }
 
     /// <summary>
-    /// Gets the instance ID from a route qualifier string.
-    /// For now, returns the first instance ID from context as a placeholder.
-    /// In production, this would parse the route qualifier and look up the corresponding instance.
+    /// Gets the instance ID from a route qualifier string (e.g., "255901/2024").
+    /// Uses the context's route qualifier mapping to find the corresponding instance ID.
     /// </summary>
-#pragma warning disable S1172 // Unused method parameter - TODO: Implement proper route qualifier parsing
     private long GetInstanceIdFromRouteQualifier(string routeQualifier)
-#pragma warning restore S1172
     {
-        // For initial implementation, assume instance IDs are in order and use index
-        // In a real implementation, you'd need to map route qualifiers to instance IDs
-        // via the InstanceManagementContext or a lookup mechanism
-
-        if (context.InstanceIds.Count == 0)
+        if (!context.RouteQualifierToInstanceId.TryGetValue(routeQualifier, out int instanceId))
         {
-            throw new InvalidOperationException("No instances found in context");
+            throw new InvalidOperationException(
+                $"No instance found for route qualifier '{SanitizeForLog(routeQualifier)}'. "
+                    + $"Available routes: {string.Join(", ", context.RouteQualifierToInstanceId.Keys.Select(SanitizeForLog))}"
+            );
         }
 
-        // Simple mapping: use the first instance for now
-        // TODO: Implement proper route qualifier to instance ID mapping
-        return context.InstanceIds[0];
+        return instanceId;
     }
 
     /// <summary>

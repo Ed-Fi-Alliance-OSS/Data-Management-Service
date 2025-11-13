@@ -21,6 +21,11 @@ public class InstanceManagementContext
     public List<int> InstanceIds { get; } = [];
 
     /// <summary>
+    /// Mapping from route qualifier (e.g., "255901/2024") to instance ID
+    /// </summary>
+    public Dictionary<string, int> RouteQualifierToInstanceId { get; } = new();
+
+    /// <summary>
     /// Application ID created during tests
     /// </summary>
     public int? ApplicationId { get; set; }
@@ -77,6 +82,7 @@ public class InstanceManagementContext
     {
         VendorId = null;
         InstanceIds.Clear();
+        RouteQualifierToInstanceId.Clear();
         ApplicationId = null;
         ClientKey = null;
         ClientSecret = null;
