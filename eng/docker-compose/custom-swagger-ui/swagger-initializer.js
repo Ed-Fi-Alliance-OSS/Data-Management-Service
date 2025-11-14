@@ -16,6 +16,12 @@ window.onload = function () {
         console.log('Ed-Fi Custom Domains plugin enabled');
     }
 
+    // Add School Year plugin if available
+    if (window.EdFiSchoolYear) {
+        plugins.push(window.EdFiSchoolYear);
+        console.log('Ed-Fi School Year plugin enabled');
+    }
+
     window.ui = SwaggerUIBundle({
         urls: [
             { url: `http://localhost:${dmsPort}/metadata/specifications/resources-spec.json`, name: "Resources" },

@@ -20,6 +20,7 @@ services:
     command: >
       sh -c "envsubst '$$DMS_HTTP_PORTS $$DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS' < /tmp/nginx-template/index.html > /usr/share/nginx/html/index.html &&
              cp /tmp/nginx-template/*.js /usr/share/nginx/html/ &&
+             cp /tmp/nginx-template/*.json /usr/share/nginx/html/ &&
              if [ -f /tmp/nginx-template/favicon.ico ]; then cp /tmp/nginx-template/favicon.ico /usr/share/nginx/html/; fi &&
              nginx -g 'daemon off;'"
 
