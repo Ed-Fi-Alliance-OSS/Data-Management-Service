@@ -1,0 +1,16 @@
+{
+  "Years": [
+    {
+      "Year": "2024",
+      "IsDefault": false
+    },
+    {
+      "Year": "2025",
+      "IsDefault": true
+    },
+    {
+      "Year": "2026",
+      "IsDefault": false
+    }
+  ]
+}
