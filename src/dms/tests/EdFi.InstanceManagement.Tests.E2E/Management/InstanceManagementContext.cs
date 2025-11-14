@@ -21,6 +21,11 @@ public class InstanceManagementContext
     public List<int> InstanceIds { get; } = [];
 
     /// <summary>
+    /// Mapping from route qualifier (e.g., "255901/2024") to instance ID
+    /// </summary>
+    public Dictionary<string, int> RouteQualifierToInstanceId { get; } = new();
+
+    /// <summary>
     /// Application ID created during tests
     /// </summary>
     public int? ApplicationId { get; set; }
@@ -61,12 +66,23 @@ public class InstanceManagementContext
     public DmsApiClient? DmsClient { get; set; }
 
     /// <summary>
+    /// Kafka message collector for topic-per-instance validation
+    /// </summary>
+    public InstanceKafkaMessageCollector? KafkaCollector { get; set; }
+
+    /// <summary>
+    /// Messages collected from Kafka, grouped by instance ID
+    /// </summary>
+    public Dictionary<long, List<KafkaTestMessage>> MessagesByInstance { get; } = new();
+
+    /// <summary>
     /// Reset context for new scenario
     /// </summary>
     public void Reset()
     {
         VendorId = null;
         InstanceIds.Clear();
+        RouteQualifierToInstanceId.Clear();
         ApplicationId = null;
         ClientKey = null;
         ClientSecret = null;
@@ -76,5 +92,8 @@ public class InstanceManagementContext
         LastResponse = null;
         DmsClient?.Dispose();
         DmsClient = null;
+        KafkaCollector?.Dispose();
+        KafkaCollector = null;
+        MessagesByInstance.Clear();
     }
 }

@@ -26,6 +26,24 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
         }
     }
 
+    [AfterScenario("@kafka", Order = 500)]
+    public void CleanupKafkaCollector()
+    {
+        if (context.KafkaCollector != null)
+        {
+            _logger?.LogInformation("Cleaning up Kafka message collector");
+
+            // Log final diagnostics before disposal
+            _logger?.LogInformation(
+                "Final Kafka message count: {MessageCount}",
+                context.KafkaCollector.MessageCount
+            );
+            context.KafkaCollector.LogDiagnostics();
+
+            // Disposal will happen in context.Reset()
+        }
+    }
+
     [AfterScenario("@InstanceCleanup", Order = 1000)]
     public async Task CleanupInstanceResources()
     {
