@@ -212,8 +212,14 @@ window.EdFiSchoolYear = function () {
         },
         fn: {
             requestInterceptor: (req) => {
+                // Get the current selected year from the DOM selector
+                const schoolYearSelect = document.getElementById('schoolYearSelect');
+                const currentYear = schoolYearSelect ? schoolYearSelect.value : selectedYear;
+
+                console.log('Request interceptor - Current year:', currentYear, 'Original URL:', req.url);
+
                 // Intercept all requests and inject the school year into the URL
-                if (selectedYear && req.url) {
+                if (currentYear && req.url) {
                     const dmsPort = window.DMS_HTTP_PORTS || "8080";
 
                     // FIRST: Replace dms-config-service with localhost for ALL requests
@@ -228,12 +234,17 @@ window.EdFiSchoolYear = function () {
 
                     // THEN: Check if this is a DMS API request (not metadata or spec files)
                     if (req.url.includes('/data/') && !req.url.includes('/metadata/')) {
-                        // Replace /data/ with /{schoolYear}/data/
-                        req.url = req.url.replace(
-                            /\/data\//,
-                            `/${selectedYear}/data/`
-                        );
-                        console.log('School year added to data request:', req.url);
+                        // Check if URL already has a year pattern (e.g., /2024/data/)
+                        if (!req.url.match(/\/\d{4}\/data\//)) {
+                            // Replace /data/ with /{schoolYear}/data/
+                            req.url = req.url.replace(
+                                /\/data\//,
+                                `/${currentYear}/data/`
+                            );
+                            console.log('School year added to data request:', req.url);
+                        } else {
+                            console.log('URL already has year, skipping:', req.url);
+                        }
                     }
 
                     // FINALLY: Intercept OAuth token requests and add school year
@@ -242,7 +253,7 @@ window.EdFiSchoolYear = function () {
                         if (!req.url.match(/\/connect\/token\/\d{4}/)) {
                             req.url = req.url.replace(
                                 /\/connect\/token$/,
-                                `/connect/token/${selectedYear}`
+                                `/connect/token/${currentYear}`
                             );
                         }
                         console.log('Token request final URL:', req.url);
