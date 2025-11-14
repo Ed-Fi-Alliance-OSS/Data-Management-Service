@@ -5,13 +5,9 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 
-public class ApiClientResponse
+public class ApiClientCredentialsResponse
 {
     public long Id { get; set; }
-    public long ApplicationId { get; set; }
-    public required string ClientId { get; set; }
-    public required Guid ClientUuid { get; set; }
-    public required string Name { get; set; }
-    public required bool IsApproved { get; set; }
-    public List<long> DmsInstanceIds { get; set; } = [];
+    public required string Key { get; set; }
+    public required string Secret { get; set; }
 }

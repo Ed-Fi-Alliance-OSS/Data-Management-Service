@@ -357,4 +357,98 @@ public class DmsInstanceTests : DatabaseTest
             instanceFromDb.DmsInstanceRouteContexts.Should().BeEmpty();
         }
     }
+
+    [TestFixture]
+    public class Given_validate_multiple_dms_instance_ids : DmsInstanceTests
+    {
+        private long _instance1Id;
+        private long _instance2Id;
+        private long _instance3Id;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var result1 = await _repository.InsertDmsInstance(
+                new DmsInstanceInsertCommand()
+                {
+                    InstanceType = "Production",
+                    InstanceName = "Test Instance 1",
+                    ConnectionString = "Server=test1;Database=TestDb1;",
+                }
+            );
+            _instance1Id = ((DmsInstanceInsertResult.Success)result1).Id;
+
+            var result2 = await _repository.InsertDmsInstance(
+                new DmsInstanceInsertCommand()
+                {
+                    InstanceType = "Staging",
+                    InstanceName = "Test Instance 2",
+                    ConnectionString = "Server=test2;Database=TestDb2;",
+                }
+            );
+            _instance2Id = ((DmsInstanceInsertResult.Success)result2).Id;
+
+            var result3 = await _repository.InsertDmsInstance(
+                new DmsInstanceInsertCommand()
+                {
+                    InstanceType = "Development",
+                    InstanceName = "Test Instance 3",
+                    ConnectionString = "Server=test3;Database=TestDb3;",
+                }
+            );
+            _instance3Id = ((DmsInstanceInsertResult.Success)result3).Id;
+        }
+
+        [Test]
+        public async Task It_should_return_all_existing_ids()
+        {
+            long[] idsToCheck = [_instance1Id, _instance2Id, _instance3Id];
+            var result = await _repository.GetExistingDmsInstanceIds(idsToCheck);
+
+            result.Should().BeOfType<DmsInstanceIdsExistResult.Success>();
+            var existingIds = ((DmsInstanceIdsExistResult.Success)result).ExistingIds;
+            existingIds.Should().HaveCount(3);
+            existingIds.Should().Contain(_instance1Id);
+            existingIds.Should().Contain(_instance2Id);
+            existingIds.Should().Contain(_instance3Id);
+        }
+
+        [Test]
+        public async Task It_should_return_only_existing_ids_when_some_dont_exist()
+        {
+            long[] idsToCheck = [_instance1Id, 99999, _instance2Id, 88888, _instance3Id];
+            var result = await _repository.GetExistingDmsInstanceIds(idsToCheck);
+
+            result.Should().BeOfType<DmsInstanceIdsExistResult.Success>();
+            var existingIds = ((DmsInstanceIdsExistResult.Success)result).ExistingIds;
+            existingIds.Should().HaveCount(3);
+            existingIds.Should().Contain(_instance1Id);
+            existingIds.Should().Contain(_instance2Id);
+            existingIds.Should().Contain(_instance3Id);
+            existingIds.Should().NotContain(99999);
+            existingIds.Should().NotContain(88888);
+        }
+
+        [Test]
+        public async Task It_should_return_empty_set_when_no_ids_exist()
+        {
+            long[] idsToCheck = [99999, 88888, 77777];
+            var result = await _repository.GetExistingDmsInstanceIds(idsToCheck);
+
+            result.Should().BeOfType<DmsInstanceIdsExistResult.Success>();
+            var existingIds = ((DmsInstanceIdsExistResult.Success)result).ExistingIds;
+            existingIds.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_should_return_empty_set_when_input_is_empty()
+        {
+            long[] idsToCheck = [];
+            var result = await _repository.GetExistingDmsInstanceIds(idsToCheck);
+
+            result.Should().BeOfType<DmsInstanceIdsExistResult.Success>();
+            var existingIds = ((DmsInstanceIdsExistResult.Success)result).ExistingIds;
+            existingIds.Should().BeEmpty();
+        }
+    }
 }

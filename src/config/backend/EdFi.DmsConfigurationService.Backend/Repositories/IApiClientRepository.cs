@@ -5,13 +5,45 @@
 
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IApiClientRepository
 {
+    Task<ApiClientInsertResult> InsertApiClient(
+        ApiClientInsertCommand command,
+        ApiClientCommand clientCommand
+    );
+    Task<ApiClientUpdateResult> UpdateApiClient(ApiClientUpdateCommand command);
+    Task<ApiClientDeleteResult> DeleteApiClient(long id);
     Task<ApiClientQueryResult> QueryApiClient(PagingQuery query);
     Task<ApiClientGetResult> GetApiClientByClientId(string clientId);
+    Task<ApiClientGetResult> GetApiClientById(long id);
+}
+
+public record ApiClientInsertResult
+{
+    /// <summary>
+    /// Successful insert.
+    /// </summary>
+    /// <param name="Id">The Id of the inserted record.</param>
+    public record Success(long Id) : ApiClientInsertResult();
+
+    /// <summary>
+    /// Referenced application not found exception thrown and caught
+    /// </summary>
+    public record FailureApplicationNotFound() : ApiClientInsertResult();
+
+    /// <summary>
+    /// Referenced DMS instance not found exception thrown and caught
+    /// </summary>
+    public record FailureDmsInstanceNotFound() : ApiClientInsertResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApiClientInsertResult();
 }
 
 public record ApiClientQueryResult
@@ -47,4 +79,50 @@ public record ApiClientGetResult
     /// </summary>
     /// <param name="FailureMessage">The failure message.</param>
     public record FailureUnknown(string FailureMessage) : ApiClientGetResult();
+}
+
+public record ApiClientUpdateResult
+{
+    /// <summary>
+    /// Successful update.
+    /// </summary>
+    public record Success() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// ApiClient not found.
+    /// </summary>
+    public record FailureNotFound() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// Referenced application not found exception thrown and caught
+    /// </summary>
+    public record FailureApplicationNotFound() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// Referenced DMS instance not found exception thrown and caught
+    /// </summary>
+    public record FailureDmsInstanceNotFound() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApiClientUpdateResult();
+}
+
+public record ApiClientDeleteResult
+{
+    /// <summary>
+    /// Successful delete.
+    /// </summary>
+    public record Success() : ApiClientDeleteResult();
+
+    /// <summary>
+    /// ApiClient not found.
+    /// </summary>
+    public record FailureNotFound() : ApiClientDeleteResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApiClientDeleteResult();
 }

@@ -50,8 +50,8 @@ public class ApplicationRepository(
             await connection.ExecuteAsync(sql, educationOrganizations);
 
             sql = """
-                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid)
-                VALUES (@ApplicationId, @ClientId, @ClientUuid)
+                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved)
+                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved)
                 RETURNING Id;
                 """;
 
@@ -62,6 +62,8 @@ public class ApplicationRepository(
                     ApplicationId = id,
                     clientCommand.ClientId,
                     clientCommand.ClientUuid,
+                    Name = command.ApplicationName,
+                    IsApproved = true,
                 }
             );
 

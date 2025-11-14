@@ -222,4 +222,30 @@ public class DmsInstanceRepository(
             return new DmsInstanceDeleteResult.FailureUnknown(ex.Message);
         }
     }
+
+    public async Task<DmsInstanceIdsExistResult> GetExistingDmsInstanceIds(long[] ids)
+    {
+        if (ids.Length == 0)
+        {
+            return new DmsInstanceIdsExistResult.Success([]);
+        }
+
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        try
+        {
+            var sql = """
+                SELECT Id
+                FROM dmscs.DmsInstance
+                WHERE Id = ANY(@Ids);
+                """;
+
+            var existingIds = await connection.QueryAsync<long>(sql, new { Ids = ids });
+            return new DmsInstanceIdsExistResult.Success([.. existingIds]);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get existing DmsInstance IDs failure");
+            return new DmsInstanceIdsExistResult.FailureUnknown(ex.Message);
+        }
+    }
 }

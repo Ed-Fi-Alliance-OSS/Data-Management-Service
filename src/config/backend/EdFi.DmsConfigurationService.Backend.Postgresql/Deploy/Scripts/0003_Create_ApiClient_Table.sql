@@ -6,6 +6,8 @@
 CREATE TABLE IF NOT EXISTS dmscs.ApiClient (
     Id BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
     ApplicationId BIGINT NOT NULL,
+    Name VARCHAR(50) NOT NULL,
+    IsApproved BOOLEAN NOT NULL DEFAULT false,
     ClientId VARCHAR(36) NOT NULL,
     ClientUuid UUID NOT NULL,
     CONSTRAINT fk_apiclient_application FOREIGN KEY (ApplicationId) REFERENCES dmscs.Application(Id) ON DELETE CASCADE
@@ -14,3 +16,5 @@ CREATE TABLE IF NOT EXISTS dmscs.ApiClient (
 COMMENT ON COLUMN dmscs.ApiClient.Id IS 'ApiClient id';
 COMMENT ON COLUMN dmscs.ApiClient.ApplicationId IS 'Application Id';
 COMMENT ON COLUMN dmscs.ApiClient.ClientUuid IS 'Unique identifier of ApiClient';
+COMMENT ON COLUMN dmscs.ApiClient.Name IS 'Name of the API client';
+COMMENT ON COLUMN dmscs.ApiClient.IsApproved IS 'Indicates whether the API client is approved';
