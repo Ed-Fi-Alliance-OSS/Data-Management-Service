@@ -361,12 +361,13 @@ Add to `EdFi.DataManagementService.Backend.Postgresql.csproj`:
 </ItemGroup>
 ```
 
-Usage pattern:
+Usage pattern for **RFC 6902 JSON Patch**:
 
 ```csharp
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using SystemTextJson.JsonDiffPatch;
+using System.Text.Json.JsonDiffPatch;
+using System.Text.Json.JsonDiffPatch.Diffs.Formatters;
 
 public static class JsonPatchUtility
 {
@@ -375,13 +376,77 @@ public static class JsonPatchUtility
         // Convert existing JsonElement to JsonNode
         var existingNode = JsonNode.Parse(existing.GetRawText());
 
-        // Compute patch; returns a JsonNode representing a JSON Patch array, or null if no changes
-        return existingNode!.Diff(incoming);
+        // Use the JsonPatchDeltaFormatter so that the result is a
+        // standard RFC 6902 JSON Patch (array of operations).
+        var options   = new JsonDiffOptions();
+        var formatter = new JsonPatchDeltaFormatter();
+
+        JsonNode patch = JsonDiffPatcher.Diff(existingNode!, incoming, formatter, options);
+
+        // JsonDiffPatcher.Diff always returns a JsonNode; if there are no changes,
+        // the patch will be an empty array: [].
+        return patch;
     }
 }
 ```
 
-**Important:** `JsonDiffPatch` yields an RFC 6902-style JSON Patch. We will ensure our `jsonb_patch` function in PostgreSQL matches the operations this library produces (at minimum `add`, `remove`, `replace`).
+**Important:**
+
+- `JsonNode.Diff(other)` (the extension method) produces the **internal JSON diff format** (like benjamine/jsondiffpatch), *not* JSON Patch.
+- To get **RFC 6902 JSON Patch**, we must call `JsonDiffPatcher.Diff(left, right, new JsonPatchDeltaFormatter(), options)`, as shown above.
+
+The resulting patch is a JSON array of operations like:
+
+```json
+[
+  { "op": "add", "path": "/tags/1", "value": "b" },
+  { "op": "replace", "path": "/level", "value": 11 }
+]
+```
+
+We will ensure our `jsonb_patch` function in PostgreSQL matches the operations this formatter produces (at minimum `add`, `remove`, `replace`) and the **JSON Pointer** path format described in the next section.
+
+### 4.4 JSON Patch Path Format (What the Library Emits)
+
+`JsonPatchDeltaFormatter` emits `path` values that follow **RFC 6901 JSON Pointer** rules:
+
+- `path` is a **string**, not an array.
+- It always starts with `/` (except for the special root path `""`).
+- Segments are separated by `/`.
+- Within each segment:
+  - `~1` encodes `/`
+  - `~0` encodes `~`
+
+Examples:
+
+- Property under root:
+  - Path: `/level`
+  - Segments: `["level"]`
+- Nested property:
+  - Path: `/student/name`
+  - Segments: `["student", "name"]`
+- Array element:
+  - Path: `/tags/1`
+  - Segments: `["tags", "1"]` (index 1)
+- Append to array:
+  - Path: `/tags/-`
+  - Segments: `["tags", "-"]` (`-` means "append at end" for `add` ops)
+- Property name containing `/`:
+  - Logical segments: `["a/b"]`
+  - Path: `/a~1b`
+- Property name containing `~`:
+  - Logical segments: `["a~b"]`
+  - Path: `/a~0b`
+
+`jsonb_patch` must:
+
+- Take the raw `path` string (e.g., `"/tags/1"`).
+- Strip the leading `/`.
+- `split` on `/` to get raw segments.
+- Decode each segment:
+  - Replace `~1` with `/`
+  - Replace `~0` with `~`
+- Use the decoded segments as the `text[]` path for `jsonb_set`, `jsonb_insert`, and `#-`.
 
 ---
 
@@ -399,20 +464,26 @@ Create a new helper in the PostgreSQL backend, e.g. `JsonPatchUtility.cs`:
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using SystemTextJson.JsonDiffPatch;
+using System.Text.Json.JsonDiffPatch;
+using System.Text.Json.JsonDiffPatch.Diffs.Formatters;
 
 namespace EdFi.DataManagementService.Backend.Postgresql;
 
 internal static class JsonPatchUtility
 {
     /// <summary>
-    /// Computes a JSON Patch that transforms existingDocument into newDocument.
-    /// Returns null if the documents are equivalent (no changes).
+    /// Computes a JSON Patch (RFC 6902) that transforms existingDocument into newDocument.
+    /// Returns a JsonNode representing an array of operations; the array may be empty if there are no changes.
     /// </summary>
     public static JsonNode? ComputePatch(JsonElement existingDocument, JsonNode newDocument)
     {
         var existingNode = JsonNode.Parse(existingDocument.GetRawText());
-        return existingNode!.Diff(newDocument);
+
+        var options   = new JsonDiffOptions();
+        var formatter = new JsonPatchDeltaFormatter();
+
+        // This returns a JSON Patch document (array of { op, path, value? }).
+        return JsonDiffPatcher.Diff(existingNode!, newDocument, formatter, options);
     }
 }
 ```
@@ -772,14 +843,15 @@ RETURNS JSONB
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    patch_element JSONB;
-    op           TEXT;
-    path_parts   TEXT[];
-    parent_path  TEXT[];
+    patch_element  JSONB;
+    op             TEXT;
+    path_text      TEXT;
+    path_parts     TEXT[];
+    parent_path    TEXT[];
     parent_element JSONB;
-    value        JSONB;
-    last_part    TEXT;
-    append_index INT;
+    value          JSONB;
+    last_part      TEXT;
+    append_index   INT;
 BEGIN
     IF jsonb_typeof(patch) != 'array' THEN
         RAISE EXCEPTION 'Patch must be a JSON array';
@@ -788,14 +860,32 @@ BEGIN
     FOR patch_element IN SELECT * FROM jsonb_array_elements(patch)
     LOOP
         op := patch_element->>'op';
+        path_text := patch_element->>'path';
 
-        -- Expect patch_element->'path' to be encoded as a JSON array
-        -- of path segments (e.g., ["student", "name"]), which is what
-        -- SystemTextJson.JsonDiffPatch can be configured to emit.
-        path_parts := (
-            SELECT array_agg(part)
-            FROM jsonb_array_elements_text(patch_element->'path') AS part
-        );
+        -- Convert RFC 6901 JSON Pointer string into text[] path:
+        --   ""           -> {}              (root)
+        --   "/a/b"       -> {"a","b"}
+        --   "/tags/1"    -> {"tags","1"}
+        --   "/a~1b"      -> {"a/b"}
+        --   "/a~0b"      -> {"a~b"}
+        IF path_text IS NULL THEN
+            RAISE EXCEPTION 'Patch operation is missing path';
+        END IF;
+
+        IF path_text = '' THEN
+            -- Root path (special case).
+            path_parts := ARRAY[]::TEXT[];
+        ELSE
+            -- Drop leading '/' and split on remaining '/'; decode ~0 and ~1 sequences.
+            SELECT array_agg(
+                       replace(
+                         replace(part, '~1', '/'),
+                         '~0', '~'
+                       )
+                   )
+            INTO path_parts
+            FROM regexp_split_to_table(ltrim(path_text, '/'), '/') AS part;
+        END IF;
 
         IF patch_element ? 'value' THEN
             value := patch_element->'value';
@@ -803,31 +893,49 @@ BEGIN
 
         CASE op
             WHEN 'replace' THEN
-                target := jsonb_set(target, path_parts, value, TRUE);
-
-            WHEN 'remove' THEN
-                target := target #- path_parts;
-
-            WHEN 'add' THEN
-                parent_path := path_parts[1:array_length(path_parts, 1) - 1];
-
-                IF array_length(parent_path, 1) = 0 THEN
-                    parent_element := target;
-                ELSE
-                    parent_element := target #> parent_path;
-                END IF;
-
-                last_part := path_parts[array_length(path_parts, 1)];
-
-                IF jsonb_typeof(parent_element) = 'array' THEN
-                    IF last_part = '-' THEN
-                        append_index := jsonb_array_length(parent_element);
-                        path_parts[array_length(path_parts, 1)] := append_index::text;
-                    END IF;
-
-                    target := jsonb_insert(target, path_parts, value);
+                IF array_length(path_parts, 1) IS NULL OR array_length(path_parts, 1) = 0 THEN
+                    -- Replace whole document
+                    target := value;
                 ELSE
                     target := jsonb_set(target, path_parts, value, TRUE);
+                END IF;
+
+            WHEN 'remove' THEN
+                IF array_length(path_parts, 1) IS NULL OR array_length(path_parts, 1) = 0 THEN
+                    -- Remove whole document; set to null JSON.
+                    target := 'null'::jsonb;
+                ELSE
+                    target := target #- path_parts;
+                END IF;
+
+            WHEN 'add' THEN
+                -- If path is root (""), treat as full replacement.
+                IF array_length(path_parts, 1) IS NULL OR array_length(path_parts, 1) = 0 THEN
+                    target := value;
+                ELSE
+                    parent_path := path_parts[1:array_length(path_parts, 1) - 1];
+
+                    IF array_length(parent_path, 1) = 0 THEN
+                        parent_element := target; -- Parent is the root
+                    ELSE
+                        parent_element := target #> parent_path;
+                    END IF;
+
+                    last_part := path_parts[array_length(path_parts, 1)];
+
+                    -- If parent is an array, we MUST use jsonb_insert
+                    IF jsonb_typeof(parent_element) = 'array' THEN
+                        -- Check for the special 'append' syntax (e.g., /tags/-)
+                        IF last_part = '-' THEN
+                            append_index := jsonb_array_length(parent_element);
+                            path_parts[array_length(path_parts, 1)] := append_index::text;
+                        END IF;
+
+                        target := jsonb_insert(target, path_parts, value);
+                    ELSE
+                        -- Parent is an object. For objects, 'add' acts like 'replace'.
+                        target := jsonb_set(target, path_parts, value, TRUE);
+                    END IF;
                 END IF;
 
             ELSE
@@ -839,8 +947,6 @@ BEGIN
 END;
 $$;
 ```
-
-**Note:** The initial JSONB partial update design assumed a particular representation of `path`. Confirm the actual output format from `SystemTextJson.JsonDiffPatch` and adjust `path_parts` extraction accordingly. If the library emits RFC 6902 strings (e.g., `"/student/name"`), add a small SQL helper to split paths by `/` into an array.
 
 ### 6.2 Using `jsonb_patch` in Updates
 
@@ -1147,4 +1253,3 @@ This design introduces **internal partial JSONB updates** for the DMS PostgreSQL
   - `JsonbPatch` (new behavior).
 
 The result should significantly reduce WAL and TOAST write volume for large documents while preserving all existing authorization, identity, and concurrency semantics.
-
