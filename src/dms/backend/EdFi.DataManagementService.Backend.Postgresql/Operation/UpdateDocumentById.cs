@@ -5,12 +5,14 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Json.More;
 using Json.Path;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
 using static EdFi.DataManagementService.Backend.Postgresql.OptimisticLockHelper;
@@ -27,9 +29,14 @@ public interface IUpdateDocumentById
     );
 }
 
-public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentById> _logger)
-    : IUpdateDocumentById
+public class UpdateDocumentById(
+    ISqlAction _sqlAction,
+    ILogger<UpdateDocumentById> _logger,
+    IOptions<DatabaseOptions> databaseOptions
+) : IUpdateDocumentById
 {
+    private readonly DocumentUpdateStrategy _updateStrategy = databaseOptions.Value.DocumentUpdateStrategy;
+
     /// <summary>
     /// Determine whether invalid referentialIds were descriptors or references, and returns the
     /// appropriate failure.
@@ -246,19 +253,74 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 _sqlAction
             );
 
-            int rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
-                PartitionKeyFor(updateRequest.DocumentUuid).Value,
-                updateRequest.DocumentUuid.Value,
-                JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
-                updateRequest.DocumentSecurityElements.ToJsonElement(),
-                schoolAuthorizationEdOrgIds,
-                studentEdOrgResponsibilityAuthorizationIds,
-                contactStudentSchoolAuthorizationEdOrgIds,
-                staffEducationOrganizationAuthorizationEdOrgIds,
-                connection,
-                transaction,
-                updateRequest.TraceId
-            );
+            int rowsAffected;
+
+            if (_updateStrategy == DocumentUpdateStrategy.JsonbPatch)
+            {
+                JsonNode? patchNode = JsonPatchUtility.ComputePatch(existingEdfiDoc, updateRequest.EdfiDoc);
+
+                if (patchNode is null)
+                {
+                    _logger.LogInformation(
+                        "Persisted document is equivalent to Request document (patch empty), no changes were made to the stored document - {TraceId}",
+                        updateRequest.TraceId.Value
+                    );
+                    return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
+                }
+
+                if (!JsonPatchUtility.HasOnlySupportedOps(patchNode))
+                {
+                    _logger.LogWarning(
+                        "JSON Patch contains unsupported operations; falling back to full update - {TraceId}",
+                        updateRequest.TraceId.Value
+                    );
+
+                    rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
+                        PartitionKeyFor(updateRequest.DocumentUuid).Value,
+                        updateRequest.DocumentUuid.Value,
+                        JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
+                        updateRequest.DocumentSecurityElements.ToJsonElement(),
+                        schoolAuthorizationEdOrgIds,
+                        studentEdOrgResponsibilityAuthorizationIds,
+                        contactStudentSchoolAuthorizationEdOrgIds,
+                        staffEducationOrganizationAuthorizationEdOrgIds,
+                        connection,
+                        transaction,
+                        updateRequest.TraceId
+                    );
+                }
+                else
+                {
+                    JsonElement patchElement = JsonSerializer.Deserialize<JsonElement>(
+                        patchNode.ToJsonString()
+                    );
+
+                    rowsAffected = await _sqlAction.PatchDocumentEdfiDoc(
+                        PartitionKeyFor(updateRequest.DocumentUuid).Value,
+                        updateRequest.DocumentUuid.Value,
+                        patchElement,
+                        connection,
+                        transaction,
+                        updateRequest.TraceId
+                    );
+                }
+            }
+            else
+            {
+                rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
+                    PartitionKeyFor(updateRequest.DocumentUuid).Value,
+                    updateRequest.DocumentUuid.Value,
+                    JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
+                    updateRequest.DocumentSecurityElements.ToJsonElement(),
+                    schoolAuthorizationEdOrgIds,
+                    studentEdOrgResponsibilityAuthorizationIds,
+                    contactStudentSchoolAuthorizationEdOrgIds,
+                    staffEducationOrganizationAuthorizationEdOrgIds,
+                    connection,
+                    transaction,
+                    updateRequest.TraceId
+                );
+            }
 
             if (
                 updateRequest

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
@@ -12,6 +13,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using ImpromptuInterface;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NUnit.Framework;
 
@@ -203,14 +205,39 @@ public abstract class DatabaseTest : DatabaseTestBase
         return new SqlAction();
     }
 
-    protected static UpsertDocument CreateUpsert()
+    protected static IOptions<DatabaseOptions> CreateDatabaseOptions(
+        DocumentUpdateStrategy strategy = DocumentUpdateStrategy.FullDocument
+    )
     {
-        return new UpsertDocument(CreateSqlAction(), NullLogger<UpsertDocument>.Instance);
+        return Options.Create(
+            new DatabaseOptions
+            {
+                IsolationLevel = ConfiguredIsolationLevel,
+                DocumentUpdateStrategy = strategy,
+            }
+        );
     }
 
-    protected static UpdateDocumentById CreateUpdate()
+    protected static UpsertDocument CreateUpsert(
+        DocumentUpdateStrategy strategy = DocumentUpdateStrategy.FullDocument
+    )
     {
-        return new UpdateDocumentById(CreateSqlAction(), NullLogger<UpdateDocumentById>.Instance);
+        return new UpsertDocument(
+            CreateSqlAction(),
+            NullLogger<UpsertDocument>.Instance,
+            CreateDatabaseOptions(strategy)
+        );
+    }
+
+    protected static UpdateDocumentById CreateUpdate(
+        DocumentUpdateStrategy strategy = DocumentUpdateStrategy.FullDocument
+    )
+    {
+        return new UpdateDocumentById(
+            CreateSqlAction(),
+            NullLogger<UpdateDocumentById>.Instance,
+            CreateDatabaseOptions(strategy)
+        );
     }
 
     protected static GetDocumentById CreateGetById()
@@ -218,9 +245,14 @@ public abstract class DatabaseTest : DatabaseTestBase
         return new GetDocumentById(CreateSqlAction(), NullLogger<GetDocumentById>.Instance);
     }
 
-    protected static QueryDocument CreateQueryDocument()
+    protected QueryDocument CreateQueryDocument()
     {
-        return new QueryDocument(CreateSqlAction(), NullLogger<QueryDocument>.Instance);
+        return new QueryDocument(
+            CreateSqlAction(),
+            NullLogger<QueryDocument>.Instance,
+            DataSource!,
+            CreateDatabaseOptions()
+        );
     }
 
     protected static DeleteDocumentById CreateDeleteById()

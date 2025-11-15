@@ -4,11 +4,14 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Json.Path;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
 using static EdFi.DataManagementService.Backend.Postgresql.ReferenceHelper;
@@ -24,8 +27,14 @@ public interface IUpsertDocument
     );
 }
 
-public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logger) : IUpsertDocument
+public class UpsertDocument(
+    ISqlAction _sqlAction,
+    ILogger<UpsertDocument> _logger,
+    IOptions<DatabaseOptions> databaseOptions
+) : IUpsertDocument
 {
+    private readonly DocumentUpdateStrategy _updateStrategy = databaseOptions.Value.DocumentUpdateStrategy;
+
     /// <summary>
     /// Determine whether invalid referentialIds were descriptors or references, and returns the
     /// appropriate failure.
@@ -195,6 +204,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         long documentId,
         short documentPartitionKey,
         Guid documentUuid,
+        Document existingDocument,
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
@@ -209,6 +219,8 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
     {
         // Update the EdfiDoc of the Document
         upsertRequest.EdfiDoc["id"] = documentUuid;
+
+        JsonElement existingEdfiDoc = existingDocument.EdfiDoc;
 
         var hasReferences =
             documentReferenceIds.ReferentialIds.Length > 0
@@ -244,19 +256,70 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             }
         }
 
-        await _sqlAction.UpdateDocumentEdfiDoc(
-            documentPartitionKey,
-            documentUuid,
-            JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
-            upsertRequest.DocumentSecurityElements.ToJsonElement(),
-            studentSchoolAuthorizationEducationOrganizationIds,
-            studentEdOrgResponsibilityAuthorizationIds,
-            contactStudentSchoolAuthorizationEducationOrganizationIds,
-            staffEducationOrganizationAuthorizationEdOrgIds,
-            connection,
-            transaction,
-            traceId
-        );
+        if (_updateStrategy == DocumentUpdateStrategy.JsonbPatch)
+        {
+            JsonNode? patchNode = JsonPatchUtility.ComputePatch(existingEdfiDoc, upsertRequest.EdfiDoc);
+
+            if (patchNode is null)
+            {
+                _logger.LogInformation(
+                    "Persisted document is equivalent to Upsert request document (patch empty), no changes were made to the stored document - {TraceId}",
+                    upsertRequest.TraceId.Value
+                );
+                return new UpsertResult.UpdateSuccess(new(documentUuid));
+            }
+
+            if (!JsonPatchUtility.HasOnlySupportedOps(patchNode))
+            {
+                _logger.LogWarning(
+                    "JSON Patch contains unsupported operations; falling back to full update - {TraceId}",
+                    upsertRequest.TraceId.Value
+                );
+
+                await _sqlAction.UpdateDocumentEdfiDoc(
+                    documentPartitionKey,
+                    documentUuid,
+                    JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
+                    upsertRequest.DocumentSecurityElements.ToJsonElement(),
+                    studentSchoolAuthorizationEducationOrganizationIds,
+                    studentEdOrgResponsibilityAuthorizationIds,
+                    contactStudentSchoolAuthorizationEducationOrganizationIds,
+                    staffEducationOrganizationAuthorizationEdOrgIds,
+                    connection,
+                    transaction,
+                    traceId
+                );
+            }
+            else
+            {
+                JsonElement patchElement = JsonSerializer.Deserialize<JsonElement>(patchNode.ToJsonString());
+
+                await _sqlAction.PatchDocumentEdfiDoc(
+                    documentPartitionKey,
+                    documentUuid,
+                    patchElement,
+                    connection,
+                    transaction,
+                    traceId
+                );
+            }
+        }
+        else
+        {
+            await _sqlAction.UpdateDocumentEdfiDoc(
+                documentPartitionKey,
+                documentUuid,
+                JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
+                upsertRequest.DocumentSecurityElements.ToJsonElement(),
+                studentSchoolAuthorizationEducationOrganizationIds,
+                studentEdOrgResponsibilityAuthorizationIds,
+                contactStudentSchoolAuthorizationEducationOrganizationIds,
+                staffEducationOrganizationAuthorizationEdOrgIds,
+                connection,
+                transaction,
+                traceId
+            );
+        }
 
         if (hasReferences)
         {
@@ -441,6 +504,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 documentId,
                 documentFromDb.DocumentPartitionKey,
                 documentFromDb.DocumentUuid,
+                documentFromDb,
                 upsertRequest,
                 documentReferenceIds,
                 descriptorReferenceIds,

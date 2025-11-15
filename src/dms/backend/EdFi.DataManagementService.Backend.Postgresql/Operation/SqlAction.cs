@@ -318,6 +318,41 @@ public partial class SqlAction() : ISqlAction
     }
 
     /// <summary>
+    /// Apply a JSON Patch to the EdfiDoc of a Document and return the number of rows affected.
+    /// </summary>
+    public async Task<int> PatchDocumentEdfiDoc(
+        int documentPartitionKey,
+        Guid documentUuid,
+        JsonElement patch,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        await using var command = new NpgsqlCommand(
+            @"UPDATE dms.Document
+              SET EdfiDoc = dms.jsonb_patch(EdfiDoc, $1::jsonb),
+                  LastModifiedAt = clock_timestamp(),
+                  LastModifiedTraceId = $4
+              WHERE DocumentPartitionKey = $2 AND DocumentUuid = $3
+              RETURNING Id;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = patch },
+                new() { Value = documentPartitionKey },
+                new() { Value = documentUuid },
+                new() { Value = traceId.Value },
+            },
+        };
+
+        return await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
     /// Update the EdfiDoc of a Document and return the number of rows affected
     /// </summary>
     public async Task<int> UpdateDocumentEdfiDoc(

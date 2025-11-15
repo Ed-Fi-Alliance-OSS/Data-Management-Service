@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using FluentAssertions;
 using Npgsql;
@@ -113,6 +114,68 @@ public class UpsertTests : DatabaseTest
             _getResult!.Should().BeOfType<GetResult.GetSuccess>();
             (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
             (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":3");
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Upsert_As_Update_With_JsonbPatch_Strategy : UpsertTests
+    {
+        private UpsertResult? _upsertResultInsert;
+        private UpsertResult? _upsertResultUpdate;
+        private GetResult? _getResult;
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocStringInitial = """{"abc":1,"nested":{"value":10}}""";
+        private static readonly string _edFiDocStringUpdated = """{"abc":1,"nested":{"value":20}}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Upsert as insert (default strategy).
+            IUpsertRequest upsertInsert = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocStringInitial
+            );
+            _upsertResultInsert = await CreateUpsert().Upsert(upsertInsert, Connection!, Transaction!);
+
+            // Upsert as update using JsonbPatch strategy.
+            IUpsertRequest upsertUpdate = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocStringUpdated
+            );
+            _upsertResultUpdate = await CreateUpsert(DocumentUpdateStrategy.JsonbPatch)
+                .Upsert(upsertUpdate, Connection!, Transaction!);
+
+            // Fetch the updated document.
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
+            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_insert_and_update()
+        {
+            _upsertResultInsert!.Should().BeOfType<UpsertResult.InsertSuccess>();
+            _upsertResultUpdate!.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_updated_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            var success = (_getResult! as GetResult.GetSuccess)!;
+
+            success.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            var json = success.EdfiDoc.ToJsonString();
+
+            // JsonbPatch correctly updated the nested value, and the document
+            // may contain additional fields like \"id\" that are added by the backend.
+            json.Should().Contain("\"nested\":{\"value\":20}");
+            json.Should().NotContain("\"nested\":{\"value\":10}");
         }
     }
 

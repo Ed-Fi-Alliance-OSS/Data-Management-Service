@@ -26,5 +26,11 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit
         {
             _databaseOptions.IsolationLevel.Should().Be(_isolationLevel);
         }
+
+        [Test]
+        public void Should_default_to_full_document_update_strategy()
+        {
+            _databaseOptions.DocumentUpdateStrategy.Should().Be(DocumentUpdateStrategy.FullDocument);
+        }
     }
 }

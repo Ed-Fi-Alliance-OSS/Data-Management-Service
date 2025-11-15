@@ -32,6 +32,7 @@
           <PrivateAssets>all</PrivateAssets>
       </PackageReference>
     <PackageReference Include="JsonPath.Net" />
+    <PackageReference Include="SystemTextJson.JsonDiffPatch" />
   </ItemGroup>
 
   <ItemGroup>
@@ -40,6 +41,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Test.Integration" />
+    <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />
     <!-- For FakeItEasy unit test proxies-->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>

@@ -8,14 +8,36 @@ using System.Data;
 namespace EdFi.DataManagementService.Backend
 {
     /// <summary>
+    /// Strategy for updating document JSON in the backing datastore.
+    /// </summary>
+    public enum DocumentUpdateStrategy
+    {
+        /// <summary>
+        /// Always send the full document JSON to the database (current behavior).
+        /// </summary>
+        FullDocument = 0,
+
+        /// <summary>
+        /// Send a JSON Patch (RFC 6902) describing changes and let the database
+        /// apply those changes to the existing JSONB document.
+        /// </summary>
+        JsonbPatch = 1,
+    }
+
+    /// <summary>
     /// Database specific options from configuration
     /// </summary>
     public class DatabaseOptions
     {
-
         /// <summary>
         /// IsolationLevel to use for all database transactions.
         /// </summary>
         public IsolationLevel IsolationLevel { get; set; }
+
+        /// <summary>
+        /// Controls how document JSON updates are applied in the backing store.
+        /// </summary>
+        public DocumentUpdateStrategy DocumentUpdateStrategy { get; set; } =
+            DocumentUpdateStrategy.FullDocument;
     }
 }

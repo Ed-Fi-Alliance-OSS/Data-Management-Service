@@ -62,6 +62,18 @@ public interface ISqlAction
         NpgsqlTransaction transaction
     );
 
+    /// <summary>
+    /// Applies a JSON Patch to the EdfiDoc of a Document and returns the number of rows affected.
+    /// </summary>
+    public Task<int> PatchDocumentEdfiDoc(
+        int documentPartitionKey,
+        Guid documentUuid,
+        JsonElement patch,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
+
     public Task<int> UpdateDocumentEdfiDoc(
         int documentPartitionKey,
         Guid documentUuid,

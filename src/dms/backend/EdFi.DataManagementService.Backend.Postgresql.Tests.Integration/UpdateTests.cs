@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
@@ -114,6 +115,63 @@ public class UpdateTests : DatabaseTest
             (_getResult! as GetResult.GetSuccess)!
                 .LastModifiedDate.Should()
                 .NotBe((_getInsertedResult! as GetResult.GetSuccess)!.LastModifiedDate);
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Update_With_JsonbPatch_Strategy : UpdateTests
+    {
+        private UpdateResult? _updateResult;
+        private GetResult? _getResult;
+
+        private static readonly Guid _documentUuidGuid = Guid.NewGuid();
+        private static readonly Guid _referentialIdGuid = Guid.NewGuid();
+        private static readonly string _edFiDocString1 = """{"abc":1,"nested":{"value":10}}""";
+        private static readonly string _edFiDocString2 = """{"abc":2,"nested":{"value":10}}""";
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Insert the original document (using default strategy).
+            IUpsertRequest upsertRequest = CreateUpsertRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString1,
+                traceId: new("upsertRequest")
+            );
+            await CreateUpsert().Upsert(upsertRequest, Connection!, Transaction!);
+
+            // Update the document using the JsonbPatch strategy.
+            IUpdateRequest updateRequest = CreateUpdateRequest(
+                _defaultResourceName,
+                _documentUuidGuid,
+                _referentialIdGuid,
+                _edFiDocString2,
+                traceId: new("updatePatch")
+            );
+            _updateResult = await CreateUpdate(DocumentUpdateStrategy.JsonbPatch)
+                .UpdateById(updateRequest, Connection!, Transaction!);
+
+            // Fetch the updated document.
+            IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
+            _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
+        }
+
+        [Test]
+        public void It_should_be_a_successful_update()
+        {
+            _updateResult!.Should().BeOfType<UpdateResult.UpdateSuccess>();
+        }
+
+        [Test]
+        public void It_should_be_found_updated_by_get()
+        {
+            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
+            var success = (_getResult! as GetResult.GetSuccess)!;
+            success.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            success.EdfiDoc.ToJsonString().Should().Be(_edFiDocString2);
+            success.LastModifiedTraceId.Should().Be("updatePatch");
         }
     }
 
