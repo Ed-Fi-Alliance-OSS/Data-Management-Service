@@ -361,41 +361,35 @@ Add to `EdFi.DataManagementService.Backend.Postgresql.csproj`:
 </ItemGroup>
 ```
 
-Usage pattern for **RFC 6902 JSON Patch**:
+At call sites (e.g., `UpdateDocumentById` / `UpsertDocument`), the usage pattern will be:
 
 ```csharp
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using System.Text.Json.JsonDiffPatch;
-using System.Text.Json.JsonDiffPatch.Diffs.Formatters;
+JsonNode? patchNode = JsonPatchUtility.ComputePatch(existingEdfiDoc, incomingEdfiDoc);
 
-public static class JsonPatchUtility
+if (patchNode is null)
 {
-    public static JsonNode? ComputePatch(JsonElement existing, JsonNode incoming)
+    // Documents are equivalent; skip DB write.
+}
+else
+{
+    // Optionally validate operations, then serialize and pass to PatchDocumentEdfiDoc(...)
+    if (!JsonPatchUtility.HasOnlySupportedOps(patchNode))
     {
-        // Convert existing JsonElement to JsonNode
-        var existingNode = JsonNode.Parse(existing.GetRawText());
-
-        // Use the JsonPatchDeltaFormatter so that the result is a
-        // standard RFC 6902 JSON Patch (array of operations).
-        var options   = new JsonDiffOptions();
-        var formatter = new JsonPatchDeltaFormatter();
-
-        JsonNode patch = JsonDiffPatcher.Diff(existingNode!, incoming, formatter, options);
-
-        // JsonDiffPatcher.Diff always returns a JsonNode; if there are no changes,
-        // the patch will be an empty array: [].
-        return patch;
+        // Log and either fall back to full update or surface an error.
     }
 }
 ```
 
-**Important:**
+**Important details:**
 
-- `JsonNode.Diff(other)` (the extension method) produces the **internal JSON diff format** (like benjamine/jsondiffpatch), *not* JSON Patch.
-- To get **RFC 6902 JSON Patch**, we must call `JsonDiffPatcher.Diff(left, right, new JsonPatchDeltaFormatter(), options)`, as shown above.
+- `JsonNode.Diff(other)` (the extension method) produces the library’s **internal diff format**, *not* JSON Patch.
+- To get **RFC 6902 JSON Patch**, the helper must call:
+  - `JsonDiffPatcher.Diff(left, right, new JsonPatchDeltaFormatter(), options)`.
+- `JsonPatchUtility.ComputePatch` will:
+  - Return `null` if there are no changes (the diff is an empty array).
+  - Otherwise return a `JsonNode` representing a JSON Patch array.
 
-The resulting patch is a JSON array of operations like:
+The resulting non-empty patch is a JSON array of operations like:
 
 ```json
 [
@@ -462,6 +456,8 @@ Create a new helper in the PostgreSQL backend, e.g. `JsonPatchUtility.cs`:
 // SPDX-License-Identifier: Apache-2.0
 // ...
 
+using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.JsonDiffPatch;
@@ -473,7 +469,7 @@ internal static class JsonPatchUtility
 {
     /// <summary>
     /// Computes a JSON Patch (RFC 6902) that transforms existingDocument into newDocument.
-    /// Returns a JsonNode representing an array of operations; the array may be empty if there are no changes.
+    /// Returns null if there are no changes; otherwise returns a JsonNode representing an array of operations.
     /// </summary>
     public static JsonNode? ComputePatch(JsonElement existingDocument, JsonNode newDocument)
     {
@@ -483,14 +479,54 @@ internal static class JsonPatchUtility
         var formatter = new JsonPatchDeltaFormatter();
 
         // This returns a JSON Patch document (array of { op, path, value? }).
-        return JsonDiffPatcher.Diff(existingNode!, newDocument, formatter, options);
+        JsonNode patch = JsonDiffPatcher.Diff(existingNode!, newDocument, formatter, options);
+
+        // Treat an empty patch array as "no changes".
+        if (patch is JsonArray arr && arr.Count == 0)
+        {
+            return null;
+        }
+
+        return patch;
+    }
+
+    private static readonly HashSet<string> SupportedOps = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "add",
+        "remove",
+        "replace",
+    };
+
+    /// <summary>
+    /// Returns true if all operations in the patch use supported RFC 6902 op codes
+    /// ("add", "remove", "replace"). Returns false if the structure is invalid or
+    /// if any op is unsupported (e.g., "copy", "move", "test").
+    /// </summary>
+    public static bool HasOnlySupportedOps(JsonNode patchNode)
+    {
+        if (patchNode is not JsonArray ops)
+        {
+            return false;
+        }
+
+        foreach (JsonNode? opNode in ops)
+        {
+            var op = opNode?["op"]?.GetValue<string>();
+
+            if (string.IsNullOrEmpty(op) || !SupportedOps.Contains(op))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
 ```
 
 Later we can extend this helper to:
 
-- Filter out operations we do not support (e.g., if the library emits `move` or `copy`).
+- Transform or reject operations we do not support (e.g., if the library emits `move` or `copy`).
 - Potentially fall back to full updates if the patch grows too large.
 
 ### 5.2 Extending `ISqlAction` for Patch-Based Updates
@@ -656,16 +692,41 @@ if (_updateStrategy.UseJsonbPatch())
         return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
     }
 
-    JsonElement patchElement = JsonSerializer.Deserialize<JsonElement>(patchNode.ToJsonString());
+    // Ensure we only send operations the database function supports.
+    if (!JsonPatchUtility.HasOnlySupportedOps(patchNode))
+    {
+        _logger.LogWarning(
+            "JSON Patch contains unsupported operations; falling back to full update - {TraceId}",
+            updateRequest.TraceId.Value
+        );
 
-    rowsAffected = await _sqlAction.PatchDocumentEdfiDoc(
-        PartitionKeyFor(updateRequest.DocumentUuid).Value,
-        updateRequest.DocumentUuid.Value,
-        patchElement,
-        connection,
-        transaction,
-        updateRequest.TraceId
-    );
+        rowsAffected = await _sqlAction.UpdateDocumentEdfiDoc(
+            PartitionKeyFor(updateRequest.DocumentUuid).Value,
+            updateRequest.DocumentUuid.Value,
+            JsonSerializer.Deserialize<JsonElement>(updateRequest.EdfiDoc),
+            updateRequest.DocumentSecurityElements.ToJsonElement(),
+            schoolAuthorizationEdOrgIds,
+            studentEdOrgResponsibilityAuthorizationIds,
+            contactStudentSchoolAuthorizationEdOrgIds,
+            staffEducationOrganizationAuthorizationEdOrgIds,
+            connection,
+            transaction,
+            updateRequest.TraceId
+        );
+    }
+    else
+    {
+        JsonElement patchElement = JsonSerializer.Deserialize<JsonElement>(patchNode.ToJsonString());
+
+        rowsAffected = await _sqlAction.PatchDocumentEdfiDoc(
+            PartitionKeyFor(updateRequest.DocumentUuid).Value,
+            updateRequest.DocumentUuid.Value,
+            patchElement,
+            connection,
+            transaction,
+            updateRequest.TraceId
+        );
+    }
 }
 else
 {
@@ -765,16 +826,40 @@ if (_updateStrategy.UseJsonbPatch())
         return new UpsertResult.UpdateSuccess(new(documentUuid));
     }
 
-    JsonElement patchElement = JsonSerializer.Deserialize<JsonElement>(patchNode.ToJsonString());
+    if (!JsonPatchUtility.HasOnlySupportedOps(patchNode))
+    {
+        _logger.LogWarning(
+            "JSON Patch contains unsupported operations; falling back to full update - {TraceId}",
+            upsertRequest.TraceId.Value
+        );
 
-    await _sqlAction.PatchDocumentEdfiDoc(
-        documentPartitionKey,
-        documentUuid,
-        patchElement,
-        connection,
-        transaction,
-        traceId
-    );
+        await _sqlAction.UpdateDocumentEdfiDoc(
+            documentPartitionKey,
+            documentUuid,
+            JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
+            upsertRequest.DocumentSecurityElements.ToJsonElement(),
+            studentSchoolAuthorizationEducationOrganizationIds,
+            studentEdOrgResponsibilityAuthorizationIds,
+            contactStudentSchoolAuthorizationEducationOrganizationIds,
+            staffEducationOrganizationAuthorizationEdOrgIds,
+            connection,
+            transaction,
+            traceId
+        );
+    }
+    else
+    {
+        JsonElement patchElement = JsonSerializer.Deserialize<JsonElement>(patchNode.ToJsonString());
+
+        await _sqlAction.PatchDocumentEdfiDoc(
+            documentPartitionKey,
+            documentUuid,
+            patchElement,
+            connection,
+            transaction,
+            traceId
+        );
+    }
 }
 else
 {
@@ -808,7 +893,9 @@ Important cases to handle:
 - **Unsupported patch operations:**  
   Initially, restrict ourselves to operations we know `jsonb_patch` supports (`add`, `remove`, `replace`). If the diff library emits `move` or `copy`, we should:
   - Either transform them to a sequence of supported operations, or
-  - Throw/log a clear error and fall back to full update.
+  - Detect them using `JsonPatchUtility.HasOnlySupportedOps` and either:
+    - fall back to full update (recommended default), or
+    - throw/log a clear error and map to `UnknownFailure`.
 
 For a first implementation, it is acceptable (and simpler) to:
 
@@ -1208,19 +1295,28 @@ This is a step-by-step checklist that you can follow to implement the design.
    - Given documents differing by array changes:
      - Ensure patch includes appropriate `add` operations with correct indexes.
    - When documents are identical:
-     - Ensure `ComputePatch` returns `null`.
+     - Ensure `ComputePatch` returns `null` and no SQL patch call is made.
+   - When the patch contains unsupported op codes:
+     - Ensure `HasOnlySupportedOps` returns `false`.
 
 2. **UpdateDocumentById Tests**
    - When strategy is `FullDocument`, ensure the existing SQL path is used.
    - When strategy is `JsonbPatch`:
      - Verify `PatchDocumentEdfiDoc` is called with a non-empty patch when documents differ.
      - Verify no call to `PatchDocumentEdfiDoc` and early success when documents are equal.
+      - Verify that when `HasOnlySupportedOps` is `false`, the code falls back to `UpdateDocumentEdfiDoc`.
 
 3. **UpsertDocument Tests**
    - Upsert-as-update with `JsonbPatch`:
      - Confirm patch is computed and `PatchDocumentEdfiDoc` is used.
    - Upsert-as-update with `_etag` unchanged:
      - Confirm no call to patch or full update methods.
+   - Upsert-as-update with an unsupported op in the patch:
+     - Confirm the backend logs a warning and falls back to full update.
+
+4. **DatabaseOptions Tests**
+   - Ensure `DocumentUpdateStrategy` defaults to `FullDocument`.
+   - Ensure it can be changed and read back (similar to the existing isolation level test).
 
 ### 10.2 Integration Tests
 
@@ -1231,6 +1327,7 @@ Add or extend tests in `EdFi.DataManagementService.Backend.Postgresql.Tests.Inte
 - Read back the document and verify:
   - The updated fields are correct.
   - Unchanged fields remain unchanged.
+ - Ensure that when `DocumentUpdateStrategy = FullDocument`, behavior and results are unchanged from today.
 
 For WAL/TOAST impact, use the separate performance testing suite (`Suite-3-Performance-Testing`) and compare:
 
