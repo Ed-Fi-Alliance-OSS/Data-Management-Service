@@ -21,16 +21,41 @@ AS
 $$
 DECLARE
     reference_partition TEXT;
-    current_session_id INTEGER := pg_backend_pid();
     needs_upsert BOOLEAN := TRUE;
     stage_has_difference BOOLEAN := FALSE;
     reference_has_orphans BOOLEAN := FALSE;
 BEGIN
     reference_partition := format('reference_%s', lpad(p_parentDocumentPartitionKey::text, 2, '0'));
 
-    -- Reuse the unlogged staging table across calls, discard any leftovers from prior aborted executions.
-    DELETE FROM dms.ReferenceStage
-    WHERE SessionId = current_session_id;
+    -- Ensure each session has a private staging table, create it on first use.
+    IF to_regclass('pg_temp.reference_stage') IS NULL THEN
+        EXECUTE '
+            CREATE TEMP TABLE reference_stage (
+                parentdocumentid BIGINT NOT NULL,
+                parentdocumentpartitionkey SMALLINT NOT NULL,
+                referentialpartitionkey SMALLINT NOT NULL,
+                referentialid UUID NOT NULL,
+                aliasid BIGINT,
+                referenceddocumentid BIGINT,
+                referenceddocumentpartitionkey SMALLINT,
+                PRIMARY KEY (referentialpartitionkey, referentialid)
+            )
+            ON COMMIT DELETE ROWS
+        ';
+
+        EXECUTE '
+            CREATE INDEX reference_stage_alias_idx
+                ON reference_stage (aliasid)
+        ';
+
+        EXECUTE '
+            CREATE INDEX reference_stage_parent_idx
+                ON reference_stage (parentdocumentpartitionkey, parentdocumentid)
+        ';
+    END IF;
+
+    -- Clear leftover rows from previous calls to keep each invocation isolated.
+    TRUNCATE reference_stage;
 
     WITH staged AS (
         -- Materialize the incoming references along with resolved alias/document metadata.
@@ -49,8 +74,7 @@ BEGIN
             ON a.ReferentialId = ids.referentialId
            AND a.ReferentialPartitionKey = ids.referentialPartitionKey
     )
-    INSERT INTO dms.ReferenceStage (
-        SessionId,
+    INSERT INTO reference_stage (
         parentdocumentid,
         parentdocumentpartitionkey,
         referentialpartitionkey,
@@ -60,7 +84,6 @@ BEGIN
         referenceddocumentpartitionkey
     )
     SELECT
-        current_session_id,
         parentdocumentid,
         parentdocumentpartitionkey,
         referentialpartitionkey,
@@ -73,9 +96,8 @@ BEGIN
     SELECT
         COALESCE(array_agg(DISTINCT referentialid), ARRAY[]::uuid[])
     INTO invalid_ids
-    FROM dms.ReferenceStage
-    WHERE SessionId = current_session_id
-      AND parentdocumentid = p_parentDocumentId
+    FROM reference_stage
+    WHERE parentdocumentid = p_parentDocumentId
       AND parentdocumentpartitionkey = p_parentDocumentPartitionKey
       AND aliasid IS NULL;
 
@@ -91,13 +113,12 @@ BEGIN
                 $sql$
                 SELECT EXISTS (
                     SELECT 1
-                    FROM dms.ReferenceStage s
+                    FROM reference_stage s
                     LEFT JOIN dms.%I r
                       ON r.ParentDocumentPartitionKey = s.parentdocumentpartitionkey
                      AND r.ParentDocumentId = s.parentdocumentid
                      AND r.AliasId = s.aliasid
-                    WHERE s.SessionId = $1
-                      AND s.aliasid IS NOT NULL
+                    WHERE s.aliasid IS NOT NULL
                       AND (
                           r.AliasId IS NULL
                        OR r.ReferentialPartitionKey IS DISTINCT FROM s.referentialpartitionkey
@@ -108,8 +129,7 @@ BEGIN
                 $sql$,
                 reference_partition
             )
-            INTO stage_has_difference
-            USING current_session_id;
+            INTO stage_has_difference;
 
             IF NOT stage_has_difference THEN
                 EXECUTE format(
@@ -121,9 +141,8 @@ BEGIN
                           AND r.ParentDocumentId = $1
                           AND NOT EXISTS (
                               SELECT 1
-                              FROM dms.ReferenceStage s
-                              WHERE s.SessionId = $3
-                                AND s.parentdocumentpartitionkey = r.ParentDocumentPartitionKey
+                              FROM reference_stage s
+                              WHERE s.parentdocumentpartitionkey = r.ParentDocumentPartitionKey
                                 AND s.parentdocumentid = r.ParentDocumentId
                                 AND s.aliasid = r.AliasId
                                 AND s.referentialpartitionkey = r.ReferentialPartitionKey
@@ -135,7 +154,7 @@ BEGIN
                     reference_partition
                 )
                 INTO reference_has_orphans
-                USING p_parentDocumentId, p_parentDocumentPartitionKey, current_session_id;
+                USING p_parentDocumentId, p_parentDocumentPartitionKey;
 
                 IF NOT reference_has_orphans THEN
                     needs_upsert := FALSE;
@@ -160,9 +179,8 @@ BEGIN
                 s.referentialpartitionkey,
                 s.referenceddocumentid,
                 s.referenceddocumentpartitionkey
-            FROM dms.ReferenceStage s
-            WHERE s.SessionId = current_session_id
-              AND s.aliasid IS NOT NULL
+            FROM reference_stage s
+            WHERE s.aliasid IS NOT NULL
             -- Use the unique constraint to detect existing reference rows. Deduplicated staging
             -- rows ensure ON CONFLICT only fires once per target row within a single statement.
             ON CONFLICT ON CONSTRAINT ux_reference_parent_alias
@@ -191,9 +209,8 @@ BEGIN
                       AND r.ParentDocumentId = $1
                       AND NOT EXISTS (
                           SELECT 1
-                          FROM dms.ReferenceStage s
-                          WHERE s.SessionId = $3
-                            AND s.parentdocumentpartitionkey = $2
+                          FROM reference_stage s
+                          WHERE s.parentdocumentpartitionkey = $2
                             AND s.parentdocumentid = $1
                             AND s.aliasid = r.aliasid
                             AND s.referentialpartitionkey = r.referentialpartitionkey
@@ -204,14 +221,13 @@ BEGIN
                     'dms',
                     reference_partition
                 )
-                USING p_parentDocumentId, p_parentDocumentPartitionKey, current_session_id;
+                USING p_parentDocumentId, p_parentDocumentPartitionKey;
             END IF;
         END IF;
     END IF;
 
-    -- Ensure the session-specific staging rows are cleared before returning.
-    DELETE FROM dms.ReferenceStage
-    WHERE SessionId = current_session_id;
+    -- Clear the session-local staging rows before returning to keep memory usage stable.
+    TRUNCATE reference_stage;
 
     RETURN QUERY
     SELECT
