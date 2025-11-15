@@ -54,9 +54,6 @@ BEGIN
         ';
     END IF;
 
-    -- Clear leftover rows from previous calls to keep each invocation isolated.
-    DELETE FROM reference_stage;
-
     WITH staged AS (
         -- Materialize the incoming references along with resolved alias/document metadata.
         SELECT
@@ -225,9 +222,6 @@ BEGIN
             END IF;
         END IF;
     END IF;
-
-    -- Clear the session-local staging rows before returning to keep memory usage stable.
-    DELETE FROM reference_stage;
 
     RETURN QUERY
     SELECT
