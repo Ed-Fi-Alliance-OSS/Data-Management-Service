@@ -59,27 +59,31 @@ internal static class BatchRequestParser
 
     private static BatchOperation ParseOperation(JsonObject operationNode, int index, RequestInfo requestInfo)
     {
-        string? op = operationNode["op"]?.GetValue<string>();
-        if (!BatchOperationTypeExtensions.TryParse(op, out var operationType))
+        string opValue = ReadRequiredString(
+            operationNode,
+            propertyName: "op",
+            index,
+            requestInfo,
+            "must specify 'op' as a string value."
+        );
+
+        if (!BatchOperationTypeExtensions.TryParse(opValue, out var operationType))
         {
             throw new BatchRequestException(
                 CreateValidationError(
                     requestInfo,
-                    $"Operation at index {index} has invalid 'op' value '{op ?? "<null>"}'."
+                    $"Operation at index {index} has invalid 'op' value '{opValue}'."
                 )
             );
         }
 
-        string? resourceName = operationNode["resource"]?.GetValue<string>();
-        if (string.IsNullOrWhiteSpace(resourceName))
-        {
-            throw new BatchRequestException(
-                CreateValidationError(
-                    requestInfo,
-                    $"Operation at index {index} must specify a non-empty 'resource'."
-                )
-            );
-        }
+        string resourceName = ReadRequiredString(
+            operationNode,
+            propertyName: "resource",
+            index,
+            requestInfo,
+            "must specify a non-empty 'resource'."
+        );
 
         JsonObject? document = operationNode["document"] as JsonObject;
         JsonObject? naturalKey = operationNode["naturalKey"] as JsonObject;
@@ -212,6 +216,29 @@ internal static class BatchRequestParser
                 ),
                 Headers: []
             )
+        );
+    }
+
+    private static string ReadRequiredString(
+        JsonObject node,
+        string propertyName,
+        int index,
+        RequestInfo requestInfo,
+        string failureDetail
+    )
+    {
+        if (
+            node.TryGetPropertyValue(propertyName, out JsonNode? jsonNode)
+            && jsonNode is JsonValue jsonValue
+            && jsonValue.TryGetValue(out string? text)
+            && !string.IsNullOrWhiteSpace(text)
+        )
+        {
+            return text!;
+        }
+
+        throw new BatchRequestException(
+            CreateValidationError(requestInfo, $"Operation at index {index} {failureDetail}")
         );
     }
 

@@ -134,11 +134,7 @@ internal class BatchHandler(
             return;
         }
 
-        await _resiliencePipeline.ExecuteAsync(async _ =>
-        {
-            await ExecuteBatchOperationsAsync(requestInfo, operations);
-            return true;
-        });
+        await ExecuteBatchOperationsAsync(requestInfo, operations);
     }
 
     private async Task ExecuteBatchOperationsAsync(
@@ -587,7 +583,9 @@ internal class BatchHandler(
             ResourceAuthorizationPathways: operationRequestInfo.AuthorizationPathways
         );
 
-        var result = await unitOfWork.UpsertDocumentAsync(upsertRequest);
+        var result = await _resiliencePipeline.ExecuteAsync(async _ =>
+            await unitOfWork.UpsertDocumentAsync(upsertRequest)
+        );
         return InterpretUpsertResult(operationRequestInfo, result);
     }
 
@@ -612,7 +610,9 @@ internal class BatchHandler(
             ResourceAuthorizationPathways: operationRequestInfo.AuthorizationPathways
         );
 
-        var result = await unitOfWork.UpdateDocumentByIdAsync(updateRequest);
+        var result = await _resiliencePipeline.ExecuteAsync(async _ =>
+            await unitOfWork.UpdateDocumentByIdAsync(updateRequest)
+        );
         return InterpretUpdateResult(operationRequestInfo, result);
     }
 
@@ -634,7 +634,9 @@ internal class BatchHandler(
             Headers: operationRequestInfo.FrontendRequest.Headers
         );
 
-        var result = await unitOfWork.DeleteDocumentByIdAsync(deleteRequest);
+        var result = await _resiliencePipeline.ExecuteAsync(async _ =>
+            await unitOfWork.DeleteDocumentByIdAsync(deleteRequest)
+        );
         return InterpretDeleteResult(operationRequestInfo, result);
     }
 
@@ -846,7 +848,14 @@ internal class BatchHandler(
                 requestInfo.PathComponents.DocumentUuid
             ),
             DeleteResult.DeleteFailureNotExists => OperationExecutionResult.Failure(
-                new FrontendResponse(StatusCode: 404, Body: null, Headers: [])
+                new FrontendResponse(
+                    StatusCode: 404,
+                    Body: FailureResponse.ForNotFound(
+                        "Resource to delete was not found",
+                        traceId: requestInfo.FrontendRequest.TraceId
+                    ),
+                    Headers: []
+                )
             ),
             DeleteResult.DeleteFailureNotAuthorized notAuthorized => OperationExecutionResult.Failure(
                 new FrontendResponse(
@@ -869,7 +878,11 @@ internal class BatchHandler(
                 )
             ),
             DeleteResult.DeleteFailureWriteConflict => OperationExecutionResult.Failure(
-                new FrontendResponse(StatusCode: 409, Body: null, Headers: [])
+                new FrontendResponse(
+                    StatusCode: 409,
+                    Body: CreateWriteConflictProblem(requestInfo.FrontendRequest.TraceId),
+                    Headers: []
+                )
             ),
             DeleteResult.DeleteFailureETagMisMatch => OperationExecutionResult.Failure(
                 new FrontendResponse(
@@ -1059,5 +1072,19 @@ internal class BatchHandler(
 
         public static OperationExecutionResult Failure(FrontendResponse response) =>
             new(false, null, response);
+    }
+
+    private static JsonObject CreateWriteConflictProblem(TraceId traceId)
+    {
+        return new JsonObject
+        {
+            ["detail"] = "The item could not be modified because of a write conflict. Retry the request.",
+            ["type"] = "urn:ed-fi:api:data-conflict:write-conflict",
+            ["title"] = "Write Conflict",
+            ["status"] = 409,
+            ["correlationId"] = traceId.Value,
+            ["validationErrors"] = new JsonObject(),
+            ["errors"] = new JsonArray(),
+        };
     }
 }
