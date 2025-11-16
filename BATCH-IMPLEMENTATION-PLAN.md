@@ -37,8 +37,8 @@
       [X] Update logging inside BatchHandler to emit batch size and per-operation summaries per Section 8.1; consider exposing metric hooks (even if initially no-ops) so we can quickly add counters later.
 [X] **6. Unit testing strategy**
       [X] BatchRequestParser: empty body, non-array payloads, invalid op/resource/documentId, documentId vs naturalKey enforcement, malformed naturalKey.
-      [X] BatchHandler (core logic): limit enforcement, zero operations, missing `IBatchUnitOfWorkFactory`, short-circuit responses from validation pipelines, natural key mismatch for immutable resources, ETag rejection, authorization failures. Use fakes/mocks for `IBatchUnitOfWork`, validation pipelines, and schema dependencies to keep tests fast.
-      [X] Backend unit tests for PostgresqlBatchUnitOfWork: multiple upserts/updates/deletes in a single transaction, rollback when `CommitAsync` not called, deterministic natural-key resolution (mocking `ISqlAction`).
+      [X] BatchHandler (core logic): limit enforcement, zero operations, missing `IBatchUnitOfWorkFactory`, short-circuit responses from validation pipelines, natural key mismatch for immutable resources, ETag rejection, authorization failures. Use fakes/mocks for `IBatchUnitOfWork`, validation pipelines, and schema dependencies to keep tests fast. (See `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/Handler/BatchHandlerTests.cs`.)
+      [X] Backend coverage for PostgresqlBatchUnitOfWork now lives in `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlBatchUnitOfWorkTests.cs`, exercising multiple upserts/updates/deletes in one transaction, rollback without `CommitAsync`, and deterministic natural-key resolution against a real PostgreSQL instance (unit tests can’t fake `NpgsqlConnection`/`NpgsqlTransaction`).
       [X] Discovery/endpoint wiring tests: ensure `/batch` is exposed via `BatchEndpointModule`, discovery document includes `batchApi`.
 
 [ ] **7. Integration testing strategy**
@@ -48,3 +48,5 @@
       [ ] Scenario: failure mid-batch (descriptor validation, referential conflict, authorization) -> assert rollback occurs.
       [ ] Scenario: ETag mismatch update (stale `_etag`) with rollback + 412 response.
       [ ] Scenario: limit enforcement (over `BatchMaxOperations`) and zero-op batch.
+
+      
