@@ -225,6 +225,7 @@ The request body is a **JSON array of operation objects**:
 | `document` | object  | `create`/`update`    | Full resource document for create/update (POST/PUT semantics).              |
 | `documentId` | string  | `update`/`delete` ∗ | The resource `id`/document UUID. Must not be combined with `naturalKey`.    |
 | `naturalKey` | object | `update`/`delete` ∗ | JSON object containing the full natural key (identity fields).              |
+| `ifMatch`  | string  | Optional on `update`/`delete` | Per-operation ETag value that overrides the HTTP `If-Match` header, enabling different optimistic-lock tokens within a single batch. |
 
 ∗ For `update`/`delete`, **exactly one** of `documentId` or `naturalKey` must be provided.
 
@@ -246,6 +247,7 @@ The request body is a **JSON array of operation objects**:
 - `naturalKey` is an object whose properties match the resource’s identity properties:
   - For `Student`: e.g., `{ "studentUniqueId": "S-123" }`.
   - For composite identities: all components must be present.
+- For association-style identities that use nested references (e.g., `studentReference.studentUniqueId`), the API accepts either the full nested shape **or** the simplified form shown above; the server maps the flattened keys to the appropriate JSON paths before resolving document identities.
 - Internally:
   - Core constructs a `JsonObject` representing only the identity fields.
   - `IdentityExtractor.ExtractDocumentIdentity` is reused with that JSON to build a `DocumentIdentity`.
@@ -265,6 +267,7 @@ The request body is a **JSON array of operation objects**:
 - `update`:
   - `document` is a **full replacement** document (PUT semantics).
   - `_etag` is required and must be current; the backend enforces optimistic locking using existing helpers.
+  - Optional `ifMatch` values in each operation override the HTTP `If-Match` header so multiple updates in the same batch can carry distinct ETag tokens.
   - For `documentId`-based updates:
     - The `documentId` from the operation and any `id` in the document must match.
     - If `id` is omitted, core will inject the `documentId` into the document before validation, to preserve `ValidateMatchingDocumentUuidsMiddleware` semantics.

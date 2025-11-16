@@ -84,6 +84,23 @@ internal static class BatchRequestParser
         JsonObject? document = operationNode["document"] as JsonObject;
         JsonObject? naturalKey = operationNode["naturalKey"] as JsonObject;
         DocumentUuid? documentUuid = TryParseDocumentUuid(operationNode["documentId"], requestInfo, index);
+        string? ifMatch = null;
+        if (operationNode.TryGetPropertyValue("ifMatch", out JsonNode? ifMatchNode))
+        {
+            if (ifMatchNode is JsonValue ifMatchValue && ifMatchValue.TryGetValue(out string? headerValue))
+            {
+                ifMatch = headerValue;
+            }
+            else if (ifMatchNode != null)
+            {
+                throw new BatchRequestException(
+                    CreateValidationError(
+                        requestInfo,
+                        $"Operation at index {index} has an invalid 'ifMatch' value. Expected a string."
+                    )
+                );
+            }
+        }
 
         switch (operationType)
         {
@@ -135,13 +152,24 @@ internal static class BatchRequestParser
                 break;
         }
 
+        if (!string.IsNullOrWhiteSpace(ifMatch) && operationType == BatchOperationType.Create)
+        {
+            throw new BatchRequestException(
+                CreateValidationError(
+                    requestInfo,
+                    $"Operation at index {index} must not provide 'ifMatch' for create actions."
+                )
+            );
+        }
+
         return new BatchOperation(
             Index: index,
             OperationType: operationType,
             Resource: new ResourceName(resourceName),
             Document: document,
             NaturalKey: naturalKey,
-            DocumentId: documentUuid
+            DocumentId: documentUuid,
+            IfMatch: string.IsNullOrWhiteSpace(ifMatch) ? null : ifMatch
         );
     }
 

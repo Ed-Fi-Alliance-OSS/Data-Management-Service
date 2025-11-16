@@ -204,6 +204,7 @@ internal class BatchHandler(
 
             string path = BuildOperationPath(resolvedResource, targetDocumentUuid);
             RequestInfo operationRequestInfo = CreateOperationRequestInfo(
+                operation,
                 requestInfo,
                 method,
                 path,
@@ -395,11 +396,24 @@ internal class BatchHandler(
             );
         }
 
+        if (
+            !TryNormalizeNaturalKey(
+                naturalKey,
+                resolvedResource,
+                requestInfo,
+                out JsonObject normalizedNaturalKey,
+                out var normalizationError
+            )
+        )
+        {
+            return NaturalKeyResolutionResult.Failure(normalizationError!);
+        }
+
         try
         {
             DocumentIdentity identity = IdentityExtractor.ExtractDocumentIdentity(
                 resolvedResource.ResourceSchema,
-                naturalKey,
+                normalizedNaturalKey,
                 _logger
             );
             return NaturalKeyResolutionResult.Successful(identity);
@@ -443,6 +457,7 @@ internal class BatchHandler(
     }
 
     private RequestInfo CreateOperationRequestInfo(
+        BatchOperation operation,
         RequestInfo batchRequestInfo,
         RequestMethod method,
         string path,
@@ -451,10 +466,18 @@ internal class BatchHandler(
     {
         string? body = document?.ToJsonString(new JsonSerializerOptions(JsonSerializerDefaults.Web));
 
+        Dictionary<string, string> headers = CloneHeaders(batchRequestInfo.FrontendRequest.Headers);
+
+        headers.Remove("If-Match");
+        if (!string.IsNullOrWhiteSpace(operation.IfMatch))
+        {
+            headers["If-Match"] = operation.IfMatch!;
+        }
+
         FrontendRequest frontendRequest = new(
             Path: path,
             Body: body,
-            Headers: batchRequestInfo.FrontendRequest.Headers,
+            Headers: headers,
             QueryParameters: new Dictionary<string, string>(),
             TraceId: batchRequestInfo.FrontendRequest.TraceId
         );
@@ -917,6 +940,94 @@ internal class BatchHandler(
                 LocationHeaderPath: response.LocationHeaderPath,
                 ContentType: response.ContentType
             );
+
+    private static Dictionary<string, string> CloneHeaders(IReadOnlyDictionary<string, string> headers) =>
+        new(headers, StringComparer.OrdinalIgnoreCase);
+
+    private static bool TryNormalizeNaturalKey(
+        JsonObject naturalKey,
+        ResolvedResource resolvedResource,
+        RequestInfo requestInfo,
+        out JsonObject normalized,
+        out FrontendResponse? errorResponse
+    )
+    {
+        normalized = new JsonObject();
+
+        foreach (var identityPath in resolvedResource.ResourceSchema.IdentityJsonPaths)
+        {
+            string[] segments = ParseIdentitySegments(identityPath);
+            JsonNode? valueNode = TryGetNestedValue(naturalKey, segments);
+
+            if (valueNode == null)
+            {
+                string flatKey = segments[^1];
+                if (naturalKey.TryGetPropertyValue(flatKey, out JsonNode? flatValue))
+                {
+                    valueNode = flatValue?.DeepClone();
+                }
+            }
+
+            if (valueNode == null)
+            {
+                errorResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    Body: FailureResponse.ForBadRequest(
+                        $"naturalKey is missing required value for '{identityPath.Value}'.",
+                        requestInfo.FrontendRequest.TraceId,
+                        [],
+                        []
+                    ),
+                    Headers: []
+                );
+                return false;
+            }
+
+            AssignNormalizedValue(normalized, segments, valueNode);
+        }
+
+        errorResponse = null;
+        return true;
+    }
+
+    private static JsonNode? TryGetNestedValue(JsonObject source, IReadOnlyList<string> segments)
+    {
+        JsonNode? current = source;
+        foreach (string segment in segments)
+        {
+            if (current is not JsonObject obj || !obj.TryGetPropertyValue(segment, out current))
+            {
+                return null;
+            }
+        }
+
+        return current?.DeepClone();
+    }
+
+    private static void AssignNormalizedValue(JsonObject root, IReadOnlyList<string> segments, JsonNode value)
+    {
+        JsonObject current = root;
+
+        for (int i = 0; i < segments.Count - 1; i++)
+        {
+            if (current[segments[i]] is not JsonObject child)
+            {
+                child = new JsonObject();
+                current[segments[i]] = child;
+            }
+
+            current = child;
+        }
+
+        current[segments[^1]] = value;
+    }
+
+    private static string[] ParseIdentitySegments(JsonPath identityPath)
+    {
+        return identityPath
+            .Value.TrimStart('$', '.')
+            .Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
 
     private sealed record ResolvedResource(
         ProjectSchema ProjectSchema,

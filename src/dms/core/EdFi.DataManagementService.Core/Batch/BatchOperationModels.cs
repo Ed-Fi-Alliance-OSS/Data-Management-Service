@@ -54,7 +54,8 @@ internal sealed record BatchOperation(
     ResourceName Resource,
     JsonObject? Document,
     JsonObject? NaturalKey,
-    DocumentUuid? DocumentId
+    DocumentUuid? DocumentId,
+    string? IfMatch
 );
 
 internal sealed record BatchOperationSuccess(
