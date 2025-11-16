@@ -339,7 +339,7 @@ Body:
 
 #### 3.4.2 Batch Operation Failure (Transactional Rollback)
 
-- **Status**: `400 Bad Request` (aggregated contract)
+- **Status**: mirrors the underlying failing operation (e.g., 400, 403, 404, 409, 412)
 - Trigger:
   - Any operation fails for reasons that map to 4xx or 409 semantics in the
     existing single-resource endpoints:
@@ -357,24 +357,42 @@ Body:
 
 ```json
 {
-  "error": "Batch operation failed and was rolled back.",
+  "detail": "Batch operation failed and was rolled back.",
+  "type": "urn:ed-fi:api:batch-operation-failed",
+  "title": "Batch Operation Failed",
+  "status": 400,
+  "correlationId": "<trace-id>",
+  "validationErrors": {},
+  "errors": [],
   "failedOperation": {
     "index": 1,
     "op": "create",
     "resource": "Student",
-    "httpStatus": 409,
-    "errorCode": "DUPLICATE_NATURAL_KEY",
-    "message": "Operation 1 (create 'Student') failed: A student with natural key 'S-JANE-DOE-001' already exists."
+    "problem": {
+      "detail": "Data validation failed. See 'validationErrors' for details.",
+      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+      "title": "Data Validation Failed",
+      "status": 400,
+      "correlationId": "<trace-id>",
+      "validationErrors": {
+        "$.studentUniqueId": [
+          "A student with natural key 'S-JANE-DOE-001' already exists."
+        ]
+      },
+      "errors": []
+    }
   }
 }
 ```
 
 Behavior:
 
-- `httpStatus` reflects the underlying operation’s single-call status (e.g., 404, 409, 412, 403).
-- `errorCode` is a stable code derived from the `*Result` type (e.g.,
-  `UpdateFailureETagMisMatch`, `UpdateFailureIdentityConflict`, `DeleteFailureReference`) mapped to more user-friendly codes.
-- The outer HTTP status is always `400` for now, but we preserve more detail in `failedOperation.httpStatus`.
+- The outer object follows the standard DMS problem-details shape (`detail`, `type`, `title`, `status`, `correlationId`, `validationErrors`, `errors`).
+- `failedOperation.index` is the zero-based index of the failing operation in the request array.
+- `failedOperation.op` and `failedOperation.resource` echo the request operation.
+- `failedOperation.problem` is the exact problem-details JSON that would have been returned if the same operation were invoked as a standalone request:
+  - `type`, `title`, `detail`, `status`, `validationErrors`, and `errors` come from the existing handlers and `FailureResponse` helpers.
+- The HTTP response status should normally match `failedOperation.problem.status` (e.g., 409 for identity conflicts, 412 for ETag mismatches), preserving consistency with non-batch endpoints.
 
 #### 3.4.3 Authentication Failures
 
