@@ -903,12 +903,12 @@ public class AppSettings
     /// <summary>
     /// Maximum number of operations allowed in a single batch request.
     /// </summary>
-    public int BatchMaxOperations { get; set; } = 500;
+    public int BatchMaxOperations { get; set; } = 100;
 }
 ```
 
 - `BatchMaxOperations` is read by `BatchHandler` from `_appSettings.Value`.
-- Default chosen per `BATCH-API-INITIAL-DESIGN.md` (500), subject to tuning.
+- Default of 100, subject to tuning.
 
 ### 7.2 Frontend Request Size
 
@@ -1018,9 +1018,6 @@ Future refinement:
   - Start dms-local stack and exercise `/batch` endpoint using realistic
     data models.
   - Validate:
-    - WAL write waits and throughput improvements compared to equivalent
-      single-call loads (for performance testing environments).
-    - That Kafka/OpenSearch still see the same logical changes.
     - That claim-set based authorization behaves identically to single-call
       endpoints.
   - Example scenarios:
@@ -1033,7 +1030,6 @@ Future refinement:
 
 - No changes to existing `/data` routes or handlers.
 - Batch endpoint is additive and can be gated by:
-  - Deploy-time configuration (e.g., feature flag in frontend appsettings).
   - Presence/absence of `IBatchUnitOfWorkFactory`.
 
 ---
