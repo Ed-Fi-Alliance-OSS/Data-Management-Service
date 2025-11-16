@@ -559,6 +559,8 @@ await using var uow = await _batchUnitOfWorkFactory.BeginAsync(
 
 #### 4.3.4 Per-operation Processing Overview
 
+**See the BATCH-PER-OPERATION-PROCESSING.md file for implementation details for this section.**
+
 For each operation `op` at `index`:
 
 1. **Resolve resource & schemas**:
