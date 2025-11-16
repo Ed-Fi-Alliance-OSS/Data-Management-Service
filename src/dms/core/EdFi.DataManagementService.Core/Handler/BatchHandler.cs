@@ -7,12 +7,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Batch;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -72,6 +74,7 @@ internal class BatchHandler(
         catch (BatchRequestException ex)
         {
             _logger.LogWarning(
+                ex,
                 "Batch request parsing failed for TraceId {TraceId}: {Message}",
                 requestInfo.FrontendRequest.TraceId.Value,
                 ex.Message
@@ -224,7 +227,6 @@ internal class BatchHandler(
             string path = BuildOperationPath(resolvedResource, targetDocumentUuid);
             RequestInfo operationRequestInfo = CreateOperationRequestInfo(
                 requestInfo,
-                resolvedResource,
                 method,
                 path,
                 operation.Document
@@ -259,7 +261,6 @@ internal class BatchHandler(
 
             var executionResult = await ExecuteBackendOperationAsync(
                 operation,
-                resolvedResource,
                 operationRequestInfo,
                 unitOfWork,
                 targetDocumentUuid
@@ -299,7 +300,7 @@ internal class BatchHandler(
             _ => throw new ArgumentOutOfRangeException(nameof(operationType), operationType, null),
         };
 
-    private bool TryResolveResource(
+    private static bool TryResolveResource(
         BatchOperation operation,
         RequestInfo requestInfo,
         out ResolvedResource resolvedResource,
@@ -415,7 +416,6 @@ internal class BatchHandler(
 
     private RequestInfo CreateOperationRequestInfo(
         RequestInfo batchRequestInfo,
-        ResolvedResource resolvedResource,
         RequestMethod method,
         string path,
         JsonObject? document
@@ -484,7 +484,6 @@ internal class BatchHandler(
 
     private async Task<OperationExecutionResult> ExecuteBackendOperationAsync(
         BatchOperation operation,
-        ResolvedResource resolvedResource,
         RequestInfo operationRequestInfo,
         IBatchUnitOfWork unitOfWork,
         DocumentUuid? targetDocumentUuid
@@ -588,17 +587,19 @@ internal class BatchHandler(
         return InterpretDeleteResult(operationRequestInfo, result);
     }
 
-    private OperationExecutionResult InterpretUpsertResult(
+    private static OperationExecutionResult InterpretUpsertResult(
         RequestInfo requestInfo,
         UpsertResult upsertResult
     ) =>
         upsertResult switch
         {
-            InsertSuccess insertSuccess => OperationExecutionResult.Success(insertSuccess.NewDocumentUuid),
-            UpdateSuccess updateSuccess => OperationExecutionResult.Success(
+            UpsertResult.InsertSuccess insertSuccess => OperationExecutionResult.Successful(
+                insertSuccess.NewDocumentUuid
+            ),
+            UpsertResult.UpdateSuccess updateSuccess => OperationExecutionResult.Successful(
                 updateSuccess.ExistingDocumentUuid
             ),
-            UpsertFailureDescriptorReference failure => OperationExecutionResult.Failure(
+            UpsertResult.UpsertFailureDescriptorReference failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 400,
                     Body: FailureResponse.ForBadRequest(
@@ -617,7 +618,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UpsertFailureReference failure => OperationExecutionResult.Failure(
+            UpsertResult.UpsertFailureReference failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 409,
                     Body: FailureResponse.ForInvalidReferences(
@@ -627,7 +628,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UpsertFailureIdentityConflict failure => OperationExecutionResult.Failure(
+            UpsertResult.UpsertFailureIdentityConflict failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 409,
                     Body: FailureResponse.ForIdentityConflict(
@@ -640,10 +641,10 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UpsertFailureWriteConflict => OperationExecutionResult.Failure(
+            UpsertResult.UpsertFailureWriteConflict => OperationExecutionResult.Failure(
                 new FrontendResponse(StatusCode: 409, Body: null, Headers: [])
             ),
-            UpsertFailureNotAuthorized failure => OperationExecutionResult.Failure(
+            UpsertResult.UpsertFailureNotAuthorized failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 403,
                     Body: FailureResponse.ForForbidden(
@@ -654,7 +655,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UnknownFailure failure => OperationExecutionResult.Failure(
+            UpsertResult.UnknownFailure failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 500,
                     Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
@@ -670,16 +671,16 @@ internal class BatchHandler(
             ),
         };
 
-    private OperationExecutionResult InterpretUpdateResult(
+    private static OperationExecutionResult InterpretUpdateResult(
         RequestInfo requestInfo,
         UpdateResult updateResult
     ) =>
         updateResult switch
         {
-            UpdateSuccess updateSuccess => OperationExecutionResult.Success(
+            UpdateResult.UpdateSuccess updateSuccess => OperationExecutionResult.Successful(
                 updateSuccess.ExistingDocumentUuid
             ),
-            UpdateFailureETagMisMatch => OperationExecutionResult.Failure(
+            UpdateResult.UpdateFailureETagMisMatch => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 412,
                     Body: FailureResponse.ForETagMisMatch(
@@ -693,7 +694,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UpdateFailureNotExists => OperationExecutionResult.Failure(
+            UpdateResult.UpdateFailureNotExists => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 404,
                     Body: FailureResponse.ForNotFound(
@@ -703,7 +704,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UpdateFailureDescriptorReference failure => OperationExecutionResult.Failure(
+            UpdateResult.UpdateFailureDescriptorReference failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 400,
                     Body: FailureResponse.ForBadRequest(
@@ -722,7 +723,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UpdateFailureReference failure => OperationExecutionResult.Failure(
+            UpdateResult.UpdateFailureReference failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 409,
                     Body: FailureResponse.ForInvalidReferences(
@@ -732,7 +733,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UpdateFailureIdentityConflict failure => OperationExecutionResult.Failure(
+            UpdateResult.UpdateFailureIdentityConflict failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 409,
                     Body: FailureResponse.ForIdentityConflict(
@@ -745,10 +746,10 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UpdateFailureWriteConflict => OperationExecutionResult.Failure(
+            UpdateResult.UpdateFailureWriteConflict => OperationExecutionResult.Failure(
                 new FrontendResponse(StatusCode: 409, Body: null, Headers: [])
             ),
-            UpdateFailureImmutableIdentity failure => OperationExecutionResult.Failure(
+            UpdateResult.UpdateFailureImmutableIdentity failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 400,
                     Body: FailureResponse.ForImmutableIdentity(
@@ -758,7 +759,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UpdateFailureNotAuthorized failure => OperationExecutionResult.Failure(
+            UpdateResult.UpdateFailureNotAuthorized failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 403,
                     Body: FailureResponse.ForForbidden(
@@ -768,7 +769,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UnknownFailure failure => OperationExecutionResult.Failure(
+            UpdateResult.UnknownFailure failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 500,
                     Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
@@ -784,17 +785,19 @@ internal class BatchHandler(
             ),
         };
 
-    private OperationExecutionResult InterpretDeleteResult(
+    private static OperationExecutionResult InterpretDeleteResult(
         RequestInfo requestInfo,
         DeleteResult deleteResult
     ) =>
         deleteResult switch
         {
-            DeleteSuccess => OperationExecutionResult.Success(requestInfo.PathComponents.DocumentUuid),
-            DeleteFailureNotExists => OperationExecutionResult.Failure(
+            DeleteResult.DeleteSuccess => OperationExecutionResult.Successful(
+                requestInfo.PathComponents.DocumentUuid
+            ),
+            DeleteResult.DeleteFailureNotExists => OperationExecutionResult.Failure(
                 new FrontendResponse(StatusCode: 404, Body: null, Headers: [])
             ),
-            DeleteFailureNotAuthorized notAuthorized => OperationExecutionResult.Failure(
+            DeleteResult.DeleteFailureNotAuthorized notAuthorized => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 403,
                     Body: FailureResponse.ForForbidden(
@@ -804,7 +807,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            DeleteFailureReference failure => OperationExecutionResult.Failure(
+            DeleteResult.DeleteFailureReference failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 409,
                     Body: FailureResponse.ForDataConflict(
@@ -814,10 +817,10 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            DeleteFailureWriteConflict => OperationExecutionResult.Failure(
+            DeleteResult.DeleteFailureWriteConflict => OperationExecutionResult.Failure(
                 new FrontendResponse(StatusCode: 409, Body: null, Headers: [])
             ),
-            DeleteFailureETagMisMatch => OperationExecutionResult.Failure(
+            DeleteResult.DeleteFailureETagMisMatch => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 412,
                     Body: FailureResponse.ForETagMisMatch(
@@ -831,7 +834,7 @@ internal class BatchHandler(
                     Headers: []
                 )
             ),
-            UnknownFailure failure => OperationExecutionResult.Failure(
+            DeleteResult.UnknownFailure failure => OperationExecutionResult.Failure(
                 new FrontendResponse(
                     StatusCode: 500,
                     Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
@@ -912,7 +915,7 @@ internal class BatchHandler(
         FrontendResponse? ErrorResponse
     )
     {
-        public static OperationExecutionResult Success(DocumentUuid documentUuid) =>
+        public static OperationExecutionResult Successful(DocumentUuid documentUuid) =>
             new(true, documentUuid, null);
 
         public static OperationExecutionResult Failure(FrontendResponse response) =>

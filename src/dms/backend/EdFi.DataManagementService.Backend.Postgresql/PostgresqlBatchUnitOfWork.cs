@@ -141,7 +141,7 @@ internal sealed class PostgresqlBatchUnitOfWork : IBatchUnitOfWork
 internal sealed class PostgresqlBatchUnitOfWorkFactory : IBatchUnitOfWorkFactory
 {
     private readonly NpgsqlDataSource _dataSource;
-    private readonly ILogger<PostgresqlBatchUnitOfWork> _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly IUpsertDocument _upsertDocument;
     private readonly IUpdateDocumentById _updateDocumentById;
     private readonly IDeleteDocumentById _deleteDocumentById;
@@ -150,7 +150,7 @@ internal sealed class PostgresqlBatchUnitOfWorkFactory : IBatchUnitOfWorkFactory
 
     public PostgresqlBatchUnitOfWorkFactory(
         NpgsqlDataSource dataSource,
-        ILogger<PostgresqlBatchUnitOfWork> logger,
+        ILoggerFactory loggerFactory,
         IUpsertDocument upsertDocument,
         IUpdateDocumentById updateDocumentById,
         IDeleteDocumentById deleteDocumentById,
@@ -159,7 +159,7 @@ internal sealed class PostgresqlBatchUnitOfWorkFactory : IBatchUnitOfWorkFactory
     )
     {
         _dataSource = dataSource;
-        _logger = logger;
+        _loggerFactory = loggerFactory;
         _upsertDocument = upsertDocument;
         _updateDocumentById = updateDocumentById;
         _deleteDocumentById = deleteDocumentById;
@@ -181,17 +181,20 @@ internal sealed class PostgresqlBatchUnitOfWorkFactory : IBatchUnitOfWorkFactory
             return new PostgresqlBatchUnitOfWork(
                 connection,
                 transaction,
-                _logger,
+                _loggerFactory.CreateLogger<PostgresqlBatchUnitOfWork>(),
                 _upsertDocument,
                 _updateDocumentById,
                 _deleteDocumentById,
                 _sqlAction
             );
         }
-        catch
+        catch (Exception ex)
         {
             await connection.DisposeAsync();
-            throw;
+            throw new InvalidOperationException(
+                "Failed to begin PostgreSQL batch unit of work transaction.",
+                ex
+            );
         }
     }
 }

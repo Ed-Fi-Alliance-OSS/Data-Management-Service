@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
 
 namespace EdFi.DataManagementService.Core.Batch;
 

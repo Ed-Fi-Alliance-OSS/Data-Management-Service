@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -172,23 +173,18 @@ internal static class BatchRequestParser
             );
         }
 
-        if (node != null)
-        {
-            throw new BatchRequestException(
-                new FrontendResponse(
-                    StatusCode: 400,
-                    Body: FailureResponse.ForBadRequest(
-                        $"Operation at index {index} has an invalid 'documentId' value.",
-                        traceId: requestInfo.FrontendRequest.TraceId,
-                        validationErrors: [],
-                        errors: []
-                    ),
-                    Headers: []
-                )
-            );
-        }
-
-        return null;
+        throw new BatchRequestException(
+            new FrontendResponse(
+                StatusCode: 400,
+                Body: FailureResponse.ForBadRequest(
+                    $"Operation at index {index} has an invalid 'documentId' value.",
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    validationErrors: [],
+                    errors: []
+                ),
+                Headers: []
+            )
+        );
     }
 
     private static async Task<JsonNode> ReadRequestBodyAsync(RequestInfo requestInfo)
@@ -253,6 +249,11 @@ internal static class BatchRequestParser
     }
 }
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Design",
+    "S3871:Exception types should be public",
+    Justification = "Exception exposes internal response types and is only used within Core batch parsing."
+)]
 internal sealed class BatchRequestException(FrontendResponse response) : Exception(response.Body?.ToString())
 {
     public FrontendResponse Response { get; } = response;
