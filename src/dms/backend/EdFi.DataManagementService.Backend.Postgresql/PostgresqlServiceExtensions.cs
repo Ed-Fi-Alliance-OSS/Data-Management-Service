@@ -52,6 +52,7 @@ public static class PostgresqlServiceExtensions
         services.AddSingleton<IUpsertDocument, UpsertDocument>();
         services.AddSingleton<IDeleteDocumentById, DeleteDocumentById>();
         services.AddSingleton<ISqlAction, SqlAction>();
+        services.AddSingleton<IBatchUnitOfWorkFactory, PostgresqlBatchUnitOfWorkFactory>();
         return services;
     }
 

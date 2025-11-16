@@ -23,13 +23,13 @@
             interprets *Result outcomes using the same mapping logic as today’s handlers to populate per-operation status or failure metadata.
           [X] Rolls back on the first failure (propagating the underlying HTTP status), logs the failing op index/type at Warning, and commits plus returns the ordered success array when all operations succeed.
           [X] Wraps the unit-of-work execution in the existing _resiliencePipeline so transient backend failures retry the entire batch once, matching the transactional semantics noted in Section 4.3.5.
-[ ] **4. Backend abstractions and PostgreSQL implementation**
-      [ ] Add IBatchUnitOfWork and IBatchUnitOfWorkFactory to the external interface assembly so the core can use them without a direct dependency on Npgsql types.
-      [ ] Implement PostgresqlBatchUnitOfWork that owns a single NpgsqlConnection/NpgsqlTransaction, delegates to the existing IUpsertDocument, IUpdateDocumentById, IDeleteDocumentById, and ISqlAction implementations, and
+[X] **4. Backend abstractions and PostgreSQL implementation**
+      [X] Add IBatchUnitOfWork and IBatchUnitOfWorkFactory to the external interface assembly so the core can use them without a direct dependency on Npgsql types.
+      [X] Implement PostgresqlBatchUnitOfWork that owns a single NpgsqlConnection/NpgsqlTransaction, delegates to the existing IUpsertDocument, IUpdateDocumentById, IDeleteDocumentById, and ISqlAction implementations, and
         supports ResolveDocumentUuidAsync, CommitAsync, RollbackAsync, and DisposeAsync.
-      [ ] Create PostgresqlBatchUnitOfWorkFactory that opens the connection, starts a transaction at the configured isolation level, and builds the unit of work; register it in PostgresqlServiceExtensions alongside the
+      [X] Create PostgresqlBatchUnitOfWorkFactory that opens the connection, starts a transaction at the configured isolation level, and builds the unit of work; register it in PostgresqlServiceExtensions alongside the
         other backend services.
-      [ ] Ensure the factory isn’t registered for unsupported datastores (MSSQL today) so the handler can detect the absence and emit 501.
+      [X] Ensure the factory isn’t registered for unsupported datastores (MSSQL today) so the handler can detect the absence and emit 501.
 [ ] **5. Configuration, limits, and observability**
       [ ] Extend EdFi.DataManagementService.Core.Configuration.AppSettings with BatchMaxOperations (default 100) and plumb it through IOptions<AppSettings> so BatchHandler can enforce the limit and log the chosen value
         at startup.
