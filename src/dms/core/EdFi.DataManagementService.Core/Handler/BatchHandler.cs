@@ -56,13 +56,8 @@ internal class BatchHandler(
     private readonly VersionedLazy<PipelineProvider> _upsertValidationPipeline = upsertValidationPipeline;
     private readonly VersionedLazy<PipelineProvider> _updateValidationPipeline = updateValidationPipeline;
     private readonly VersionedLazy<PipelineProvider> _deleteValidationPipeline = deleteValidationPipeline;
-    private readonly HashSet<string> _allowIdentityUpdateOverrides = new(
-        appSettings.Value.AllowIdentityUpdateOverrides.Split(
-            ',',
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
-        ),
-        StringComparer.OrdinalIgnoreCase
-    );
+
+    private static readonly DocumentUuid NaturalKeyTemporaryDocumentUuid = new(Guid.Empty);
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
@@ -167,61 +162,44 @@ internal class BatchHandler(
             }
 
             var method = MapMethod(operation.OperationType);
-            DocumentUuid? targetDocumentUuid = null;
+            bool requiresDocumentUuid = operation.OperationType != BatchOperationType.Create;
+            bool requiresNaturalKey = requiresDocumentUuid && !operation.DocumentId.HasValue;
+
+            DocumentUuid? targetDocumentUuid =
+                operation.DocumentId ?? (requiresNaturalKey ? NaturalKeyTemporaryDocumentUuid : null);
             DocumentIdentity? naturalKeyIdentity = null;
+            string? originalDocumentId = null;
 
-            if (operation.OperationType != BatchOperationType.Create)
+            if (requiresNaturalKey)
             {
-                if (operation.DocumentId.HasValue)
+                var naturalKeyResult = TryResolveNaturalKeyIdentity(operation, resolvedResource, requestInfo);
+                if (!naturalKeyResult.Success)
                 {
-                    targetDocumentUuid = operation.DocumentId;
-                }
-                else
-                {
-                    var naturalKeyResult = TryResolveNaturalKeyIdentity(
+                    await HandleFailureAsync(
+                        requestInfo,
+                        unitOfWork,
                         operation,
-                        resolvedResource,
-                        requestInfo
+                        naturalKeyResult.ErrorResponse!
                     );
-                    if (!naturalKeyResult.Success)
-                    {
-                        await HandleFailureAsync(
-                            requestInfo,
-                            unitOfWork,
-                            operation,
-                            naturalKeyResult.ErrorResponse!
-                        );
-                        return;
-                    }
-
-                    naturalKeyIdentity = naturalKeyResult.Identity;
-                    ResourceInfo lookupResourceInfo = CreateResourceInfo(resolvedResource);
-                    DocumentUuid? resolvedUuid = await unitOfWork.ResolveDocumentUuidAsync(
-                        lookupResourceInfo,
-                        naturalKeyIdentity!,
-                        requestInfo.FrontendRequest.TraceId
-                    );
-
-                    if (resolvedUuid == null)
-                    {
-                        var notFound = new FrontendResponse(
-                            StatusCode: 404,
-                            Body: FailureResponse.ForNotFound(
-                                "Resource to update was not found",
-                                requestInfo.FrontendRequest.TraceId
-                            ),
-                            Headers: []
-                        );
-                        await HandleFailureAsync(requestInfo, unitOfWork, operation, notFound);
-                        return;
-                    }
-
-                    targetDocumentUuid = resolvedUuid.Value;
-                    if (operation.Document is JsonObject doc)
-                    {
-                        doc["id"] = targetDocumentUuid.Value.ToString();
-                    }
+                    return;
                 }
+
+                naturalKeyIdentity = naturalKeyResult.Identity;
+
+                if (operation.Document is JsonObject doc)
+                {
+                    originalDocumentId = doc["id"]?.GetValue<string>();
+                    doc["id"] = NaturalKeyTemporaryDocumentUuid.Value.ToString();
+                }
+            }
+            else if (
+                operation.DocumentId.HasValue
+                && operation.OperationType == BatchOperationType.Update
+                && operation.Document is JsonObject doc
+                && doc["id"] == null
+            )
+            {
+                doc["id"] = operation.DocumentId.Value.Value.ToString();
             }
 
             string path = BuildOperationPath(resolvedResource, targetDocumentUuid);
@@ -257,6 +235,59 @@ internal class BatchHandler(
             {
                 await HandleFailureAsync(requestInfo, unitOfWork, operation, naturalKeyError!);
                 return;
+            }
+
+            if (requiresNaturalKey)
+            {
+                DocumentUuid? resolvedUuid = await unitOfWork.ResolveDocumentUuidAsync(
+                    operationRequestInfo.ResourceInfo,
+                    naturalKeyIdentity!,
+                    requestInfo.FrontendRequest.TraceId
+                );
+
+                if (resolvedUuid == null)
+                {
+                    var notFound = new FrontendResponse(
+                        StatusCode: 404,
+                        Body: FailureResponse.ForNotFound(
+                            "Resource to update was not found",
+                            requestInfo.FrontendRequest.TraceId
+                        ),
+                        Headers: []
+                    );
+                    await HandleFailureAsync(requestInfo, unitOfWork, operation, notFound);
+                    return;
+                }
+
+                if (
+                    originalDocumentId != null
+                    && (
+                        !Guid.TryParse(originalDocumentId, out var providedId)
+                        || providedId != resolvedUuid.Value.Value
+                    )
+                )
+                {
+                    var mismatch = new FrontendResponse(
+                        StatusCode: 400,
+                        Body: FailureResponse.ForBadRequest(
+                            "The request could not be processed. See 'errors' for details.",
+                            operationRequestInfo.FrontendRequest.TraceId,
+                            [],
+                            ["Request body id must match the id in the url."]
+                        ),
+                        Headers: []
+                    );
+                    await HandleFailureAsync(requestInfo, unitOfWork, operation, mismatch);
+                    return;
+                }
+
+                if (operationRequestInfo.ParsedBody is JsonObject parsedBody)
+                {
+                    parsedBody["id"] = resolvedUuid.Value.Value.ToString();
+                }
+
+                UpdateOperationRequestInfoPath(operationRequestInfo, resolvedUuid.Value);
+                targetDocumentUuid = resolvedUuid;
             }
 
             var executionResult = await ExecuteBackendOperationAsync(
@@ -390,28 +421,25 @@ internal class BatchHandler(
         }
     }
 
-    private ResourceInfo CreateResourceInfo(ResolvedResource resolvedResource)
-    {
-        bool allowIdentityUpdates =
-            resolvedResource.ResourceSchema.AllowIdentityUpdates
-            || _allowIdentityUpdateOverrides.Contains(resolvedResource.ResourceSchema.ResourceName.Value);
-
-        return new ResourceInfo(
-            ProjectName: resolvedResource.ProjectSchema.ProjectName,
-            ResourceVersion: resolvedResource.ProjectSchema.ResourceVersion,
-            ResourceName: resolvedResource.ResourceSchema.ResourceName,
-            IsDescriptor: resolvedResource.ResourceSchema.IsDescriptor,
-            AllowIdentityUpdates: allowIdentityUpdates,
-            EducationOrganizationHierarchyInfo: new EducationOrganizationHierarchyInfo(false, 0, null),
-            AuthorizationSecurableInfo: Array.Empty<AuthorizationSecurableInfo>()
-        );
-    }
-
     private static string BuildOperationPath(ResolvedResource resolvedResource, DocumentUuid? documentUuid)
     {
         string basePath =
             $"/{resolvedResource.ProjectSchema.ProjectEndpointName.Value}/{resolvedResource.EndpointName.Value}";
         return documentUuid.HasValue ? $"{basePath}/{documentUuid.Value.Value}" : basePath;
+    }
+
+    private static void UpdateOperationRequestInfoPath(RequestInfo requestInfo, DocumentUuid documentUuid)
+    {
+        var existingComponents = requestInfo.PathComponents;
+        string updatedPath =
+            $"/{existingComponents.ProjectEndpointName.Value}/{existingComponents.EndpointName.Value}/{documentUuid.Value}";
+
+        requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Path = updatedPath };
+        requestInfo.PathComponents = new PathComponents(
+            existingComponents.ProjectEndpointName,
+            existingComponents.EndpointName,
+            documentUuid
+        );
     }
 
     private RequestInfo CreateOperationRequestInfo(
