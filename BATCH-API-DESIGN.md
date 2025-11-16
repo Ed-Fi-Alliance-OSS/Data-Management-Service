@@ -1,4 +1,4 @@
-# Design: DMS Batch / Bulk Operations Endpoint
+# Design: DMS Batch Operations Endpoint
 
 > This document refines `BATCH-API-INITIAL-DESIGN.md` using the actual
 > Data Management Service (DMS) architecture under `src/dms`. It specifies
@@ -15,7 +15,7 @@ The current DMS API is very chatty:
 
 - Each `POST`/`PUT`/`DELETE` call maps to a single database transaction.
 - For PostgreSQL, each transaction incurs full WAL write and `fsync`.
-- High-volume loads (e.g., ETL, nightly syncs, or bulk ingest) generate
+- High-volume loads (e.g., ETL, nightly syncs, or batch ingest) generate
   many small transactions, leading to high WAL write waits and reduced
   throughput.
 
@@ -44,7 +44,7 @@ is its own unit.
 
 ### 1.2 Proposed Solution
 
-Add a new **bulk operations endpoint** that:
+Add a new **batch operations endpoint** that:
 
 - Accepts an ordered array of operations (`create`, `update`, `delete`)
   across arbitrary Ed‑Fi resources.
@@ -59,13 +59,13 @@ Add a new **bulk operations endpoint** that:
 
 At a high level:
 
-1. ASP.NET Core frontend exposes `POST /bulk`.
+1. ASP.NET Core frontend exposes `POST /batch`.
 2. The frontend forwards the request to a new core entry point on
-   `IApiService` (e.g., `ExecuteBulkAsync`).
+   `IApiService` (e.g., `ExecuteBatchAsync`).
 3. Core runs a lightweight pipeline (logging, exception logging,
    JWT authentication, API schema availability) and hands control to a
-   `BulkHandler`.
-4. `BulkHandler`:
+   `BatchHandler`.
+4. `BatchHandler`:
    - Parses the operations array.
    - Enforces `MAX_BATCH_SIZE`.
    - Opens a **unit-of-work transaction** from the backend.
@@ -121,10 +121,10 @@ per-document operations inside that unit of work.
 - No change to existing external data model or resource schemas.
 - No change to existing Kafka / OpenSearch integration. Those continue
   to see individual row-level changes from the database, regardless of
-  whether they come from single or bulk operations.
+  whether they come from single or batch operations.
 - No new partial-update client API. Partial updates remain an internal
   optimization in the PostgreSQL backend (see `PARTIAL-UPDATE-DESIGN.md`).
-- No first-class bulk read/query endpoint in this iteration.
+- No first-class batch read/query endpoint in this iteration.
 - No guaranteed **idempotency** beyond what existing endpoints provide
   (ETags, uniqueness constraints, and deterministic referential IDs).
 
@@ -135,7 +135,7 @@ per-document operations inside that unit of work.
 ### 3.1 Endpoint and Routing
 
 - **HTTP Method**: `POST`
-- **Route**: `POST /bulk`
+- **Route**: `POST /batch`
   - Chosen to avoid collision with existing `/data/{**dmsPath}` route in
     `CoreEndpointModule`.
   - Sits alongside `/data`, `/metadata`, `/management`, and `/` (discovery)
@@ -149,23 +149,23 @@ per-document operations inside that unit of work.
 
 #### 3.1.1 Frontend Mapping
 
-- Add a new `BulkEndpointModule` in
+- Add a new `BatchEndpointModule` in
   `EdFi.DataManagementService.Frontend.AspNetCore/Modules` implementing
   `IEndpointModule`.
 - Sample routing:
 
 ```csharp
-public class BulkEndpointModule : IEndpointModule
+public class BatchEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints
-            .MapPost("/bulk", HandleBulkAsync)
-            .WithName("BulkOperations")
+            .MapPost("/batch", HandleBatchAsync)
+            .WithName("BatchOperations")
             .WithSummary("Executes multiple create/update/delete operations in a single unit of work.");
     }
 
-    private static async Task<IResult> HandleBulkAsync(
+    private static async Task<IResult> HandleBatchAsync(
         HttpContext httpContext,
         IApiService apiService,
         IOptions<AppSettings> options // frontend appsettings for trace id header, etc.
@@ -173,19 +173,19 @@ public class BulkEndpointModule : IEndpointModule
     {
         var frontendRequest = AspNetCoreFrontend.FromRequest(
             httpContext.Request,
-            dmsPath: "bulk", // DMS path is not used by the batch pipeline for routing
+            dmsPath: "batch", // DMS path is not used by the batch pipeline for routing
             options,
             includeBody: true
         );
 
-        var frontendResponse = await apiService.ExecuteBulkAsync(frontendRequest);
-        return AspNetCoreFrontend.ToResult(frontendResponse, httpContext, dmsPath: "bulk");
+        var frontendResponse = await apiService.ExecuteBatchAsync(frontendRequest);
+        return AspNetCoreFrontend.ToResult(frontendResponse, httpContext, dmsPath: "batch");
     }
 }
 ```
 
 > Note: `AspNetCoreFrontend.FromRequest` and `ToResult` are reused so that
-> bulk follows the same trace-id, header, and JSON serialization behavior
+> batch follows the same trace-id, header, and JSON serialization behavior
 > as `/data` endpoints.
 
 ### 3.2 Request Schema
@@ -391,7 +391,7 @@ Behavior:
     - `failedOperation.httpStatus = 403`.
     - `errorCode` and `message` derived from existing forbidden responses.
 
-#### 3.4.5 Backend Not Supporting Bulk Unit-of-Work
+#### 3.4.5 Backend Not Supporting Batch Unit-of-Work
 
 - If the configured backend does not implement the new unit-of-work interface:
   - **Status**: `501 Not Implemented`.
@@ -399,7 +399,7 @@ Behavior:
 
 ```json
 {
-  "error": "Bulk operations not supported for configured backend.",
+  "error": "Batch operations not supported for configured backend.",
   "message": "The current document store does not support transactional batch operations."
 }
 ```
@@ -423,7 +423,7 @@ public interface IApiService
     /// <summary>
     /// Executes a batch of create/update/delete operations as a single unit of work.
     /// </summary>
-    Task<IFrontendResponse> ExecuteBulkAsync(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> ExecuteBatchAsync(FrontendRequest frontendRequest);
 }
 ```
 
@@ -433,41 +433,41 @@ Implementation in `ApiService`:
 internal class ApiService : IApiService
 {
     // existing fields...
-    private readonly VersionedLazy<PipelineProvider> _bulkSteps;
+    private readonly VersionedLazy<PipelineProvider> _batchSteps;
 
     public ApiService(/* existing deps */, IServiceProvider serviceProvider, /* ... */)
     {
         // existing initialization...
 
-        _bulkSteps = new VersionedLazy<PipelineProvider>(
-            CreateBulkPipeline,
+        _batchSteps = new VersionedLazy<PipelineProvider>(
+            CreateBatchPipeline,
             () => _apiSchemaProvider.ReloadId
         );
     }
 
-    public async Task<IFrontendResponse> ExecuteBulkAsync(FrontendRequest frontendRequest)
+    public async Task<IFrontendResponse> ExecuteBatchAsync(FrontendRequest frontendRequest)
     {
         var requestInfo = new RequestInfo(frontendRequest, RequestMethod.POST);
-        await _bulkSteps.Value.Run(requestInfo);
+        await _batchSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
 }
 ```
 
-### 4.2 Bulk Pipeline Composition
+### 4.2 Batch Pipeline Composition
 
-The bulk pipeline should:
+The batch pipeline should:
 
 1. Reuse cross-cutting concerns (`RequestResponseLoggingMiddleware`,
    `CoreExceptionLoggingMiddleware`, `JwtAuthenticationMiddleware`).
 2. Ensure API schema is loaded and merged (`ApiSchemaValidationMiddleware`,
    `ProvideApiSchemaMiddleware`).
-3. Delegate operation-level work to a dedicated `BulkHandler`.
+3. Delegate operation-level work to a dedicated `BatchHandler`.
 
-Proposed `CreateBulkPipeline`:
+Proposed `CreateBatchPipeline`:
 
 ```csharp
-private PipelineProvider CreateBulkPipeline()
+private PipelineProvider CreateBatchPipeline()
 {
     var steps = GetCommonInitialSteps(); // logging, exception logging, JWT auth
 
@@ -475,7 +475,7 @@ private PipelineProvider CreateBulkPipeline()
         [
             new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
             new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
-            new BulkHandler(
+            new BatchHandler(
                 _logger,
                 _appSettings,
                 _documentValidator,
@@ -484,7 +484,7 @@ private PipelineProvider CreateBulkPipeline()
                 _claimSetProvider,
                 _authorizationServiceFactory,
                 _resiliencePipeline,
-                _bulkUnitOfWorkFactory // new abstraction, see Section 5
+                _batchUnitOfWorkFactory // new abstraction, see Section 5
             )
         ]
     );
@@ -496,9 +496,9 @@ private PipelineProvider CreateBulkPipeline()
 > Note: `GetCommonInitialSteps()` already injects `JwtAuthenticationMiddleware`
 > from `IServiceProvider` and is reused as-is.
 
-### 4.3 BulkHandler Responsibilities
+### 4.3 BatchHandler Responsibilities
 
-`BulkHandler` is a new `IPipelineStep` inside core. It orchestrates:
+`BatchHandler` is a new `IPipelineStep` inside core. It orchestrates:
 
 1. **Input parsing and validation**
 2. **Batch size enforcement**
@@ -526,11 +526,11 @@ private PipelineProvider CreateBulkPipeline()
 
 #### 4.3.3 Unit-of-Work Acquisition
 
-- Use a new core abstraction `IBulkUnitOfWorkFactory` (Section 5) injected into `BulkHandler`.
+- Use a new core abstraction `IBatchUnitOfWorkFactory` (Section 5) injected into `BatchHandler`.
 - Create a unit-of-work:
 
 ```csharp
-await using var uow = await _bulkUnitOfWorkFactory.BeginAsync(
+await using var uow = await _batchUnitOfWorkFactory.BeginAsync(
     requestInfo.FrontendRequest.TraceId,
     requestInfo.FrontendRequest.Headers
 );
@@ -603,7 +603,7 @@ For each operation `op` at `index`:
      per-operation `PipelineProvider` with a shortened set of steps that
      end in a no-op instead of a handler), or
    - Factoring the validation logic into shared helpers, called directly
-     from `BulkHandler`.
+     from `BatchHandler`.
 
    The design goal is **behavioral parity** with the existing pipelines,
    not exact reuse of the pipeline composition mechanism.
@@ -643,7 +643,7 @@ For each operation `op` at `index`:
      identically to the existing handlers (`UpsertHandler`, `UpdateByIdHandler`,
      `DeleteByIdHandler`), but:
      - Do **not** immediately commit/rollback.
-     - Map the result into an internal `BulkOperationOutcome` with:
+     - Map the result into an internal `BatchOperationOutcome` with:
        - `IsSuccess`.
        - `HttpStatusCode`.
        - `ErrorCode` / `Message` (for error cases).
@@ -652,10 +652,10 @@ For each operation `op` at `index`:
 7. **Short-circuit on failure**:
    - On the first failed operation:
      - Call `await uow.RollbackAsync()`.
-     - Build the batch-level error response from `BulkOperationOutcome` and
+     - Build the batch-level error response from `BatchOperationOutcome` and
        `index`.
      - Set `requestInfo.FrontendResponse`.
-     - Return from `BulkHandler.Execute`.
+     - Return from `BatchHandler.Execute`.
 
 8. **Commit on success**:
    - After all operations succeed:
@@ -667,7 +667,7 @@ For each operation `op` at `index`:
 
 - The existing core uses a Polly `ResiliencePipeline` around backend calls in
   the standard handlers.
-- For bulk:
+- For batch:
   - A single top-level `ResiliencePipeline.ExecuteAsync` will wrap the entire
     unit-of-work:
     - Any transient backend exception triggers retry for the whole batch
@@ -692,7 +692,7 @@ To keep core backend-agnostic while allowing shared transactions, introduce:
 ```csharp
 namespace EdFi.DataManagementService.Core.External.Interface;
 
-public interface IBulkUnitOfWork : IAsyncDisposable
+public interface IBatchUnitOfWork : IAsyncDisposable
 {
     Task<UpsertResult> UpsertDocumentAsync(IUpsertRequest request);
     Task<UpdateResult> UpdateDocumentByIdAsync(IUpdateRequest request);
@@ -712,29 +712,29 @@ public interface IBulkUnitOfWork : IAsyncDisposable
     Task RollbackAsync();
 }
 
-public interface IBulkUnitOfWorkFactory
+public interface IBatchUnitOfWorkFactory
 {
-    Task<IBulkUnitOfWork> BeginAsync(TraceId traceId, IReadOnlyDictionary<string, string> headers);
+    Task<IBatchUnitOfWork> BeginAsync(TraceId traceId, IReadOnlyDictionary<string, string> headers);
 }
 ```
 
-- `IBulkUnitOfWork` lives in the core external interface assembly so that
-  `ApiService`/`BulkHandler` can depend on it without knowing about Npgsql.
+- `IBatchUnitOfWork` lives in the core external interface assembly so that
+  `ApiService`/`BatchHandler` can depend on it without knowing about Npgsql.
 
 ### 5.2 PostgreSQL Implementation
 
 Add a concrete implementation in `EdFi.DataManagementService.Backend.Postgresql`:
 
 ```csharp
-public sealed class PostgresqlBulkUnitOfWork(
+public sealed class PostgresqlBatchUnitOfWork(
     NpgsqlDataSource dataSource,
-    ILogger<PostgresqlBulkUnitOfWork> logger,
+    ILogger<PostgresqlBatchUnitOfWork> logger,
     IUpsertDocument upsertDocument,
     IUpdateDocumentById updateDocumentById,
     IDeleteDocumentById deleteDocumentById,
     ISqlAction sqlAction,
     IOptions<DatabaseOptions> databaseOptions
-) : IBulkUnitOfWork
+) : IBatchUnitOfWork
 {
     private readonly IsolationLevel _isolationLevel = databaseOptions.Value.IsolationLevel;
     private readonly NpgsqlConnection _connection;
@@ -781,32 +781,32 @@ public sealed class PostgresqlBulkUnitOfWork(
 }
 ```
 
-A corresponding `PostgresqlBulkUnitOfWorkFactory` creates the instance by:
+A corresponding `PostgresqlBatchUnitOfWorkFactory` creates the instance by:
 
 1. Opening a connection: `await dataSource.OpenConnectionAsync()`.
 2. Starting a transaction with `_isolationLevel`.
-3. Constructing `PostgresqlBulkUnitOfWork`.
+3. Constructing `PostgresqlBatchUnitOfWork`.
 
 ### 5.3 Registration and Backend Selection
 
-- Register `IBulkUnitOfWorkFactory` in `PostgresqlServiceExtensions` alongside
+- Register `IBatchUnitOfWorkFactory` in `PostgresqlServiceExtensions` alongside
   `PostgresqlDocumentStoreRepository`:
 
 ```csharp
-services.AddSingleton<IBulkUnitOfWorkFactory, PostgresqlBulkUnitOfWorkFactory>();
+services.AddSingleton<IBatchUnitOfWorkFactory, PostgresqlBatchUnitOfWorkFactory>();
 ```
 
-- For backends that do **not** support bulk:
-  - Do **not** register `IBulkUnitOfWorkFactory`.
-  - `BulkHandler` detects absence and returns `501 Not Implemented`.
+- For backends that do **not** support batch:
+  - Do **not** register `IBatchUnitOfWorkFactory`.
+  - `BatchHandler` detects absence and returns `501 Not Implemented`.
 
 ### 5.4 Interaction With Existing Repository
 
 - Existing `PostgresqlDocumentStoreRepository` remains unchanged for
   single-resource endpoints.
-- Bulk uses the lower-level operations (`IUpsertDocument`,
+- Batch uses the lower-level operations (`IUpsertDocument`,
   `IUpdateDocumentById`, `IDeleteDocumentById`, and `ISqlAction`) directly
-  via `IBulkUnitOfWork`, sharing the same connection and transaction across
+  via `IBatchUnitOfWork`, sharing the same connection and transaction across
   all operations.
 - This preserves:
   - Existing referential integrity and cascading logic.
@@ -822,8 +822,8 @@ services.AddSingleton<IBulkUnitOfWorkFactory, PostgresqlBulkUnitOfWorkFactory>()
 - If any operation returns a non-success `*Result`:
   - The core chooses to roll back the transaction.
   - No additional database calls are made in that batch.
-- If an exception bubbles out of `IBulkUnitOfWork` calls:
-  - `BulkHandler` treats it as a batch-level failure.
+- If an exception bubbles out of `IBatchUnitOfWork` calls:
+  - `BatchHandler` treats it as a batch-level failure.
   - The resilience pipeline may decide to retry the entire batch.
   - On final failure, `RollbackAsync` is invoked before returning a 500-level
     batch error (with minimal information to avoid leaking internal details).
@@ -849,14 +849,14 @@ services.AddSingleton<IBulkUnitOfWorkFactory, PostgresqlBulkUnitOfWorkFactory>()
 - For `update`/`delete` operations specifying `naturalKey`:
   - Build a `DocumentIdentity` matching the resource’s `IdentityJsonPaths`.
   - Use `ReferentialIdCalculator` to compute `ReferentialId`.
-  - Call `IBulkUnitOfWork.ResolveDocumentUuidAsync` to resolve `DocumentUuid`.
+  - Call `IBatchUnitOfWork.ResolveDocumentUuidAsync` to resolve `DocumentUuid`.
   - If not found:
     - Treat as a 404 error for that operation.
   - If found:
     - Carry on as if the client had supplied that `uuid`:
       - Synthesize the path with that `uuid`.
       - Inject `id` into payload for `update`.
-      - Call backend `Update`/`Delete` via `IBulkUnitOfWork`.
+      - Call backend `Update`/`Delete` via `IBatchUnitOfWork`.
 
 ### 6.3 Consistency Between `naturalKey` and Payload
 
@@ -883,13 +883,13 @@ public class AppSettings
     // existing properties...
 
     /// <summary>
-    /// Maximum number of operations allowed in a single bulk request.
+    /// Maximum number of operations allowed in a single batch request.
     /// </summary>
-    public int BulkMaxOperations { get; set; } = 500;
+    public int BatchMaxOperations { get; set; } = 500;
 }
 ```
 
-- `BulkMaxOperations` is read by `BulkHandler` from `_appSettings.Value`.
+- `BatchMaxOperations` is read by `BatchHandler` from `_appSettings.Value`.
 - Default chosen per `BATCH-API-INITIAL-DESIGN.md` (500), subject to tuning.
 
 ### 7.2 Frontend Request Size
@@ -897,15 +897,15 @@ public class AppSettings
 - Current frontend configuration in `Program.cs` limits:
   - `FormOptions.ValueLengthLimit` and `MultipartBodyLengthLimit` to 10MB.
   - `KestrelServerOptions.Limits.MaxRequestBodySize` to 10MB.
-- For bulk:
+- For batch:
   - Initial implementation can reuse the 10MB limit.
-  - If bulk performance testing shows the need for larger batches, we can:
+  - If batch performance testing shows the need for larger batches, we can:
     - Increase `MaxRequestBodySize` globally, or
-    - Introduce a separate configuration for `/bulk` requests.
+    - Introduce a separate configuration for `/batch` requests.
 
 ### 7.3 Backend Isolation Level
 
-- Bulk uses the existing `DatabaseOptions.IsolationLevel`:
+- Batch uses the existing `DatabaseOptions.IsolationLevel`:
   - Defaults will be whatever is configured for other write operations.
   - For large batches, a serialized isolation level may reduce anomalies but
     increase contention; operational tuning can adjust as needed.
@@ -914,14 +914,14 @@ public class AppSettings
 
 ## 8. Observability and Metrics
 
-To ensure we can validate performance benefits and detect issues, bulk should
+To ensure we can validate performance benefits and detect issues, batch should
 be observable.
 
 ### 8.1 Logging
 
-- `RequestResponseLoggingMiddleware` remains at the top of the bulk pipeline:
+- `RequestResponseLoggingMiddleware` remains at the top of the batch pipeline:
   - Logs request/response status codes and trace IDs.
-- `BulkHandler` should:
+- `BatchHandler` should:
   - Log batch size and per-operation execution summary at `Information` level.
   - Log the index and type of the first failing operation at `Warning` level.
   - Avoid logging full payloads by default; respect `MaskRequestBodyInLogs`.
@@ -931,11 +931,11 @@ be observable.
 Add counters/timers (actual implementation depends on the existing telemetry
 stack):
 
-- `dms.bulk.requests` (counter)
-- `dms.bulk.operations` (counter)
-- `dms.bulk.batch_size` (distribution)
-- `dms.bulk.duration_ms` (histogram)
-- `dms.bulk.errors` (counter, tagged by `errorCode`)
+- `dms.batch.requests` (counter)
+- `dms.batch.operations` (counter)
+- `dms.batch.batch_size` (distribution)
+- `dms.batch.duration_ms` (histogram)
+- `dms.batch.errors` (counter, tagged by `errorCode`)
 
 These can be emitted either via the existing logging-to-metrics bridge or
 via direct metric exporters if configured.
@@ -952,23 +952,23 @@ The existing `DiscoveryEndpointModule` returns:
 
 To advertise the batch endpoint:
 
-- Add `"bulkApi": "{rootUrl}/bulk"` to the `urls` object in the discovery response.
+- Add `"batchApi": "{rootUrl}/batch"` to the `urls` object in the discovery response.
 
 ### 9.2 OpenAPI Metadata
 
-The current OpenAPI generation is tied to resource schemas; the bulk endpoint
+The current OpenAPI generation is tied to resource schemas; the batch endpoint
 is **not** derived from those schemas.
 
 Initial approach:
 
-- Keep bulk endpoint **out of** the auto-generated resource OpenAPI document.
-- Optionally provide a separate static OpenAPI fragment for `/bulk` that can
+- Keep batch endpoint **out of** the auto-generated resource OpenAPI document.
+- Optionally provide a separate static OpenAPI fragment for `/batch` that can
   be documented in the product documentation but not necessarily integrated
   into the existing OpenAPI metadata endpoints.
 
 Future refinement:
 
-- Integrate bulk endpoint into OpenAPI metadata as a separate tag, using
+- Integrate batch endpoint into OpenAPI metadata as a separate tag, using
   a static specification merged into the existing OpenAPI document.
 
 ---
@@ -978,7 +978,7 @@ Future refinement:
 ### 10.1 Unit Tests
 
 - Core:
-  - `BulkHandler` tests covering:
+  - `BatchHandler` tests covering:
     - Empty batch.
     - Batch size limit exceeded.
     - Successful mixed-operation batch.
@@ -987,9 +987,9 @@ Future refinement:
     - Authorization failures.
     - ETag mismatches.
   - Natural key ↔ payload identity consistency checks.
-  - Behavior when `IBulkUnitOfWorkFactory` is not registered.
+  - Behavior when `IBatchUnitOfWorkFactory` is not registered.
 - Backend:
-  - `PostgresqlBulkUnitOfWork` tests:
+  - `PostgresqlBatchUnitOfWork` tests:
     - Multiple upserts in a single transaction commit as a whole.
     - Single operation failure leads to rollback when directed by core.
     - `ResolveDocumentUuidAsync` correctly finds/not-finds documents.
@@ -997,7 +997,7 @@ Future refinement:
 ### 10.2 Integration Tests
 
 - End-to-end tests in `EdFi.DataManagementService.Tests.E2E`:
-  - Start dms-local stack and exercise `/bulk` endpoint using realistic
+  - Start dms-local stack and exercise `/batch` endpoint using realistic
     data models.
   - Validate:
     - WAL write waits and throughput improvements compared to equivalent
@@ -1014,17 +1014,17 @@ Future refinement:
 ### 10.3 Backwards Compatibility
 
 - No changes to existing `/data` routes or handlers.
-- Bulk endpoint is additive and can be gated by:
+- Batch endpoint is additive and can be gated by:
   - Deploy-time configuration (e.g., feature flag in frontend appsettings).
-  - Presence/absence of `IBulkUnitOfWorkFactory`.
+  - Presence/absence of `IBatchUnitOfWorkFactory`.
 
 ---
 
 ## 11. Summary of Key Design Choices
 
-- **Endpoint**: `POST /bulk`, JSON array of operations.
+- **Endpoint**: `POST /batch`, JSON array of operations.
 - **Atomicity**: All operations in a batch run inside a single PostgreSQL
-  transaction via `IBulkUnitOfWork`. Any failure rolls back the entire batch.
+  transaction via `IBatchUnitOfWork`. Any failure rolls back the entire batch.
 - **Core re-use**: The batch implementation reuses existing schema, validation,
   authorization, and backend logic as much as possible, favoring behavioral
   parity over code duplication.
@@ -1034,7 +1034,7 @@ Future refinement:
 - **Configurable limits and observability**: Batch size is configurable, and
   logging/metrics are designed to validate performance gains and detect errors.
 
-This design gives DMS a high-throughput, transactional bulk endpoint that is
+This design gives DMS a high-throughput, transactional batch endpoint that is
 consistent with the existing architecture and behavior, and is focused on
 solving the WAL write wait bottleneck for PostgreSQL-backed deployments.
 
