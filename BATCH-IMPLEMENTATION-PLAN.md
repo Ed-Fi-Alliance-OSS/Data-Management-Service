@@ -9,20 +9,20 @@
       [X] Introduce three VersionedLazy<PipelineProvider> instances for the batch validation-only pipelines that omit GetCommonInitialSteps(), schema loading, and terminal handlers.
       [X] Add CreateBatchPipeline() that chains GetCommonInitialSteps(), ApiSchemaValidationMiddleware, ProvideApiSchemaMiddleware, and the new BatchHandler. _batchSteps.Value.Run() inside ExecuteBatchAsync becomes the
         execution path for the endpoint.
-[ ] **3. Batch handler, models, and per-operation flow**
-      [ ] Create new model types (BatchOperation, BatchOperationResult, etc.) plus parsing helpers to read the incoming JSON array, validate op/resource/documentId/naturalKey requirements, and enforce documentId XOR
+[X] **3. Batch handler, models, and per-operation flow**
+      [X] Create new model types (BatchOperation, BatchOperationResult, etc.) plus parsing helpers to read the incoming JSON array, validate op/resource/documentId/naturalKey requirements, and enforce documentId XOR
         naturalKey for update/delete operations.
-      [ ] Implement BatchHandler : IPipelineStep that:
-          [ ] Reads the JSON payload, enforces BatchMaxOperations, and returns a 413 response on overflow before touching the database.
-          [ ] Attempts to resolve an IBatchUnitOfWork via the injected factory; if unavailable, returns the 501 problem payload described in Section 3.4.5.
-          [ ] For each operation, copies schema/auth context from the batch-level RequestInfo, synthesizes an operation-specific FrontendRequest/RequestInfo, and runs the method-appropriate validation pipeline. Short-
+      [X] Implement BatchHandler : IPipelineStep that:
+          [X] Reads the JSON payload, enforces BatchMaxOperations, and returns a 413 response on overflow before touching the database.
+          [X] Attempts to resolve an IBatchUnitOfWork via the injected factory; if unavailable, returns the 501 problem payload described in Section 3.4.5.
+          [X] For each operation, copies schema/auth context from the batch-level RequestInfo, synthesizes an operation-specific FrontendRequest/RequestInfo, and runs the method-appropriate validation pipeline. Short-
             circuits (validation or auth failure) are mapped into the standardized failedOperation problem response with rollback.
-          [ ] Handles natural-key resolution through DocumentIdentity + ReferentialIdCalculator + IBatchUnitOfWork.ResolveDocumentUuidAsync, injects id for updates, and checks identity mismatches before entering the
+          [X] Handles natural-key resolution through DocumentIdentity + ReferentialIdCalculator + IBatchUnitOfWork.ResolveDocumentUuidAsync, injects id for updates, and checks identity mismatches before entering the
             validation pipeline.
-          [ ] Builds UpsertRequest / UpdateRequest / DeleteRequest from the populated RequestInfo (including new ResourceAuthorizationHandler, UpdateCascadeHandler, etc.), executes the matching unit-of-work method, and
+          [X] Builds UpsertRequest / UpdateRequest / DeleteRequest from the populated RequestInfo (including new ResourceAuthorizationHandler, UpdateCascadeHandler, etc.), executes the matching unit-of-work method, and
             interprets *Result outcomes using the same mapping logic as today’s handlers to populate per-operation status or failure metadata.
-          [ ] Rolls back on the first failure (propagating the underlying HTTP status), logs the failing op index/type at Warning, and commits plus returns the ordered success array when all operations succeed.
-          [ ] Wraps the unit-of-work execution in the existing _resiliencePipeline so transient backend failures retry the entire batch once, matching the transactional semantics noted in Section 4.3.5.
+          [X] Rolls back on the first failure (propagating the underlying HTTP status), logs the failing op index/type at Warning, and commits plus returns the ordered success array when all operations succeed.
+          [X] Wraps the unit-of-work execution in the existing _resiliencePipeline so transient backend failures retry the entire batch once, matching the transactional semantics noted in Section 4.3.5.
 [ ] **4. Backend abstractions and PostgreSQL implementation**
       [ ] Add IBatchUnitOfWork and IBatchUnitOfWorkFactory to the external interface assembly so the core can use them without a direct dependency on Npgsql types.
       [ ] Implement PostgresqlBatchUnitOfWork that owns a single NpgsqlConnection/NpgsqlTransaction, delegates to the existing IUpsertDocument, IUpdateDocumentById, IDeleteDocumentById, and ISqlAction implementations, and

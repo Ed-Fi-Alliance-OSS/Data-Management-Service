@@ -49,6 +49,7 @@ internal class ApiService : IApiService
     private readonly IServiceProvider _serviceProvider;
     private readonly ClaimSetsCache _claimSetsCache;
     private readonly ICompiledSchemaCache _compiledSchemaCache;
+    private readonly IBatchUnitOfWorkFactory? _batchUnitOfWorkFactory;
 
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -142,6 +143,7 @@ internal class ApiService : IApiService
         _serviceProvider = serviceProvider;
         _claimSetsCache = claimSetsCache;
         _compiledSchemaCache = compiledSchemaCache;
+        _batchUnitOfWorkFactory = _serviceProvider.GetService<IBatchUnitOfWorkFactory>();
 
         // Initialize VersionedLazy instances with schema version provider
         _upsertSteps = new VersionedLazy<PipelineProvider>(
@@ -460,6 +462,11 @@ internal class ApiService : IApiService
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
                 new BatchHandler(
                     _serviceProvider.GetRequiredService<ILogger<BatchHandler>>(),
+                    _appSettings,
+                    _resiliencePipeline,
+                    _batchUnitOfWorkFactory,
+                    _apiSchemaProvider,
+                    _authorizationServiceFactory,
                     _batchUpsertValidationSteps,
                     _batchUpdateValidationSteps,
                     _batchDeleteValidationSteps

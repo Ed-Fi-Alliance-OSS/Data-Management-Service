@@ -21,6 +21,11 @@ public class AppSettings
     public bool MaskRequestBodyInLogs { get; set; }
 
     /// <summary>
+    /// Maximum number of operations permitted in a single batch request.
+    /// </summary>
+    public int BatchMaxOperations { get; set; } = 100;
+
+    /// <summary>
     /// Indicates the maximum number of items that should be returned in the results
     /// </summary>
     public int MaximumPageSize { get; set; }
