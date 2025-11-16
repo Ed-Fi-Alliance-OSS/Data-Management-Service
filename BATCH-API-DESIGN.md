@@ -202,7 +202,7 @@ The request body is a **JSON array of operation objects**:
   {
     "op": "update",
     "resource": "Section",
-    "uuid": "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6",
+    "documentId": "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6",
     "document": { ... }
   },
   {
@@ -223,10 +223,10 @@ The request body is a **JSON array of operation objects**:
 | `op`       | string  | Yes                  | `"create"`, `"update"`, `"delete"` (case-insensitive).                      |
 | `resource` | string  | Yes                  | Ed‑Fi resource name, e.g., `"Student"`, `"Section"`, `"StudentSchoolAssociation"`. |
 | `document` | object  | `create`/`update`    | Full resource document for create/update (POST/PUT semantics).              |
-| `uuid`     | string  | `update`/`delete` ∗ | The resource `id`/document UUID. Must not be combined with `naturalKey`.    |
+| `documentId` | string  | `update`/`delete` ∗ | The resource `id`/document UUID. Must not be combined with `naturalKey`.    |
 | `naturalKey` | object | `update`/`delete` ∗ | JSON object containing the full natural key (identity fields).              |
 
-∗ For `update`/`delete`, **exactly one** of `uuid` or `naturalKey` must be provided.
+∗ For `update`/`delete`, **exactly one** of `documentId` or `naturalKey` must be provided.
 
 #### 3.2.2 Resource Resolution
 
@@ -251,7 +251,7 @@ The request body is a **JSON array of operation objects**:
   - `IdentityExtractor.ExtractDocumentIdentity` is reused with that JSON to build a `DocumentIdentity`.
   - `ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, documentIdentity)` produces a deterministic `ReferentialId`.
   - The backend uses `FindDocumentByReferentialId` (via a new repository abstraction, see Section 5) to resolve a `DocumentUuid`.
-  - `update`/`delete` operations using `naturalKey` are executed as if they were `PUT`/`DELETE` by `uuid` using that resolved `DocumentUuid`.
+- `update`/`delete` operations using `naturalKey` are executed as if they were `PUT`/`DELETE` by `documentId` using that resolved `DocumentUuid`.
 - Validation:
   - If `naturalKey` refers to a non-existent document, the operation behaves like a 404 on the corresponding single-resource endpoint.
   - Optionally (and recommended), the identity fields in `document` for `update` must match the `naturalKey` values; mismatches yield a 400 validation error.
@@ -265,15 +265,15 @@ The request body is a **JSON array of operation objects**:
 - `update`:
   - `document` is a **full replacement** document (PUT semantics).
   - `_etag` is required and must be current; the backend enforces optimistic locking using existing helpers.
-  - For `uuid`-based updates:
-    - The `uuid` from the operation and any `id` in the document must match.
-    - If `id` is omitted, core will inject the `uuid` into the document before validation, to preserve `ValidateMatchingDocumentUuidsMiddleware` semantics.
+  - For `documentId`-based updates:
+    - The `documentId` from the operation and any `id` in the document must match.
+    - If `id` is omitted, core will inject the `documentId` into the document before validation, to preserve `ValidateMatchingDocumentUuidsMiddleware` semantics.
   - For `naturalKey`-based updates:
     - `naturalKey` is used to resolve the `DocumentUuid`.
     - The resolved `DocumentUuid` is injected into the document `id` field before update processing.
 - `delete`:
   - `document` must be null or absent.
-  - `uuid` or `naturalKey` identify the document to delete.
+  - `documentId` or `naturalKey` identify the document to delete.
 
 ### 3.3 Success Response
 
@@ -291,21 +291,21 @@ Shape:
     "status": "success",
     "op": "create",
     "resource": "Student",
-    "uuid": "generated-document-uuid"
+    "documentId": "generated-document-uuid"
   },
   {
     "index": 1,
     "status": "success",
     "op": "update",
     "resource": "Section",
-    "uuid": "existing-document-uuid"
+    "documentId": "existing-document-uuid"
   },
   {
     "index": 2,
     "status": "success",
     "op": "delete",
     "resource": "StudentSchoolAssociation",
-    "uuid": "deleted-document-uuid"
+    "documentId": "deleted-document-uuid"
   }
 ]
 ```
@@ -313,8 +313,8 @@ Shape:
 Notes:
 
 - `index` is zero-based index into the original operations array.
-- For `create`, the `uuid` is the newly generated `DocumentUuid`.
-- For `update` and `delete`, `uuid` is the existing `DocumentUuid` that was updated/deleted.
+- For `create`, the `documentId` is the newly generated `DocumentUuid`.
+- For `update` and `delete`, `documentId` is the existing `DocumentUuid` that was updated/deleted.
 - Additional fields (e.g., `etag` for `update`, `location`) can be added over time if needed.
 
 ### 3.4 Error Responses
@@ -559,7 +559,7 @@ For each operation `op` at `index`:
      - Shares headers and trace ID with the top-level request.
      - `Path` synthesized as:
        - For create: `/{projectSchema.ProjectEndpointName}/{endpointName}`
-       - For update/delete by uuid: `/{projectSchema.ProjectEndpointName}/{endpointName}/{uuid}`
+       - For update/delete by documentId: `/{projectSchema.ProjectEndpointName}/{endpointName}/{documentId}`
        - For naturalKey-based update/delete: path uses the resolved `DocumentUuid` (below).
      - `Body`/`BodyStream` is a serialized view of `document` for create/update; null for delete.
    - `ApiSchemaDocuments`, `ProjectSchema`, and `ResourceSchema` are set from the resolved schema.
@@ -834,11 +834,11 @@ services.AddSingleton<IBatchUnitOfWorkFactory, PostgresqlBatchUnitOfWorkFactory>
 
 ### 6.1 UUID-Based Operations
 
-- For `update`/`delete` operations specifying `uuid`:
+- For `update`/`delete` operations specifying `documentId`:
   - Core parses the string into `Guid` and wraps it in `DocumentUuid`.
-  - Per-operation path is synthesized as `/{projectEndpointName}/{endpointName}/{uuid}`.
+  - Per-operation path is synthesized as `/{projectEndpointName}/{endpointName}/{documentId}`.
   - For `update`:
-    - If the document includes `id`, it must match `uuid`.
+    - If the document includes `id`, it must match `documentId`.
     - If `id` is missing, core injects it before validation to maintain
       `ValidateMatchingDocumentUuidsMiddleware` behavior.
   - Backend executes as `UpdateDocumentById` / `DeleteDocumentById` exactly
@@ -853,8 +853,8 @@ services.AddSingleton<IBatchUnitOfWorkFactory, PostgresqlBatchUnitOfWorkFactory>
   - If not found:
     - Treat as a 404 error for that operation.
   - If found:
-    - Carry on as if the client had supplied that `uuid`:
-      - Synthesize the path with that `uuid`.
+    - Carry on as if the client had supplied that `documentId`:
+      - Synthesize the path with that `documentId`.
       - Inject `id` into document for `update`.
       - Call backend `Update`/`Delete` via `IBatchUnitOfWork`.
 
@@ -983,7 +983,7 @@ Future refinement:
     - Batch size limit exceeded.
     - Successful mixed-operation batch.
     - Failure on create/update/delete with rollback.
-    - `uuid` vs `naturalKey` resolution behavior.
+    - `documentId` vs `naturalKey` resolution behavior.
     - Authorization failures.
     - ETag mismatches.
   - Natural key ↔ document identity consistency checks.
@@ -1029,7 +1029,7 @@ Future refinement:
   authorization, and backend logic as much as possible, favoring behavioral
   parity over code duplication.
 - **Natural key support**: `update`/`delete` operations can target resources
-  by `uuid` or by `naturalKey`; the latter is resolved to a `DocumentUuid`
+  by `documentId` or by `naturalKey`; the latter is resolved to a `DocumentUuid`
   using existing referential ID mechanisms.
 - **Configurable limits and observability**: Batch size is configurable, and
   logging/metrics are designed to validate performance gains and detect errors.
