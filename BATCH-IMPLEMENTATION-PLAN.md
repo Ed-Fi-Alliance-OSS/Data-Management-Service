@@ -1,7 +1,7 @@
-[ ] **1. Public API & Frontend wiring**
-      [ ] Extend IApiService with ExecuteBatchAsync() and add a VersionedLazy<PipelineProvider> field in ApiService to drive the /batch pipeline, mirroring how the existing _upsertSteps etc. operate.
-      [ ] Add a static Batch adapter in AspNetCoreFrontend that reuses FromRequest/ToResult, then create BatchEndpointModule that maps POST /batch to that adapter so routing stays consistent with other modules.
-      [ ] Update DiscoveryEndpointModule to expose urls.batchApi so clients can discover the new surface, and ensure the module only advertises batch when the backend actually supports it (or always advertise if we keep
+[X] **1. Public API & Frontend wiring**
+      [X] Extend IApiService with ExecuteBatchAsync() and add a VersionedLazy<PipelineProvider> field in ApiService to drive the /batch pipeline, mirroring how the existing _upsertSteps etc. operate.
+      [X] Add a static Batch adapter in AspNetCoreFrontend that reuses FromRequest/ToResult, then create BatchEndpointModule that maps POST /batch to that adapter so routing stays consistent with other modules.
+      [X] Update DiscoveryEndpointModule to expose urls.batchApi so clients can discover the new surface, and ensure the module only advertises batch when the backend actually supports it (or always advertise if we keep
         the contract unconditional).
 [ ] **2. Core pipeline refactor & composition**
       [ ] Factor the per-operation middleware lists in ApiService into GetUpsertCoreSteps(), GetUpdateCoreSteps(), GetDeleteCoreSteps() so they can be shared between the “full” pipelines and the new validation-only

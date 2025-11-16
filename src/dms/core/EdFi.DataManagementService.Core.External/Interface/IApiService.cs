@@ -38,6 +38,11 @@ public interface IApiService
     public Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest);
 
     /// <summary>
+    /// Executes a batch of create, update, and delete operations as a single unit.
+    /// </summary>
+    public Task<IFrontendResponse> ExecuteBatchAsync(FrontendRequest frontendRequest);
+
+    /// <summary>
     /// DMS entry point for data model information from ApiSchema.json
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo();

@@ -211,6 +211,21 @@ public static class AspNetCoreFrontend
         );
     }
 
+    /// <summary>
+    /// ASP.NET Core entry point for batch API requests to DMS.
+    /// </summary>
+    public static async Task<IResult> Batch(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> options
+    )
+    {
+        var frontendRequest = FromRequest(httpContext.Request, dmsPath: "batch", options, includeBody: true);
+        var frontendResponse = await apiService.ExecuteBatchAsync(frontendRequest);
+
+        return ToResult(frontendResponse, httpContext, dmsPath: "batch");
+    }
+
     private sealed class StreamResult(
         int statusCode,
         string? contentType,

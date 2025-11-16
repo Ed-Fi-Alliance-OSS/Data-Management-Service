@@ -76,6 +76,11 @@ internal class ApiService : IApiService
     private readonly VersionedLazy<PipelineProvider> _deleteByIdSteps;
 
     /// <summary>
+    /// The pipeline steps to satisfy a batch request
+    /// </summary>
+    private readonly VersionedLazy<PipelineProvider> _batchSteps;
+
+    /// <summary>
     /// The OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
     private readonly VersionedLazy<JsonNode> _resourceOpenApiSpecification;
@@ -146,6 +151,11 @@ internal class ApiService : IApiService
 
         _deleteByIdSteps = new VersionedLazy<PipelineProvider>(
             CreateDeleteByIdPipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _batchSteps = new VersionedLazy<PipelineProvider>(
+            CreateBatchPipeline,
             () => _apiSchemaProvider.ReloadId
         );
 
@@ -370,6 +380,12 @@ internal class ApiService : IApiService
         return new PipelineProvider(steps);
     }
 
+    private PipelineProvider CreateBatchPipeline()
+    {
+        var steps = GetCommonInitialSteps();
+        return new PipelineProvider(steps);
+    }
+
     /// <summary>
     /// Parses the excluded domains configuration setting into an array of domain names
     /// </summary>
@@ -459,6 +475,31 @@ internal class ApiService : IApiService
     {
         RequestInfo requestInfo = new(frontendRequest, RequestMethod.DELETE);
         await _deleteByIdSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for batch operations.
+    /// </summary>
+    public async Task<IFrontendResponse> ExecuteBatchAsync(FrontendRequest frontendRequest)
+    {
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST);
+        await _batchSteps.Value.Run(requestInfo);
+
+        if (requestInfo.FrontendResponse == No.FrontendResponse)
+        {
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 501,
+                Body: new JsonObject
+                {
+                    ["detail"] = "Batch endpoint is not yet implemented.",
+                    ["status"] = 501,
+                    ["correlationId"] = frontendRequest.TraceId.Value,
+                },
+                Headers: []
+            );
+        }
+
         return requestInfo.FrontendResponse;
     }
 

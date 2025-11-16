@@ -66,6 +66,7 @@ public class DiscoveryEndpointModule : IEndpointModule
                 ["openApiMetadata"] = $"{rootUrl}/metadata/specifications",
                 ["oauth"] = appSettings.Value.AuthenticationService,
                 ["dataManagementApi"] = $"{rootUrl}/data",
+                ["batchApi"] = $"{rootUrl}/batch",
                 ["xsdMetadata"] = $"{rootUrl}/metadata/xsd",
             },
         };
