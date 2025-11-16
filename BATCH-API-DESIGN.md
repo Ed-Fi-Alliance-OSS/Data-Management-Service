@@ -878,14 +878,37 @@ services.AddSingleton<IBatchUnitOfWorkFactory, PostgresqlBatchUnitOfWorkFactory>
 
 ### 6.3 Consistency Between `naturalKey` and Document
 
-- For `update` with both `document` and `naturalKey`:
-  - Recommended validation:
+The relationship between `naturalKey` and the `document` identity depends on
+whether the resource allows identity updates.
+
+- For resources where `resourceInfo.AllowIdentityUpdates == false`:
+  - The `naturalKey` represents the existing identity of the document, and the
+    update is not allowed to change that identity.
+  - This is consistent with the PostgreSQL backend behavior in
+    `UpdateDocumentById`, where an attempted identity change for a resource
+    that does not allow identity updates results in
+    `UpdateResult.UpdateFailureImmutableIdentity`.
+  - Recommended behavior:
     - Extract `DocumentIdentity` from `document` using `IdentityExtractor`.
-    - Compare to the identity from `naturalKey`.
-    - If they differ, return a 400 validation error indicating mismatched
-      identity values.
-- This prevents confusing scenarios where `naturalKey` resolves one document
-  but the document’s identity describes another.
+    - Compare it to the identity represented by `naturalKey`.
+    - If they differ, treat it as a client error handled in the same way as
+    `UpdateResult.UpdateFailureImmutableIdentity`
+
+- For resources where `resourceInfo.AllowIdentityUpdates == true`:
+  - A mismatch between the identity implied by `naturalKey` (current identity)
+    and the identity in the `document` (new identity) is expected when the
+    client is legitimately changing the natural keys of the document.
+  - In this case the batch handler **must not** reject the request purely on
+    that mismatch. Instead:
+    - Use `naturalKey` to locate the current document.
+    - Pass the `document` through to the backend `UpdateDocumentById` logic,
+      which already:
+      - Validates whether identity changes are allowed for that resource.
+      - Detects immutable-identity violations.
+      - Enforces uniqueness and cascades identity changes where appropriate.
+
+In all cases, `naturalKey` must resolve to exactly one existing document (or be
+treated as a 404) before applying any update.
 
 ---
 
