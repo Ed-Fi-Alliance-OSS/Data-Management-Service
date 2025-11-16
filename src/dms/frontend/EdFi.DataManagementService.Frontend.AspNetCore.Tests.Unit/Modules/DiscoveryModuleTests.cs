@@ -68,12 +68,13 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(5);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(6);
         apiDetails?["applicationName"]?.GetValue<string>().Should().Be("DMS");
         apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("Release Candidate 1");
         apiDetails?["dataModels"].Should().NotBeNull();
         apiDetails?["dataModels"]?.AsArray().Count.Should().Be(1);
         apiDetails?["dataModels"]?[0]?["name"]?.GetValue<string>().Should().Be("Ed-Fi");
+        apiDetails?["urls"]?["batchApi"]?.GetValue<string>().Should().EndWith("/batch");
     }
 
     [Test]
@@ -128,10 +129,11 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(5);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(6);
         var dependenciesUrl = apiDetails?["urls"]?["dependencies"];
         dependenciesUrl.Should().NotBeNull();
         dependenciesUrl?.GetValue<string>().Should().Contain(pathBase);
+        apiDetails?["urls"]?["batchApi"]?.GetValue<string>().Should().Contain(pathBase);
         apiDetails?["applicationName"]?.GetValue<string>().Should().Be("DMS");
         apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("Release Candidate 1");
         apiDetails?["dataModels"].Should().NotBeNull();

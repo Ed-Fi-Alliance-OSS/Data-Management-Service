@@ -35,14 +35,14 @@
         at startup.
       [X] Add the corresponding key to appsettings*.json so operators can tune it, and document recommended request size considerations (10 MB limit today) or hook into existing request-size configuration if needed.
       [X] Update logging inside BatchHandler to emit batch size and per-operation summaries per Section 8.1; consider exposing metric hooks (even if initially no-ops) so we can quickly add counters later.
-[ ] **6. Unit testing strategy**
-      [ ] BatchRequestParser: empty body, non-array payloads, invalid op/resource/documentId, documentId vs naturalKey enforcement, malformed naturalKey.
-      [ ] BatchHandler (core logic): limit enforcement, zero operations, missing `IBatchUnitOfWorkFactory`, short-circuit responses from validation pipelines, natural key mismatch for immutable resources, ETag rejection, authorization failures. Use fakes/mocks for `IBatchUnitOfWork`, validation pipelines, and schema dependencies to keep tests fast.
-      [ ] Backend unit tests for PostgresqlBatchUnitOfWork: multiple upserts/updates/deletes in a single transaction, rollback when `CommitAsync` not called, deterministic natural-key resolution (mocking `ISqlAction`).
-      [ ] Discovery/endpoint wiring tests: ensure `/batch` is exposed via `BatchEndpointModule`, discovery document includes `batchApi`.
+[X] **6. Unit testing strategy**
+      [X] BatchRequestParser: empty body, non-array payloads, invalid op/resource/documentId, documentId vs naturalKey enforcement, malformed naturalKey.
+      [X] BatchHandler (core logic): limit enforcement, zero operations, missing `IBatchUnitOfWorkFactory`, short-circuit responses from validation pipelines, natural key mismatch for immutable resources, ETag rejection, authorization failures. Use fakes/mocks for `IBatchUnitOfWork`, validation pipelines, and schema dependencies to keep tests fast.
+      [X] Backend unit tests for PostgresqlBatchUnitOfWork: multiple upserts/updates/deletes in a single transaction, rollback when `CommitAsync` not called, deterministic natural-key resolution (mocking `ISqlAction`).
+      [X] Discovery/endpoint wiring tests: ensure `/batch` is exposed via `BatchEndpointModule`, discovery document includes `batchApi`.
 
 [ ] **7. Integration testing strategy**
-      [ ] Harness: in-process `ApiService` + real Postgres (Testcontainers or existing integration infra). Seed documents via repository helpers so each test is self-contained (no separate SQL scripts).
+      [ ] Harness: in-process `ApiService` all the way through the batch pipeline to real Postgres (use existing integration test infra). Seed documents like other integration tests so each test is self-contained (no separate SQL scripts).
       [ ] Scenario: mixed create/update/delete batch (commit success) and verify DB state per op.
       [ ] Scenario: natural-key based update/delete with identity mismatch and immutable resources.
       [ ] Scenario: failure mid-batch (descriptor validation, referential conflict, authorization) -> assert rollback occurs.

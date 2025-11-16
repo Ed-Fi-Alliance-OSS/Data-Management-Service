@@ -43,6 +43,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Test.Integration" />
     <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Postgresql.Tests.Integration" />
+    <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Tests.Unit" />
     <!-- For FakeItEasy unit test proxies-->
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
