@@ -3,11 +3,11 @@
       [X] Add a static Batch adapter in AspNetCoreFrontend that reuses FromRequest/ToResult, then create BatchEndpointModule that maps POST /batch to that adapter so routing stays consistent with other modules.
       [X] Update DiscoveryEndpointModule to expose urls.batchApi so clients can discover the new surface, and ensure the module only advertises batch when the backend actually supports it (or always advertise if we keep
         the contract unconditional).
-[ ] **2. Core pipeline refactor & composition**
-      [ ] Factor the per-operation middleware lists in ApiService into GetUpsertCoreSteps(), GetUpdateCoreSteps(), GetDeleteCoreSteps() so they can be shared between the “full” pipelines and the new validation-only
+[X] **2. Core pipeline refactor & composition**
+      [X] Factor the per-operation middleware lists in ApiService into GetUpsertCoreSteps(), GetUpdateCoreSteps(), GetDeleteCoreSteps() so they can be shared between the “full” pipelines and the new validation-only
         pipelines described in BATCH-PER-OPERATION-PROCESSING.md.
-      [ ] Introduce three VersionedLazy<PipelineProvider> instances for the batch validation-only pipelines that omit GetCommonInitialSteps(), schema loading, and terminal handlers.
-      [ ] Add CreateBatchPipeline() that chains GetCommonInitialSteps(), ApiSchemaValidationMiddleware, ProvideApiSchemaMiddleware, and the new BatchHandler. _batchSteps.Value.Run() inside ExecuteBatchAsync becomes the
+      [X] Introduce three VersionedLazy<PipelineProvider> instances for the batch validation-only pipelines that omit GetCommonInitialSteps(), schema loading, and terminal handlers.
+      [X] Add CreateBatchPipeline() that chains GetCommonInitialSteps(), ApiSchemaValidationMiddleware, ProvideApiSchemaMiddleware, and the new BatchHandler. _batchSteps.Value.Run() inside ExecuteBatchAsync becomes the
         execution path for the endpoint.
 [ ] **3. Batch handler, models, and per-operation flow**
       [ ] Create new model types (BatchOperation, BatchOperationResult, etc.) plus parsing helpers to read the incoming JSON array, validate op/resource/documentId/naturalKey requirements, and enforce documentId XOR

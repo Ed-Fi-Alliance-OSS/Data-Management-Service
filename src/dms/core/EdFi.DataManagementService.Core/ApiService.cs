@@ -81,6 +81,21 @@ internal class ApiService : IApiService
     private readonly VersionedLazy<PipelineProvider> _batchSteps;
 
     /// <summary>
+    /// Validation-only upsert pipeline for batch operations.
+    /// </summary>
+    private readonly VersionedLazy<PipelineProvider> _batchUpsertValidationSteps;
+
+    /// <summary>
+    /// Validation-only update pipeline for batch operations.
+    /// </summary>
+    private readonly VersionedLazy<PipelineProvider> _batchUpdateValidationSteps;
+
+    /// <summary>
+    /// Validation-only delete pipeline for batch operations.
+    /// </summary>
+    private readonly VersionedLazy<PipelineProvider> _batchDeleteValidationSteps;
+
+    /// <summary>
     /// The OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
     private readonly VersionedLazy<JsonNode> _resourceOpenApiSpecification;
@@ -159,6 +174,21 @@ internal class ApiService : IApiService
             () => _apiSchemaProvider.ReloadId
         );
 
+        _batchUpsertValidationSteps = new VersionedLazy<PipelineProvider>(
+            CreateBatchUpsertValidationPipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _batchUpdateValidationSteps = new VersionedLazy<PipelineProvider>(
+            CreateBatchUpdateValidationPipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _batchDeleteValidationSteps = new VersionedLazy<PipelineProvider>(
+            CreateBatchDeleteValidationPipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
         _resourceOpenApiSpecification = new VersionedLazy<JsonNode>(
             CreateResourceOpenApiSpecification,
             () => _apiSchemaProvider.ReloadId
@@ -180,25 +210,20 @@ internal class ApiService : IApiService
         ];
     }
 
-    private PipelineProvider CreateUpsertPipeline()
+    private List<IPipelineStep> GetUpsertCoreSteps()
     {
-        var steps = GetCommonInitialSteps();
-        steps.AddRange(
-            [
-                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
-                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
-                new ParsePathMiddleware(_logger),
-                new ParseBodyMiddleware(_logger),
-                new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
-                new DuplicatePropertiesMiddleware(_logger),
-                new ValidateEndpointMiddleware(_logger),
-                new RejectResourceIdentifierMiddleware(_logger),
-                new CoerceDateFormatMiddleware(_logger),
-                new CoerceDateTimesMiddleware(_logger),
-            ]
-        );
+        var steps = new List<IPipelineStep>
+        {
+            new ParsePathMiddleware(_logger),
+            new ParseBodyMiddleware(_logger),
+            new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+            new DuplicatePropertiesMiddleware(_logger),
+            new ValidateEndpointMiddleware(_logger),
+            new RejectResourceIdentifierMiddleware(_logger),
+            new CoerceDateFormatMiddleware(_logger),
+            new CoerceDateTimesMiddleware(_logger),
+        };
 
-        // CoerceFromStringsMiddleware should be immediately before ValidateDocumentMiddleware
         if (_appSettings.Value.BypassStringTypeCoercion)
         {
             _logger.LogDebug("Bypassing CoerceFromStringsMiddleware");
@@ -227,14 +252,96 @@ internal class ApiService : IApiService
                 new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
                 new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
                 new ProvideAuthorizationPathwayMiddleware(_logger),
-                new UpsertHandler(
-                    _documentStoreRepository,
-                    _logger,
-                    _resiliencePipeline,
-                    _apiSchemaProvider,
-                    _authorizationServiceFactory
-                ),
             ]
+        );
+
+        return steps;
+    }
+
+    private List<IPipelineStep> GetUpdateCoreSteps()
+    {
+        var steps = new List<IPipelineStep>
+        {
+            new ParsePathMiddleware(_logger),
+            new ParseBodyMiddleware(_logger),
+            new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+            new DuplicatePropertiesMiddleware(_logger),
+            new ValidateEndpointMiddleware(_logger),
+            new CoerceDateFormatMiddleware(_logger),
+            new CoerceDateTimesMiddleware(_logger),
+        };
+
+        if (_appSettings.Value.BypassStringTypeCoercion)
+        {
+            _logger.LogDebug("Bypassing CoerceFromStringsMiddleware");
+        }
+        else
+        {
+            steps.Add(new CoerceFromStringsMiddleware(_logger));
+        }
+
+        steps.AddRange(
+            [
+                new ValidateDocumentMiddleware(_logger, _documentValidator),
+                new ValidateDecimalMiddleware(_logger, _decimalValidator),
+                new ExtractDocumentSecurityElementsMiddleware(_logger),
+                new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
+                new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
+                new ProvideEducationOrganizationHierarchyMiddleware(_logger),
+                new ProvideAuthorizationSecurableInfoMiddleware(_logger),
+                new BuildResourceInfoMiddleware(
+                    _logger,
+                    _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+                ),
+                new ExtractDocumentInfoMiddleware(_logger),
+                new ReferenceArrayUniquenessValidationMiddleware(_logger),
+                new ArrayUniquenessValidationMiddleware(_logger),
+                new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
+                new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+                new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+                new ProvideAuthorizationPathwayMiddleware(_logger),
+            ]
+        );
+
+        return steps;
+    }
+
+    private List<IPipelineStep> GetDeleteCoreSteps()
+    {
+        return
+        [
+            new ParsePathMiddleware(_logger),
+            new ValidateEndpointMiddleware(_logger),
+            new BuildResourceInfoMiddleware(
+                _logger,
+                _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
+            ),
+            new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
+            new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+            new ProvideAuthorizationPathwayMiddleware(_logger),
+            new ProvideAuthorizationSecurableInfoMiddleware(_logger),
+        ];
+    }
+
+    private PipelineProvider CreateUpsertPipeline()
+    {
+        var steps = GetCommonInitialSteps();
+        steps.AddRange(
+            [
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
+            ]
+        );
+
+        steps.AddRange(GetUpsertCoreSteps());
+        steps.Add(
+            new UpsertHandler(
+                _documentStoreRepository,
+                _logger,
+                _resiliencePipeline,
+                _apiSchemaProvider,
+                _authorizationServiceFactory
+            )
         );
 
         return new PipelineProvider(steps);
@@ -299,54 +406,18 @@ internal class ApiService : IApiService
             [
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
-                new ParsePathMiddleware(_logger),
-                new ParseBodyMiddleware(_logger),
-                new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
-                new DuplicatePropertiesMiddleware(_logger),
-                new ValidateEndpointMiddleware(_logger),
-                new CoerceDateFormatMiddleware(_logger),
-                new CoerceDateTimesMiddleware(_logger),
             ]
         );
 
-        // CoerceFromStringsMiddleware should be immediately before ValidateDocumentMiddleware
-        if (_appSettings.Value.BypassStringTypeCoercion)
-        {
-            _logger.LogDebug("Bypassing CoerceFromStringsMiddleware");
-        }
-        else
-        {
-            steps.Add(new CoerceFromStringsMiddleware(_logger));
-        }
-
-        steps.AddRange(
-            [
-                new ValidateDocumentMiddleware(_logger, _documentValidator),
-                new ValidateDecimalMiddleware(_logger, _decimalValidator),
-                new ExtractDocumentSecurityElementsMiddleware(_logger),
-                new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
-                new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
-                new ProvideEducationOrganizationHierarchyMiddleware(_logger),
-                new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-                new BuildResourceInfoMiddleware(
-                    _logger,
-                    _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                ),
-                new ExtractDocumentInfoMiddleware(_logger),
-                new ReferenceArrayUniquenessValidationMiddleware(_logger),
-                new ArrayUniquenessValidationMiddleware(_logger),
-                new InjectVersionMetadataToEdFiDocumentMiddleware(_logger),
-                new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
-                new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                new ProvideAuthorizationPathwayMiddleware(_logger),
-                new UpdateByIdHandler(
-                    _documentStoreRepository,
-                    _logger,
-                    _resiliencePipeline,
-                    _apiSchemaProvider,
-                    _authorizationServiceFactory
-                ),
-            ]
+        steps.AddRange(GetUpdateCoreSteps());
+        steps.Add(
+            new UpdateByIdHandler(
+                _documentStoreRepository,
+                _logger,
+                _resiliencePipeline,
+                _apiSchemaProvider,
+                _authorizationServiceFactory
+            )
         );
         return new PipelineProvider(steps);
     }
@@ -358,31 +429,44 @@ internal class ApiService : IApiService
             [
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
-                new ParsePathMiddleware(_logger),
-                new ValidateEndpointMiddleware(_logger),
-                new BuildResourceInfoMiddleware(
-                    _logger,
-                    _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
-                ),
-                new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
-                new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
-                new ProvideAuthorizationPathwayMiddleware(_logger),
-                new ProvideAuthorizationSecurableInfoMiddleware(_logger),
-                new DeleteByIdHandler(
-                    _documentStoreRepository,
-                    _logger,
-                    _resiliencePipeline,
-                    _authorizationServiceFactory
-                ),
             ]
+        );
+
+        steps.AddRange(GetDeleteCoreSteps());
+        steps.Add(
+            new DeleteByIdHandler(
+                _documentStoreRepository,
+                _logger,
+                _resiliencePipeline,
+                _authorizationServiceFactory
+            )
         );
 
         return new PipelineProvider(steps);
     }
 
+    private PipelineProvider CreateBatchUpsertValidationPipeline() => new(GetUpsertCoreSteps());
+
+    private PipelineProvider CreateBatchUpdateValidationPipeline() => new(GetUpdateCoreSteps());
+
+    private PipelineProvider CreateBatchDeleteValidationPipeline() => new(GetDeleteCoreSteps());
+
     private PipelineProvider CreateBatchPipeline()
     {
         var steps = GetCommonInitialSteps();
+        steps.AddRange(
+            [
+                new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
+                new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
+                new BatchHandler(
+                    _serviceProvider.GetRequiredService<ILogger<BatchHandler>>(),
+                    _batchUpsertValidationSteps,
+                    _batchUpdateValidationSteps,
+                    _batchDeleteValidationSteps
+                ),
+            ]
+        );
+
         return new PipelineProvider(steps);
     }
 
