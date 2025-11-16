@@ -41,3 +41,9 @@
       [ ] Add backend unit tests for PostgresqlBatchUnitOfWork to confirm it reuses the same transaction for multiple calls, propagates commit/rollback, and resolves document UUIDs correctly via ISqlAction.
       [ ] Expand discovery and endpoint registration tests (if present) to assert /batch is mapped.
       [ ] Plan higher-level integration tests (or end-to-end harness) that exercise /batch in a running stack to verify cross-resource sequences, rollback on failure, and identity-lookup flows, as outlined in Section 10.2.
+
+
+3. **No automated tests cover the new `/batch` surface area**  
+   - This change introduces ~2k LOC across core, frontend, and the PostgreSQL backend, but the only test file touched is the benchmarking harness (`src/dms/tests/EdFi.DataManagementService.Benchmarks/DocumentValidatorBenchmarks.cs`). There are no unit, integration, or E2E tests that exercise `BatchHandler`, the per-operation pipelines, happy-path commits, or rollback/error shaping.  
+   - Without automated coverage we have no safety net for regressions (e.g., schema resolution, transactional semantics, per-operation errors) and no proof that the feature works end-to-end.  
+   - **Recommendation:** add at least unit tests around `BatchRequestParser`, `BatchHandler` success/failure paths, and repository UoW integration, followed by an E2E scenario that issues a real `/batch` request to catch contract drift (especially around `_etag` handling and natural-key lookups).
