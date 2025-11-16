@@ -71,7 +71,7 @@ At a high level:
    - Opens a **unit-of-work transaction** from the backend.
    - For each operation:
      - Resolves resource and schema.
-     - Validates the payload with existing `IDocumentValidator`.
+     - Validates the document with existing `IDocumentValidator`.
      - Extracts identities and security elements from the document.
      - Enforces authorization using the existing authorization subsystem.
      - Calls backend CUD methods that join the same DB transaction.
@@ -197,13 +197,13 @@ The request body is a **JSON array of operation objects**:
   {
     "op": "create",
     "resource": "Student",
-    "payload": { ... }
+    "document": { ... }
   },
   {
     "op": "update",
     "resource": "Section",
     "uuid": "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6",
-    "payload": { ... }
+    "document": { ... }
   },
   {
     "op": "delete",
@@ -222,7 +222,7 @@ The request body is a **JSON array of operation objects**:
 |------------|---------|----------------------|-----------------------------------------------------------------------------|
 | `op`       | string  | Yes                  | `"create"`, `"update"`, `"delete"` (case-insensitive).                      |
 | `resource` | string  | Yes                  | Ed‑Fi resource name, e.g., `"Student"`, `"Section"`, `"StudentSchoolAssociation"`. |
-| `payload`  | object  | `create`/`update`    | Full resource document for create/update (POST/PUT semantics).              |
+| `document` | object  | `create`/`update`    | Full resource document for create/update (POST/PUT semantics).              |
 | `uuid`     | string  | `update`/`delete` ∗ | The resource `id`/document UUID. Must not be combined with `naturalKey`.    |
 | `naturalKey` | object | `update`/`delete` ∗ | JSON object containing the full natural key (identity fields).              |
 
@@ -254,25 +254,25 @@ The request body is a **JSON array of operation objects**:
   - `update`/`delete` operations using `naturalKey` are executed as if they were `PUT`/`DELETE` by `uuid` using that resolved `DocumentUuid`.
 - Validation:
   - If `naturalKey` refers to a non-existent document, the operation behaves like a 404 on the corresponding single-resource endpoint.
-  - Optionally (and recommended), the identity fields in `payload` for `update` must match the `naturalKey` values; mismatches yield a 400 validation error.
+  - Optionally (and recommended), the identity fields in `document` for `update` must match the `naturalKey` values; mismatches yield a 400 validation error.
 
-#### 3.2.4 Payload Semantics
+#### 3.2.4 Document Semantics
 
 - `create`:
-  - `payload` is the **insert document** (same as POST `/data/...`).
+  - `document` is the **insert document** (same as POST `/data/...`).
   - Identity is inferred from the document body.
-  - Clients must **not** supply `id` in the payload; if present, it will be rejected (same as existing `RejectResourceIdentifierMiddleware` behavior).
+  - Clients must **not** supply `id` in the document; if present, it will be rejected (same as existing `RejectResourceIdentifierMiddleware` behavior).
 - `update`:
-  - `payload` is a **full replacement** document (PUT semantics).
+  - `document` is a **full replacement** document (PUT semantics).
   - `_etag` is required and must be current; the backend enforces optimistic locking using existing helpers.
   - For `uuid`-based updates:
-    - The `uuid` from the operation and any `id` in the payload must match.
-    - If `id` is omitted, core will inject the `uuid` into the payload before validation, to preserve `ValidateMatchingDocumentUuidsMiddleware` semantics.
+    - The `uuid` from the operation and any `id` in the document must match.
+    - If `id` is omitted, core will inject the `uuid` into the document before validation, to preserve `ValidateMatchingDocumentUuidsMiddleware` semantics.
   - For `naturalKey`-based updates:
     - `naturalKey` is used to resolve the `DocumentUuid`.
-    - The resolved `DocumentUuid` is injected into the payload `id` field before update processing.
+    - The resolved `DocumentUuid` is injected into the document `id` field before update processing.
 - `delete`:
-  - `payload` must be null or absent.
+  - `document` must be null or absent.
   - `uuid` or `naturalKey` identify the document to delete.
 
 ### 3.3 Success Response
@@ -521,7 +521,7 @@ private PipelineProvider CreateBatchPipeline()
 
 - Retrieve `maxBatchSize` from configuration (see Section 7).
 - If `operations.Count > maxBatchSize`:
-  - `requestInfo.FrontendResponse = 413` payload-too-large response (Section 3.4.1).
+  - `requestInfo.FrontendResponse = 413` batch-too-large response (Section 3.4.1).
   - Return without opening a transaction.
 
 #### 4.3.3 Unit-of-Work Acquisition
@@ -561,7 +561,7 @@ For each operation `op` at `index`:
        - For create: `/{projectSchema.ProjectEndpointName}/{endpointName}`
        - For update/delete by uuid: `/{projectSchema.ProjectEndpointName}/{endpointName}/{uuid}`
        - For naturalKey-based update/delete: path uses the resolved `DocumentUuid` (below).
-     - `Body`/`BodyStream` is a serialized view of `payload` for create/update; null for delete.
+     - `Body`/`BodyStream` is a serialized view of `document` for create/update; null for delete.
    - `ApiSchemaDocuments`, `ProjectSchema`, and `ResourceSchema` are set from the resolved schema.
 
 3. **Natural Key Resolution (for `update`/`delete` with `naturalKey`)**:
@@ -573,10 +573,10 @@ For each operation `op` at `index`:
      - Treat as a 404 failure for this operation.
    - If found:
      - Synthesize the per-operation path with that `DocumentUuid`.
-     - Inject `id` into the payload (for update).
+     - Inject `id` into the document (for update).
 
 4. **Document shape & identity validation**:
-   - Set `opRequest.ParsedBody` to `payload` for create/update.
+   - Set `opRequest.ParsedBody` to `document` for create/update.
    - Use existing helpers in sequence (reused as callable services rather than as full pipeline steps):
      - Date/time coercion:
        - `CoerceDateFormatMiddleware` logic.
@@ -592,7 +592,7 @@ For each operation `op` at `index`:
        - `ArrayUniquenessValidationMiddleware`.
      - Identity consistency:
        - `ValidateMatchingDocumentUuidsMiddleware` semantics:
-         - Ensure `payload.id` (if present) matches path UUID.
+         - Ensure `document.id` (if present) matches path UUID.
      - Equality constraints:
        - `ValidateEqualityConstraintMiddleware` using `_equalityConstraintValidator`.
 
@@ -838,7 +838,7 @@ services.AddSingleton<IBatchUnitOfWorkFactory, PostgresqlBatchUnitOfWorkFactory>
   - Core parses the string into `Guid` and wraps it in `DocumentUuid`.
   - Per-operation path is synthesized as `/{projectEndpointName}/{endpointName}/{uuid}`.
   - For `update`:
-    - If the payload includes `id`, it must match `uuid`.
+    - If the document includes `id`, it must match `uuid`.
     - If `id` is missing, core injects it before validation to maintain
       `ValidateMatchingDocumentUuidsMiddleware` behavior.
   - Backend executes as `UpdateDocumentById` / `DeleteDocumentById` exactly
@@ -855,19 +855,19 @@ services.AddSingleton<IBatchUnitOfWorkFactory, PostgresqlBatchUnitOfWorkFactory>
   - If found:
     - Carry on as if the client had supplied that `uuid`:
       - Synthesize the path with that `uuid`.
-      - Inject `id` into payload for `update`.
+      - Inject `id` into document for `update`.
       - Call backend `Update`/`Delete` via `IBatchUnitOfWork`.
 
-### 6.3 Consistency Between `naturalKey` and Payload
+### 6.3 Consistency Between `naturalKey` and Document
 
-- For `update` with both `payload` and `naturalKey`:
+- For `update` with both `document` and `naturalKey`:
   - Recommended validation:
-    - Extract `DocumentIdentity` from `payload` using `IdentityExtractor`.
+    - Extract `DocumentIdentity` from `document` using `IdentityExtractor`.
     - Compare to the identity from `naturalKey`.
     - If they differ, return a 400 validation error indicating mismatched
       identity values.
 - This prevents confusing scenarios where `naturalKey` resolves one document
-  but the payload’s identity describes another.
+  but the document’s identity describes another.
 
 ---
 
@@ -924,7 +924,7 @@ be observable.
 - `BatchHandler` should:
   - Log batch size and per-operation execution summary at `Information` level.
   - Log the index and type of the first failing operation at `Warning` level.
-  - Avoid logging full payloads by default; respect `MaskRequestBodyInLogs`.
+  - Avoid logging full documents by default; respect `MaskRequestBodyInLogs`.
 
 ### 8.2 Metrics (Conceptual)
 
@@ -986,7 +986,7 @@ Future refinement:
     - `uuid` vs `naturalKey` resolution behavior.
     - Authorization failures.
     - ETag mismatches.
-  - Natural key ↔ payload identity consistency checks.
+  - Natural key ↔ document identity consistency checks.
   - Behavior when `IBatchUnitOfWorkFactory` is not registered.
 - Backend:
   - `PostgresqlBatchUnitOfWork` tests:
@@ -1037,4 +1037,3 @@ Future refinement:
 This design gives DMS a high-throughput, transactional batch endpoint that is
 consistent with the existing architecture and behavior, and is focused on
 solving the WAL write wait bottleneck for PostgreSQL-backed deployments.
-
