@@ -41,12 +41,12 @@
       [X] Backend coverage for PostgresqlBatchUnitOfWork now lives in `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/PostgresqlBatchUnitOfWorkTests.cs`, exercising multiple upserts/updates/deletes in one transaction, rollback without `CommitAsync`, and deterministic natural-key resolution against a real PostgreSQL instance (unit tests can’t fake `NpgsqlConnection`/`NpgsqlTransaction`).
       [X] Discovery/endpoint wiring tests: ensure `/batch` is exposed via `BatchEndpointModule`, discovery document includes `batchApi`.
 
-[ ] **7. Integration testing strategy**
-      [ ] Harness: in-process `ApiService` all the way through the batch pipeline to real Postgres (use existing integration test infra). Seed documents like other integration tests so each test is self-contained (no separate SQL scripts).
-      [ ] Scenario: mixed create/update/delete batch (commit success) and verify DB state per op.
-      [ ] Scenario: natural-key based update/delete with identity mismatch and immutable resources.
-      [ ] Scenario: failure mid-batch (descriptor validation, referential conflict, authorization) -> assert rollback occurs.
-      [ ] Scenario: ETag mismatch update (stale `_etag`) with rollback + 412 response.
-      [ ] Scenario: limit enforcement (over `BatchMaxOperations`) and zero-op batch.
+[X] **7. Integration testing strategy**
+      [X] Harness: in-process `ApiService` all the way through the batch pipeline to real Postgres (use existing integration test infra). Seed documents like other integration tests so each test is self-contained (no separate SQL scripts).
+      [X] Scenario: mixed create/update/delete batch (commit success) and verify DB state per op.
+      [X] Scenario: natural-key based update/delete with identity mismatch and immutable resources.
+      [X] Scenario: failure mid-batch (descriptor validation, referential conflict, authorization) -> assert rollback occurs.
+      [X] Scenario: ETag mismatch update (stale `_etag`) with rollback + 412 response.
+      [X] Scenario: limit enforcement (over `BatchMaxOperations`) and zero-op batch.
 
       
