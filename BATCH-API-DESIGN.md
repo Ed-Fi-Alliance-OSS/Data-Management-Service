@@ -934,6 +934,7 @@ public class AppSettings
 
 - `BatchMaxOperations` is read by `BatchHandler` from `_appSettings.Value`.
 - Default of 100, subject to tuning.
+- Operators can override the limit via the `AppSettings:BatchMaxOperations` entry in the frontend `appsettings*.json` files.
 
 ### 7.2 Frontend Request Size
 
@@ -942,6 +943,7 @@ public class AppSettings
   - `KestrelServerOptions.Limits.MaxRequestBodySize` to 10MB.
 - For batch:
   - Initial implementation can reuse the 10MB limit.
+    - These limits are configured today in `Program.cs` via `KestrelServerOptions`/`FormOptions`.
   - If batch performance testing shows the need for larger batches, we can:
     - Increase `MaxRequestBodySize` globally, or
     - Introduce a separate configuration for `/batch` requests.

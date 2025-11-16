@@ -80,6 +80,20 @@ internal class BatchHandler(
             return;
         }
 
+        int createCount = operations.Count(x => x.OperationType == BatchOperationType.Create);
+        int updateCount = operations.Count(x => x.OperationType == BatchOperationType.Update);
+        int deleteCount = operations.Count(x => x.OperationType == BatchOperationType.Delete);
+
+        _logger.LogInformation(
+            "Batch request {TraceId} received with {Total} operations (create: {CreateCount}, update: {UpdateCount}, delete: {DeleteCount}). Configured limit: {Limit}.",
+            requestInfo.FrontendRequest.TraceId.Value,
+            operations.Count,
+            createCount,
+            updateCount,
+            deleteCount,
+            _appSettings.Value.BatchMaxOperations
+        );
+
         if (operations.Count == 0)
         {
             _logger.LogInformation(

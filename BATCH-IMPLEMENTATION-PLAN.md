@@ -30,11 +30,11 @@
       [X] Create PostgresqlBatchUnitOfWorkFactory that opens the connection, starts a transaction at the configured isolation level, and builds the unit of work; register it in PostgresqlServiceExtensions alongside the
         other backend services.
       [X] Ensure the factory isn’t registered for unsupported datastores (MSSQL today) so the handler can detect the absence and emit 501.
-[ ] **5. Configuration, limits, and observability**
-      [ ] Extend EdFi.DataManagementService.Core.Configuration.AppSettings with BatchMaxOperations (default 100) and plumb it through IOptions<AppSettings> so BatchHandler can enforce the limit and log the chosen value
+[X] **5. Configuration, limits, and observability**
+      [X] Extend EdFi.DataManagementService.Core.Configuration.AppSettings with BatchMaxOperations (default 100) and plumb it through IOptions<AppSettings> so BatchHandler can enforce the limit and log the chosen value
         at startup.
-      [ ] Add the corresponding key to appsettings*.json so operators can tune it, and document recommended request size considerations (10 MB limit today) or hook into existing request-size configuration if needed.
-      [ ] Update logging inside BatchHandler to emit batch size and per-operation summaries per Section 8.1; consider exposing metric hooks (even if initially no-ops) so we can quickly add counters later.
+      [X] Add the corresponding key to appsettings*.json so operators can tune it, and document recommended request size considerations (10 MB limit today) or hook into existing request-size configuration if needed.
+      [X] Update logging inside BatchHandler to emit batch size and per-operation summaries per Section 8.1; consider exposing metric hooks (even if initially no-ops) so we can quickly add counters later.
 [ ] **6. Testing strategy**
       [ ] Unit-test the per-operation validation pipelines (e.g., BatchHandlerTests) to cover happy path, size limit, schema errors, authorization failures, natural-key resolution (both success and not-found), immutable
         identity mismatches, and backend result mapping; use fakes for IBatchUnitOfWork, the validation pipelines, and serializers to keep tests fast.
