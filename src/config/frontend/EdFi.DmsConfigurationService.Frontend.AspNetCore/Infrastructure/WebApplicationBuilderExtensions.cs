@@ -108,6 +108,10 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddSingleton<IClaimsDataLoader, ClaimsDataLoader>();
         webApplicationBuilder.Services.AddSingleton<IClaimsUploadService, ClaimsUploadService>();
         webApplicationBuilder.Services.AddTransient<IDmsInstanceRepository, DmsInstanceRepository>();
+        webApplicationBuilder.Services.AddTransient<
+            IDmsInstanceDerivativeRepository,
+            DmsInstanceDerivativeRepository
+        >();
         webApplicationBuilder.Services.AddSingleton<
             IConnectionStringEncryptionService,
             ConnectionStringEncryptionService
