@@ -30,6 +30,7 @@ using SecurityDriven;
 using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
 using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
+using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 using static EdFi.DataManagementService.Core.Handler.Utility;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
@@ -236,14 +237,38 @@ internal class BatchHandler(
 
             if (requiresNaturalKey)
             {
-                DocumentUuid? resolvedUuid = await unitOfWork.ResolveDocumentUuidAsync(
+                string identityDescription = string.Join(
+                    ",",
+                    naturalKeyIdentity!.DocumentIdentityElements.Select(e =>
+                        $"{e.IdentityJsonPath.Value}={e.IdentityValue}"
+                    )
+                );
+                _logger.LogDebug(
+                    "Resolving document UUID for operation {Index} ({Op} {Endpoint}) using natural key [{Identity}]",
+                    operation.Index,
+                    operation.OperationType.ToOperationString(),
+                    resolvedResource.EndpointName.Value,
+                    identityDescription
+                );
+
+                ReferentialId naturalKeyReferentialId = ReferentialIdFrom(
                     operationRequestInfo.ResourceInfo,
-                    naturalKeyIdentity!,
+                    naturalKeyIdentity!
+                );
+                DocumentUuid? resolvedUuid = await unitOfWork.ResolveDocumentUuidAsync(
+                    naturalKeyReferentialId,
                     requestInfo.FrontendRequest.TraceId
                 );
 
                 if (resolvedUuid == null)
                 {
+                    _logger.LogDebug(
+                        "Natural key lookup failed for operation {Index} ({Op} {Endpoint}) with identity [{Identity}]",
+                        operation.Index,
+                        operation.OperationType.ToOperationString(),
+                        resolvedResource.EndpointName.Value,
+                        identityDescription
+                    );
                     var notFound = new FrontendResponse(
                         StatusCode: 404,
                         Body: FailureResponse.ForNotFound(
@@ -298,6 +323,40 @@ internal class BatchHandler(
             {
                 await HandleFailureAsync(requestInfo, unitOfWork, operation, executionResult.ErrorResponse!);
                 return;
+            }
+
+            if (operation.OperationType == BatchOperationType.Create)
+            {
+                string resourceSegment =
+                    $"{operationRequestInfo.ResourceInfo.ProjectName.Value}{operationRequestInfo.ResourceInfo.ResourceName.Value}";
+                string identitySegment = string.Join(
+                    "#",
+                    operationRequestInfo.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(e =>
+                        $"${e.IdentityJsonPath.Value}={e.IdentityValue}"
+                    )
+                );
+                ReferentialId recomputed = ReferentialIdFrom(
+                    operationRequestInfo.ResourceInfo,
+                    operationRequestInfo.DocumentInfo.DocumentIdentity
+                );
+                string inputHex = BitConverter.ToString(
+                    System.Text.Encoding.UTF8.GetBytes(resourceSegment + identitySegment)
+                );
+
+                _logger.LogDebug(
+                    "Create operation {Index} resolved document identity [{Identity}] with referential id {ReferentialId} using input '{Input}' ({InputHex}) (recomputed {Recomputed})",
+                    operation.Index,
+                    string.Join(
+                        ",",
+                        operationRequestInfo.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(
+                            e => $"{e.IdentityJsonPath.Value}={e.IdentityValue}"
+                        )
+                    ),
+                    operationRequestInfo.DocumentInfo.ReferentialId.Value,
+                    resourceSegment + identitySegment,
+                    inputHex,
+                    recomputed.Value
+                );
             }
 
             successes.Add(

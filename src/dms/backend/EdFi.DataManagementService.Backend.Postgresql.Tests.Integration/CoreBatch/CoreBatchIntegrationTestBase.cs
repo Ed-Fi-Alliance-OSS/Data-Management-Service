@@ -49,6 +49,7 @@ public abstract class CoreBatchIntegrationTestBase : DatabaseTest
     protected const string ProjectName = "Test";
     protected const string ProjectEndpoint = "test";
     protected const string StudentResource = "Student";
+    protected const string StudentEndpoint = "students";
     protected const string ClaimSetName = "BatchIntegrationClaims";
 
     private static readonly Guid ReferentialNamespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
@@ -222,7 +223,7 @@ public abstract class CoreBatchIntegrationTestBase : DatabaseTest
     {
         return CreateBatchOperation(
             op: "create",
-            resource: StudentResource,
+            resource: StudentEndpoint,
             document: CreateStudentDocument(studentUniqueId, givenName, etag: null)
         );
     }
@@ -236,7 +237,7 @@ public abstract class CoreBatchIntegrationTestBase : DatabaseTest
     {
         return CreateBatchOperation(
             op: "update",
-            resource: StudentResource,
+            resource: StudentEndpoint,
             documentId: documentId,
             document: CreateStudentDocument(studentUniqueId, givenName, etag),
             ifMatch: etag
@@ -245,7 +246,7 @@ public abstract class CoreBatchIntegrationTestBase : DatabaseTest
 
     protected static JsonObject CreateUpdateByNaturalKeyOperation(
         string naturalKeyValue,
-        string etag,
+        string? etag,
         string studentUniqueId,
         string givenName
     )
@@ -253,7 +254,7 @@ public abstract class CoreBatchIntegrationTestBase : DatabaseTest
         var naturalKey = new JsonObject { ["studentUniqueId"] = naturalKeyValue };
         return CreateBatchOperation(
             op: "update",
-            resource: StudentResource,
+            resource: StudentEndpoint,
             naturalKey: naturalKey,
             document: CreateStudentDocument(studentUniqueId, givenName, etag),
             ifMatch: etag
@@ -262,7 +263,13 @@ public abstract class CoreBatchIntegrationTestBase : DatabaseTest
 
     protected static JsonObject CreateDeleteOperation(Guid documentId)
     {
-        return CreateBatchOperation(op: "delete", resource: StudentResource, documentId: documentId);
+        return CreateBatchOperation(op: "delete", resource: StudentEndpoint, documentId: documentId);
+    }
+
+    protected static JsonObject CreateDeleteByNaturalKeyOperation(string naturalKeyValue)
+    {
+        var naturalKey = new JsonObject { ["studentUniqueId"] = naturalKeyValue };
+        return CreateBatchOperation(op: "delete", resource: StudentEndpoint, naturalKey: naturalKey);
     }
 
     private static JsonObject CreateBatchOperation(

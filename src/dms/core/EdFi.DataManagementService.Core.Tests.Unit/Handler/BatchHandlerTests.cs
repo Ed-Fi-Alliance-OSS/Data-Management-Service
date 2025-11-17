@@ -67,8 +67,8 @@ public class BatchHandlerTests
             req => Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess(req.DocumentUuid));
         public Func<IDeleteRequest, Task<DeleteResult>> OnDelete { get; set; } =
             req => Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess());
-        public Func<ResourceInfo, DocumentIdentity, TraceId, Task<DocumentUuid?>> OnResolve { get; set; } =
-            (info, identity, traceId) => Task.FromResult<DocumentUuid?>(new DocumentUuid(Guid.NewGuid()));
+        public Func<ReferentialId, TraceId, Task<DocumentUuid?>> OnResolve { get; set; } =
+            (referentialId, traceId) => Task.FromResult<DocumentUuid?>(new DocumentUuid(Guid.NewGuid()));
 
         public bool CommitCalled { get; private set; }
         public bool RollbackCalled { get; private set; }
@@ -79,11 +79,8 @@ public class BatchHandlerTests
 
         public Task<DeleteResult> DeleteDocumentByIdAsync(IDeleteRequest request) => OnDelete(request);
 
-        public Task<DocumentUuid?> ResolveDocumentUuidAsync(
-            ResourceInfo resourceInfo,
-            DocumentIdentity identity,
-            TraceId traceId
-        ) => OnResolve(resourceInfo, identity, traceId);
+        public Task<DocumentUuid?> ResolveDocumentUuidAsync(ReferentialId referentialId, TraceId traceId) =>
+            OnResolve(referentialId, traceId);
 
         public Task CommitAsync()
         {
@@ -400,7 +397,7 @@ public class BatchHandlerTests
         var context = new BatchHandlerTestContext();
         var unitOfWork = new TestBatchUnitOfWork
         {
-            OnResolve = (info, identity, traceId) =>
+            OnResolve = (referentialId, traceId) =>
                 Task.FromResult<DocumentUuid?>(new DocumentUuid(Guid.NewGuid())),
             OnUpdate = request => Task.FromResult<UpdateResult>(new UpdateResult.UpdateFailureETagMisMatch()),
         };
@@ -431,7 +428,7 @@ public class BatchHandlerTests
         var context = new BatchHandlerTestContext();
         var unitOfWork = new TestBatchUnitOfWork
         {
-            OnResolve = (info, identity, traceId) =>
+            OnResolve = (referentialId, traceId) =>
                 Task.FromResult<DocumentUuid?>(
                     new DocumentUuid(Guid.Parse("11111111-1111-1111-1111-111111111111"))
                 ),

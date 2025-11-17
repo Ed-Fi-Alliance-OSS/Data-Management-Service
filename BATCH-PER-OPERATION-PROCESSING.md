@@ -395,10 +395,10 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
          else if (op.NaturalKey is not null)
          {
             var identity = BuildDocumentIdentityFromNaturalKey(projectSchema, op.Endpoint, op.NaturalKey);
+            var referentialId = ReferentialIdCalculator.ReferentialIdFrom(new ResourceInfo(...), identity);
              documentUuid = await uow.ResolveDocumentUuidAsync(
-                 resourceInfo: new ResourceInfo(...), // or computed later
-                 identity,
-                 batchInfo.FrontendRequest.TraceId
+                referentialId,
+                batchInfo.FrontendRequest.TraceId
              );
              if (documentUuid is null)
              {

@@ -21,14 +21,10 @@ public interface IBatchUnitOfWork : IAsyncDisposable
     Task<DeleteResult> DeleteDocumentByIdAsync(IDeleteRequest request);
 
     /// <summary>
-    /// Resolves a document UUID from the provided natural key identity.
+    /// Resolves a document UUID from the provided referential identifier.
     /// Returns null when the document does not exist.
     /// </summary>
-    Task<DocumentUuid?> ResolveDocumentUuidAsync(
-        ResourceInfo resourceInfo,
-        DocumentIdentity identity,
-        TraceId traceId
-    );
+    Task<DocumentUuid?> ResolveDocumentUuidAsync(ReferentialId referentialId, TraceId traceId);
 
     Task CommitAsync();
     Task RollbackAsync();

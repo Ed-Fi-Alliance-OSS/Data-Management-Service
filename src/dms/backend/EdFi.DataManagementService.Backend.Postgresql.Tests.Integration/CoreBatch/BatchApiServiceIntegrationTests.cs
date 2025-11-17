@@ -118,4 +118,29 @@ public class BatchApiServiceIntegrationTests : CoreBatchIntegrationTestBase
         response.StatusCode.Should().Be(200);
         response.Body!.AsArray().Should().BeEmpty();
     }
+
+    [Test]
+    public async Task Given_Create_Update_Delete_By_NaturalKey_When_Update_Uses_Same_Batch_Document_Succeeds()
+    {
+        string uniqueId = $"batch-{Guid.NewGuid():N}".Substring(0, 12);
+
+        JsonObject create = CreateCreateOperation(uniqueId, "Initial");
+        JsonObject update = CreateUpdateByNaturalKeyOperation(
+            naturalKeyValue: uniqueId,
+            etag: null,
+            studentUniqueId: uniqueId,
+            givenName: "Updated"
+        );
+        JsonObject delete = CreateDeleteByNaturalKeyOperation(uniqueId);
+
+        IFrontendResponse response = await ExecuteBatchAsync(create, update, delete);
+
+        response.StatusCode.Should().Be(200);
+        JsonArray body = response.Body!.AsArray();
+        body.Count.Should().Be(3);
+
+        Guid createdId = Guid.Parse(body[0]!["documentId"]!.GetValue<string>());
+        JsonObject? deletedDocument = await GetStudentDocumentAsync(createdId);
+        deletedDocument.Should().BeNull();
+    }
 }

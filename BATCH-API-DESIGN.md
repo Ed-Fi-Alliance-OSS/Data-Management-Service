@@ -590,7 +590,7 @@ For each operation `op` at `index`:
 3. **Natural Key Resolution (for `update`/`delete` with `naturalKey`)**:
    - Use `resourceSchema.IdentityJsonPaths` and `naturalKey` to create a `DocumentIdentity`.
    - Compute `ReferentialId` with `ReferentialIdCalculator.ReferentialIdFrom`.
-   - Call `uow.ResolveDocumentUuidAsync(resourceInfo, documentIdentity, traceId)`:
+  - Call `uow.ResolveDocumentUuidAsync(referentialId, traceId)`:
      - Internally uses backend’s `FindDocumentByReferentialId`.
    - If no document exists:
      - Treat as a 404 failure for this operation.
@@ -722,14 +722,10 @@ public interface IBatchUnitOfWork : IAsyncDisposable
     Task<DeleteResult> DeleteDocumentByIdAsync(IDeleteRequest request);
 
     /// <summary>
-    /// Resolves a document UUID from its natural key (DocumentIdentity).
+    /// Resolves a document UUID from a referential identifier computed in core.
     /// Returns null if the document does not exist.
     /// </summary>
-    Task<DocumentUuid?> ResolveDocumentUuidAsync(
-        ResourceInfo resourceInfo,
-        DocumentIdentity identity,
-        TraceId traceId
-    );
+    Task<DocumentUuid?> ResolveDocumentUuidAsync(ReferentialId referentialId, TraceId traceId);
 
     Task CommitAsync();
     Task RollbackAsync();
@@ -774,13 +770,8 @@ public sealed class PostgresqlBatchUnitOfWork(
     public async Task<DeleteResult> DeleteDocumentByIdAsync(IDeleteRequest request)
         => await deleteDocumentById.DeleteById(request, _connection, _transaction);
 
-    public async Task<DocumentUuid?> ResolveDocumentUuidAsync(
-        ResourceInfo resourceInfo,
-        DocumentIdentity identity,
-        TraceId traceId
-    )
+    public async Task<DocumentUuid?> ResolveDocumentUuidAsync(ReferentialId referentialId, TraceId traceId)
     {
-        var referentialId = ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, identity);
         var partitionKey = PartitionUtility.PartitionKeyFor(referentialId);
 
         Document? doc = await sqlAction.FindDocumentByReferentialId(

@@ -135,8 +135,7 @@ public class PostgresqlBatchUnitOfWorkTests : DatabaseTest
 
         await using PostgresqlBatchUnitOfWork batch = await CreateBatchUnitOfWorkAsync();
         DocumentUuid? resolved = await batch.ResolveDocumentUuidAsync(
-            resourceInfo,
-            documentIdentity,
+            new ReferentialId(referentialId),
             new TraceId("resolve-test")
         );
 

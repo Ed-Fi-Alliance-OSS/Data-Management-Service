@@ -130,6 +130,20 @@ public class UpsertDocument(
             transaction
         );
 
+        _logger.LogDebug(
+            "Inserted document {DocumentUuid} for project {Project} resource {Resource} with referential id {ReferentialId} (identity [{Identity}])",
+            upsertRequest.DocumentUuid.Value,
+            upsertRequest.ResourceInfo.ProjectName.Value,
+            upsertRequest.ResourceInfo.ResourceName.Value,
+            upsertRequest.DocumentInfo.ReferentialId.Value,
+            string.Join(
+                ",",
+                upsertRequest.DocumentInfo.DocumentIdentity.DocumentIdentityElements.Select(e =>
+                    $"{e.IdentityJsonPath.Value}={e.IdentityValue}"
+                )
+            )
+        );
+
         SuperclassIdentity? superclassIdentity = upsertRequest.DocumentInfo.SuperclassIdentity;
 
         try

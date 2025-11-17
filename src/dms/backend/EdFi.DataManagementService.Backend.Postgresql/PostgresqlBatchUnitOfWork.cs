@@ -6,9 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Linq;
 using System.Threading.Tasks;
-using Be.Vlaanderen.Basisregisters.Generators.Guid;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -23,8 +21,6 @@ namespace EdFi.DataManagementService.Backend.Postgresql;
 
 internal sealed class PostgresqlBatchUnitOfWork : IBatchUnitOfWork
 {
-    private static readonly Guid ReferentialNamespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
-
     private readonly NpgsqlConnection _connection;
     private readonly NpgsqlTransaction _transaction;
     private readonly ILogger<PostgresqlBatchUnitOfWork> _logger;
@@ -68,14 +64,15 @@ internal sealed class PostgresqlBatchUnitOfWork : IBatchUnitOfWork
         return _deleteDocumentById.DeleteById(request, _connection, _transaction);
     }
 
-    public async Task<DocumentUuid?> ResolveDocumentUuidAsync(
-        ResourceInfo resourceInfo,
-        DocumentIdentity identity,
-        TraceId traceId
-    )
+    public async Task<DocumentUuid?> ResolveDocumentUuidAsync(ReferentialId referentialId, TraceId traceId)
     {
-        ReferentialId referentialId = CreateReferentialId(resourceInfo, identity);
         PartitionKey partitionKey = PartitionKeyFor(referentialId);
+        _logger.LogDebug(
+            "Resolving referential id {ReferentialId} (partition {PartitionKey}) - TraceId {TraceId}",
+            referentialId.Value,
+            partitionKey.Value,
+            traceId.Value
+        );
 
         var document = await _sqlAction.FindDocumentByReferentialId(
             referentialId,
@@ -84,6 +81,15 @@ internal sealed class PostgresqlBatchUnitOfWork : IBatchUnitOfWork
             _transaction,
             traceId
         );
+
+        if (document == null)
+        {
+            _logger.LogDebug(
+                "Referential id {ReferentialId} not found - TraceId {TraceId}",
+                referentialId.Value,
+                traceId.Value
+            );
+        }
 
         return document == null ? null : new DocumentUuid(document.DocumentUuid);
     }
@@ -121,20 +127,6 @@ internal sealed class PostgresqlBatchUnitOfWork : IBatchUnitOfWork
             await _transaction.DisposeAsync();
             await _connection.DisposeAsync();
         }
-    }
-
-    private static ReferentialId CreateReferentialId(ResourceInfo resourceInfo, DocumentIdentity identity)
-    {
-        string resourceSegment = $"{resourceInfo.ProjectName.Value}{resourceInfo.ResourceName.Value}";
-        string identitySegment = string.Join(
-            "#",
-            identity.DocumentIdentityElements.Select(element =>
-                $"${element.IdentityJsonPath.Value}={element.IdentityValue}"
-            )
-        );
-
-        Guid referentialGuid = Deterministic.Create(ReferentialNamespace, resourceSegment + identitySegment);
-        return new ReferentialId(referentialGuid);
     }
 }
 
