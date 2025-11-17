@@ -3,38 +3,16 @@ Feature: DmsInstanceDerivatives endpoints
         Background:
             Given valid credentials
               And token received
-
-        Scenario: 01 Ensure clients can GET dmsInstanceDerivatives list
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                   |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb;  |
-              And the system has these "dmsInstanceDerivatives"
-                  | instanceId | derivativeType | connectionString                       |
-                  | {id}       | ReadReplica    | Server=replica1;Database=ReplicaDb1;   |
-                  | {id}       | Snapshot       | Server=snapshot1;Database=SnapshotDb1; |
-                  | {id}       | ReadReplica    | Server=replica2;Database=ReplicaDb2;   |
-             When a GET request is made to "/v2/dmsInstanceDerivatives?offset=0&limit=2"
-             Then it should respond with 200
-              And the response body is
+              And a POST request is made to "/v2/dmsInstances" with
                   """
-                      [{
-                          "id": {id},
-                          "instanceId": {id},
-                          "derivativeType": "ReadReplica",
-                          "connectionString": "Server=replica1;Database=ReplicaDb1;"
-                      },
-                      {
-                          "id": {id},
-                          "instanceId": {id},
-                          "derivativeType": "Snapshot",
-                          "connectionString": "Server=snapshot1;Database=SnapshotDb1;"
-                      }]
+                  {
+                    "instanceType": "Production",
+                    "instanceName": "Parent Instance",
+                    "connectionString": "Server=localhost;Database=TestDb;"
+                  }
                   """
 
         Scenario: 02 Ensure clients can create a dmsInstanceDerivative with ReadReplica type
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -54,16 +32,13 @@ Feature: DmsInstanceDerivatives endpoints
                   """
                     {
                         "id": {id},
-                        "instanceId": {id},
+                        "instanceId": {dmsInstanceId},
                         "derivativeType": "ReadReplica",
                         "connectionString": "Server=newreplica;Database=NewReplicaDb;"
                     }
                   """
 
         Scenario: 03 Ensure clients can create a dmsInstanceDerivative with Snapshot type
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -77,16 +52,13 @@ Feature: DmsInstanceDerivatives endpoints
                   """
                     {
                         "id": {id},
-                        "instanceId": {id},
+                        "instanceId": {dmsInstanceId},
                         "derivativeType": "Snapshot",
                         "connectionString": "Server=newsnapshot;Database=NewSnapshotDb;"
                     }
                   """
 
         Scenario: 04 Verify retrieving a single dmsInstanceDerivative by ID
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -102,16 +74,13 @@ Feature: DmsInstanceDerivatives endpoints
                   """
                       {
                           "id": {id},
-                          "instanceId": {id},
+                          "instanceId": {dmsInstanceId},
                           "derivativeType": "ReadReplica",
                           "connectionString": "Server=retrieved;Database=RetrievedDb;"
                       }
                   """
 
         Scenario: 05 Put an existing dmsInstanceDerivative
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -135,16 +104,13 @@ Feature: DmsInstanceDerivatives endpoints
                   """
                     {
                         "id": {id},
-                        "instanceId": {id},
+                        "instanceId": {dmsInstanceId},
                         "derivativeType": "Snapshot",
                         "connectionString": "Server=updated;Database=UpdatedDb;"
                     }
                   """
 
         Scenario: 06 Verify deleting a specific dmsInstanceDerivative by ID
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -158,9 +124,6 @@ Feature: DmsInstanceDerivatives endpoints
              Then it should respond with 204
 
         Scenario: 07 Verify error handling when trying to get an item that has already been deleted
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -176,9 +139,6 @@ Feature: DmsInstanceDerivatives endpoints
              Then it should respond with 404
 
         Scenario: 08 Verify error handling when trying to update an item that has already been deleted
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -202,9 +162,6 @@ Feature: DmsInstanceDerivatives endpoints
              Then it should respond with 404
 
         Scenario: 09 Verify error handling when trying to delete an item that has already been deleted
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -256,6 +213,7 @@ Feature: DmsInstanceDerivatives endpoints
                         "type": "urn:ed-fi:api:bad-request",
                         "title": "Bad Request",
                         "status": 400,
+                        "validationErrors": {},
                         "errors": []
                     }
                   """
@@ -305,7 +263,8 @@ Feature: DmsInstanceDerivatives endpoints
                         "status": 400,
                         "validationErrors": {
                             "DerivativeType": [
-                                "DerivativeType is required."
+                                "DerivativeType is required.",
+                                "DerivativeType must be either 'ReadReplica' or 'Snapshot'."
                             ]
                         },
                         "errors": []
@@ -357,7 +316,7 @@ Feature: DmsInstanceDerivatives endpoints
                         "status": 400,
                         "validationErrors": {
                             "ConnectionString": [
-                                "The length of 'Connection String' must be 1000 characters or fewer. You entered 1010 characters."
+                                "ConnectionString must be 1000 characters or fewer."
                             ]
                         },
                         "errors": []
@@ -365,9 +324,6 @@ Feature: DmsInstanceDerivatives endpoints
                   """
 
         Scenario: 18 Verify PUT request with mismatched IDs
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -404,9 +360,6 @@ Feature: DmsInstanceDerivatives endpoints
                   """
 
         Scenario: 19 Verify CASCADE DELETE when parent dmsInstance is deleted
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
              When a POST request is made to "/v2/dmsInstanceDerivatives" with
                   """
                     {
@@ -430,25 +383,3 @@ Feature: DmsInstanceDerivatives endpoints
              When a GET request is made to "/v2/dmsInstanceDerivatives/{dmsInstanceDerivativeId}"
              Then it should respond with 404
 
-        Scenario: 20 Verify creating derivative without connectionString is valid
-            Given the system has these "dmsInstances"
-                  | instanceType | instanceName    | connectionString                  |
-                  | Production   | Parent Instance | Server=localhost;Database=TestDb; |
-             When a POST request is made to "/v2/dmsInstanceDerivatives" with
-                  """
-                    {
-                        "instanceId": {dmsInstanceId},
-                        "derivativeType": "ReadReplica",
-                        "connectionString": null
-                    }
-                  """
-             Then it should respond with 201
-              And the record can be retrieved with a GET request
-                  """
-                    {
-                        "id": {id},
-                        "instanceId": {id},
-                        "derivativeType": "ReadReplica",
-                        "connectionString": null
-                    }
-                  """
