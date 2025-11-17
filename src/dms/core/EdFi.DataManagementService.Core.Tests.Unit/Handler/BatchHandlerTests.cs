@@ -426,6 +426,60 @@ public class BatchHandlerTests
     }
 
     [Test]
+    public async Task Update_With_Natural_Key_Matching_Document_Allows_Identity_Check()
+    {
+        var context = new BatchHandlerTestContext();
+        var unitOfWork = new TestBatchUnitOfWork
+        {
+            OnResolve = (info, identity, traceId) =>
+                Task.FromResult<DocumentUuid?>(
+                    new DocumentUuid(Guid.Parse("11111111-1111-1111-1111-111111111111"))
+                ),
+            OnUpdate = request =>
+                Task.FromResult<UpdateResult>(new UpdateResult.UpdateSuccess(request.DocumentUuid)),
+            OnDelete = request => Task.FromResult<DeleteResult>(new DeleteResult.DeleteSuccess()),
+        };
+
+        var handler = context.CreateHandler(new TestBatchUnitOfWorkFactory(() => unitOfWork));
+
+        var requestInfo = context.CreateBatchRequest(
+            """
+            [
+              {
+                "op": "create",
+                "resource": "students",
+                "document": {
+                  "studentUniqueId": "BATCH-STUDENT-001",
+                  "_etag": "1"
+                }
+              },
+              {
+                "op": "update",
+                "resource": "students",
+                "naturalKey": { "studentUniqueId": "BATCH-STUDENT-001" },
+                "document": {
+                  "studentUniqueId": "BATCH-STUDENT-001",
+                  "_etag": "2",
+                  "firstName": "Updated"
+                }
+              },
+              {
+                "op": "delete",
+                "resource": "students",
+                "naturalKey": { "studentUniqueId": "BATCH-STUDENT-001" }
+              }
+            ]
+            """
+        );
+
+        await handler.Execute(requestInfo, TestHelper.NullNext);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        unitOfWork.CommitCalled.Should().BeTrue();
+        unitOfWork.RollbackCalled.Should().BeFalse();
+    }
+
+    [Test]
     public async Task Upsert_NotAuthorized_Returns_403()
     {
         var context = new BatchHandlerTestContext();

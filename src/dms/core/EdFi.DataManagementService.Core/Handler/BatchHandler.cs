@@ -519,7 +519,7 @@ internal class BatchHandler(
             return true;
         }
 
-        if (!operationRequestInfo.DocumentInfo.DocumentIdentity.Equals(naturalKeyIdentity))
+        if (!DocumentIdentitiesEqual(operationRequestInfo.DocumentInfo.DocumentIdentity, naturalKeyIdentity))
         {
             errorResponse = new FrontendResponse(
                 StatusCode: 400,
@@ -530,6 +530,33 @@ internal class BatchHandler(
                 Headers: []
             );
             return false;
+        }
+
+        return true;
+    }
+
+    private static bool DocumentIdentitiesEqual(DocumentIdentity left, DocumentIdentity right)
+    {
+        DocumentIdentityElement[] leftElements = left.DocumentIdentityElements;
+        DocumentIdentityElement[] rightElements = right.DocumentIdentityElements;
+
+        if (leftElements.Length != rightElements.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < leftElements.Length; i++)
+        {
+            DocumentIdentityElement l = leftElements[i];
+            DocumentIdentityElement r = rightElements[i];
+
+            if (
+                !string.Equals(l.IdentityJsonPath.Value, r.IdentityJsonPath.Value, StringComparison.Ordinal)
+                || !string.Equals(l.IdentityValue, r.IdentityValue, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
         }
 
         return true;
