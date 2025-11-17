@@ -644,7 +644,7 @@ internal class ApiService : IApiService
     /// </summary>
     public JsonNode GetResourceOpenApiSpecification(JsonArray servers)
     {
-        JsonNode specification = _resourceOpenApiSpecification.Value;
+        JsonNode specification = _resourceOpenApiSpecification.Value.DeepClone();
         specification["servers"] = servers;
 
         // Add OAuth2 Security Section
@@ -659,7 +659,7 @@ internal class ApiService : IApiService
     /// </summary>
     public JsonNode GetDescriptorOpenApiSpecification(JsonArray servers)
     {
-        JsonNode specification = _descriptorOpenApiSpecification.Value;
+        JsonNode specification = _descriptorOpenApiSpecification.Value.DeepClone();
         specification["servers"] = servers;
 
         // Add OAuth2 Security Section
