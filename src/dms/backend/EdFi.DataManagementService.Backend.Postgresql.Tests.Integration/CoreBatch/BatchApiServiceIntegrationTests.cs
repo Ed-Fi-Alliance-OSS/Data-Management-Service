@@ -44,6 +44,71 @@ public class BatchApiServiceIntegrationTests : CoreBatchIntegrationTestBase
     }
 
     [Test]
+    public async Task Given_Two_Creates_With_Different_Identities_Succeeds()
+    {
+        string firstStudentId = $"batch-dupe-{Guid.NewGuid():N}".Substring(0, 12);
+        string secondStudentId = $"batch-dupe-{Guid.NewGuid():N}".Substring(0, 12);
+
+        IFrontendResponse response = await ExecuteBatchAsync(
+            CreateCreateOperation(firstStudentId, "First"),
+            CreateCreateOperation(secondStudentId, "Second")
+        );
+
+        response.StatusCode.Should().Be(200);
+        JsonArray body = response.Body!.AsArray();
+        body.Count.Should().Be(2);
+
+        Guid firstDocumentId = Guid.Parse(body[0]!["documentId"]!.GetValue<string>());
+        Guid secondDocumentId = Guid.Parse(body[1]!["documentId"]!.GetValue<string>());
+        firstDocumentId.Should().NotBe(secondDocumentId);
+
+        JsonObject? firstDocument = await GetStudentDocumentAsync(firstDocumentId);
+        JsonObject? secondDocument = await GetStudentDocumentAsync(secondDocumentId);
+
+        firstDocument.Should().NotBeNull();
+        secondDocument.Should().NotBeNull();
+
+        firstDocument!["studentUniqueId"]!.GetValue<string>().Should().Be(firstStudentId);
+        secondDocument!["studentUniqueId"]!.GetValue<string>().Should().Be(secondStudentId);
+        firstDocument["givenName"]!.GetValue<string>().Should().Be("First");
+        secondDocument["givenName"]!.GetValue<string>().Should().Be("Second");
+    }
+
+    [Test]
+    public async Task Given_Create_Update_Delete_Create_On_Same_Resource_Succeeds()
+    {
+        string initialStudentId = $"batch-chain-{Guid.NewGuid():N}".Substring(0, 12);
+        string secondStudentId = $"batch-chain-{Guid.NewGuid():N}".Substring(0, 12);
+
+        IFrontendResponse response = await ExecuteBatchAsync(
+            CreateCreateOperation(initialStudentId, "First"),
+            CreateUpdateByNaturalKeyOperation(
+                naturalKeyValue: initialStudentId,
+                etag: null,
+                studentUniqueId: initialStudentId,
+                givenName: "Updated"
+            ),
+            CreateDeleteByNaturalKeyOperation(initialStudentId),
+            CreateCreateOperation(secondStudentId, "Second")
+        );
+
+        response.StatusCode.Should().Be(200);
+        JsonArray body = response.Body!.AsArray();
+        body.Count.Should().Be(4);
+
+        Guid firstDocumentId = Guid.Parse(body[0]!["documentId"]!.GetValue<string>());
+        Guid secondDocumentId = Guid.Parse(body[3]!["documentId"]!.GetValue<string>());
+
+        JsonObject? deletedDocument = await GetStudentDocumentAsync(firstDocumentId);
+        deletedDocument.Should().BeNull("first document should be deleted before final create");
+
+        JsonObject? secondDocument = await GetStudentDocumentAsync(secondDocumentId);
+        secondDocument.Should().NotBeNull();
+        secondDocument!["studentUniqueId"]!.GetValue<string>().Should().Be(secondStudentId);
+        secondDocument["givenName"]!.GetValue<string>().Should().Be("Second");
+    }
+
+    [Test]
     public async Task Given_Natural_Key_Update_With_Mismatched_Identity_When_Resource_Immutable_Returns_400()
     {
         Guid documentId = await InsertStudentAsync("immutable-match", "Original");
