@@ -19,14 +19,16 @@ Feature: DmsInstances endpoints
                           "instanceType": "Production",
                           "instanceName": "Test Instance",
                           "connectionString": "Server=localhost;Database=TestDb;",
-                          "dmsInstanceRouteContexts": []
+                          "dmsInstanceRouteContexts": [],
+                          "dmsInstanceDerivatives": []
                       },
                       {
                           "id": {id},
                           "instanceType": "Development",
                           "instanceName": "Dev Instance",
                           "connectionString": "Server=dev;Database=DevDb;",
-                          "dmsInstanceRouteContexts": []
+                          "dmsInstanceRouteContexts": [],
+                          "dmsInstanceDerivatives": []
                       }]
                   """
 
@@ -53,7 +55,8 @@ Feature: DmsInstances endpoints
                         "instanceType": "Production",
                         "instanceName": "New Test Instance",
                         "connectionString": "Server=newtest;Database=NewTestDb;",
-                        "dmsInstanceRouteContexts": []
+                        "dmsInstanceRouteContexts": [],
+                        "dmsInstanceDerivatives": []
                     }
                   """
 
@@ -76,7 +79,8 @@ Feature: DmsInstances endpoints
                           "instanceType": "Development",
                           "instanceName": "Retrieved Instance",
                           "connectionString": "Server=retrieved;Database=RetrievedDb;",
-                          "dmsInstanceRouteContexts": []
+                          "dmsInstanceRouteContexts": [],
+                          "dmsInstanceDerivatives": []
                       }
                   """
 
@@ -107,7 +111,8 @@ Feature: DmsInstances endpoints
                         "instanceType": "Production",
                         "instanceName": "Updated Instance",
                         "connectionString": "Server=updated;Database=UpdatedDb;",
-                        "dmsInstanceRouteContexts": []
+                        "dmsInstanceRouteContexts": [],
+                        "dmsInstanceDerivatives": []
                     }
                   """
 
@@ -308,5 +313,60 @@ Feature: DmsInstances endpoints
                             ]
                         },
                         "errors": []
+                    }
+                  """
+
+        Scenario: 16 Verify retrieving a dmsInstance with derivatives
+             When a POST request is made to "/v2/dmsInstances" with
+                  """
+                    {
+                        "instanceType": "Production",
+                        "instanceName": "Instance with Derivatives",
+                        "connectionString": "Server=main;Database=MainDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v2/dmsInstanceDerivatives" with
+                  """
+                    {
+                        "instanceId": {dmsInstanceId},
+                        "derivativeType": "ReadReplica",
+                        "connectionString": "Server=replica;Database=ReplicaDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v2/dmsInstanceDerivatives" with
+                  """
+                    {
+                        "instanceId": {dmsInstanceId},
+                        "derivativeType": "Snapshot",
+                        "connectionString": "Server=snapshot;Database=SnapshotDb;"
+                    }
+                  """
+             Then it should respond with 201
+             When a GET request is made to "/v2/dmsInstances/{dmsInstanceId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    {
+                        "id": {id},
+                        "instanceType": "Production",
+                        "instanceName": "Instance with Derivatives",
+                        "connectionString": "Server=main;Database=MainDb;",
+                        "dmsInstanceRouteContexts": [],
+                        "dmsInstanceDerivatives": [
+                            {
+                                "id": "{*}",
+                                "dmsInstanceId": {dmsInstanceId},
+                                "derivativeType": "ReadReplica",
+                                "connectionString": "Server=replica;Database=ReplicaDb;"
+                            },
+                            {
+                                "id": "{*}",
+                                "dmsInstanceId": {dmsInstanceId},
+                                "derivativeType": "Snapshot",
+                                "connectionString": "Server=snapshot;Database=SnapshotDb;"
+                            }
+                        ]
                     }
                   """

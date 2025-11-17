@@ -41,6 +41,18 @@ public interface IDmsInstanceDerivativeRepository
     /// Delete a DMS instance derivative by ID
     /// </summary>
     Task<DmsInstanceDerivativeDeleteResult> DeleteDmsInstanceDerivative(long id);
+
+    /// <summary>
+    /// Get all derivatives for a specific DMS instance
+    /// </summary>
+    Task<InstanceDerivativeQueryByInstanceResult> GetInstanceDerivativesByInstance(long instanceId);
+
+    /// <summary>
+    /// Get all derivatives for multiple DMS instances
+    /// </summary>
+    Task<InstanceDerivativeQueryByInstanceIdsResult> GetInstanceDerivativesByInstanceIds(
+        List<long> instanceIds
+    );
 }
 
 // Result types using discriminated unions pattern
@@ -158,4 +170,38 @@ public record DmsInstanceDerivativeDeleteResult
     /// </summary>
     /// <param name="FailureMessage">Error message</param>
     public record FailureUnknown(string FailureMessage) : DmsInstanceDerivativeDeleteResult();
+}
+
+/// <summary>
+/// Result of querying derivatives for a specific instance
+/// </summary>
+public record InstanceDerivativeQueryByInstanceResult
+{
+    /// <summary>
+    /// Successful retrieval of derivatives for a specific instance
+    /// </summary>
+    public record Success(IEnumerable<DmsInstanceDerivativeResponse> DmsInstanceDerivativeResponses)
+        : InstanceDerivativeQueryByInstanceResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : InstanceDerivativeQueryByInstanceResult();
+}
+
+/// <summary>
+/// Result of querying derivatives for multiple instances
+/// </summary>
+public record InstanceDerivativeQueryByInstanceIdsResult
+{
+    /// <summary>
+    /// Successful retrieval of derivatives for multiple instances
+    /// </summary>
+    public record Success(IEnumerable<DmsInstanceDerivativeResponse> DmsInstanceDerivativeResponses)
+        : InstanceDerivativeQueryByInstanceIdsResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : InstanceDerivativeQueryByInstanceIdsResult();
 }

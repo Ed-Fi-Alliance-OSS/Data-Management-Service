@@ -32,11 +32,17 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         public async Task Setup()
         {
             // Insert a DmsInstance and use its ID
+            var derivativeRepository = new DmsInstanceDerivativeRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+            );
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-                _repository
+                _repository,
+                derivativeRepository
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -108,11 +114,17 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         public async Task Setup()
         {
             // Insert a DmsInstance and use its ID
+            var derivativeRepository = new DmsInstanceDerivativeRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+            );
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-                _repository
+                _repository,
+                derivativeRepository
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -169,11 +181,17 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         public async Task Setup()
         {
             // Insert a DmsInstance and use its ID
+            var derivativeRepository = new DmsInstanceDerivativeRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+            );
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-                _repository
+                _repository,
+                derivativeRepository
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -218,11 +236,17 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         public async Task Setup()
         {
             // Insert a DmsInstance and use its ID
+            var derivativeRepository = new DmsInstanceDerivativeRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<DmsInstanceDerivativeRepository>.Instance,
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+            );
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-                _repository
+                _repository,
+                derivativeRepository
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {

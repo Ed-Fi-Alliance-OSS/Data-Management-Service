@@ -100,6 +100,10 @@ public class DmsInstanceModuleTests
                                 InstanceType = "Production",
                                 InstanceName = "Test Instance",
                                 ConnectionString = "Server=localhost;Database=TestDb;",
+                                DmsInstanceDerivatives =
+                                [
+                                    new(1, 1, "ReadReplica", "Server=localhost;Database=Replica1;"),
+                                ],
                             },
                         ]
                     )
@@ -118,6 +122,11 @@ public class DmsInstanceModuleTests
                             [
                                 new(1, 1, "contextKey1", "contextValue1"),
                                 new(2, 1, "contextKey2", "contextValue2"),
+                            ],
+                            DmsInstanceDerivatives =
+                            [
+                                new(1, 1, "ReadReplica", "Server=localhost;Database=Replica1;"),
+                                new(2, 1, "Snapshot", "Server=localhost;Database=Snapshot1;"),
                             ],
                         }
                     )
@@ -200,6 +209,40 @@ public class DmsInstanceModuleTests
             instance
                 .DmsInstanceRouteContexts.Should()
                 .Contain(c => c.ContextKey == "contextKey2" && c.ContextValue == "contextValue2");
+        }
+
+        [Test]
+        public async Task Should_return_dms_instance_with_derivatives()
+        {
+            using var client = SetUpClient();
+
+            var getResponse = await client.GetAsync("/v2/dmsInstances/1");
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var responseContent = await getResponse.Content.ReadAsStringAsync();
+            var instance = JsonSerializer.Deserialize<DmsInstanceResponse>(
+                responseContent,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+            );
+
+            instance.Should().NotBeNull();
+            instance!.DmsInstanceDerivatives.Should().HaveCount(2);
+            instance
+                .DmsInstanceDerivatives.Should()
+                .Contain(d =>
+                    d.Id == 1
+                    && d.DmsInstanceId == 1
+                    && d.DerivativeType == "ReadReplica"
+                    && d.ConnectionString == "Server=localhost;Database=Replica1;"
+                );
+            instance
+                .DmsInstanceDerivatives.Should()
+                .Contain(d =>
+                    d.Id == 2
+                    && d.DmsInstanceId == 1
+                    && d.DerivativeType == "Snapshot"
+                    && d.ConnectionString == "Server=localhost;Database=Snapshot1;"
+                );
         }
     }
 

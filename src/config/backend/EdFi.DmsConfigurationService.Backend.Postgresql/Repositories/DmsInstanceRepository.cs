@@ -19,7 +19,8 @@ public class DmsInstanceRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<DmsInstanceRepository> logger,
     IConnectionStringEncryptionService encryptionService,
-    IDmsInstanceRouteContextRepository routeContextRepository
+    IDmsInstanceRouteContextRepository routeContextRepository,
+    IDmsInstanceDerivativeRepository derivativeRepository
 ) : IDmsInstanceRepository
 {
     public async Task<DmsInstanceInsertResult> InsertDmsInstance(DmsInstanceInsertCommand command)
@@ -100,6 +101,30 @@ public class DmsInstanceRepository(
                 _ => new Dictionary<long, List<DmsInstanceRouteContextItem>>(),
             };
 
+            // Fetch derivatives for all instances in this page
+            var derivativesResult = await derivativeRepository.GetInstanceDerivativesByInstanceIds(
+                instanceIds
+            );
+
+            // Group derivatives by instance ID
+            var derivativesByInstanceId = derivativesResult switch
+            {
+                InstanceDerivativeQueryByInstanceIdsResult.Success success => success
+                    .DmsInstanceDerivativeResponses.GroupBy(d => d.InstanceId)
+                    .ToDictionary(
+                        g => g.Key,
+                        g =>
+                            g.Select(d => new DmsInstanceDerivativeItem(
+                                    d.Id,
+                                    d.InstanceId,
+                                    d.DerivativeType,
+                                    d.ConnectionString
+                                ))
+                                .ToList()
+                    ),
+                _ => new Dictionary<long, List<DmsInstanceDerivativeItem>>(),
+            };
+
             var instances = instancesList.Select(row => new DmsInstanceResponse
             {
                 Id = row.Id,
@@ -107,6 +132,7 @@ public class DmsInstanceRepository(
                 InstanceName = row.InstanceName,
                 ConnectionString = encryptionService.Decrypt(row.ConnectionString),
                 DmsInstanceRouteContexts = routeContextsByInstanceId.GetValueOrDefault(row.Id, []),
+                DmsInstanceDerivatives = derivativesByInstanceId.GetValueOrDefault(row.Id, []),
             });
             return new DmsInstanceQueryResult.Success(instances);
         }
@@ -153,6 +179,20 @@ public class DmsInstanceRepository(
                 _ => [],
             };
 
+            // Fetch derivatives for this instance
+            var derivativesResult = await derivativeRepository.GetInstanceDerivativesByInstance(id);
+            var derivatives = derivativesResult switch
+            {
+                InstanceDerivativeQueryByInstanceResult.Success success =>
+                    success.DmsInstanceDerivativeResponses.Select(d => new DmsInstanceDerivativeItem(
+                        d.Id,
+                        d.InstanceId,
+                        d.DerivativeType,
+                        d.ConnectionString
+                    )),
+                _ => [],
+            };
+
             var instance = new DmsInstanceResponse
             {
                 Id = result.Value.Id,
@@ -160,6 +200,7 @@ public class DmsInstanceRepository(
                 InstanceName = result.Value.InstanceName,
                 ConnectionString = encryptionService.Decrypt(result.Value.ConnectionString),
                 DmsInstanceRouteContexts = routeContexts,
+                DmsInstanceDerivatives = derivatives,
             };
             return new DmsInstanceGetResult.Success(instance);
         }

@@ -23,6 +23,13 @@ public class DmsInstanceTests : DatabaseTest
             NullLogger<DmsInstanceRouteContextRepository>.Instance
         );
 
+    private readonly IDmsInstanceDerivativeRepository _derivativeRepository =
+        new DmsInstanceDerivativeRepository(
+            Configuration.DatabaseOptions,
+            NullLogger<DmsInstanceDerivativeRepository>.Instance,
+            new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+        );
+
     private readonly IDmsInstanceRepository _repository;
 
     public DmsInstanceTests()
@@ -31,7 +38,8 @@ public class DmsInstanceTests : DatabaseTest
             Configuration.DatabaseOptions,
             NullLogger<DmsInstanceRepository>.Instance,
             new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-            _routeContextRepository
+            _routeContextRepository,
+            _derivativeRepository
         );
     }
 

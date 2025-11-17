@@ -195,4 +195,80 @@ public class DmsInstanceDerivativeRepository(
             return new DmsInstanceDerivativeDeleteResult.FailureUnknown(ex.Message);
         }
     }
+
+    public async Task<InstanceDerivativeQueryByInstanceResult> GetInstanceDerivativesByInstance(
+        long instanceId
+    )
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        try
+        {
+            var sql = """
+                SELECT Id, InstanceId, DerivativeType, ConnectionString
+                FROM dmscs.DmsInstanceDerivative
+                WHERE InstanceId = @InstanceId
+                ORDER BY Id;
+                """;
+
+            var results = await connection.QueryAsync<(
+                long Id,
+                long InstanceId,
+                string DerivativeType,
+                byte[]? ConnectionString
+            )>(sql, new { InstanceId = instanceId });
+
+            var derivatives = results.Select(row => new DmsInstanceDerivativeResponse
+            {
+                Id = row.Id,
+                InstanceId = row.InstanceId,
+                DerivativeType = row.DerivativeType,
+                ConnectionString = encryptionService.Decrypt(row.ConnectionString),
+            });
+
+            return new InstanceDerivativeQueryByInstanceResult.Success(derivatives);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get instance derivatives by instance failure");
+            return new InstanceDerivativeQueryByInstanceResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<InstanceDerivativeQueryByInstanceIdsResult> GetInstanceDerivativesByInstanceIds(
+        List<long> instanceIds
+    )
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        try
+        {
+            var sql = """
+                SELECT Id, InstanceId, DerivativeType, ConnectionString
+                FROM dmscs.DmsInstanceDerivative
+                WHERE InstanceId = ANY(@InstanceIds)
+                ORDER BY InstanceId, Id;
+                """;
+
+            var results = await connection.QueryAsync<(
+                long Id,
+                long InstanceId,
+                string DerivativeType,
+                byte[]? ConnectionString
+            )>(sql, new { InstanceIds = instanceIds });
+
+            var derivatives = results.Select(row => new DmsInstanceDerivativeResponse
+            {
+                Id = row.Id,
+                InstanceId = row.InstanceId,
+                DerivativeType = row.DerivativeType,
+                ConnectionString = encryptionService.Decrypt(row.ConnectionString),
+            });
+
+            return new InstanceDerivativeQueryByInstanceIdsResult.Success(derivatives);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get instance derivatives by instance IDs failure");
+            return new InstanceDerivativeQueryByInstanceIdsResult.FailureUnknown(ex.Message);
+        }
+    }
 }
