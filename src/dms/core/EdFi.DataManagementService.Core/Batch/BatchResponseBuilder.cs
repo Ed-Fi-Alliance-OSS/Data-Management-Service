@@ -56,7 +56,7 @@ internal static class BatchResponseBuilder
                     ["index"] = success.Index,
                     ["status"] = "success",
                     ["op"] = success.OperationType.ToOperationString(),
-                    ["resource"] = success.Resource.Value,
+                    ["resource"] = success.Endpoint.Value,
                     ["documentId"] = success.DocumentUuid.Value.ToString(),
                 }
             );
@@ -92,7 +92,7 @@ internal static class BatchResponseBuilder
         {
             ["index"] = failure.Operation.Index,
             ["op"] = failure.Operation.OperationType.ToOperationString(),
-            ["resource"] = failure.Operation.Resource.Value,
+            ["resource"] = failure.Operation.Endpoint.Value,
             ["problem"] = CloneOrCreateProblem(failure.ErrorResponse),
         };
     }

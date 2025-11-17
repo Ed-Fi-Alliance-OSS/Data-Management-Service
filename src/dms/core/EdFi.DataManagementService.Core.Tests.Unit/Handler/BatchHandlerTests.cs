@@ -292,8 +292,8 @@ public class BatchHandlerTests
         var requestInfo = context.CreateBatchRequest(
             """
             [
-              { "op": "create", "resource": "Student", "document": { "studentUniqueId": "1", "_etag": "1" } },
-              { "op": "create", "resource": "Student", "document": { "studentUniqueId": "2", "_etag": "2" } }
+              { "op": "create", "resource": "students", "document": { "studentUniqueId": "1", "_etag": "1" } },
+              { "op": "create", "resource": "students", "document": { "studentUniqueId": "2", "_etag": "2" } }
             ]
             """
         );
@@ -325,7 +325,7 @@ public class BatchHandlerTests
         var context = new BatchHandlerTestContext();
         var requestInfo = context.CreateBatchRequest(
             """
-            [{ "op": "create", "resource": "Student", "document": { "studentUniqueId": "1", "_etag": "1" } }]
+            [{ "op": "create", "resource": "students", "document": { "studentUniqueId": "1", "_etag": "1" } }]
             """
         );
         var handler = context.CreateHandler(factoryOverride: null);
@@ -358,7 +358,7 @@ public class BatchHandlerTests
 
         var requestInfo = context.CreateBatchRequest(
             """
-            [{ "op": "create", "resource": "Student", "document": { "studentUniqueId": "1", "_etag": "1" } }]
+            [{ "op": "create", "resource": "students", "document": { "studentUniqueId": "1", "_etag": "1" } }]
             """
         );
 
@@ -378,7 +378,7 @@ public class BatchHandlerTests
             [
               {
                 "op": "update",
-                "resource": "Student",
+                "resource": "students",
                 "naturalKey": { "studentUniqueId": "1" },
                 "document": { "studentUniqueId": "different", "_etag": "123" }
               }
@@ -411,7 +411,7 @@ public class BatchHandlerTests
             [
               {
                 "op": "update",
-                "resource": "Student",
+                "resource": "students",
                 "documentId": "0478a8a4-5cde-42d8-8a58-5a2e5a428702",
                 "document": { "studentUniqueId": "1", "_etag": "bad-etag" }
               }
@@ -444,7 +444,7 @@ public class BatchHandlerTests
 
         var requestInfo = context.CreateBatchRequest(
             """
-            [{ "op": "create", "resource": "Student", "document": { "studentUniqueId": "1", "_etag": "1" } }]
+            [{ "op": "create", "resource": "students", "document": { "studentUniqueId": "1", "_etag": "1" } }]
             """
         );
 

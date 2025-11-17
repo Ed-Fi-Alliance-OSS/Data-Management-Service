@@ -5,6 +5,7 @@
 
 using System;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 
@@ -51,7 +52,7 @@ internal static class BatchOperationTypeExtensions
 internal sealed record BatchOperation(
     int Index,
     BatchOperationType OperationType,
-    ResourceName Resource,
+    EndpointName Endpoint,
     JsonObject? Document,
     JsonObject? NaturalKey,
     DocumentUuid? DocumentId,
@@ -61,7 +62,7 @@ internal sealed record BatchOperation(
 internal sealed record BatchOperationSuccess(
     int Index,
     BatchOperationType OperationType,
-    ResourceName Resource,
+    EndpointName Endpoint,
     DocumentUuid DocumentUuid
 );
 

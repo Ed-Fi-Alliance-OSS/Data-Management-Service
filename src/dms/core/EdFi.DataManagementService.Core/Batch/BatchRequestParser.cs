@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
@@ -77,13 +78,14 @@ internal static class BatchRequestParser
             );
         }
 
-        string resourceName = ReadRequiredString(
+        string resourceEndpoint = ReadRequiredString(
             operationNode,
             propertyName: "resource",
             index,
             requestInfo,
             "must specify a non-empty 'resource'."
         );
+        EndpointName endpointName = new(resourceEndpoint);
 
         JsonObject? document = operationNode["document"] as JsonObject;
         JsonObject? naturalKey = operationNode["naturalKey"] as JsonObject;
@@ -169,7 +171,7 @@ internal static class BatchRequestParser
         return new BatchOperation(
             Index: index,
             OperationType: operationType,
-            Resource: new ResourceName(resourceName),
+            Endpoint: endpointName,
             Document: document,
             NaturalKey: naturalKey,
             DocumentId: documentUuid,

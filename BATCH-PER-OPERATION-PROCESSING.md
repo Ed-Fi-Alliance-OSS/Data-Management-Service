@@ -378,8 +378,11 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
 
      // 2. Resolve project + endpoint name from resource name
      // (uses the same ApiSchemaDocuments that schema middleware prepared)
-     var projectSchema = FindProjectSchemaForResource(batchInfo.ApiSchemaDocuments, op.Resource);
-     var endpointName = projectSchema.GetEndpointNameFromResourceName(new ResourceName(op.Resource));
+    var projectSchema = FindProjectSchemaForEndpoint(batchInfo.ApiSchemaDocuments, op.Endpoint);
+    var resourceSchema = new ResourceSchema(
+        projectSchema.FindResourceSchemaNodeByEndpointName(op.Endpoint)
+    );
+    var endpointName = projectSchema.GetEndpointNameFromResourceName(resourceSchema.ResourceName);
 
      // 3. Resolve documentId if naturalKey is used
      DocumentUuid? documentUuid = null;
@@ -391,7 +394,7 @@ This keeps things elegant, maximizes reuse, and avoids restructuring individual 
          }
          else if (op.NaturalKey is not null)
          {
-             var identity = BuildDocumentIdentityFromNaturalKey(projectSchema, op.Resource, op.NaturalKey);
+            var identity = BuildDocumentIdentityFromNaturalKey(projectSchema, op.Endpoint, op.NaturalKey);
              documentUuid = await uow.ResolveDocumentUuidAsync(
                  resourceInfo: new ResourceInfo(...), // or computed later
                  identity,

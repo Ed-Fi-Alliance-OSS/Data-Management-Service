@@ -58,7 +58,7 @@ public class BatchRequestParserTests
     [Test]
     public async Task Given_Invalid_Operation_Value_Throws()
     {
-        var body = """[{ "op": "invalid", "resource": "Student", "document": {} }]""";
+        var body = """[{ "op": "invalid", "resource": "students", "document": {} }]""";
         var ex = await ExpectFailureAsync(CreateRequest(body));
         ex.Response.StatusCode.Should().Be(400);
         ex.Response.Body?["detail"]?.GetValue<string>().Should().Contain("invalid 'op'");
@@ -80,7 +80,7 @@ public class BatchRequestParserTests
             [
               {
                 "op": "update",
-                "resource": "Student",
+                "resource": "students",
                 "documentId": "a1111111-1111-1111-1111-111111111111",
                 "naturalKey": { "studentUniqueId": "1" },
                 "document": { "studentUniqueId": "1", "_etag": "etag" }
@@ -101,7 +101,7 @@ public class BatchRequestParserTests
             [
               {
                 "op": "delete",
-                "resource": "Student",
+                "resource": "students",
                 "documentId": "not-a-guid"
               }
             ]
@@ -118,12 +118,12 @@ public class BatchRequestParserTests
             [
               {
                 "op": "create",
-                "resource": "Student",
+                "resource": "students",
                 "document": { "studentUniqueId": "100", "_etag": "etag" }
               },
               {
                 "op": "delete",
-                "resource": "Student",
+                "resource": "students",
                 "naturalKey": { "studentUniqueId": "100" }
               }
             ]
@@ -145,7 +145,7 @@ public class BatchRequestParserTests
             [
               {
                 "op": "delete",
-                "resource": "Student",
+                "resource": "students",
                 "naturalKey": "not-an-object"
               }
             ]

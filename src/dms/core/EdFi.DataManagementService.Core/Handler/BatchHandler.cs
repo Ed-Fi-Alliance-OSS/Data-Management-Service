@@ -304,7 +304,7 @@ internal class BatchHandler(
                 new BatchOperationSuccess(
                     operation.Index,
                     operation.OperationType,
-                    resolvedResource.ResourceSchema.ResourceName,
+                    resolvedResource.EndpointName,
                     executionResult.DocumentUuid!.Value
                 )
             );
@@ -335,19 +335,22 @@ internal class BatchHandler(
         out FrontendResponse errorResponse
     )
     {
-        var resourceName = operation.Resource;
+        var requestedEndpoint = operation.Endpoint;
         List<ResolvedResource> matches = [];
 
         foreach (var projectSchema in requestInfo.ApiSchemaDocuments.GetAllProjectSchemas())
         {
-            var resourceNode = projectSchema.FindResourceSchemaNodeByResourceName(resourceName);
+            var resourceNode = projectSchema.FindResourceSchemaNodeByEndpointName(requestedEndpoint);
             if (resourceNode == null)
             {
                 continue;
             }
 
-            EndpointName endpointName = projectSchema.GetEndpointNameFromResourceName(resourceName);
-            matches.Add(new ResolvedResource(projectSchema, new ResourceSchema(resourceNode), endpointName));
+            var resourceSchema = new ResourceSchema(resourceNode);
+            EndpointName endpointName = projectSchema.GetEndpointNameFromResourceName(
+                resourceSchema.ResourceName
+            );
+            matches.Add(new ResolvedResource(projectSchema, resourceSchema, endpointName));
         }
 
         if (matches.Count == 1)
@@ -360,8 +363,8 @@ internal class BatchHandler(
         resolvedResource = null!;
         string detail =
             matches.Count == 0
-                ? $"Resource '{resourceName.Value}' was not found in the loaded API schemas."
-                : $"Resource '{resourceName.Value}' is defined in multiple projects. Specify a unique resource.";
+                ? $"Endpoint '{requestedEndpoint.Value}' was not found in the loaded API schemas."
+                : $"Endpoint '{requestedEndpoint.Value}' is defined in multiple projects. Specify a unique endpoint name.";
         errorResponse = new FrontendResponse(
             StatusCode: 400,
             Body: FailureResponse.ForBadRequest(detail, requestInfo.FrontendRequest.TraceId, [], []),
@@ -465,6 +468,9 @@ internal class BatchHandler(
         Dictionary<string, string> headers = CloneHeaders(batchRequestInfo.FrontendRequest.Headers);
 
         headers.Remove("If-Match");
+
+        // Batch updates can opt-out of optimistic concurrency by leaving If-Match null.
+        // We only forward the header when callers explicitly supply an ETag.
         if (!string.IsNullOrWhiteSpace(operation.IfMatch))
         {
             headers["If-Match"] = operation.IfMatch!;
@@ -934,7 +940,7 @@ internal class BatchHandler(
             "Batch operation {Index} ({Op} {Resource}) failed with status {StatusCode}.",
             operation.Index,
             operation.OperationType.ToOperationString(),
-            operation.Resource.Value,
+            operation.Endpoint.Value,
             errorResponse.StatusCode
         );
         batchRequestInfo.FrontendResponse = BatchResponseBuilder.CreateFailureResponse(

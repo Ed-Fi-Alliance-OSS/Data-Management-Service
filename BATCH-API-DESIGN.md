@@ -196,18 +196,18 @@ The request body is a **JSON array of operation objects**:
 [
   {
     "op": "create",
-    "resource": "Student",
+    "resource": "students",
     "document": { ... }
   },
   {
     "op": "update",
-    "resource": "Section",
+    "resource": "sections",
     "documentId": "a1b2c3d4-e5f6-a7b8-c9d0-e1f2a3b4c5d6",
     "document": { ... }
   },
   {
     "op": "delete",
-    "resource": "StudentSchoolAssociation",
+    "resource": "studentSchoolAssociations",
     "naturalKey": {
       "studentUniqueId": "S-123",
       "schoolId": 255901001
@@ -221,7 +221,7 @@ The request body is a **JSON array of operation objects**:
 | Field       | Type    | Required             | Description                                                                 |
 |------------|---------|----------------------|-----------------------------------------------------------------------------|
 | `op`       | string  | Yes                  | `"create"`, `"update"`, `"delete"` (case-insensitive).                      |
-| `resource` | string  | Yes                  | Ed‑Fi resource name, e.g., `"Student"`, `"Section"`, `"StudentSchoolAssociation"`. |
+| `resource` | string  | Yes                  | Endpoint segment from the `/data/{project}/{endpoint}` route (case-insensitive), e.g., `"students"`, `"sections"`, `"studentSchoolAssociations"`. |
 | `document` | object  | `create`/`update`    | Full resource document for create/update (POST/PUT semantics).              |
 | `documentId` | string  | `update`/`delete` ∗ | The resource `id`/document UUID. Must not be combined with `naturalKey`.    |
 | `naturalKey` | object | `update`/`delete` ∗ | JSON object containing the full natural key (identity fields).              |
@@ -231,16 +231,16 @@ The request body is a **JSON array of operation objects**:
 
 #### 3.2.2 Resource Resolution
 
-- `resource` maps to `ResourceSchema.ResourceName.Value`.
+- `resource` refers to the endpoint name exactly as it appears in `/data/{projectEndpoint}/{endpoint}` (lowercase/plural for most resources, camelCase for descriptors/associations). The batch handler treats the value case-insensitively and maps it to the canonical endpoint name using `caseInsensitiveEndpointNameMapping`.
+- The canonical endpoint is then used to locate the backing `ResourceSchema`:
+  - Iterate all `ProjectSchema` instances returned by `ApiSchemaDocuments.GetAllProjectSchemas()`.
+  - For each, call `FindResourceSchemaNodeByEndpointName(new EndpointName(resource))`.
 - Resolution rules:
-  - All `ProjectSchema` instances from `ApiSchemaDocuments.GetAllProjectSchemas()` are searched.
-  - `ProjectSchema.FindResourceSchemaNodeByResourceName(new ResourceName(resource))` is used.
-  - If the resource is found in **exactly one** project:
+  - If the endpoint exists in **exactly one** project:
     - That `ProjectSchema` and `ResourceSchema` are used.
   - If zero or multiple matches:
-    - The batch fails with a 400-level error indicating ambiguous or unknown resource.
-- First implementation does **not** expose a `project` field in the request.
-  - If needed later, a `project` property can constrain the search to a specific project.
+    - The batch fails with a 400-level error indicating ambiguous or unknown endpoint.
+- First implementation does **not** expose a `project` field in the request. Endpoint names must therefore be unique across all loaded projects; otherwise the "ambiguous endpoint" error is returned. If needed later, a `project` property can constrain the search to a specific project.
 
 #### 3.2.3 Identity Via `naturalKey`
 
@@ -293,21 +293,21 @@ Shape:
     "index": 0,
     "status": "success",
     "op": "create",
-    "resource": "Student",
+    "resource": "students",
     "documentId": "generated-document-uuid"
   },
   {
     "index": 1,
     "status": "success",
     "op": "update",
-    "resource": "Section",
+    "resource": "sections",
     "documentId": "existing-document-uuid"
   },
   {
     "index": 2,
     "status": "success",
     "op": "delete",
-    "resource": "StudentSchoolAssociation",
+    "resource": "studentSchoolAssociations",
     "documentId": "deleted-document-uuid"
   }
 ]
@@ -370,7 +370,7 @@ Body:
   "failedOperation": {
     "index": 1,
     "op": "create",
-    "resource": "Student",
+    "resource": "students",
     "problem": {
       "detail": "Data validation failed. See 'validationErrors' for details.",
       "type": "urn:ed-fi:api:bad-request:data-validation-failed",
