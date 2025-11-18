@@ -9,6 +9,21 @@ CREATE TABLE IF NOT EXISTS dmscs.OpenIddictKey (
     PublicKey BYTEA NOT NULL, -- binary format for public key
     PrivateKey TEXT NOT NULL, -- encrypted with pgcrypto
     CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256),
     ExpiresAt TIMESTAMP,
     IsActive BOOLEAN NOT NULL DEFAULT TRUE
 );
+
+COMMENT ON TABLE dmscs.OpenIddictKey IS 'OpenIddict cryptographic keys storage.';
+COMMENT ON COLUMN dmscs.OpenIddictKey.Id IS 'Key unique identifier.';
+COMMENT ON COLUMN dmscs.OpenIddictKey.KeyId IS 'Key identifier string.';
+COMMENT ON COLUMN dmscs.OpenIddictKey.PublicKey IS 'Public key binary data.';
+COMMENT ON COLUMN dmscs.OpenIddictKey.PrivateKey IS 'Encrypted private key.';
+COMMENT ON COLUMN dmscs.OpenIddictKey.CreatedAt IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN dmscs.OpenIddictKey.CreatedBy IS 'User or client ID who created the record';
+COMMENT ON COLUMN dmscs.OpenIddictKey.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN dmscs.OpenIddictKey.ModifiedBy IS 'User or client ID who last modified the record';
+COMMENT ON COLUMN dmscs.OpenIddictKey.ExpiresAt IS 'Key expiration timestamp.';
+COMMENT ON COLUMN dmscs.OpenIddictKey.IsActive IS 'Whether the key is currently active.';

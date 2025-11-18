@@ -23,13 +23,15 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 public class ClaimSetTests : DatabaseTest
 {
     private readonly IClaimSetRepository _repository = new ClaimSetRepository(
-        Configuration.DatabaseOptions,
-        NullLogger<ClaimSetRepository>.Instance,
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimSetRepository>.Instance,
         new ClaimsHierarchyRepository(
             Configuration.DatabaseOptions,
-            NullLogger<ClaimsHierarchyRepository>.Instance
+            NullLogger<ClaimsHierarchyRepository>.Instance,
+            new TestAuditContext()
         ),
-        new ClaimsHierarchyManager()
+        new ClaimsHierarchyManager(),
+        new TestAuditContext()
     );
 
     protected async Task EnsureClaimsDataLoaded()
@@ -48,7 +50,8 @@ public class ClaimSetTests : DatabaseTest
 
         var claimsHierarchyRepository = new ClaimsHierarchyRepository(
             Configuration.DatabaseOptions,
-            NullLogger<ClaimsHierarchyRepository>.Instance
+            NullLogger<ClaimsHierarchyRepository>.Instance,
+            new TestAuditContext()
         );
 
         var claimsTableValidator = new ClaimsTableValidator(
@@ -156,7 +159,8 @@ public class ClaimSetTests : DatabaseTest
 
             IVendorRepository repository = new VendorRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<VendorRepository>.Instance
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext()
             );
 
             VendorInsertCommand vendor = new()
@@ -173,7 +177,8 @@ public class ClaimSetTests : DatabaseTest
             // Create the application to contain the claim set to be renamed
             _applicationRepository = new ApplicationRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<ApplicationRepository>.Instance
+                NullLogger<ApplicationRepository>.Instance,
+                new TestAuditContext()
             );
 
             ApplicationInsertCommand application = new()
@@ -207,9 +212,10 @@ public class ClaimSetTests : DatabaseTest
 
             // Initialize claims hierarchy
             _claimsHierarchyRepository = new ClaimsHierarchyRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<ClaimsHierarchyRepository>.Instance
-            );
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimsHierarchyRepository>.Instance,
+            new TestAuditContext()
+        );
 
             // Get the existing claims hierarchy
             var existingHierarchyGetResult = await _claimsHierarchyRepository.GetClaimsHierarchy();
@@ -413,10 +419,11 @@ public class ClaimSetTests : DatabaseTest
             );
 
             var claimSetRepository = new ClaimSetRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<ClaimSetRepository>.Instance,
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimSetRepository>.Instance,
                 claimsHierarchyRepository,
-                new ClaimsHierarchyManager()
+                new ClaimsHierarchyManager(),
+                new TestAuditContext()
             );
 
             // Act
@@ -447,9 +454,10 @@ public class ClaimSetTests : DatabaseTest
         {
             // Initialize claims hierarchy
             var claimsHierarchyRepository = new ClaimsHierarchyRepository(
-                Configuration.DatabaseOptions,
-                NullLogger<ClaimsHierarchyRepository>.Instance
-            );
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimsHierarchyRepository>.Instance,
+            new TestAuditContext()
+        );
 
             return claimsHierarchyRepository;
         }
@@ -461,9 +469,10 @@ public class ClaimSetTests : DatabaseTest
         {
             private readonly IClaimsHierarchyRepository _multiUserClaimsHierarchyRepository =
                 new ClaimsHierarchyRepository(
-                    Configuration.DatabaseOptions,
-                    NullLogger<ClaimsHierarchyRepository>.Instance
-                );
+            Configuration.DatabaseOptions,
+            NullLogger<ClaimsHierarchyRepository>.Instance,
+            new TestAuditContext()
+        );
 
             private int _remainingConflictingUpdateCount = _conflictingUpdateCount;
 
@@ -745,3 +754,5 @@ public class ClaimSetTests : DatabaseTest
         }
     }
 }
+
+

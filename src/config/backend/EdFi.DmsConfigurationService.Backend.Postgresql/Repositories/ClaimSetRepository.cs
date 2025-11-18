@@ -8,6 +8,7 @@ using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using Microsoft.Extensions.Logging;
@@ -24,7 +25,8 @@ public class ClaimSetRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<ClaimSetRepository> logger,
     IClaimsHierarchyRepository claimsHierarchyRepository,
-    IClaimsHierarchyManager claimsHierarchyManager
+    IClaimsHierarchyManager claimsHierarchyManager,
+    IAuditContext auditContext
 ) : IClaimSetRepository
 {
     public IEnumerable<Action> GetActions()
@@ -105,12 +107,17 @@ public class ClaimSetRepository(
         try
         {
             string sql = """
-                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
-                   VALUES(@ClaimSetName, @IsSystemReserved)
+                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy)
+                   VALUES(@ClaimSetName, @IsSystemReserved, @CreatedBy)
                    RETURNING Id;
                 """;
 
-            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = command.IsSystemReserved };
+            var parameters = new
+            {
+                ClaimSetName = command.Name,
+                IsSystemReserved = command.IsSystemReserved,
+                CreatedBy = auditContext.GetCurrentUser()
+            };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
             await transaction.CommitAsync();
@@ -244,13 +251,19 @@ public class ClaimSetRepository(
 
             string renameClaimSetSql = """
                 UPDATE dmscs.ClaimSet
-                SET ClaimSetName=@ClaimSetName
+                SET ClaimSetName=@ClaimSetName, LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
                 WHERE Id = @Id;
                 """;
 
             string newClaimSetName = command.Name;
 
-            var renameClaimSetParameters = new { command.Id, ClaimSetName = newClaimSetName };
+            var renameClaimSetParameters = new
+            {
+                command.Id,
+                ClaimSetName = newClaimSetName,
+                LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                ModifiedBy = auditContext.GetCurrentUser()
+            };
 
             int affectedRows = await connection.ExecuteAsync(
                 renameClaimSetSql,
@@ -524,11 +537,16 @@ public class ClaimSetRepository(
 
             // Insert new claim set
             string insertSql = """
-                    INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
-                    VALUES(@ClaimSetName, @IsSystemReserved)
+                    INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy)
+                    VALUES(@ClaimSetName, @IsSystemReserved, @CreatedBy)
                     RETURNING Id;
                 """;
-            var parameters = new { ClaimSetName = command.Name, IsSystemReserved = false };
+            var parameters = new
+            {
+                ClaimSetName = command.Name,
+                IsSystemReserved = false,
+                CreatedBy = auditContext.GetCurrentUser()
+            };
             existingClaimSetId = await connection.ExecuteScalarAsync<long>(
                 insertSql,
                 parameters,
@@ -664,8 +682,8 @@ public class ClaimSetRepository(
             }
 
             string insertSql = """
-                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved)
-                VALUES (@ClaimSetName, @IsSystemReserved)
+                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy)
+                VALUES (@ClaimSetName, @IsSystemReserved, @CreatedBy)
                 RETURNING Id;
                 """;
 
@@ -675,6 +693,7 @@ public class ClaimSetRepository(
                 {
                     ClaimSetName = command.Name,
                     IsSystemReserved = (bool)originalClaimSet.issystemreserved,
+                    CreatedBy = auditContext.GetCurrentUser()
                 },
                 transaction
             );

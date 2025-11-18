@@ -15,6 +15,9 @@ CREATE TABLE IF NOT EXISTS dmscs.OpenIddictApplication (
     Requirements varchar(100)[],
     Type varchar(50),
     CreatedAt timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256),
     ProtocolMappers jsonb
 );
 
@@ -49,5 +52,8 @@ COMMENT ON COLUMN dmscs.OpenIddictApplication.Requirements IS 'Requirements for 
 COMMENT ON COLUMN dmscs.OpenIddictApplication.Type IS 'Application type (public/confidential).';
 
 
-COMMENT ON COLUMN dmscs.OpenIddictApplication.CreatedAt IS 'Creation timestamp.';
+COMMENT ON COLUMN dmscs.OpenIddictApplication.CreatedAt IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN dmscs.OpenIddictApplication.CreatedBy IS 'User or client ID who created the record';
+COMMENT ON COLUMN dmscs.OpenIddictApplication.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN dmscs.OpenIddictApplication.ModifiedBy IS 'User or client ID who last modified the record';
 COMMENT ON COLUMN dmscs.OpenIddictApplication.ProtocolMappers IS 'Protocol mappers for the client, stored as JSON.';

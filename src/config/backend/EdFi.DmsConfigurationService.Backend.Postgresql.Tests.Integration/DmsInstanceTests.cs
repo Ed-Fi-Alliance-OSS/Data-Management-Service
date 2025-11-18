@@ -20,7 +20,8 @@ public class DmsInstanceTests : DatabaseTest
     private readonly IDmsInstanceRouteContextRepository _routeContextRepository =
         new DmsInstanceRouteContextRepository(
             Configuration.DatabaseOptions,
-            NullLogger<DmsInstanceRouteContextRepository>.Instance
+            NullLogger<DmsInstanceRouteContextRepository>.Instance,
+            new TestAuditContext()
         );
 
     private readonly IDmsInstanceRepository _repository;
@@ -31,7 +32,8 @@ public class DmsInstanceTests : DatabaseTest
             Configuration.DatabaseOptions,
             NullLogger<DmsInstanceRepository>.Instance,
             new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
-            _routeContextRepository
+            _routeContextRepository,
+            new TestAuditContext()
         );
     }
 

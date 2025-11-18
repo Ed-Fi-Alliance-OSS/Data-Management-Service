@@ -6,6 +6,7 @@
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
@@ -19,7 +20,8 @@ public class DmsInstanceRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<DmsInstanceRepository> logger,
     IConnectionStringEncryptionService encryptionService,
-    IDmsInstanceRouteContextRepository routeContextRepository
+    IDmsInstanceRouteContextRepository routeContextRepository,
+    IAuditContext auditContext
 ) : IDmsInstanceRepository
 {
     public async Task<DmsInstanceInsertResult> InsertDmsInstance(DmsInstanceInsertCommand command)
@@ -28,8 +30,8 @@ public class DmsInstanceRepository(
         try
         {
             var sql = """
-                INSERT INTO dmscs.DmsInstance (InstanceType, InstanceName, ConnectionString)
-                VALUES (@InstanceType, @InstanceName, @ConnectionString)
+                INSERT INTO dmscs.DmsInstance (InstanceType, InstanceName, ConnectionString, CreatedBy)
+                VALUES (@InstanceType, @InstanceName, @ConnectionString, @CreatedBy)
                 RETURNING Id;
                 """;
 
@@ -38,6 +40,7 @@ public class DmsInstanceRepository(
                 command.InstanceType,
                 command.InstanceName,
                 ConnectionString = encryptionService.Encrypt(command.ConnectionString),
+                CreatedBy = auditContext.GetCurrentUser()
             };
 
             var id = await connection.ExecuteScalarAsync<long>(sql, parameters);
@@ -56,7 +59,8 @@ public class DmsInstanceRepository(
         try
         {
             var sql = """
-                SELECT Id, InstanceType, InstanceName, ConnectionString
+                SELECT Id, InstanceType, InstanceName, ConnectionString,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstance
                 ORDER BY Id
                 LIMIT @Limit OFFSET @Offset;
@@ -66,7 +70,11 @@ public class DmsInstanceRepository(
                 long Id,
                 string InstanceType,
                 string InstanceName,
-                byte[]? ConnectionString
+                byte[]? ConnectionString,
+                DateTime CreatedAt,
+                string? CreatedBy,
+                DateTime? LastModifiedAt,
+                string? ModifiedBy
             )>(sql, query);
 
             var instancesList = results.ToList();
@@ -107,6 +115,10 @@ public class DmsInstanceRepository(
                 InstanceName = row.InstanceName,
                 ConnectionString = encryptionService.Decrypt(row.ConnectionString),
                 DmsInstanceRouteContexts = routeContextsByInstanceId.GetValueOrDefault(row.Id, []),
+                CreatedAt = row.CreatedAt,
+                CreatedBy = row.CreatedBy,
+                LastModifiedAt = row.LastModifiedAt,
+                ModifiedBy = row.ModifiedBy
             });
             return new DmsInstanceQueryResult.Success(instances);
         }
@@ -123,7 +135,8 @@ public class DmsInstanceRepository(
         try
         {
             var sql = """
-                SELECT Id, InstanceType, InstanceName, ConnectionString
+                SELECT Id, InstanceType, InstanceName, ConnectionString,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstance
                 WHERE Id = @Id;
                 """;
@@ -132,7 +145,11 @@ public class DmsInstanceRepository(
                 long Id,
                 string InstanceType,
                 string InstanceName,
-                byte[]? ConnectionString
+                byte[]? ConnectionString,
+                DateTime CreatedAt,
+                string? CreatedBy,
+                DateTime? LastModifiedAt,
+                string? ModifiedBy
             )?>(sql, new { Id = id });
             if (result == null)
             {
@@ -160,6 +177,10 @@ public class DmsInstanceRepository(
                 InstanceName = result.Value.InstanceName,
                 ConnectionString = encryptionService.Decrypt(result.Value.ConnectionString),
                 DmsInstanceRouteContexts = routeContexts,
+                CreatedAt = result.Value.CreatedAt,
+                CreatedBy = result.Value.CreatedBy,
+                LastModifiedAt = result.Value.LastModifiedAt,
+                ModifiedBy = result.Value.ModifiedBy
             };
             return new DmsInstanceGetResult.Success(instance);
         }
@@ -177,7 +198,8 @@ public class DmsInstanceRepository(
         {
             var sql = """
                 UPDATE dmscs.DmsInstance
-                SET InstanceType = @InstanceType, InstanceName = @InstanceName, ConnectionString = @ConnectionString
+                SET InstanceType = @InstanceType, InstanceName = @InstanceName, ConnectionString = @ConnectionString,
+                    LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
                 WHERE Id = @Id;
                 """;
 
@@ -187,6 +209,8 @@ public class DmsInstanceRepository(
                 command.InstanceType,
                 command.InstanceName,
                 ConnectionString = encryptionService.Encrypt(command.ConnectionString),
+                LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                ModifiedBy = auditContext.GetCurrentUser()
             };
 
             var affectedRows = await connection.ExecuteAsync(sql, parameters);

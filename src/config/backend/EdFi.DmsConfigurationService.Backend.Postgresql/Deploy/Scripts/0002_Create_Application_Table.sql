@@ -8,6 +8,10 @@ CREATE TABLE IF NOT EXISTS dmscs.Application (
     ApplicationName VARCHAR(256) NOT NULL,
     VendorId BIGINT NOT NULL,
     ClaimSetName VARCHAR(256) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256),
     CONSTRAINT fk_vendor FOREIGN KEY (VendorId) REFERENCES dmscs.Vendor(Id) ON DELETE CASCADE
 );
 
@@ -17,10 +21,18 @@ COMMENT ON COLUMN dmscs.Application.Id IS 'Application id';
 COMMENT ON COLUMN dmscs.Application.ApplicationName IS 'Application name';
 COMMENT ON COLUMN dmscs.Application.VendorId IS 'Vendor or company id';
 COMMENT ON COLUMN dmscs.Application.ClaimSetName IS 'Claim set name';
+COMMENT ON COLUMN dmscs.Application.CreatedAt IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN dmscs.Application.CreatedBy IS 'User or client ID who created the record';
+COMMENT ON COLUMN dmscs.Application.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN dmscs.Application.ModifiedBy IS 'User or client ID who last modified the record';
 
 CREATE TABLE IF NOT EXISTS dmscs.ApplicationEducationOrganization (
     ApplicationId BIGINT NOT NULL,
     EducationOrganizationId BIGINT NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256),
     CONSTRAINT pk_applicationEducationOrganization PRIMARY KEY (ApplicationId, EducationOrganizationId),
     CONSTRAINT fk_application_educationOrganization FOREIGN KEY (ApplicationId) REFERENCES dmscs.Application(id) ON DELETE CASCADE
 );
@@ -28,4 +40,8 @@ CREATE TABLE IF NOT EXISTS dmscs.ApplicationEducationOrganization (
 COMMENT ON TABLE dmscs.ApplicationEducationOrganization IS 'Relationship of applications with educational organizations';
 COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.ApplicationId IS 'Application id';
 COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.EducationOrganizationId IS 'Education organization id';
+COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.CreatedAt IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.CreatedBy IS 'User or client ID who created the record';
+COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN dmscs.ApplicationEducationOrganization.ModifiedBy IS 'User or client ID who last modified the record';
 

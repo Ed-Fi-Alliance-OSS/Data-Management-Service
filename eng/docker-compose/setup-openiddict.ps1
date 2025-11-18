@@ -243,6 +243,9 @@ CREATE TABLE IF NOT EXISTS dmscs.OpenIddictKey (
     PublicKey BYTEA NOT NULL, -- binary format for public key
     PrivateKey TEXT NOT NULL, -- encrypted with pgcrypto
     CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256),
     ExpiresAt TIMESTAMP,
     IsActive BOOLEAN NOT NULL DEFAULT TRUE
 );
