@@ -44,7 +44,24 @@ public sealed class NpgsqlDataSourceCache(
                     "Creating new NpgsqlDataSource for connection string hash: {Hash}",
                     cs.GetHashCode()
                 );
-                return NpgsqlDataSource.Create(cs);
+
+                NpgsqlDataSourceBuilder builder = new(cs);
+                var csb = builder.ConnectionStringBuilder;
+
+                // Skip RESET/DISCARD when returning pooled connections, we manage session state explicitly.
+                csb.NoResetOnClose = true;
+
+                // Make PostgreSQL monitoring output more readable
+                if (string.IsNullOrWhiteSpace(csb.ApplicationName))
+                {
+                    csb.ApplicationName = "EdFi.DMS";
+                }
+
+                // Let Npgsql handle plan caching automatically
+                csb.AutoPrepareMinUsages = 3;
+                csb.MaxAutoPrepare = 256;
+
+                return builder.Build();
             }
         );
     }

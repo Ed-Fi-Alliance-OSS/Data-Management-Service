@@ -58,7 +58,7 @@ internal static class BidirectionalGraphExtensions
 
                 if (sacrificialDependency == null)
                 {
-                    graph.ValidateGraph(logger);
+                    graph.ValidateAcyclicGraph(logger);
 
                     // Should never get here in this situation, but throw an exception to satisfy code analysis warnings
                     throw new NonAcyclicGraphException();
@@ -100,13 +100,15 @@ internal static class BidirectionalGraphExtensions
 
     /// <summary>
     /// Validates that the graph is free of cycles, and throws a <see cref="NonAcyclicGraphException"/> otherwise.
+    ///
+    /// Used in testing
     /// </summary>
     /// <typeparam name="TVertex">The <see cref="Type" /> of the vertices of the graph.</typeparam>
     /// <typeparam name="TEdge">The <see cref="Type" /> of the edges of the graph.</typeparam>
     /// <param name="graph">The bidirectional graph to be validated.</param>
     /// <param name="logger"></param>
     /// <exception cref="NonAcyclicGraphException">Occurs if there are cycles in the graph.</exception>
-    public static void ValidateGraph<TVertex, TEdge>(
+    public static void ValidateAcyclicGraph<TVertex, TEdge>(
         this BidirectionalGraph<TVertex, TEdge> graph,
         ILogger logger
     )

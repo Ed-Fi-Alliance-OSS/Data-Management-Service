@@ -297,7 +297,7 @@ Feature: Create a Descriptor
                     "correlationId": null,
                     "validationErrors": {
                         "$.": [
-                        "The JSON object contains a trailing comma at the end which is not supported in this mode. Change the reader options. LineNumber: 6 | BytePositionInLine: 2."
+                        "The JSON object contains a trailing comma at the end which is not supported in this mode. Change the reader options. Path: $ | LineNumber: 6 | BytePositionInLine: 2."
                         ]
                     },
                     "errors": []

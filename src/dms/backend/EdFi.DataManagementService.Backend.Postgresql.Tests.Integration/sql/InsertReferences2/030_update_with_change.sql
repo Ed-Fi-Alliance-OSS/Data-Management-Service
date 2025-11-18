@@ -1,0 +1,16 @@
+-- Update scenario that changes one referential pair and expects success.
+BEGIN;
+    SELECT * FROM dms.InsertReferences(
+        p_parentDocumentId        => (SELECT Id FROM dms.Document WHERE ResourceName = 'InsertReferences2Test' ORDER BY Id DESC LIMIT 1),
+        p_parentDocumentPartitionKey => 1::smallint,
+        p_referentialIds          => ARRAY[
+            '9a5226cd-6f14-c117-73b0-575f5505790c',
+            '0ae6e94d-d446-28f8-da03-240821ed958c',
+            'b9c20540-8759-0edc-feec-1c7775711621',
+            '0916dd27-b187-2c61-74c7-d88923aa800f',
+            '95bf9a1f-ecd5-6227-4102-7dd211a05e66'
+        ]::uuid[],
+        p_referentialPartitionKeys => ARRAY[12,12,1,15,6]::smallint[],
+        p_isPureInsert             => FALSE
+    );
+ROLLBACK;

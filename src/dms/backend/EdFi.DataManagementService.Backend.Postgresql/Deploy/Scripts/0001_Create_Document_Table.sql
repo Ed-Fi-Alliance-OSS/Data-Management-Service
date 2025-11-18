@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS dms.Document (
   LastModifiedAt TIMESTAMP NOT NULL DEFAULT NOW(),
   LastModifiedTraceId VARCHAR(128) NOT NULL,
   PRIMARY KEY (DocumentPartitionKey, Id)
-) PARTITION BY HASH(DocumentPartitionKey);
+) PARTITION BY LIST(DocumentPartitionKey);
 
 -- Create partitions if not exists
 DO $$
@@ -32,7 +32,7 @@ BEGIN
     FOR i IN 0..15 LOOP
         partition_name := 'document_' || to_char(i, 'FM00');
         EXECUTE format(
-            'CREATE TABLE IF NOT EXISTS dms.%I PARTITION OF dms.Document FOR VALUES WITH (MODULUS 16, REMAINDER %s);',
+            'CREATE TABLE IF NOT EXISTS dms.%I PARTITION OF dms.Document FOR VALUES IN (%s);',
             partition_name, i
         );
     END LOOP;
@@ -40,7 +40,6 @@ END$$;
 
 -- Create unique indexes if not exists
 CREATE UNIQUE INDEX IF NOT EXISTS UX_Document_DocumentUuid ON dms.Document (DocumentPartitionKey, DocumentUuid);
-CREATE UNIQUE INDEX IF NOT EXISTS UX_Document_DocumentId ON dms.Document (DocumentPartitionKey, Id);
 
 -- Set REPLICA IDENTITY FULL to all partitions
 DO $$

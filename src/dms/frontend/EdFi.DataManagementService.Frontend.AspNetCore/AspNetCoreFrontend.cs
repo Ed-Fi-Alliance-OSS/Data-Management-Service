@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IO;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -20,6 +23,13 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore;
 /// </summary>
 public static class AspNetCoreFrontend
 {
+    internal static JsonSerializerOptions SharedSerializerOptions { get; } =
+        new()
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        };
+
     /// <summary>
     /// Takes an HttpRequest and returns a deserialized request body
     /// </summary>
@@ -117,18 +127,19 @@ public static class AspNetCoreFrontend
     /// Converts an AspNetCore HttpRequest to a DMS FrontendRequest
     /// </summary>
     private static async Task<FrontendRequest> FromRequest(
-        HttpRequest HttpRequest,
+        HttpRequest httpRequest,
         string dmsPath,
-        IOptions<AppSettings> options
+        IOptions<AppSettings> options,
+        bool includeBody
     )
     {
         return new(
-            Body: await ExtractJsonBodyFrom(HttpRequest),
-            Headers: ExtractHeadersFrom(HttpRequest),
+            Body: includeBody ? await ExtractJsonBodyFrom(httpRequest) : null,
+            Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
-            QueryParameters: HttpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
-            TraceId: ExtractTraceIdFrom(HttpRequest, options),
-            RouteQualifiers: ExtractRouteQualifiersFrom(HttpRequest, options)
+            QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
+            TraceId: ExtractTraceIdFrom(httpRequest, options),
+            RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, options)
         );
     }
 
@@ -156,23 +167,12 @@ public static class AspNetCoreFrontend
             httpContext.Response.Headers.Append(header.Key, header.Value);
         }
 
-        IResult result = Results.Content(
-            statusCode: frontendResponse.StatusCode,
-            content: frontendResponse.Body == null
-                ? null
-                : JsonSerializer.Serialize(
-                    frontendResponse.Body,
-                    new JsonSerializerOptions()
-                    {
-                        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                        WriteIndented = true,
-                    }
-                ),
+        return Results.Json(
+            data: frontendResponse.Body,
+            options: SharedSerializerOptions,
             contentType: frontendResponse.ContentType,
-            contentEncoding: System.Text.Encoding.UTF8
+            statusCode: frontendResponse.StatusCode
         );
-
-        return result;
     }
 
     /// <summary>
@@ -189,7 +189,9 @@ public static class AspNetCoreFrontend
     )
     {
         return ToResult(
-            await apiService.Upsert(await FromRequest(httpContext.Request, dmsPath, options)),
+            await apiService.Upsert(
+                await FromRequest(httpContext.Request, dmsPath, options, includeBody: true)
+            ),
             httpContext,
             dmsPath
         );
@@ -206,7 +208,9 @@ public static class AspNetCoreFrontend
     )
     {
         return ToResult(
-            await apiService.Get(await FromRequest(httpContext.Request, dmsPath, options)),
+            await apiService.Get(
+                await FromRequest(httpContext.Request, dmsPath, options, includeBody: false)
+            ),
             httpContext,
             dmsPath
         );
@@ -223,7 +227,9 @@ public static class AspNetCoreFrontend
     )
     {
         return ToResult(
-            await apiService.UpdateById(await FromRequest(httpContext.Request, dmsPath, options)),
+            await apiService.UpdateById(
+                await FromRequest(httpContext.Request, dmsPath, options, includeBody: true)
+            ),
             httpContext,
             dmsPath
         );
@@ -240,7 +246,9 @@ public static class AspNetCoreFrontend
     )
     {
         return ToResult(
-            await apiService.DeleteById(await FromRequest(httpContext.Request, dmsPath, options)),
+            await apiService.DeleteById(
+                await FromRequest(httpContext.Request, dmsPath, options, includeBody: false)
+            ),
             httpContext,
             dmsPath
         );

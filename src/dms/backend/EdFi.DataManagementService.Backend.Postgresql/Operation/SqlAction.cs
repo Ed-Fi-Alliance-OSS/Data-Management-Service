@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -68,7 +69,7 @@ public partial class SqlAction() : ISqlAction
         string resourceName,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         TraceId traceId
     )
     {
@@ -86,7 +87,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -135,7 +135,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -337,14 +336,15 @@ public partial class SqlAction() : ISqlAction
     }
 
     /// <summary>
-    /// Returns an array of Documents from the database corresponding to the given ResourceName
+    /// Retrieves documents from the database corresponding to the given ResourceName.
     /// </summary>
-    public async Task<JsonArray> GetAllDocumentsByResourceName(
+    public async Task<JsonArray> GetAllDocumentsByResourceNameAsync(
         string resourceName,
         IQueryRequest queryRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        TraceId traceId
+        TraceId traceId,
+        CancellationToken cancellationToken
     )
     {
         var andConditions = new List<string> { "ResourceName = $1" };
@@ -372,22 +372,22 @@ public partial class SqlAction() : ISqlAction
         );
         command.Parameters.AddRange(parameters.ToArray());
 
-        await command.PrepareAsync();
-        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        JsonArray results = [];
 
-        var documents = new List<JsonNode>();
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
 
-        while (await reader.ReadAsync())
+        while (await reader.ReadAsync(cancellationToken))
         {
-            JsonNode? edfiDoc = (await reader.GetFieldValueAsync<JsonElement>(0)).Deserialize<JsonNode>();
+            JsonElement edfiDoc = await reader.GetFieldValueAsync<JsonElement>(0, cancellationToken);
+            JsonNode? node = JsonNode.Parse(edfiDoc.GetRawText());
 
-            if (edfiDoc != null)
+            if (node != null)
             {
-                documents.Add(edfiDoc);
+                results.Add(node);
             }
         }
 
-        return new(documents.ToArray());
+        return results;
     }
 
     /// <summary>
@@ -417,7 +417,6 @@ public partial class SqlAction() : ISqlAction
         );
 
         command.Parameters.AddRange(parameters.ToArray());
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -494,7 +493,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
@@ -565,7 +563,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -607,7 +604,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         if (!reader.HasRows)
@@ -655,7 +651,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         return Convert.ToInt64(await command.ExecuteScalarAsync());
     }
 
@@ -692,13 +687,12 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
     /// <summary>
     /// Attempt to insert references into the Reference table.
-    /// If any referentialId is invalid, rolls back and returns an array of invalid referentialIds.
+    /// Returns any invalid referentialIds
     /// </summary>
     public async Task<Guid[]> InsertReferences(
         BulkReferences bulkReferences,
@@ -712,36 +706,136 @@ public partial class SqlAction() : ISqlAction
             "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
         );
 
-        long[] parentDocumentIds = new long[bulkReferences.ReferentialIds.Length];
-        Array.Fill(parentDocumentIds, bulkReferences.ParentDocumentId);
+        // Ensure we do not send redundant referential rows to the database.
+        var (referentialIds, referentialPartitionKeys) = DeduplicateReferentialIds(
+            bulkReferences.ReferentialIds,
+            bulkReferences.ReferentialPartitionKeys
+        );
 
-        short[] parentDocumentPartitionKeys = new short[bulkReferences.ReferentialIds.Length];
-        Array.Fill(parentDocumentPartitionKeys, bulkReferences.ParentDocumentPartitionKey);
-
-        await using var command = new NpgsqlCommand(
-            @"SELECT dms.InsertReferences($1, $2, $3, $4)",
+        await using NpgsqlCommand command = new(
+            @"SELECT success, invalid_ids
+              FROM dms.InsertReferences($1, $2, $3, $4, $5)",
             connection,
             transaction
         )
         {
             Parameters =
             {
-                new() { Value = parentDocumentIds },
-                new() { Value = parentDocumentPartitionKeys },
-                new() { Value = bulkReferences.ReferentialIds },
-                new() { Value = bulkReferences.ReferentialPartitionKeys },
+                new() { Value = bulkReferences.ParentDocumentId },
+                new() { Value = bulkReferences.ParentDocumentPartitionKey },
+                new() { Value = referentialIds },
+                new() { Value = referentialPartitionKeys },
+                new() { Value = bulkReferences.IsPureInsert },
             },
         };
-        await command.PrepareAsync();
+
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
-        List<Guid> result = [];
-        while (await reader.ReadAsync())
+        if (!await reader.ReadAsync())
         {
-            result.Add(reader.GetGuid(0));
+            throw new InvalidOperationException("InsertReferences returned no result.");
         }
 
-        return result.ToArray();
+        if (reader.GetBoolean(0))
+        {
+            return [];
+        }
+
+        return (await reader.IsDBNullAsync(1)) ? [] : await reader.GetFieldValueAsync<Guid[]>(1);
+    }
+
+    /// <summary>
+    /// Queries the Alias table to identify referentialIds that are invalid.
+    /// </summary>
+    public async Task<Guid[]> FindInvalidReferences(
+        Guid[] referentialIds,
+        short[] referentialPartitionKeys,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    )
+    {
+        Trace.Assert(
+            referentialIds.Length == referentialPartitionKeys.Length,
+            "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
+        );
+
+        if (referentialIds.Length == 0)
+        {
+            return [];
+        }
+
+        var (dedupedIds, dedupedPartitionKeys) = DeduplicateReferentialIds(
+            referentialIds,
+            referentialPartitionKeys
+        );
+
+        await using NpgsqlCommand command = new(
+            @"
+            SELECT ids.referential_id
+            FROM unnest($1::uuid[], $2::smallint[]) AS ids(referential_id, referential_partition_key)
+            LEFT JOIN dms.Alias a
+                   ON a.ReferentialId = ids.referential_id
+                  AND a.ReferentialPartitionKey = ids.referential_partition_key
+            WHERE a.Id IS NULL;",
+            connection,
+            transaction
+        )
+        {
+            Parameters =
+            {
+                new() { Value = dedupedIds },
+                new() { Value = dedupedPartitionKeys },
+            },
+        };
+
+        List<Guid> invalid = [];
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            invalid.Add(await reader.GetFieldValueAsync<Guid>(0));
+        }
+
+        return invalid.Count == 0 ? [] : invalid.ToArray();
+    }
+
+    /// <summary>
+    /// Filters duplicate referential ids while keeping the initial ordering intact.
+    /// </summary>
+    private static (Guid[] ReferentialIds, short[] ReferentialPartitionKeys) DeduplicateReferentialIds(
+        Guid[] referentialIds,
+        short[] referentialPartitionKeys
+    )
+    {
+        // Remove duplicate (ReferentialId, PartitionKey) pairs while retaining their original order.
+        if (referentialIds.Length <= 1)
+        {
+            return (referentialIds, referentialPartitionKeys);
+        }
+
+        List<Guid> uniqueIds = new(referentialIds.Length);
+        List<short> uniquePartitionKeys = new(referentialPartitionKeys.Length);
+        HashSet<(Guid ReferentialId, short PartitionKey)> seen = [];
+        var duplicatesDetected = false;
+
+        // Traverse the parallel arrays once, storing only the first occurrence of each tuple.
+        for (var index = 0; index < referentialIds.Length; index++)
+        {
+            var pair = (ReferentialId: referentialIds[index], PartitionKey: referentialPartitionKeys[index]);
+
+            if (!seen.Add(pair))
+            {
+                duplicatesDetected = true;
+                continue;
+            }
+
+            uniqueIds.Add(pair.ReferentialId);
+            uniquePartitionKeys.Add(pair.PartitionKey);
+        }
+
+        return duplicatesDetected
+            ? (uniqueIds.ToArray(), uniquePartitionKeys.ToArray())
+            : (referentialIds, referentialPartitionKeys);
     }
 
     /// <summary>
@@ -769,7 +863,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -782,15 +875,20 @@ public partial class SqlAction() : ISqlAction
     )
     {
         await using NpgsqlCommand command = new(
-            $@"SELECT d.ResourceName FROM dms.Document d
-                   INNER JOIN (
-                     SELECT ParentDocumentId, ParentDocumentPartitionKey
-                     FROM dms.Reference r
-                     INNER JOIN dms.Document d2 ON d2.Id = r.ReferencedDocumentId
-                       AND d2.DocumentPartitionKey = r.ReferencedDocumentPartitionKey
-                       WHERE d2.DocumentUuid = $1 AND d2.DocumentPartitionKey = $2) AS re
-                     ON re.ParentDocumentId = d.id AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
-                   ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
+            $@"SELECT d.ResourceName
+                FROM dms.Document d
+                INNER JOIN (
+                    SELECT r.ParentDocumentId, r.ParentDocumentPartitionKey
+                    FROM dms.Reference r
+                    INNER JOIN dms.Document d2
+                        ON d2.Id = r.ReferencedDocumentId
+                        AND d2.DocumentPartitionKey = r.ReferencedDocumentPartitionKey
+                    WHERE d2.DocumentUuid = $1
+                      AND d2.DocumentPartitionKey = $2
+                ) AS re
+                    ON re.ParentDocumentId = d.Id
+                    AND re.ParentDocumentPartitionKey = d.DocumentPartitionKey
+                ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
@@ -802,7 +900,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         var resourceNames = new List<string>();
@@ -824,10 +921,14 @@ public partial class SqlAction() : ISqlAction
     )
     {
         await using NpgsqlCommand command = new(
-            $@"SELECT * FROM dms.Document d
-                                INNER JOIN dms.Reference r ON d.Id = r.ParentDocumentId And d.DocumentPartitionKey = r.ParentDocumentPartitionKey
-                                WHERE r.ReferencedDocumentId = $1 AND r.ReferencedDocumentPartitionKey = $2
-                                ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
+            $@"SELECT d.*
+                FROM dms.Document d
+                INNER JOIN dms.Reference r
+                    ON d.Id = r.ParentDocumentId
+                    AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+                WHERE r.ReferencedDocumentId = $1
+                  AND r.ReferencedDocumentPartitionKey = $2
+                ORDER BY d.ResourceName {SqlBuilder.SqlFor(LockOption.BlockUpdateDelete)};",
             connection,
             transaction
         )
@@ -839,7 +940,6 @@ public partial class SqlAction() : ISqlAction
             },
         };
 
-        await command.PrepareAsync();
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
         List<Document> documents = [];
@@ -885,7 +985,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -923,7 +1022,6 @@ public partial class SqlAction() : ISqlAction
                 },
             },
         };
-        await updateCommand.PrepareAsync();
         return await updateCommand.ExecuteNonQueryAsync();
     }
 
@@ -954,14 +1052,13 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
     public async Task<long[]> GetAncestorEducationOrganizationIds(
         long[] educationOrganizationIds,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -988,7 +1085,6 @@ public partial class SqlAction() : ISqlAction
         {
             Parameters = { new() { Value = educationOrganizationIds } },
         };
-        await command.PrepareAsync();
 
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
 
@@ -1005,7 +1101,7 @@ public partial class SqlAction() : ISqlAction
     public async Task<JsonElement?> GetStudentSchoolAuthorizationEducationOrganizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -1024,7 +1120,6 @@ public partial class SqlAction() : ISqlAction
             Parameters = { new() { Value = studentUniqueId } },
         };
 
-        await command.PrepareAsync();
         object? result = await command.ExecuteScalarAsync();
 
         return result == DBNull.Value || result == null
@@ -1035,7 +1130,7 @@ public partial class SqlAction() : ISqlAction
     public async Task<JsonElement?> GetStudentEdOrgResponsibilityAuthorizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -1054,7 +1149,6 @@ public partial class SqlAction() : ISqlAction
             Parameters = { new() { Value = studentUniqueId } },
         };
 
-        await command.PrepareAsync();
         object? result = await command.ExecuteScalarAsync();
 
         return result == DBNull.Value || result == null
@@ -1065,7 +1159,7 @@ public partial class SqlAction() : ISqlAction
     public async Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
         string contactUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -1084,7 +1178,6 @@ public partial class SqlAction() : ISqlAction
             Parameters = { new() { Value = contactUniqueId } },
         };
 
-        await command.PrepareAsync();
         object? result = await command.ExecuteScalarAsync();
 
         return result == DBNull.Value || result == null
@@ -1095,7 +1188,7 @@ public partial class SqlAction() : ISqlAction
     public async Task<JsonElement?> GetStaffEducationOrganizationAuthorizationEdOrgIds(
         string staffUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         await using NpgsqlCommand command = new(
@@ -1114,7 +1207,6 @@ public partial class SqlAction() : ISqlAction
             Parameters = { new() { Value = staffUniqueId } },
         };
 
-        await command.PrepareAsync();
         object? result = await command.ExecuteScalarAsync();
 
         return result == DBNull.Value || result == null
@@ -1145,7 +1237,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1172,7 +1263,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1199,7 +1289,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1226,7 +1315,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1253,7 +1341,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 
@@ -1280,7 +1367,6 @@ public partial class SqlAction() : ISqlAction
                 new() { Value = documentPartitionKey },
             },
         };
-        await command.PrepareAsync();
         return await command.ExecuteNonQueryAsync();
     }
 }

@@ -58,11 +58,7 @@ public class ArrayUniquenessValidationMiddlewareTests
                 ?? new JsonObject()
         );
 
-        var body = JsonNode.Parse(requestInfo.FrontendRequest.Body!);
-        if (body != null)
-        {
-            requestInfo.ParsedBody = body;
-        }
+        requestInfo.ParsedBody = JsonNode.Parse(jsonBody)!;
 
         await Middleware().Execute(requestInfo, NullNext);
         return requestInfo;

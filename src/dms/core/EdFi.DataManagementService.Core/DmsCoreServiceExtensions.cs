@@ -3,6 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -47,6 +50,7 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IUploadApiSchemaService, UploadApiSchemaService>()
             .AddSingleton<IApiService, ApiService>()
             .AddSingleton<IDataModelInfoProvider, DataModelInfoProvider>()
+            .AddSingleton<ICompiledSchemaCache, CompiledSchemaCache>()
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
@@ -108,7 +112,7 @@ public static class DmsCoreServiceExtensions
                             getSuccess.LastModifiedTraceId
                         ),
                         QueryResult.QuerySuccess querySuccess => new QueryResult.QuerySuccess(
-                            ["REDACTED"],
+                            new JsonArray("REDACTED"),
                             querySuccess.TotalCount
                         ),
                         _ => result,

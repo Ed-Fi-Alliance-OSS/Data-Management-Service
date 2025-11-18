@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS dms.Alias (
   DocumentId BIGINT NOT NULL,
   DocumentPartitionKey SMALLINT NOT NULL,
   PRIMARY KEY (ReferentialPartitionKey, Id)
-) PARTITION BY HASH(ReferentialPartitionKey);
+) PARTITION BY LIST(ReferentialPartitionKey);
 
 -- Create partitions if not exists
 DO $$
@@ -22,7 +22,7 @@ BEGIN
     FOR i IN 0..15 LOOP
         partition_name := 'alias_' || to_char(i, 'FM00');
         EXECUTE format(
-            'CREATE TABLE IF NOT EXISTS dms.%I PARTITION OF dms.Alias FOR VALUES WITH (MODULUS 16, REMAINDER %s);',
+            'CREATE TABLE IF NOT EXISTS dms.%I PARTITION OF dms.Alias FOR VALUES IN (%s);',
             partition_name, i
         );
     END LOOP;
@@ -30,6 +30,9 @@ END$$;
 
 -- Referential ID uniqueness validation and reference insert into References support
 CREATE UNIQUE INDEX IF NOT EXISTS UX_Alias_ReferentialId ON dms.Alias (ReferentialPartitionKey, ReferentialId);
+
+-- Reverse lookup for deletes
+CREATE INDEX IX_Alias_DocumentId ON dms.Alias (DocumentPartitionKey, DocumentId);
 
 -- Add FK constraint if not exists
 DO $$

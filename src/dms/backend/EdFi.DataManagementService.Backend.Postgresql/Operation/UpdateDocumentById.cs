@@ -79,6 +79,23 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             updateRequest.DocumentInfo.DescriptorReferences
         );
 
+        var hasReferences =
+            documentReferenceIds.ReferentialIds.Length > 0
+            || descriptorReferenceIds.ReferentialIds.Length > 0;
+
+        Guid[] combinedReferentialIds = [];
+        short[] combinedReferentialPartitionKeys = [];
+
+        if (hasReferences)
+        {
+            combinedReferentialIds = documentReferenceIds
+                .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
+                .ToArray();
+            combinedReferentialPartitionKeys = documentReferenceIds
+                .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
+                .ToArray();
+        }
+
         try
         {
             ResourceAuthorizationResult getAuthorizationResult =
@@ -190,6 +207,28 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 return new UpdateResult.UpdateSuccess(updateRequest.DocumentUuid);
             }
 
+            if (hasReferences)
+            {
+                // Pre-flight validation trims doomed requests before we touch heap/index storage.
+                // InsertReferences repeats the lookup later to catch aliases that change between statements.
+                Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferences(
+                    combinedReferentialIds,
+                    combinedReferentialPartitionKeys,
+                    connection,
+                    transaction,
+                    updateRequest.TraceId
+                );
+
+                if (invalidReferentialIds.Length > 0)
+                {
+                    _logger.LogDebug(
+                        "Invalid references on UpdateById.UpdateDocumentById - {TraceId}",
+                        updateRequest.TraceId.Value
+                    );
+                    return ReportReferenceFailure(updateRequest.DocumentInfo, invalidReferentialIds);
+                }
+            }
+
             JsonElement? schoolAuthorizationEdOrgIds = null;
             JsonElement? studentEdOrgResponsibilityAuthorizationIds = null;
             JsonElement? contactStudentSchoolAuthorizationEdOrgIds = null;
@@ -246,23 +285,16 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 case 1:
                     long documentId = documentFromDb.Id.GetValueOrDefault();
 
-                    if (
-                        documentReferenceIds.ReferentialIds.Length > 0
-                        || descriptorReferenceIds.ReferentialIds.Length > 0
-                    )
+                    if (hasReferences)
                     {
+                        // InsertReferences revalidates using the live snapshot to guard against aliases disappearing
+                        // after the pre-check but before the write executes.
                         Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
                             new(
                                 ParentDocumentPartitionKey: documentPartitionKey.Value,
                                 ParentDocumentId: documentId,
-                                ReferentialIds: documentReferenceIds
-                                    .ReferentialIds.Concat(descriptorReferenceIds.ReferentialIds)
-                                    .ToArray(),
-                                ReferentialPartitionKeys: documentReferenceIds
-                                    .ReferentialPartitionKeys.Concat(
-                                        descriptorReferenceIds.ReferentialPartitionKeys
-                                    )
-                                    .ToArray()
+                                ReferentialIds: combinedReferentialIds,
+                                ReferentialPartitionKeys: combinedReferentialPartitionKeys
                             ),
                             connection,
                             transaction,
