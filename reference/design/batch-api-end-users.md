@@ -134,6 +134,7 @@ For many clients, **natural keys are easier to obtain and store** than internal 
 
 - Issue **update/delete operations by natural key**, without first querying for the `id`.
 - Maintain consistency: for updates, the natural key must match the identity inside the `document` when identity updates are not allowed.
+- Create a resource in an earlier operation and **refer to it later in the same batch by natural key**, without wiring the `documentId` from the create response into a later operation. This gives you practical cross‑operation referencing within a batch without needing a full cross‑operation reference language in the request.
 
 Internally, the batch handler resolves natural keys to document IDs using the same identity and referential ID logic the single‑resource API already uses.
 
@@ -209,8 +210,8 @@ This design makes error handling predictable: the nested `problem` object is the
 ### Optimistic Concurrency (`If-Match`)
 
 - You can still use ETags for concurrency control.
-- The top‑level `If-Match` header applies to all operations by default.
 - Each operation can supply its own `ifMatch` value to override the header, allowing multiple updates with different ETags in one batch.
+- If you are using optimistic concurrency, favor smaller batch sizes. The entire batch operation aborts on a failed If-Match.
 
 ---
 
@@ -355,4 +356,3 @@ For API consumers, this is why:
   - Batch sizes, latencies, and any `Batch Operation Failed` errors, using the `index` field to locate problematic items.
 
 Used this way, `/batch` gives you a higher‑throughput, easier‑to‑operate way to perform the same logical work you already do with the DMS `/data` endpoints, while preserving the same validation, authorization, and data semantics.
-
