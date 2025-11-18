@@ -1,7 +1,6 @@
 # Design: DMS Batch Operations Endpoint
 
-> This document refines `BATCH-API-INITIAL-DESIGN.md` using the actual
-> Data Management Service (DMS) architecture under `src/dms`. It specifies
+> This document specifies
 > how to add a transactional batch endpoint that fits the existing
 > frontend → core (middleware pipeline) → backend layering and patterns.
 
