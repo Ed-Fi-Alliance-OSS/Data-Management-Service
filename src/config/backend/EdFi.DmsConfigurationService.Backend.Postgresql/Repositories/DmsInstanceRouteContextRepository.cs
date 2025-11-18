@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
 public class DmsInstanceRouteContextRepository(
     IOptions<DatabaseOptions> databaseOptions,
-    ILogger<DmsInstanceRouteContextRepository> logger
+    ILogger<DmsInstanceRouteContextRepository> logger,
+    IAuditContext auditContext
 ) : IDmsInstanceRouteContextRepository
 {
     public async Task<DmsInstanceRouteContextInsertResult> InsertDmsInstanceRouteContext(
@@ -27,12 +29,20 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             string sql = """
-                INSERT INTO dmscs.DmsInstanceRouteContext (InstanceId, ContextKey, ContextValue)
-                VALUES (@InstanceId, @ContextKey, @ContextValue)
+                INSERT INTO dmscs.DmsInstanceRouteContext (InstanceId, ContextKey, ContextValue, CreatedBy)
+                VALUES (@InstanceId, @ContextKey, @ContextValue, @CreatedBy)
                 RETURNING Id;
                 """;
 
-            long id = await connection.ExecuteScalarAsync<long>(sql, command);
+            long id = await connection.ExecuteScalarAsync<long>(
+                sql,
+                new
+                {
+                    command.InstanceId,
+                    command.ContextKey,
+                    command.ContextValue,
+                    CreatedBy = auditContext.GetCurrentUser()
+                });
 
             return new DmsInstanceRouteContextInsertResult.Success(id);
         }
@@ -70,7 +80,8 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             string sql = """
-                SELECT Id, InstanceId, ContextKey, ContextValue
+                SELECT Id, InstanceId, ContextKey, ContextValue,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceRouteContext
                 ORDER BY Id
                 LIMIT @Limit OFFSET @Offset;
@@ -96,7 +107,8 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             string sql = """
-                SELECT Id, InstanceId, ContextKey, ContextValue
+                SELECT Id, InstanceId, ContextKey, ContextValue,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceRouteContext
                 WHERE Id = @Id;
                 """;
@@ -128,11 +140,22 @@ public class DmsInstanceRouteContextRepository(
         {
             string sql = """
                 UPDATE dmscs.DmsInstanceRouteContext
-                SET InstanceId = @InstanceId, ContextKey = @ContextKey, ContextValue = @ContextValue
+                SET InstanceId = @InstanceId, ContextKey = @ContextKey, ContextValue = @ContextValue,
+                    LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
                 WHERE Id = @Id;
                 """;
 
-            int affectedRows = await connection.ExecuteAsync(sql, command);
+            int affectedRows = await connection.ExecuteAsync(
+                sql,
+                new
+                {
+                    command.Id,
+                    command.InstanceId,
+                    command.ContextKey,
+                    command.ContextValue,
+                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                    ModifiedBy = auditContext.GetCurrentUser()
+                });
 
             if (affectedRows == 0)
             {
@@ -199,7 +222,8 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             string sql = """
-                SELECT Id, InstanceId, ContextKey, ContextValue
+                SELECT Id, InstanceId, ContextKey, ContextValue,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceRouteContext
                 WHERE InstanceId = @InstanceId
                 ORDER BY ContextKey;
@@ -232,7 +256,8 @@ public class DmsInstanceRouteContextRepository(
             }
 
             string sql = """
-                SELECT Id, InstanceId, ContextKey, ContextValue
+                SELECT Id, InstanceId, ContextKey, ContextValue,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceRouteContext
                 WHERE InstanceId = ANY(@InstanceIds)
                 ORDER BY InstanceId, ContextKey;

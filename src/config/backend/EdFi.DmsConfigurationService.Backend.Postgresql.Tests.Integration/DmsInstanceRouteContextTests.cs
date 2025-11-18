@@ -18,7 +18,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
 {
     private readonly DmsInstanceRouteContextRepository _repository = new DmsInstanceRouteContextRepository(
         Configuration.DatabaseOptions,
-        NullLogger<DmsInstanceRouteContextRepository>.Instance
+        NullLogger<DmsInstanceRouteContextRepository>.Instance,
+        new TestAuditContext()
     );
 
     [TestFixture]
@@ -42,7 +43,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 NullLogger<DmsInstanceRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 _repository,
-                derivativeRepository
+                derivativeRepository,
+                new TestAuditContext()
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -124,7 +126,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 NullLogger<DmsInstanceRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 _repository,
-                derivativeRepository
+                derivativeRepository,
+                new TestAuditContext()
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -191,7 +194,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 NullLogger<DmsInstanceRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 _repository,
-                derivativeRepository
+                derivativeRepository,
+                new TestAuditContext()
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -246,7 +250,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 NullLogger<DmsInstanceRepository>.Instance,
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 _repository,
-                derivativeRepository
+                derivativeRepository,
+                new TestAuditContext()
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -291,3 +296,4 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         }
     }
 }
+
