@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
@@ -16,7 +17,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
 public class ApiClientRepository(
     IOptions<DatabaseOptions> databaseOptions,
-    ILogger<ApiClientRepository> logger
+    ILogger<ApiClientRepository> logger,
+    IAuditContext auditContext
 ) : IApiClientRepository
 {
     public async Task<ApiClientInsertResult> InsertApiClient(
@@ -30,8 +32,8 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved)
-                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved)
+                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved, CreatedBy)
+                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy)
                 RETURNING Id;
                 """;
 
@@ -44,6 +46,7 @@ public class ApiClientRepository(
                     clientCommand.ClientUuid,
                     command.Name,
                     command.IsApproved,
+                    CreatedBy = auditContext.GetCurrentUser()
                 },
                 transaction
             );
@@ -51,14 +54,16 @@ public class ApiClientRepository(
             if (command.DmsInstanceIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId)
-                    VALUES (@ApiClientId, @DmsInstanceId);
+                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId, CreatedBy)
+                    VALUES (@ApiClientId, @DmsInstanceId, @CreatedBy);
                     """;
 
+                var currentUser = auditContext.GetCurrentUser();
                 var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
                 {
                     ApiClientId = apiClientId,
                     DmsInstanceId = dmsInstanceId,
+                    CreatedBy = currentUser
                 });
 
                 await connection.ExecuteAsync(sql, dmsInstanceMappings, transaction);
@@ -94,7 +99,9 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved, acd.DmsInstanceId
+                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
+                       ac.CreatedAt, ac.CreatedBy, ac.LastModifiedAt, ac.ModifiedBy,
+                       acd.DmsInstanceId
                 FROM (SELECT * FROM dmscs.ApiClient ORDER BY Id LIMIT @Limit OFFSET @Offset) AS ac
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
                 ORDER BY ac.Id;
@@ -140,7 +147,9 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved, acd.DmsInstanceId
+                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
+                       ac.CreatedAt, ac.CreatedBy, ac.LastModifiedAt, ac.ModifiedBy,
+                       acd.DmsInstanceId
                 FROM dmscs.ApiClient ac
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
                 WHERE ac.ClientId = @ClientId;
@@ -188,7 +197,9 @@ public class ApiClientRepository(
         try
         {
             string sql = """
-                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved, acd.DmsInstanceId
+                SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
+                       ac.CreatedAt, ac.CreatedBy, ac.LastModifiedAt, ac.ModifiedBy,
+                       acd.DmsInstanceId
                 FROM dmscs.ApiClient ac
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
                 WHERE ac.Id = @Id;
@@ -248,7 +259,8 @@ public class ApiClientRepository(
             // Update ApiClient record
             string updateSql = """
                 UPDATE dmscs.ApiClient
-                SET ApplicationId = @ApplicationId, Name = @Name, IsApproved = @IsApproved
+                SET ApplicationId = @ApplicationId, Name = @Name, IsApproved = @IsApproved,
+                    LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
                 WHERE Id = @Id;
                 """;
 
@@ -260,6 +272,8 @@ public class ApiClientRepository(
                     command.ApplicationId,
                     command.Name,
                     command.IsApproved,
+                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                    ModifiedBy = auditContext.GetCurrentUser()
                 },
                 transaction
             );
@@ -272,14 +286,16 @@ public class ApiClientRepository(
             if (command.DmsInstanceIds.Length > 0)
             {
                 string insertSql = """
-                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId)
-                    VALUES (@ApiClientId, @DmsInstanceId);
+                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId, CreatedBy)
+                    VALUES (@ApiClientId, @DmsInstanceId, @CreatedBy);
                     """;
 
+                var currentUser = auditContext.GetCurrentUser();
                 var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
                 {
                     ApiClientId = command.Id,
                     DmsInstanceId = dmsInstanceId,
+                    CreatedBy = currentUser
                 });
 
                 await connection.ExecuteAsync(insertSql, dmsInstanceMappings, transaction);

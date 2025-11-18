@@ -21,6 +21,7 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
@@ -116,6 +117,10 @@ public static class WebApplicationBuilderExtensions
             IConnectionStringEncryptionService,
             ConnectionStringEncryptionService
         >();
+
+        // Register audit context service
+        webApplicationBuilder.Services.AddHttpContextAccessor();
+        webApplicationBuilder.Services.AddScoped<IAuditContext, AuditContext>();
 
         Serilog.ILogger ConfigureLogging()
         {
