@@ -94,7 +94,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     RouteQualifiers: []
                 );
                 _requestInfo = Context(frontEndRequest, RequestMethod.POST);
-                _requestInfo.ParsedBody = JsonNode.Parse(_requestInfo.FrontendRequest.Body!)!;
+                _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
                 await Middleware().Execute(_requestInfo, () => Task.CompletedTask);
             }
 
@@ -133,7 +133,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                     RouteQualifiers: []
                 );
                 _requestInfo = Context(frontEndRequest, RequestMethod.POST);
-                _requestInfo.ParsedBody = JsonNode.Parse(_requestInfo.FrontendRequest.Body!)!;
+                _requestInfo.ParsedBody = JsonNode.Parse(jsonData)!;
                 await Middleware().Execute(_requestInfo, () => Task.CompletedTask);
             }
 

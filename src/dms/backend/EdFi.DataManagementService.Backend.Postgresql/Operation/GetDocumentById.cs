@@ -18,7 +18,7 @@ public interface IGetDocumentById
     public Task<GetResult> GetById(
         IGetRequest getRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 }
 
@@ -32,7 +32,7 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
     public async Task<GetResult> GetById(
         IGetRequest getRequest,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     )
     {
         _logger.LogDebug("Entering GetDocumentById.GetById - {TraceId}", getRequest.TraceId.Value);

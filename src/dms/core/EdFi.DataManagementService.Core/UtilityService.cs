@@ -18,9 +18,9 @@ public static partial class UtilityService
     [GeneratedRegex(@"\/(?<projectNamespace>[^/]+)\/(?<endpointName>[^/]+)(\/|$)((?<documentUuid>[^/]*$))?")]
     public static partial Regex PathExpressionRegex();
 
-    // Regex for a UUID v4 string
-    [GeneratedRegex(@"^[0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")]
-    public static partial Regex Uuid4Regex();
+    // Regex for a UUID string - does not enforce any particular UUID version
+    [GeneratedRegex(@"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")]
+    public static partial Regex UuidRegex();
 
     //Prevent string contain space characters
     [GeneratedRegex("(\"(?:[^\"\\\\]|\\\\.)*\")|\\s+")]

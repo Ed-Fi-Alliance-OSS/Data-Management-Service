@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
@@ -43,6 +44,11 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
     /// Provides information from a set of ApiSchema.json documents
     /// </summary>
     public ApiSchemaDocuments ApiSchemaDocuments { get; set; } = No.ApiSchemaDocument;
+
+    /// <summary>
+    /// The reload identifier associated with the ApiSchemaDocuments attached to this request.
+    /// </summary>
+    public Guid ApiSchemaReloadId { get; set; } = Guid.Empty;
 
     /// <summary>
     /// Provides information from the ProjectSchema portion of an ApiSchema.json document

@@ -50,7 +50,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
             [Test]
             public void Should_not_throw_an_exception()
             {
-                Action act = () => _graph!.ValidateGraph(_logger);
+                Action act = () => _graph!.ValidateAcyclicGraph(_logger);
 
                 act.Should().NotThrow<NonAcyclicGraphException>();
             }
@@ -99,7 +99,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
             [Test]
             public void Validation_should_throw_a_NonAcyclicGraphException()
             {
-                Action act = () => _graph!.ValidateGraph(_logger);
+                Action act = () => _graph!.ValidateAcyclicGraph(_logger);
 
                 act.Should().Throw<NonAcyclicGraphException>();
             }
@@ -217,7 +217,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
             [Test]
             public void Validation_should_fail_initially()
             {
-                Action act = () => _graph!.ValidateGraph(_logger);
+                Action act = () => _graph!.ValidateAcyclicGraph(_logger);
                 act.Should().Throw<NonAcyclicGraphException>();
             }
 
@@ -234,7 +234,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
                     Console.WriteLine(removedEdge);
                 }
 
-                clonedGraph.ValidateGraph(_logger);
+                clonedGraph.ValidateAcyclicGraph(_logger);
 
                 clonedGraph.Edges.Count().Should().Be(_graph.Edges.Count() - 4);
 
@@ -280,7 +280,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ResourceLoadOrder
             [Test]
             public void Should_throw_an_exception_on_validation()
             {
-                Action act = () => _graph!.ValidateGraph(_logger);
+                Action act = () => _graph!.ValidateAcyclicGraph(_logger);
                 act.Should().Throw<NonAcyclicGraphException>();
             }
 

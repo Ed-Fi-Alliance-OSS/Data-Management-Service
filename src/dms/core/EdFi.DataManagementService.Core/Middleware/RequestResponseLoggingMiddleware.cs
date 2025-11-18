@@ -19,13 +19,26 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
     {
         var traceId = requestInfo.FrontendRequest.TraceId.Value;
         var stopwatch = Stopwatch.StartNew();
+        bool logInformation = _logger.IsEnabled(LogLevel.Information);
+        string method = logInformation
+            ? LoggingSanitizer.SanitizeForLogging(requestInfo.Method.ToString())
+            : string.Empty;
+        string path = logInformation
+            ? LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path)
+            : string.Empty;
+        string sanitizedTraceId = logInformation
+            ? LoggingSanitizer.SanitizeForLogging(traceId)
+            : string.Empty;
 
-        _logger.LogInformation(
-            "Core pipeline started: {Method} {Path} - TraceId: {TraceId}",
-            LoggingSanitizer.SanitizeForLogging(requestInfo.Method.ToString()),
-            LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path),
-            LoggingSanitizer.SanitizeForLogging(traceId)
-        );
+        if (logInformation)
+        {
+            _logger.LogInformation(
+                "Core pipeline started: {Method} {Path} - TraceId: {TraceId}",
+                method,
+                path,
+                sanitizedTraceId
+            );
+        }
 
         try
         {
@@ -34,14 +47,17 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
             stopwatch.Stop();
             var statusCode = requestInfo.FrontendResponse?.StatusCode ?? 0;
 
-            _logger.LogInformation(
-                "Core pipeline completed: {Method} {Path} - Status: {StatusCode} - Duration: {Duration}ms - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.Method.ToString()),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path),
-                statusCode,
-                stopwatch.ElapsedMilliseconds,
-                LoggingSanitizer.SanitizeForLogging(traceId)
-            );
+            if (logInformation)
+            {
+                _logger.LogInformation(
+                    "Core pipeline completed: {Method} {Path} - Status: {StatusCode} - Duration: {Duration}ms - TraceId: {TraceId}",
+                    method,
+                    path,
+                    statusCode,
+                    stopwatch.ElapsedMilliseconds,
+                    sanitizedTraceId
+                );
+            }
         }
         catch (Exception ex)
         {
@@ -49,10 +65,14 @@ internal class RequestResponseLoggingMiddleware(ILogger _logger) : IPipelineStep
             _logger.LogError(
                 ex,
                 "Core pipeline failed: {Method} {Path} - Duration: {Duration}ms - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(requestInfo.Method.ToString()),
-                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path),
+                method.Length == 0
+                    ? LoggingSanitizer.SanitizeForLogging(requestInfo.Method.ToString())
+                    : method,
+                path.Length == 0
+                    ? LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Path)
+                    : path,
                 stopwatch.ElapsedMilliseconds,
-                LoggingSanitizer.SanitizeForLogging(traceId)
+                sanitizedTraceId.Length == 0 ? LoggingSanitizer.SanitizeForLogging(traceId) : sanitizedTraceId
             );
 
             // Re-throw with contextual information preserved in log

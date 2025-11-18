@@ -32,22 +32,17 @@ namespace EdFi.DataManagementService.Core.Middleware
                 "Entering RejectResourceIdentifierMiddleware - {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
-            if (requestInfo.FrontendRequest.Body != null)
+            if (requestInfo.ParsedBody is JsonNode body && PropertyExists(body, "id"))
             {
-                JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
-
-                if (body != null && PropertyExists(body, "id"))
-                {
-                    requestInfo.FrontendResponse = new FrontendResponse(
-                        StatusCode: 400,
-                        GenerateFrontendErrorResponse(
-                            "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body.",
-                            requestInfo.FrontendRequest.TraceId
-                        ),
-                        Headers: []
-                    );
-                    return;
-                }
+                requestInfo.FrontendResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    GenerateFrontendErrorResponse(
+                        "Resource identifiers cannot be assigned by the client. The 'id' property should not be included in the request body.",
+                        requestInfo.FrontendRequest.TraceId
+                    ),
+                    Headers: []
+                );
+                return;
             }
 
             await next();

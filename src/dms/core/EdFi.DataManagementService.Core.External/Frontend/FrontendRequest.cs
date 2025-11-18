@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IO;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.External.Frontend;
@@ -38,4 +39,8 @@ public record FrontendRequest(
     /// Empty if no route qualifiers are configured.
     /// </summary>
     Dictionary<RouteQualifierName, RouteQualifierValue> RouteQualifiers
+    /// <summary>
+    /// Raw request body stream when supplied by the frontend.
+    /// </summary>
+    Stream? BodyStream = null
 );

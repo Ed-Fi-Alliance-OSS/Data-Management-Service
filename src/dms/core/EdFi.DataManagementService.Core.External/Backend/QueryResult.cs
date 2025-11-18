@@ -2,7 +2,9 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
-using System.Text.Json.Nodes;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace EdFi.DataManagementService.Core.External.Backend;
 
@@ -14,9 +16,9 @@ public record QueryResult
     /// <summary>
     /// A successful query request
     /// </summary>
-    /// <param name="EdfiDocs">The documents returned from the query</param>
+    /// <param name="StreamWriter">Delegate that streams the documents to the caller</param>
     /// <param name="TotalCount">The total number of documents returned</param>
-    public record QuerySuccess(JsonArray EdfiDocs, int? TotalCount) : QueryResult();
+    public record QuerySuccess(QueryStreamWriter StreamWriter, int? TotalCount) : QueryResult();
 
     /// <summary>
     /// A known failure from the query handler, likely invalid query terms that
@@ -36,4 +38,6 @@ public record QueryResult
     public record UnknownFailure(string FailureMessage) : QueryResult();
 
     private QueryResult() { }
+
+    public delegate Task QueryStreamWriter(Stream destination, CancellationToken cancellationToken);
 }

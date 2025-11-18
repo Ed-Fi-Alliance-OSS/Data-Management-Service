@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using ImpromptuInterface;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NUnit.Framework;
 
@@ -218,9 +219,19 @@ public abstract class DatabaseTest : DatabaseTestBase
         return new GetDocumentById(CreateSqlAction(), NullLogger<GetDocumentById>.Instance);
     }
 
-    protected static QueryDocument CreateQueryDocument()
+    protected static IOptions<DatabaseOptions> CreateDatabaseOptions()
     {
-        return new QueryDocument(CreateSqlAction(), NullLogger<QueryDocument>.Instance);
+        return Options.Create(new DatabaseOptions { IsolationLevel = ConfiguredIsolationLevel });
+    }
+
+    protected QueryDocument CreateQueryDocument()
+    {
+        return new QueryDocument(
+            CreateSqlAction(),
+            NullLogger<QueryDocument>.Instance,
+            DataSource!,
+            CreateDatabaseOptions()
+        );
     }
 
     protected static DeleteDocumentById CreateDeleteById()
