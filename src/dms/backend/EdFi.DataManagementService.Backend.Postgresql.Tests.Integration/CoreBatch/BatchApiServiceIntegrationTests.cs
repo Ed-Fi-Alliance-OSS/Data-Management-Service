@@ -75,6 +75,22 @@ public class BatchApiServiceIntegrationTests : CoreBatchIntegrationTestBase
     }
 
     [Test]
+    public async Task Given_Creates_With_Descriptor_References_Succeeds()
+    {
+        string firstStudentId = $"descriptor-{Guid.NewGuid():N}".Substring(0, 20);
+        string secondStudentId = $"descriptor-{Guid.NewGuid():N}".Substring(0, 20);
+
+        IFrontendResponse response = await ExecuteBatchAsync(
+            CreateCreateOperationWithDescriptors(firstStudentId, "Alpha"),
+            CreateCreateOperationWithDescriptors(secondStudentId, "Beta")
+        );
+
+        response.StatusCode.Should().Be(200);
+        JsonArray body = response.Body!.AsArray();
+        body.Count.Should().Be(2);
+    }
+
+    [Test]
     public async Task Given_Create_Update_Delete_Create_On_Same_Resource_Succeeds()
     {
         string initialStudentId = $"batch-chain-{Guid.NewGuid():N}".Substring(0, 12);

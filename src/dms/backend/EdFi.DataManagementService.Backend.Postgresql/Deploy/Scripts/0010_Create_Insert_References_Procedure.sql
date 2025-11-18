@@ -54,6 +54,10 @@ BEGIN
         ';
     END IF;
 
+    -- Ensure the staging table only contains rows for the current invocation.
+    -- Needed to support multiple InsertReferences calls in one transaction.
+    DELETE FROM reference_stage;
+
     WITH staged AS (
         -- Materialize the incoming references along with resolved alias/document metadata.
         SELECT

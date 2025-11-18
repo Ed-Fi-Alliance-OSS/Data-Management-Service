@@ -228,6 +228,15 @@ public abstract class CoreBatchIntegrationTestBase : DatabaseTest
         );
     }
 
+    protected static JsonObject CreateCreateOperationWithDescriptors(string studentUniqueId, string givenName)
+    {
+        return CreateBatchOperation(
+            op: "create",
+            resource: StudentEndpoint,
+            document: CreateStudentDocumentWithDescriptors(studentUniqueId, givenName)
+        );
+    }
+
     protected static JsonObject CreateUpdateOperation(
         Guid documentId,
         string etag,
@@ -314,6 +323,83 @@ public abstract class CoreBatchIntegrationTestBase : DatabaseTest
         {
             document["_etag"] = etag;
         }
+
+        return document;
+    }
+
+    protected static JsonObject CreateStudentDocumentWithDescriptors(string studentUniqueId, string givenName)
+    {
+        JsonObject document = CreateStudentDocument(studentUniqueId, givenName, etag: null);
+        document["birthDate"] = "2009-01-01";
+        document["middleName"] = "Integration";
+        document["lastSurname"] = "Test";
+        document["generationCodeSuffix"] = "JR";
+        document["personalTitlePrefix"] = "Mr";
+        document["hispanicLatinoEthnicity"] = false;
+        document["birthCity"] = "Grand Bend";
+        document["birthCountryDescriptor"] = "uri://ed-fi.org/CountryDescriptor#AG";
+        document["birthStateAbbreviationDescriptor"] = "uri://ed-fi.org/StateAbbreviationDescriptor#TX";
+
+        document["addresses"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["addressTypeDescriptor"] = "uri://ed-fi.org/AddressTypeDescriptor#Temporary",
+                ["city"] = "Grand Bend",
+                ["postalCode"] = "78834",
+                ["stateAbbreviationDescriptor"] = "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
+                ["streetNumberName"] = "654 Mission Hills",
+                ["apartmentRoomSuiteNumber"] = "100",
+                ["nameOfCounty"] = "Williston",
+            },
+        };
+
+        document["electronicMails"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["electronicMailAddress"] = $"{studentUniqueId}@example.org",
+                ["electronicMailTypeDescriptor"] = "uri://ed-fi.org/ElectronicMailTypeDescriptor#Other",
+            },
+        };
+
+        document["identificationCodes"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["identificationCode"] = 704,
+                ["assigningOrganizationIdentificationCode"] = "State",
+                ["studentIdentificationSystemDescriptor"] =
+                    "uri://ed-fi.org/StudentIdentificationSystemDescriptor#State",
+            },
+        };
+
+        document["studentLanguages"] = new JsonArray
+        {
+            new JsonObject { ["languageDescriptor"] = "uri://ed-fi.org/LanguageDescriptor#Spanish" },
+        };
+
+        document["studentLanguageUses"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["languageUseDescriptor"] = "uri://ed-fi.org/LanguageUseDescriptor#Home language",
+            },
+        };
+
+        document["studentRaces"] = new JsonArray
+        {
+            new JsonObject { ["raceDescriptor"] = "uri://ed-fi.org/RaceDescriptor#Black - African American" },
+        };
+
+        document["telephones"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["telephoneNumber"] = "111-222-3333",
+                ["telephoneNumberTypeDescriptor"] = "uri://ed-fi.org/TelephoneNumberTypeDescriptor#Home",
+            },
+        };
 
         return document;
     }
