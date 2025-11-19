@@ -44,7 +44,7 @@ Feature: ApiClients endpoints
                           "isApproved": true,
                           "dmsInstanceIds": [{dmsInstanceId}],
                           "createdAt": "{*}",
-                          "createdBy": "DmsConfigurationService",
+                          "createdBy": "{*}",
                           "lastModifiedAt": null,
                           "modifiedBy": null
                       }]
@@ -73,7 +73,7 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "dmsInstanceIds": [{dmsInstanceId}],
                     "createdAt": "{*}",
-                    "createdBy": "DmsConfigurationService",
+                    "createdBy": "{*}",
                     "lastModifiedAt": null,
                     "modifiedBy": null
                   }
@@ -316,7 +316,7 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "dmsInstanceIds": [{dmsInstanceId}],
                     "createdAt": "{*}",
-                    "createdBy": "DmsConfigurationService",
+                    "createdBy": "{*}",
                     "lastModifiedAt": null,
                     "modifiedBy": null
                   }
