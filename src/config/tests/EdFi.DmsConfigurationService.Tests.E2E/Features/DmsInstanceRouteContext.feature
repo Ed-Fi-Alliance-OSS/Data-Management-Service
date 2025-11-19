@@ -12,7 +12,7 @@ Feature: DMS Instance Route Context
                   }
                   """
 
-       
+
         Scenario: 01 Ensure clients can create a new instance route context
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
@@ -35,7 +35,11 @@ Feature: DMS Instance Route Context
                             "id": {id},
                             "instanceId": {dmsInstanceId},
                             "contextKey": "schoolYear",
-                            "contextValue": "2022"
+                            "contextValue": "2022",
+                            "createdAt": "{*}",
+                            "createdBy": "{*}",
+                            "lastModifiedAt": null,
+                            "modifiedBy": null
                   }
                   """
              When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
@@ -43,7 +47,7 @@ Feature: DMS Instance Route Context
              When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
              Then it should respond with 204
 
-       
+
         Scenario: 02 Ensure clients can GET dmsInstanceRouteContexts list
             Given a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
@@ -61,7 +65,11 @@ Feature: DMS Instance Route Context
                           "id": {id},
                           "instanceId": {dmsInstanceId},
                           "contextKey": "schoolYear",
-                          "contextValue": "2022"
+                          "contextValue": "2022",
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }]
                   """
              When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
@@ -70,7 +78,7 @@ Feature: DMS Instance Route Context
              Then it should respond with 204
 
 
-       
+
         Scenario: 03 Verify retrieving a single instance route context by ID
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
@@ -89,7 +97,11 @@ Feature: DMS Instance Route Context
                        "id": {id},
                        "instanceId": {dmsInstanceId},
                        "contextKey": "schoolYear",
-                       "contextValue": "2022"
+                       "contextValue": "2022",
+                       "createdAt": "{*}",
+                       "createdBy": "{*}",
+                       "lastModifiedAt": null,
+                       "modifiedBy": null
                   }
                   """
              When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
@@ -97,7 +109,7 @@ Feature: DMS Instance Route Context
              When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"
              Then it should respond with 204
 
-       
+
         Scenario: 04 Put an existing instance route context
              When a POST request is made to "/v2/dmsInstanceRouteContexts" with
                   """
@@ -124,7 +136,11 @@ Feature: DMS Instance Route Context
                        "id": {id},
                        "instanceId": {dmsInstanceId},
                        "contextKey": "schoolYear",
-                       "contextValue": "2023"
+                       "contextValue": "2023",
+                       "createdAt": "{*}",
+                       "createdBy": "{*}",
+                       "lastModifiedAt": "{*}",
+                       "modifiedBy": "{*}"
                   }
                   """
              When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
@@ -251,7 +267,11 @@ Feature: DMS Instance Route Context
                                "contextKey": "schoolYear",
                                "contextValue": "2024"
                            }
-                       ]
+                       ],
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": null,
+                        "modifiedBy": null
                   }
                   """
              When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"

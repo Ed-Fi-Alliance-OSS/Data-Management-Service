@@ -19,14 +19,22 @@ Feature: DmsInstances endpoints
                           "instanceType": "Production",
                           "instanceName": "Test Instance",
                           "connectionString": "Server=localhost;Database=TestDb;",
-                          "dmsInstanceRouteContexts": []
+                          "dmsInstanceRouteContexts": [],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       },
                       {
                           "id": {id},
                           "instanceType": "Development",
                           "instanceName": "Dev Instance",
                           "connectionString": "Server=dev;Database=DevDb;",
-                          "dmsInstanceRouteContexts": []
+                          "dmsInstanceRouteContexts": [],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }]
                   """
 
@@ -53,7 +61,11 @@ Feature: DmsInstances endpoints
                         "instanceType": "Production",
                         "instanceName": "New Test Instance",
                         "connectionString": "Server=newtest;Database=NewTestDb;",
-                        "dmsInstanceRouteContexts": []
+                        "dmsInstanceRouteContexts": [],
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": null,
+                        "modifiedBy": null
                     }
                   """
 
@@ -76,7 +88,11 @@ Feature: DmsInstances endpoints
                           "instanceType": "Development",
                           "instanceName": "Retrieved Instance",
                           "connectionString": "Server=retrieved;Database=RetrievedDb;",
-                          "dmsInstanceRouteContexts": []
+                          "dmsInstanceRouteContexts": [],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }
                   """
 
@@ -107,7 +123,11 @@ Feature: DmsInstances endpoints
                         "instanceType": "Production",
                         "instanceName": "Updated Instance",
                         "connectionString": "Server=updated;Database=UpdatedDb;",
-                        "dmsInstanceRouteContexts": []
+                        "dmsInstanceRouteContexts": [],
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": "{*}",
+                        "modifiedBy": "{*}"
                     }
                   """
 
