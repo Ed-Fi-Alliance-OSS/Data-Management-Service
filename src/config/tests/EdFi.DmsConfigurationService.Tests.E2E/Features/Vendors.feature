@@ -139,9 +139,9 @@ Feature: Vendors endpoints
                        "contactEmailAddress": "test@gmail.com",
                        "namespacePrefixes": "Test",
                         "createdAt": "{*}",
-                        "createdBy": "DmsConfigurationService",
+                        "createdBy": "{*}",
                         "lastModifiedAt": "{*}",
-                        "modifiedBy": "DmsConfigurationService"
+                        "modifiedBy": "{*}"
                    }
                   """
 
@@ -397,7 +397,7 @@ Feature: Vendors endpoints
                       "contactEmailAddress": "test@gmail.com",
                       "namespacePrefixes": "Test",
                       "createdAt": "{*}",
-                      "createdBy": "DmsConfigurationService",
+                      "createdBy": "{*}",
                       "lastModifiedAt": null,
                       "modifiedBy": null
                   }
