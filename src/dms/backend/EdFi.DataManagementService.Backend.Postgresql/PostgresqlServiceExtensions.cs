@@ -19,28 +19,6 @@ public static class PostgresqlServiceExtensions
     /// </summary>
     public static IServiceCollection AddPostgresqlDatastore(this IServiceCollection services)
     {
-	    // *** FIX ME this needs to move
-        services.AddSingleton(sp =>
-        {
-            NpgsqlDataSourceBuilder builder = new(connectionString);
-            var csb = builder.ConnectionStringBuilder;
-
-            // Skip RESET/DISCARD when returning pooled connections, we manage session state explicitly.
-            csb.NoResetOnClose = true;
-
-            // Make PostgreSQL monitoring output more readable
-            if (string.IsNullOrWhiteSpace(csb.ApplicationName))
-            {
-                csb.ApplicationName = "EdFi.DMS";
-            }
-
-            // Let Npgsql handle plan caching automatically
-            csb.AutoPrepareMinUsages = 3;
-            csb.MaxAutoPrepare = 256;
-
-            return builder.Build();
-        });
-
         // Register singleton cache for NpgsqlDataSource instances
         services.AddSingleton<NpgsqlDataSourceCache>();
 

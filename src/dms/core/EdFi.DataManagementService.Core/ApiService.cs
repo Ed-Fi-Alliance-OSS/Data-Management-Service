@@ -99,7 +99,7 @@ internal class ApiService : IApiService
         IUploadApiSchemaService apiSchemaUploadService,
         IServiceProvider serviceProvider,
         ClaimSetsCache claimSetsCache,
-        IResourceDependencyGraphMLFactory resourceDependencyGraphMLFactory
+        IResourceDependencyGraphMLFactory resourceDependencyGraphMLFactory,
         ICompiledSchemaCache compiledSchemaCache
     )
     {

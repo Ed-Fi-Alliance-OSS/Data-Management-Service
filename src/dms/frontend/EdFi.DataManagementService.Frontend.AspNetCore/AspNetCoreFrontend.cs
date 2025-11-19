@@ -121,8 +121,8 @@ public static class AspNetCoreFrontend
             Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
-            TraceId: ExtractTraceIdFrom(HttpRequest, options),
-            RouteQualifiers: ExtractRouteQualifiersFrom(HttpRequest, options)
+            TraceId: ExtractTraceIdFrom(httpRequest, options),
+            RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, options),
             BodyStream: includeBody ? httpRequest.Body : null
         );
     }
