@@ -22,7 +22,7 @@ public interface IQueryDocument
 public class QueryDocument(
     ISqlAction _sqlAction,
     ILogger<QueryDocument> _logger,
-    NpgsqlDataSource _dataSource,
+    NpgsqlDataSourceProvider _dataSourceProvider,
     IOptions<DatabaseOptions> _databaseOptions
 ) : IQueryDocument
 {
@@ -37,7 +37,7 @@ public class QueryDocument(
 
             if (queryRequest.PaginationParameters.TotalCount)
             {
-                await using var countConnection = await _dataSource.OpenConnectionAsync();
+                await using var countConnection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
                 await using var countTransaction = await countConnection.BeginTransactionAsync(
                     _databaseOptions.Value.IsolationLevel
                 );
@@ -63,7 +63,9 @@ public class QueryDocument(
             return new QueryResult.QuerySuccess(
                 async (stream, cancellationToken) =>
                 {
-                    await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken);
+                    await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync(
+                        cancellationToken
+                    );
                     await using var transaction = await connection.BeginTransactionAsync(
                         _databaseOptions.Value.IsolationLevel,
                         cancellationToken

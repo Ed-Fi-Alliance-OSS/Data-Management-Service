@@ -63,7 +63,6 @@ public class LoggingMiddleware(RequestDelegate next)
                     ? LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)
                     : sanitizedPath,
                 stopwatch.ElapsedMilliseconds,
-                sanitizedTraceId.Length == 0,
                 context.TraceIdentifier
             );
 
