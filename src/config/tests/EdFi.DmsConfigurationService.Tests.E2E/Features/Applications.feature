@@ -111,7 +111,11 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
-                          "dmsInstanceIds": [{dmsInstanceId}]
+                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       },
                       {
                           "id": {id},
@@ -119,7 +123,11 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
-                          "dmsInstanceIds": [{dmsInstanceId}]
+                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       },
                       {
                           "id": {id},
@@ -127,7 +135,11 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
-                          "dmsInstanceIds": [{dmsInstanceId}]
+                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       },
                       {
                           "id": {id},
@@ -135,7 +147,11 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
-                          "dmsInstanceIds": [{dmsInstanceId}]
+                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       },
                       {
                           "id": {id},
@@ -143,7 +159,11 @@ Feature: Applications endpoints
                           "claimSetName": "claim01",
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
-                          "dmsInstanceIds": [{dmsInstanceId}]
+                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }]
                   """
 

@@ -32,8 +32,8 @@ Feature: Vendors endpoints
                           "namespacePrefixes": "Test",
                           "createdAt": "{*}",
                           "createdBy": "{*}",
-                          "lastModifiedAt": "{*}",
-                          "modifiedBy": "{*}"
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       },
                       {
                           "id": {id},
@@ -43,8 +43,8 @@ Feature: Vendors endpoints
                           "namespacePrefixes": "Test",
                           "createdAt": "{*}",
                           "createdBy": "{*}",
-                          "lastModifiedAt": "{*}",
-                          "modifiedBy": "{*}"
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }]
                   """
 
