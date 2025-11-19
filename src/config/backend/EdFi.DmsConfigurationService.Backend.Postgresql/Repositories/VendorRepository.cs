@@ -118,7 +118,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = """
-                    SELECT Id, Company, ContactName, ContactEmailAddress, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy, NamespacePrefix
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, NamespacePrefix
                     FROM (SELECT * FROM dmscs.Vendor ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v
                     LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
                     """;
@@ -157,7 +157,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = """
-                    SELECT Id, Company, ContactName, ContactEmailAddress, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy, NamespacePrefix
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, NamespacePrefix
                     FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
                     WHERE v.Id = @Id;
                     """;
