@@ -1,0 +1,85 @@
+### Quick Test: School Year Instances Setup
+### This file demonstrates how to verify the school year instances were created correctly
+
+@configPort = 8081
+@dmsPort = 8080
+
+### ============================================================================
+### STEP 1: Get Configuration Service Token
+### ============================================================================
+
+### Get token for Configuration Service
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=dms-instance-admin
+&client_secret=DmsSetup1!
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken = {{configTokenRequest.response.body.access_token}}
+
+
+### ============================================================================
+### STEP 2: Verify DMS Instances Were Created
+### ============================================================================
+
+### List all DMS Instances
+# @name listInstances
+GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+Authorization: bearer {{configToken}}
+
+### Expected: You should see instances named "School Year 2022", "School Year 2023", etc.
+
+
+### ============================================================================
+### STEP 3: Verify Route Contexts Were Created
+### ============================================================================
+
+### List all Route Contexts
+# @name listRouteContexts
+GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts?offset=0&limit=50
+Authorization: bearer {{configToken}}
+
+### Expected: You should see route contexts with contextKey="schoolYear" and contextValue="2022", "2023", etc.
+
+
+### ============================================================================
+### STEP 4: Test DMS Discovery Endpoint
+### ============================================================================
+
+### Get DMS Discovery Information
+GET http://localhost:{{dmsPort}}
+
+### Expected: Should show available API endpoints
+
+
+### ============================================================================
+### STEP 5: Verify OpenAPI Spec Shows School Years
+### ============================================================================
+
+### Get Descriptors OpenAPI Specification
+GET http://localhost:{{dmsPort}}/metadata/specifications/descriptors-spec.json
+
+### Expected: The "servers" section should show school year variables with enum containing your years
+
+
+### Get Resources OpenAPI Specification
+GET http://localhost:{{dmsPort}}/metadata/specifications/resources-spec.json
+
+### Expected: The "servers" section should show school year variables with enum containing your years
+
+
+### ============================================================================
+### STEP 6: Access Swagger UI
+### ============================================================================
+
+### Open in browser:
+### http://localhost:8082
+###
+### Expected:
+### - School year selector dropdown appears at the top
+### - Default selected year is the current school year (based on current date)
+### - You can switch between years 2022-2026 (or whatever range you specified)

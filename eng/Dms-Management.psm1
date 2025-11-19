@@ -641,4 +641,194 @@ function Get-DmsInstances {
     return $response
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Invoke-Api
+<#
+.SYNOPSIS
+    Creates a DMS Instance Route Context by sending a POST request to the Configuration Service.
+
+.DESCRIPTION
+    Adds a route context (key-value pair) to an existing DMS Instance.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server (e.g., http://localhost:8081).
+
+.PARAMETER InstanceId
+    The ID of the DMS Instance to which this route context will be added (mandatory).
+
+.PARAMETER ContextKey
+    The context key (e.g., "schoolYear", "districtId"). Mandatory.
+
+.PARAMETER ContextValue
+    The context value (e.g., "2024", "255901"). Mandatory.
+
+.PARAMETER AccessToken
+    The bearer token for authorization (mandatory).
+
+.OUTPUTS
+    [long] Returns the Route Context ID of the newly created route context.
+
+.EXAMPLE
+    # Add schoolYear route context to an instance
+    $routeContextId = Add-DmsInstanceRouteContext -AccessToken $token -InstanceId 1 -ContextKey "schoolYear" -ContextValue "2024"
+#>
+function Add-DmsInstanceRouteContext {
+    [CmdletBinding()]
+    param (
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [Parameter(Mandatory = $true)]
+        [long]$InstanceId,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ContextKey,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ContextValue,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AccessToken
+    )
+
+    $routeContextData = @{
+        instanceId   = $InstanceId
+        contextKey   = $ContextKey
+        contextValue = $ContextValue
+    }
+
+    $invokeParams = @{
+        BaseUrl      = $CmsUrl
+        RelativeUrl  = "v2/dmsInstanceRouteContexts"
+        Method       = "Post"
+        ContentType  = "application/json"
+        Body         = ConvertTo-Json -InputObject $routeContextData -Depth 10
+        Headers      = @{ Authorization = "Bearer $AccessToken" }
+    }
+
+    $response = Invoke-Api @invokeParams
+
+    return $response.id
+}
+
+<#
+.SYNOPSIS
+    Creates multiple DMS Instances with school year route contexts.
+
+.DESCRIPTION
+    Creates a DMS Instance for each school year in the specified range.
+    Each instance will have a route context with key "schoolYear" and the year as the value.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server (e.g., http://localhost:8081).
+
+.PARAMETER StartYear
+    The first school year in the range (mandatory).
+
+.PARAMETER EndYear
+    The last school year in the range (mandatory).
+
+.PARAMETER PostgresPassword
+    The PostgreSQL password (mandatory).
+
+.PARAMETER PostgresDbName
+    The PostgreSQL database name. Defaults to "edfi_datamanagementservice".
+
+.PARAMETER PostgresHost
+    The PostgreSQL host. Defaults to "dms-postgresql".
+
+.PARAMETER PostgresPort
+    The PostgreSQL port. Defaults to 5432.
+
+.PARAMETER PostgresUser
+    The PostgreSQL username. Defaults to "postgres".
+
+.PARAMETER AccessToken
+    The bearer token for authorization (mandatory).
+
+.OUTPUTS
+    Array of hashtables containing InstanceId and Year for each created instance.
+
+.EXAMPLE
+    # Create instances for years 2022-2026
+    $instances = Add-DmsSchoolYearInstances -AccessToken $token -StartYear 2022 -EndYear 2026 -PostgresPassword "secret123"
+#>
+function Add-DmsSchoolYearInstances {
+    [CmdletBinding()]
+    param (
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [Parameter(Mandatory = $true)]
+        [int]$StartYear,
+
+        [Parameter(Mandatory = $true)]
+        [int]$EndYear,
+
+        [Parameter(Mandatory = $true)]
+        [string]$PostgresPassword,
+
+        [ValidateNotNullOrEmpty()]
+        [string]$PostgresDbName = "edfi_datamanagementservice",
+
+        [ValidateNotNullOrEmpty()]
+        [string]$PostgresHost = "dms-postgresql",
+
+        [int]$PostgresPort = 5432,
+
+        [ValidateNotNullOrEmpty()]
+        [string]$PostgresUser = "postgres",
+
+        [Parameter(Mandatory = $true)]
+        [string]$AccessToken
+    )
+
+    # Validate year range
+    if ($StartYear -gt $EndYear) {
+        throw "StartYear ($StartYear) cannot be greater than EndYear ($EndYear)"
+    }
+
+    $createdInstances = @()
+
+    Write-Host "Creating DMS Instances for school years $StartYear to $EndYear..." -ForegroundColor Cyan
+
+    for ($year = $StartYear; $year -le $EndYear; $year++) {
+        Write-Host "  Creating instance for School Year $year..." -ForegroundColor Yellow
+
+        # Create DMS Instance
+        $instanceId = Add-DmsInstance `
+            -CmsUrl $CmsUrl `
+            -InstanceType "SchoolYear" `
+            -InstanceName "School Year $year" `
+            -PostgresPassword $PostgresPassword `
+            -PostgresDbName $PostgresDbName `
+            -PostgresHost $PostgresHost `
+            -PostgresPort $PostgresPort `
+            -PostgresUser $PostgresUser `
+            -AccessToken $AccessToken
+
+        Write-Host "    Instance created with ID: $instanceId" -ForegroundColor Green
+
+        # Add route context for school year
+        $routeContextId = Add-DmsInstanceRouteContext `
+            -CmsUrl $CmsUrl `
+            -InstanceId $instanceId `
+            -ContextKey "schoolYear" `
+            -ContextValue $year.ToString() `
+            -AccessToken $AccessToken
+
+        Write-Host "    Route context created with ID: $routeContextId (schoolYear=$year)" -ForegroundColor Green
+
+        $createdInstances += @{
+            InstanceId = $instanceId
+            Year = $year
+            RouteContextId = $routeContextId
+        }
+    }
+
+    Write-Host "Successfully created $($createdInstances.Count) DMS Instances with school year route contexts" -ForegroundColor Green
+
+    return $createdInstances
+}
+
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Add-DmsInstanceRouteContext, Add-DmsSchoolYearInstances, Invoke-Api

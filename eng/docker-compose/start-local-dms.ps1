@@ -51,7 +51,11 @@ param (
 
     # Add initial DMS Instance to Configuration Service
     [Switch]
-    $AddDmsInstance = $true
+    $AddDmsInstance = $true,
+
+    # School year range for multi-instance setup (format: StartYear-EndYear, e.g., "2022-2026")
+    [string]
+    $SchoolYearRange = ""
 )
 
 
@@ -205,10 +209,9 @@ else {
         Write-Output "These credentials can be used for smoke testing the DMS API."
     }
 
-    if($AddDmsInstance)
+    if($AddDmsInstance -or $SchoolYearRange)
     {
         Import-Module ../Dms-Management.psm1 -Force
-        Write-Output "Creating initial DMS Instance..."
 
         try {
             # Create system administrator credentials
@@ -217,13 +220,42 @@ else {
             # Get configuration service token
             $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!"
 
-            # Create DMS Instance using environment variables
-            $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development"
+            # Handle school year range instances
+            if ($SchoolYearRange) {
+                Write-Output "Creating DMS Instances for school year range: $SchoolYearRange"
+                
+                # Parse the range (format: StartYear-EndYear, e.g., "2022-2026")
+                if ($SchoolYearRange -match '^(\d{4})-(\d{4})$') {
+                    $startYear = [int]$matches[1]
+                    $endYear = [int]$matches[2]
+                    
+                    # Create instances for each year in the range
+                    $instances = Add-DmsSchoolYearInstances `
+                        -CmsUrl "http://localhost:8081" `
+                        -AccessToken $configToken `
+                        -StartYear $startYear `
+                        -EndYear $endYear `
+                        -PostgresPassword $envValues.POSTGRES_PASSWORD `
+                        -PostgresDbName $envValues.POSTGRES_DB_NAME
+                    
+                    Write-Output "Created $($instances.Count) school year instances successfully"
+                }
+                else {
+                    Write-Warning "Invalid SchoolYearRange format. Expected format: StartYear-EndYear (e.g., 2022-2026)"
+                }
+            }
+            # Handle single default instance
+            elseif($AddDmsInstance) {
+                Write-Output "Creating initial DMS Instance..."
+                
+                # Create DMS Instance using environment variables
+                $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development"
 
-            Write-Output "DMS Instance created successfully with ID: $instanceId"
+                Write-Output "DMS Instance created successfully with ID: $instanceId"
+            }
         }
         catch {
-            Write-Warning "Failed to create DMS Instance: $($_.Exception.Message)"
+            Write-Warning "Failed to create DMS Instance(s): $($_.Exception.Message)"
         }
     }
 

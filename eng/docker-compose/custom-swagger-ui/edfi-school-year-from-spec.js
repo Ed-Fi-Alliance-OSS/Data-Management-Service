@@ -6,6 +6,9 @@
 // VERSION: Extracts school years automatically from OpenAPI spec servers array
 
 window.EdFiSchoolYear = function () {
+
+    const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
+
     let selectedYear = null;
     let schoolYears = [];
     let swaggerUIInstance = null;
@@ -18,12 +21,29 @@ window.EdFiSchoolYear = function () {
                 return [];
             }
 
-            // Extract years from server URLs (e.g., "http://localhost:8080/2025/data")
             const years = [];
-            const yearRegex = /\/(20\d{2})\//; // Match year pattern like /2024/
 
             spec.servers.forEach(server => {
-                if (server.url) {
+                // Check if server has variables defined (OpenAPI 3.0 server variables)
+                if (server.variables) {
+                    // Look for School Year variable (case-insensitive search)
+                    const schoolYearVar = Object.keys(server.variables).find(key =>
+                        key.toLowerCase().includes('school') && key.toLowerCase().includes('year')
+                    );
+
+                    if (schoolYearVar && server.variables[schoolYearVar].enum) {
+                        // Extract years from the enum array
+                        server.variables[schoolYearVar].enum.forEach(year => {
+                            const yearNum = parseInt(year);
+                            if (!isNaN(yearNum) && !years.includes(yearNum)) {
+                                years.push(yearNum);
+                            }
+                        });
+                    }
+                }
+                // Fallback: try to extract years from server URL (backward compatibility)
+                else if (server.url) {
+                    const yearRegex = /\/(20\d{2})\//; // Match year pattern like /2024/
                     const match = server.url.match(yearRegex);
                     if (match && match[1]) {
                         const year = parseInt(match[1]);
@@ -37,7 +57,6 @@ window.EdFiSchoolYear = function () {
             // Sort years in descending order (newest first)
             years.sort((a, b) => b - a);
 
-            console.log('School years extracted from OpenAPI spec:', years);
             return years;
         } catch (error) {
             console.error('Error extracting school years from spec:', error);
@@ -52,26 +71,65 @@ window.EdFiSchoolYear = function () {
         // Wait for Swagger UI to be fully loaded
         await waitForSwaggerUI();
 
-        // Extract school years from spec
-        const spec = window.ui.spec().toJS();
-        schoolYears = extractSchoolYearsFromSpec(spec);
+        // Wait a bit more for spec to be fully processed
+        await new Promise(resolve => setTimeout(resolve, 500));
 
-        if (schoolYears.length === 0) {
-            console.warn('No school years found in OpenAPI spec servers');
-            return;
+        try {
+            // Extract school years from spec
+            // window.ui.spec() returns an Immutable object, use toJS() to get plain object
+            const specWrapper = window.ui.spec();
+
+            // Get the actual spec - try both .toJS() and .json properties
+            let spec = null;
+            if (specWrapper && typeof specWrapper.toJS === 'function') {
+                const jsObject = specWrapper.toJS();
+                // Check if it has a 'json' property (parsed spec) or use the whole object
+                spec = jsObject.json || jsObject;
+            } else if (specWrapper && specWrapper.json) {
+                spec = specWrapper.json;
+            } else {
+                spec = specWrapper;
+            }
+
+            // If spec is still a string, parse it
+            if (typeof spec === 'string') {
+                try {
+                    spec = JSON.parse(spec);
+                } catch (e) {
+                    console.error('Failed to parse spec string:', e);
+                }
+            }
+
+            schoolYears = extractSchoolYearsFromSpec(spec);
+
+            if (schoolYears.length === 0) {
+                console.warn('No school years found in OpenAPI spec servers');
+                return;
+            }
+
+            // Calculate current year based on current date
+            // If current month > June (6), use next year; otherwise use current year
+            const currentDate = new Date();
+            const currentCalendarYear = currentDate.getFullYear();
+            const currentMonth = currentDate.getMonth() + 1; // JavaScript months are 0-indexed
+            const calculatedCurrentYear = currentMonth > 6 ? currentCalendarYear + 1 : currentCalendarYear;
+
+            // Find the calculated current year in the available school years, or use the most recent
+            selectedYear = schoolYears.includes(calculatedCurrentYear)
+                ? calculatedCurrentYear
+                : schoolYears[0];
+
+            // Create the selector UI
+            createSchoolYearSelector();
+
+            // Wait for server selector to be available
+            await waitForServerSelector();
+
+            // Populate server selector
+            populateServerSelector();
+        } catch (error) {
+            console.error('Error initializing school year plugin:', error);
         }
-
-        // Set default year (most recent)
-        selectedYear = schoolYears[0];
-
-        // Create the selector UI
-        createSchoolYearSelector();
-
-        // Wait for server selector to be available
-        await waitForServerSelector();
-
-        // Populate server selector
-        populateServerSelector();
     };
 
     // Wait for Swagger UI to be fully initialized
@@ -151,7 +209,6 @@ window.EdFiSchoolYear = function () {
 
         select.addEventListener('change', (e) => {
             selectedYear = e.target.value;
-            console.log('School year changed to:', selectedYear);
             updateServerSelector();
             updateComputedUrl();
         });
@@ -164,10 +221,24 @@ window.EdFiSchoolYear = function () {
             font-size: 14px;
             color: #555;
         `;
+
+        // Get initial URL template from spec
+        const spec = window.ui.spec().toJS();
+        let initialUrl = `http://localhost:${dmsPort}/${selectedYear}/data`;
+        if (spec && spec.servers && spec.servers.length > 0) {
+            const server = spec.servers[0];
+            if (server.url) {
+                const varMatch = server.url.match(/\{([^}]*school[^}]*year[^}]*)\}/i);
+                if (varMatch && varMatch[1]) {
+                    initialUrl = server.url.replace(`{${varMatch[1]}}`, selectedYear);
+                }
+            }
+        }
+
         computedUrlContainer.innerHTML = `
             <strong>Computed URL:</strong>
             <span class="computed-url-value" style="font-family: monospace; color: #0066cc;">
-                http://localhost:8080/${selectedYear}/data
+                ${initialUrl}
             </span>
         `;
 
@@ -195,28 +266,64 @@ window.EdFiSchoolYear = function () {
             return;
         }
 
+        // Get the base URL template from the spec
+        const spec = window.ui.spec().toJS();
+        let urlTemplate = `http://localhost:${dmsPort}/{schoolYear}/data`;
+        let schoolYearVarName = 'schoolYear';
+
+        // Extract URL template and variable name from spec
+        if (spec && spec.servers && spec.servers.length > 0) {
+            const server = spec.servers[0];
+            if (server.url) {
+                urlTemplate = server.url;
+                // Find the school year variable name in the URL
+                const varMatch = urlTemplate.match(/\{([^}]*school[^}]*year[^}]*)\}/i);
+                if (varMatch && varMatch[1]) {
+                    schoolYearVarName = varMatch[1];
+                }
+            }
+        }
+
         // Clear existing options
         serverSelector.innerHTML = '';
 
         // Add options for each school year
         schoolYears.forEach(year => {
             const option = document.createElement('option');
-            option.value = `http://localhost:8080/${year}/data`;
-            option.textContent = `http://localhost:8080/{schoolYear}/data (${year})`;
+            // Replace the variable placeholder with the actual year
+            const yearUrl = urlTemplate.replace(`{${schoolYearVarName}}`, year);
+            option.value = yearUrl;
+            option.textContent = `${urlTemplate} (${year})`;
             if (year === selectedYear) {
                 option.selected = true;
             }
             serverSelector.appendChild(option);
         });
 
-        console.log('Server selector populated with school years from spec');
     };
 
     // Update server selector when year changes
     const updateServerSelector = () => {
         const serverSelector = document.querySelector('.servers select');
         if (serverSelector) {
-            const newUrl = `http://localhost:8080/${selectedYear}/data`;
+            // Get the URL template from spec
+            const spec = window.ui.spec().toJS();
+            let urlTemplate = `http://localhost:${dmsPort}/{schoolYear}/data`;
+            let schoolYearVarName = 'schoolYear';
+
+            if (spec && spec.servers && spec.servers.length > 0) {
+                const server = spec.servers[0];
+                if (server.url) {
+                    urlTemplate = server.url;
+                    const varMatch = urlTemplate.match(/\{([^}]*school[^}]*year[^}]*)\}/i);
+                    if (varMatch && varMatch[1]) {
+                        schoolYearVarName = varMatch[1];
+                    }
+                }
+            }
+
+            // Replace the variable with the selected year
+            const newUrl = urlTemplate.replace(`{${schoolYearVarName}}`, selectedYear);
             serverSelector.value = newUrl;
 
             // Trigger change event to update Swagger UI
@@ -229,7 +336,25 @@ window.EdFiSchoolYear = function () {
     const updateComputedUrl = () => {
         const computedUrlElement = document.querySelector('.computed-url-value');
         if (computedUrlElement) {
-            computedUrlElement.textContent = `http://localhost:8080/${selectedYear}/data`;
+            // Get the URL template from spec
+            const spec = window.ui.spec().toJS();
+            let urlTemplate = `http://localhost:${dmsPort}/{schoolYear}/data`;
+            let schoolYearVarName = 'schoolYear';
+
+            if (spec && spec.servers && spec.servers.length > 0) {
+                const server = spec.servers[0];
+                if (server.url) {
+                    urlTemplate = server.url;
+                    const varMatch = urlTemplate.match(/\{([^}]*school[^}]*year[^}]*)\}/i);
+                    if (varMatch && varMatch[1]) {
+                        schoolYearVarName = varMatch[1];
+                    }
+                }
+            }
+
+            // Replace the variable with the selected year
+            const computedUrl = urlTemplate.replace(`{${schoolYearVarName}}`, selectedYear);
+            computedUrlElement.textContent = computedUrl;
         }
     };
 
@@ -256,7 +381,6 @@ window.EdFiSchoolYear = function () {
             }
         }
 
-        console.log('Request URL with school year:', req.url);
         return req;
     };
 
@@ -265,7 +389,10 @@ window.EdFiSchoolYear = function () {
             spec: {
                 wrapActions: {
                     updateSpec: (oriAction, system) => (...args) => {
-                        // Get the spec before Swagger processes it
+                        // Call original action first
+                        const result = oriAction(...args);
+
+                        // Get the spec after Swagger processes it
                         let [spec] = args;
 
                         // If spec is a string, parse it
@@ -274,7 +401,7 @@ window.EdFiSchoolYear = function () {
                                 spec = JSON.parse(spec);
                             } catch (e) {
                                 console.error('Failed to parse spec:', e);
-                                return oriAction(...args);
+                                return result;
                             }
                         }
 
@@ -286,8 +413,7 @@ window.EdFiSchoolYear = function () {
                             }));
                         }
 
-                        // Call original action with modified spec
-                        return oriAction(spec);
+                        return result;
                     }
                 }
             }
