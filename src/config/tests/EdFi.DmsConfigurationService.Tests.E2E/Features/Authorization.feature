@@ -62,7 +62,11 @@ Feature: Authorization
                     "vendorId": {vendorId},
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
-                    "dmsInstanceIds": [{dmsInstanceId}]
+                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "createdAt": "{*}",
+                    "createdBy": "{*}",
+                    "lastModifiedAt": null,
+                    "modifiedBy": null
                   }
                   """
 
