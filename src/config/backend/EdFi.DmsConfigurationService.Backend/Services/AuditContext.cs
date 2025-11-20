@@ -12,15 +12,8 @@ namespace EdFi.DmsConfigurationService.Backend.Services;
 /// <summary>
 /// Provides audit context information by extracting the current authenticated user from the HTTP context.
 /// </summary>
-public class AuditContext : IAuditContext
+public class AuditContext(IHttpContextAccessor httpContextAccessor) : IAuditContext
 {
-    private readonly IHttpContextAccessor _httpContextAccessor;
-
-    public AuditContext(IHttpContextAccessor httpContextAccessor)
-    {
-        _httpContextAccessor = httpContextAccessor;
-    }
-
     /// <summary>
     /// Gets the identifier of the current authenticated user or client.
     /// Checks JWT claims in the following order: "sub", "client_id", "name".
@@ -30,7 +23,7 @@ public class AuditContext : IAuditContext
     {
         try
         {
-            var httpContext = _httpContextAccessor.HttpContext;
+            var httpContext = httpContextAccessor.HttpContext;
 
             if (httpContext?.User?.Identity?.IsAuthenticated != true)
             {

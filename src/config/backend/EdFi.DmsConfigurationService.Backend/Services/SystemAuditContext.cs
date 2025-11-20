@@ -18,16 +18,10 @@ public class SystemAuditContext : IAuditContext
     /// Gets the identifier for system operations.
     /// Always returns "system" since there's no authenticated user context.
     /// </summary>
-    public string GetCurrentUser()
-    {
-        return "system";
-    }
+    public string GetCurrentUser() => "system";
 
     /// <summary>
     /// Gets the current UTC timestamp for audit tracking.
     /// </summary>
-    public DateTime GetCurrentTimestamp()
-    {
-        return DateTime.UtcNow;
-    }
+    public DateTime GetCurrentTimestamp() => DateTime.UtcNow;
 }
