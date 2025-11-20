@@ -1,0 +1,337 @@
+# DMS-858 ApiClient Management Endpoints Demonstration
+# ========================================================
+# This file demonstrates the API Client management endpoints in the
+# DMS Configuration Management Service.
+#
+# Endpoints covered:
+# 1. POST /v2/apiClients - Create a new API client
+# 2. PUT /v2/apiClients/{id} - Update an existing API client
+# 3. DELETE /v2/apiClients/{id} - Delete an API client
+# 4. PUT /v2/apiClients/{id}/reset-credential - Reset API client credentials
+#
+# Prerequisites:
+# - Configuration service running on port 8081
+# - Valid vendor, application, and DMS instance already created
+
+@configPort=8081
+
+# System Administrator credentials
+@sysAdminId=sys-admin
+@sysAdminSecret=SdfH)98&Jk
+@encodedSysAdminSecret=SdfH%2998%26Jk
+
+# ==========================================
+# PART 1: Setup - Get System Administrator Token
+# ==========================================
+
+### Register system administrator (if not already registered)
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=System Administrator
+
+
+### Get system admin token for CMS operations
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+
+# ==========================================
+# PART 2: Setup - Create Prerequisites
+# ==========================================
+
+### Create a vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Demo Vendor for ApiClient",
+    "contactName": "John Doe",
+    "contactEmailAddress": "john.doe@example.com",
+    "namespacePrefixes": "uri://ed-fi-demo.org"
+}
+
+###
+@vendorId={{createVendor.response.body.id}}
+
+### Create a DMS instance
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "Demo DMS Instance",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
+### Create a second DMS instance for testing updates
+# @name createDmsInstance2
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "Demo DMS Instance 2",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice2;"
+}
+
+###
+@dmsInstanceId2={{createDmsInstance2.response.body.id}}
+
+### Create an application
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Demo Application for ApiClient",
+    "claimSetName": "E2E-NameSpaceBasedClaimSet",
+    "dmsInstanceIds": [{{dmsInstanceId}}]
+}
+
+###
+@applicationId={{createApplication.response.body.id}}
+
+# ==========================================
+# PART 3: POST - Create a New API Client
+# ==========================================
+
+### Create a new API client
+# @name createApiClient
+POST http://localhost:{{configPort}}/v2/apiClients
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "applicationId": {{applicationId}},
+    "name": "Demo API Client",
+    "isApproved": true,
+    "dmsInstanceIds": [{{dmsInstanceId}}]
+}
+
+###
+@apiClientId={{createApiClient.response.body.id}}
+@apiClientKey={{createApiClient.response.body.key}}
+@apiClientSecret={{createApiClient.response.body.secret}}
+
+### Verify the API client was created - Get by ID
+# @name getApiClientById
+GET http://localhost:{{configPort}}/v2/apiClients/{{apiClientKey}}
+Authorization: bearer {{configToken}}
+
+
+### Verify the API client appears in the list - Get all
+# @name getAllApiClients
+GET http://localhost:{{configPort}}/v2/apiClients?offset=0&limit=25
+Authorization: bearer {{configToken}}
+
+
+# ==========================================
+# PART 4: PUT - Update an Existing API Client
+# ==========================================
+
+### Update the API client (change name, approval status, and DMS instances)
+# @name updateApiClient
+PUT http://localhost:{{configPort}}/v2/apiClients/{{apiClientId}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "id": {{apiClientId}},
+    "applicationId": {{applicationId}},
+    "name": "Updated Demo API Client",
+    "isApproved": false,
+    "dmsInstanceIds": [{{dmsInstanceId}}, {{dmsInstanceId2}}]
+}
+
+
+### Verify the API client was updated
+# @name getUpdatedApiClient
+GET http://localhost:{{configPort}}/v2/apiClients/{{apiClientKey}}
+Authorization: bearer {{configToken}}
+
+
+# ==========================================
+# PART 5: PUT - Reset API Client Credentials
+# ==========================================
+
+### Reset the API client credentials
+# @name resetCredentials
+PUT http://localhost:{{configPort}}/v2/apiClients/{{apiClientId}}/reset-credential
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{}
+
+###
+@newApiClientKey={{resetCredentials.response.body.key}}
+@newApiClientSecret={{resetCredentials.response.body.secret}}
+
+### Verify the key remains the same but secret is new
+# Note: The key should be the same, but the secret will be different
+# Original key: {{apiClientKey}}
+# Original secret: {{apiClientSecret}}
+# New key: {{newApiClientKey}}
+# New secret: {{newApiClientSecret}}
+
+
+# ==========================================
+# PART 6: POST - Create Another API Client for Deletion Test
+# ==========================================
+
+### Create another API client to demonstrate deletion
+# @name createApiClient2
+POST http://localhost:{{configPort}}/v2/apiClients
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "applicationId": {{applicationId}},
+    "name": "API Client To Be Deleted",
+    "isApproved": true,
+    "dmsInstanceIds": [{{dmsInstanceId}}]
+}
+
+###
+@apiClientId2={{createApiClient2.response.body.id}}
+@apiClientKey2={{createApiClient2.response.body.key}}
+
+### Verify the second API client was created
+# @name getApiClient2
+GET http://localhost:{{configPort}}/v2/apiClients/{{apiClientKey2}}
+Authorization: bearer {{configToken}}
+
+
+# ==========================================
+# PART 7: DELETE - Delete an API Client
+# ==========================================
+
+### Delete the second API client
+# @name deleteApiClient
+DELETE http://localhost:{{configPort}}/v2/apiClients/{{apiClientId2}}
+Authorization: bearer {{configToken}}
+
+
+### Verify the API client was deleted (should return 404)
+# @name verifyDeleted
+GET http://localhost:{{configPort}}/v2/apiClients/{{apiClientKey2}}
+Authorization: bearer {{configToken}}
+
+
+### Verify the first API client still exists
+# @name verifyFirstClientStillExists
+GET http://localhost:{{configPort}}/v2/apiClients/{{apiClientKey}}
+Authorization: bearer {{configToken}}
+
+
+# ==========================================
+# PART 8: Error Scenarios
+# ==========================================
+
+### Try to create API client with non-existent application (should fail with 400)
+# @name createApiClientWithInvalidApplication
+POST http://localhost:{{configPort}}/v2/apiClients
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "applicationId": 99999,
+    "name": "Invalid API Client",
+    "isApproved": true,
+    "dmsInstanceIds": [{{dmsInstanceId}}]
+}
+
+
+### Try to create API client with non-existent DMS instance (should fail with 400)
+# @name createApiClientWithInvalidDmsInstance
+POST http://localhost:{{configPort}}/v2/apiClients
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "applicationId": {{applicationId}},
+    "name": "Invalid API Client",
+    "isApproved": true,
+    "dmsInstanceIds": [99999, 88888]
+}
+
+
+### Try to create API client with empty DMS instances (should fail with 400)
+# @name createApiClientWithEmptyDmsInstances
+POST http://localhost:{{configPort}}/v2/apiClients
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "applicationId": {{applicationId}},
+    "name": "Invalid API Client",
+    "isApproved": true,
+    "dmsInstanceIds": []
+}
+
+
+### Try to update non-existent API client (should fail with 404)
+# @name updateNonExistentApiClient
+PUT http://localhost:{{configPort}}/v2/apiClients/99999
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "id": 99999,
+    "applicationId": {{applicationId}},
+    "name": "Non-existent Client",
+    "isApproved": true,
+    "dmsInstanceIds": [{{dmsInstanceId}}]
+}
+
+
+### Try to delete non-existent API client (should fail with 404)
+# @name deleteNonExistentApiClient
+DELETE http://localhost:{{configPort}}/v2/apiClients/99999
+Authorization: bearer {{configToken}}
+
+
+### Try to reset credentials for non-existent API client (should fail with 404)
+# @name resetCredentialsNonExistentApiClient
+PUT http://localhost:{{configPort}}/v2/apiClients/99999/reset-credential
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{}
+
+
+# ==========================================
+# PART 9: Cleanup
+# ==========================================
+
+### Delete the first API client (cleanup)
+# @name cleanupDeleteApiClient
+DELETE http://localhost:{{configPort}}/v2/apiClients/{{apiClientId}}
+Authorization: bearer {{configToken}}
+
+
+### Verify cleanup - should return 404
+# @name verifyCleanup
+GET http://localhost:{{configPort}}/v2/apiClients/{{apiClientKey}}
+Authorization: bearer {{configToken}}
