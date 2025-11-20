@@ -527,6 +527,38 @@ function Setup-InstanceManagementDatabases {
     Write-Host "PostgreSQL publications created successfully!" -ForegroundColor Green
 }
 
+function Wait-ForKafkaConnect {
+    Write-Host "Waiting for Kafka Connect to be ready..." -ForegroundColor Cyan
+
+    $maxAttempts = 30
+    $attempt = 0
+    $ready = $false
+
+    while (-not $ready -and $attempt -lt $maxAttempts) {
+        $attempt++
+        Write-Host "Attempt $attempt of $maxAttempts..." -ForegroundColor Gray
+
+        try {
+            $response = Invoke-WebRequest -Uri "http://localhost:8083/connectors" -Method GET -UseBasicParsing -TimeoutSec 5 -ErrorAction SilentlyContinue
+            if ($response.StatusCode -eq 200) {
+                $ready = $true
+                Write-Host "Kafka Connect is ready!" -ForegroundColor Green
+            }
+        }
+        catch {
+            Write-Host "Kafka Connect not ready yet: $_" -ForegroundColor Yellow
+        }
+
+        if (-not $ready) {
+            Start-Sleep -Seconds 2
+        }
+    }
+
+    if (-not $ready) {
+        throw "Kafka Connect did not become ready within the timeout period"
+    }
+}
+
 function Setup-InstanceKafkaConnectors {
     Write-Host "Setting up Kafka connectors for topic-per-instance architecture..." -ForegroundColor Cyan
 
@@ -539,7 +571,7 @@ function Setup-InstanceKafkaConnectors {
         @{ InstanceId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
     )
 
-    $connectorSetupScript = "$solutionRoot/../eng/docker-compose/setup-instance-kafka-connectors.ps1"
+    $connectorSetupScript = "$PSScriptRoot/eng/docker-compose/setup-instance-kafka-connectors.ps1"
 
     if (-not (Test-Path $connectorSetupScript)) {
         Write-Host "WARNING: Kafka connector setup script not found at: $connectorSetupScript" -ForegroundColor Yellow
@@ -549,9 +581,9 @@ function Setup-InstanceKafkaConnectors {
 
     # Determine environment file path (look for .env.e2e or .env.routeContext.e2e)
     $possibleEnvFiles = @(
-        "$solutionRoot/../eng/docker-compose/.env.routeContext.e2e",
-        "$solutionRoot/../eng/docker-compose/.env.e2e",
-        "$solutionRoot/../eng/docker-compose/.env"
+        "$PSScriptRoot/eng/docker-compose/.env.routeContext.e2e",
+        "$PSScriptRoot/eng/docker-compose/.env.e2e",
+        "$PSScriptRoot/eng/docker-compose/.env"
     )
 
     $envFile = $null
@@ -571,7 +603,7 @@ function Setup-InstanceKafkaConnectors {
     Write-Host "Using environment file: $envFile" -ForegroundColor Gray
 
     # Change to docker-compose directory to run the setup script
-    Push-Location "$solutionRoot/../eng/docker-compose"
+    Push-Location "$PSScriptRoot/eng/docker-compose"
 
     try {
         # Run the connector setup script
@@ -637,6 +669,9 @@ function InstanceE2ETests {
 
     # Create and configure test databases
     Invoke-Step { Setup-InstanceManagementDatabases }
+
+    # Wait for Kafka Connect to be ready
+    Invoke-Step { Wait-ForKafkaConnect }
 
     # Setup Kafka connectors for topic-per-instance architecture
     Invoke-Step { Setup-InstanceKafkaConnectors }
