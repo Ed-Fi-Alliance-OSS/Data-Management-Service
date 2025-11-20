@@ -28,41 +28,58 @@ public class AuditContext : IAuditContext
     /// </summary>
     public string GetCurrentUser()
     {
-        var httpContext = _httpContextAccessor.HttpContext;
-
-        if (httpContext?.User?.Identity?.IsAuthenticated != true)
+        try
         {
+            var httpContext = _httpContextAccessor.HttpContext;
+
+            if (httpContext?.User?.Identity?.IsAuthenticated != true)
+            {
+                return "system";
+            }
+
+            // Try to get user identifier from various claim types
+            var claimsPrincipal = httpContext.User;
+
+            // Check for "sub" claim (subject - standard JWT claim)
+            var subClaim = claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)
+                           ?? claimsPrincipal.FindFirst("sub");
+            if (subClaim != null && !string.IsNullOrWhiteSpace(subClaim.Value))
+            {
+                return TruncateIfNeeded(subClaim.Value);
+            }
+
+            // Check for "client_id" claim (OAuth client)
+            var clientIdClaim = claimsPrincipal.FindFirst("client_id");
+            if (clientIdClaim != null && !string.IsNullOrWhiteSpace(clientIdClaim.Value))
+            {
+                return TruncateIfNeeded(clientIdClaim.Value);
+            }
+
+            // Check for "name" claim
+            var nameClaim = claimsPrincipal.FindFirst(ClaimTypes.Name)
+                            ?? claimsPrincipal.FindFirst("name");
+            if (nameClaim != null && !string.IsNullOrWhiteSpace(nameClaim.Value))
+            {
+                return TruncateIfNeeded(nameClaim.Value);
+            }
+
+            // Fallback to "system" if no identifiable claim is found
             return "system";
         }
-
-        // Try to get user identifier from various claim types
-        var claimsPrincipal = httpContext.User;
-
-        // Check for "sub" claim (subject - standard JWT claim)
-        var subClaim = claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)
-                       ?? claimsPrincipal.FindFirst("sub");
-        if (subClaim != null && !string.IsNullOrWhiteSpace(subClaim.Value))
+        catch
         {
-            return subClaim.Value;
+            // If any exception occurs during claim extraction, return "system" to ensure audit logging continues
+            return "system";
         }
+    }
 
-        // Check for "client_id" claim (OAuth client)
-        var clientIdClaim = claimsPrincipal.FindFirst("client_id");
-        if (clientIdClaim != null && !string.IsNullOrWhiteSpace(clientIdClaim.Value))
-        {
-            return clientIdClaim.Value;
-        }
-
-        // Check for "name" claim
-        var nameClaim = claimsPrincipal.FindFirst(ClaimTypes.Name)
-                        ?? claimsPrincipal.FindFirst("name");
-        if (nameClaim != null && !string.IsNullOrWhiteSpace(nameClaim.Value))
-        {
-            return nameClaim.Value;
-        }
-
-        // Fallback to "system" if no identifiable claim is found
-        return "system";
+    /// <summary>
+    /// Truncates the user identifier if it exceeds the database column length (256 characters).
+    /// </summary>
+    private static string TruncateIfNeeded(string value)
+    {
+        const int maxLength = 256;
+        return value.Length > maxLength ? value[..maxLength] : value;
     }
 
     /// <summary>
