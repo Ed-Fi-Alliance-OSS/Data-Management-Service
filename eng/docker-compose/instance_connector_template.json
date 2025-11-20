@@ -26,7 +26,7 @@
     "schema.history.internal.kafka.producer.enable.idempotence": "true",
 
     "topic.prefix": "edfi.dms.{{INSTANCE_ID}}",
-    "table.include.list": "dms.document,dms.educationorganizationhierarchytermslookup",
+    "table.include.list": "dms.document,dms.document_00,dms.document_01,dms.document_02,dms.document_03,dms.document_04,dms.document_05,dms.document_06,dms.document_07,dms.document_08,dms.document_09,dms.document_10,dms.document_11,dms.document_12,dms.document_13,dms.document_14,dms.document_15,dms.educationorganizationhierarchytermslookup",
 
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",
@@ -34,7 +34,7 @@
     "key.converter": "org.apache.kafka.connect.json.JsonConverter",
     "key.converter.schemas.enable": "false",
 
-    "transforms": "unwrap, extractId, extractPlainId, expandDocumentJson, expandHierarchyJson",
+    "transforms": "unwrap, extractId, extractPlainId, expandDocumentJson, expandHierarchyJson, routeToCorrectTopic, stripPartitionSuffix",
     "predicates": "isDocumentTable, isHierarchyTable",
 
     "predicates.isDocumentTable.type": "org.apache.kafka.connect.transforms.predicates.TopicNameMatches",
@@ -59,6 +59,14 @@
 
     "transforms.expandHierarchyJson.type": "com.redhat.insights.expandjsonsmt.ExpandJSON$Value",
     "transforms.expandHierarchyJson.sourceFields": "hierarchy",
-    "transforms.expandHierarchyJson.predicate": "isHierarchyTable"
+    "transforms.expandHierarchyJson.predicate": "isHierarchyTable",
+
+    "transforms.routeToCorrectTopic.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.routeToCorrectTopic.regex": "edfi\\.dms\\.([0-9]+)\\.dms\\.(.*)",
+    "transforms.routeToCorrectTopic.replacement": "edfi.dms.$1.$2",
+
+    "transforms.stripPartitionSuffix.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.stripPartitionSuffix.regex": "edfi\\.dms\\.([0-9]+)\\.(document|educationorganizationhierarchytermslookup)_\\d+",
+    "transforms.stripPartitionSuffix.replacement": "edfi.dms.$1.$2"
   }
 }
