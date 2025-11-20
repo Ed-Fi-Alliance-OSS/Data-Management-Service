@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.IO;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -51,6 +52,8 @@ public class QueryTests : DatabaseTest
             IGetRequest getRequest = CreateGetRequest(_defaultResourceName, _documentUuidGuid);
             _getResult = await CreateGetById().GetById(getRequest, Connection!, Transaction!);
 
+            await CommitTestTransactionAsync(beginNewTransaction: false);
+
             Dictionary<string, string>? searchParameters = [];
             PaginationParameters paginationParameters = new(25, 0, false, MaximumPageSize: 500);
 
@@ -71,24 +74,30 @@ public class QueryTests : DatabaseTest
         [Test]
         public void It_should_be_found_by_get_by_id()
         {
-            _getResult!.Should().BeOfType<GetResult.GetSuccess>();
-            (_getResult! as GetResult.GetSuccess)!.DocumentUuid.Value.Should().Be(_documentUuidGuid);
-            (_getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
+            GetResult.GetSuccess getSuccess = _getResult.Should().BeOfType<GetResult.GetSuccess>().Which;
+            getSuccess.DocumentUuid.Value.Should().Be(_documentUuidGuid);
+            getSuccess.EdfiDoc.ToJsonString().Should().Contain("\"abc\":1");
         }
 
         [Test]
         public async Task It_should_be_found_by_query()
         {
-            _queryResult!.Should().BeOfType<QueryResult.QuerySuccess>();
-            JsonArray docs = await ReadDocumentsAsync((_queryResult as QueryResult.QuerySuccess)!);
+            QueryResult.QuerySuccess success = _queryResult
+                .Should()
+                .BeOfType<QueryResult.QuerySuccess>()
+                .Which;
+            JsonArray docs = await ReadDocumentsAsync(success);
             docs.Count.Should().Be(1);
         }
 
         [Test]
         public void It_should_not_be_total_count()
         {
-            _queryResult!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_queryResult! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(null);
+            QueryResult.QuerySuccess success = _queryResult
+                .Should()
+                .BeOfType<QueryResult.QuerySuccess>()
+                .Which;
+            success.TotalCount.Should().BeNull();
         }
     }
 
@@ -114,6 +123,8 @@ public class QueryTests : DatabaseTest
                 await CreateUpsert().Upsert(request, Connection!, Transaction!);
             }
 
+            await CommitTestTransactionAsync(beginNewTransaction: false);
+
             Dictionary<string, string>? searchParameters = [];
             PaginationParameters paginationParameters = new(25, 0, true, MaximumPageSize: 500);
 
@@ -128,16 +139,22 @@ public class QueryTests : DatabaseTest
         [Test]
         public async Task It_should_be_found_by_query()
         {
-            _queryResults!.Should().BeOfType<QueryResult.QuerySuccess>();
-            JsonArray docs = await ReadDocumentsAsync((_queryResults as QueryResult.QuerySuccess)!);
+            QueryResult.QuerySuccess success = _queryResults
+                .Should()
+                .BeOfType<QueryResult.QuerySuccess>()
+                .Which;
+            JsonArray docs = await ReadDocumentsAsync(success);
             docs.Count.Should().Be(3);
         }
 
         [Test]
         public void It_should_be_found_by_query_and_total_count_in_header()
         {
-            _queryResults!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_queryResults! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(3);
+            QueryResult.QuerySuccess success = _queryResults
+                .Should()
+                .BeOfType<QueryResult.QuerySuccess>()
+                .Which;
+            success.TotalCount.Should().Be(3);
         }
     }
 
@@ -176,6 +193,8 @@ public class QueryTests : DatabaseTest
                     Transaction!
                 );
 
+            await CommitTestTransactionAsync(beginNewTransaction: false);
+
             Dictionary<string, string>? searchParameters = [];
             PaginationParameters paginationParameters = new(25, 0, false, MaximumPageSize: 500);
 
@@ -197,8 +216,10 @@ public class QueryTests : DatabaseTest
         [Test]
         public async Task It_should_find_3_documents_for_resourcename1()
         {
-            _queryResults1!.Should().BeOfType<QueryResult.QuerySuccess>();
-            QueryResult.QuerySuccess success = (_queryResults1! as QueryResult.QuerySuccess)!;
+            QueryResult.QuerySuccess success = _queryResults1
+                .Should()
+                .BeOfType<QueryResult.QuerySuccess>()
+                .Which;
             JsonArray edfiDocs = await ReadDocumentsAsync(success);
             edfiDocs.Count.Should().Be(3);
             edfiDocs[0]!.ToJsonString().Should().NotContain("\"abc\":4");
@@ -209,8 +230,10 @@ public class QueryTests : DatabaseTest
         [Test]
         public async Task It_should_find_1_document_for_resourcename2()
         {
-            _queryResults2!.Should().BeOfType<QueryResult.QuerySuccess>();
-            QueryResult.QuerySuccess success = (_queryResults2! as QueryResult.QuerySuccess)!;
+            QueryResult.QuerySuccess success = _queryResults2
+                .Should()
+                .BeOfType<QueryResult.QuerySuccess>()
+                .Which;
             JsonArray edfiDocs = await ReadDocumentsAsync(success);
             edfiDocs.Count.Should().Be(1);
             edfiDocs[0]!.ToJsonString().Should().Contain("\"abc\":4");
@@ -219,8 +242,11 @@ public class QueryTests : DatabaseTest
         [Test]
         public void It_should_not_be_total_count()
         {
-            _queryResults2!.Should().BeOfType<QueryResult.QuerySuccess>();
-            (_queryResults2! as QueryResult.QuerySuccess)!.TotalCount.Should().Be(null);
+            QueryResult.QuerySuccess success = _queryResults2
+                .Should()
+                .BeOfType<QueryResult.QuerySuccess>()
+                .Which;
+            success.TotalCount.Should().BeNull();
         }
     }
 }
