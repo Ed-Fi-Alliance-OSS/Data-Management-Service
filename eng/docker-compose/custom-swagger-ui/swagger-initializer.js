@@ -34,7 +34,7 @@ window.onload = function () {
         docExpansion: "none",
         requestInterceptor: (req) => {
             // Get the current selected year from the DOM selector
-            const schoolYearSelect = document.getElementById('schoolYearSelect');
+            const schoolYearSelect = document.querySelector('.school-year-select');
             const currentYear = schoolYearSelect ? schoolYearSelect.value : null;
 
             console.log('Request interceptor - Current year:', currentYear, 'Original URL:', req.url);

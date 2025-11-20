@@ -177,6 +177,7 @@ window.EdFiSchoolYear = function () {
             display: flex;
             align-items: center;
             gap: 15px;
+            hidden: true;
         `;
 
         const label = document.createElement('label');

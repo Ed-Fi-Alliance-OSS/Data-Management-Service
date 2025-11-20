@@ -116,7 +116,7 @@ Authorization: bearer {{configToken}}
 GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
 Authorization: bearer {{configToken}}
 
-### Create Application
+### Create Application -- Instance 3 not configurable to see error handling
 # @name createApplication
 POST http://localhost:{{configPort}}/v2/applications
 Authorization: bearer {{configToken}}
