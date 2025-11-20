@@ -118,9 +118,10 @@ public static class WebApplicationBuilderExtensions
             ConnectionStringEncryptionService
         >();
 
-        // Register audit context service
+        // Register audit context as transient to allow resolution from both singleton and scoped services
+        // Each repository will get a fresh instance that captures the current HTTP context (if available)
         webApplicationBuilder.Services.AddHttpContextAccessor();
-        webApplicationBuilder.Services.AddScoped<IAuditContext, AuditContext>();
+        webApplicationBuilder.Services.AddTransient<IAuditContext, AuditContext>();
 
         Serilog.ILogger ConfigureLogging()
         {
