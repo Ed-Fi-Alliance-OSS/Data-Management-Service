@@ -18,6 +18,14 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
+/// <summary>
+/// Test stub for NpgsqlDataSourceProvider that wraps a NpgsqlDataSource
+/// </summary>
+file class TestNpgsqlDataSourceProvider(NpgsqlDataSource dataSource)
+{
+    public NpgsqlDataSource DataSource => dataSource;
+}
+
 public abstract class DatabaseTest : DatabaseTestBase
 {
     protected NpgsqlConnection? Connection { get; set; }
@@ -224,12 +232,17 @@ public abstract class DatabaseTest : DatabaseTestBase
         return Options.Create(new DatabaseOptions { IsolationLevel = ConfiguredIsolationLevel });
     }
 
+    protected dynamic CreateDataSourceProvider()
+    {
+        return new TestNpgsqlDataSourceProvider(DataSource!);
+    }
+
     protected QueryDocument CreateQueryDocument()
     {
         return new QueryDocument(
             CreateSqlAction(),
             NullLogger<QueryDocument>.Instance,
-            DataSource!,
+            CreateDataSourceProvider(),
             CreateDatabaseOptions()
         );
     }
