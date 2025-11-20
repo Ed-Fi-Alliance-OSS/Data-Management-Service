@@ -55,7 +55,8 @@ public class DocumentValidatorTests
             Body: null,
             Headers: [],
             QueryParameters: [],
-            TraceId: new TraceId("trace")
+            TraceId: new TraceId("trace"),
+            RouteQualifiers: []
         );
 
         var requestInfo = new RequestInfo(frontendRequest, RequestMethod.POST)

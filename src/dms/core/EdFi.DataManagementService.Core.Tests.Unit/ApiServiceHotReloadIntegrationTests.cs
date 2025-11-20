@@ -150,6 +150,7 @@ public class ApiServiceHotReloadIntegrationTests
             apiSchemaUploadService,
             serviceProvider,
             A.Fake<ClaimSetsCache>(),
+            A.Fake<IResourceDependencyGraphMLFactory>(),
             new CompiledSchemaCache()
         );
     }
@@ -399,6 +400,7 @@ public class ApiServiceHotReloadIntegrationTests
                 apiSchemaUploadService,
                 new ServiceCollection().BuildServiceProvider(),
                 A.Fake<ClaimSetsCache>(),
+                A.Fake<IResourceDependencyGraphMLFactory>(),
                 new CompiledSchemaCache()
             );
 

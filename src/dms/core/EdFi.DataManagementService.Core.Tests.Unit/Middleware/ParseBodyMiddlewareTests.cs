@@ -168,6 +168,7 @@ public class ParseBodyMiddlewareTests
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("trace"),
+                RouteQualifiers: [],
                 BodyStream: stream
             );
 
