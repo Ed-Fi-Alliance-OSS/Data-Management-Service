@@ -552,7 +552,7 @@ function InstanceE2ETests {
     Invoke-Step { Restart-DmsContainer }
 
     Write-Host "`nInstance E2E setup complete!" -ForegroundColor Green
-    Write-Host "Infrastructure was created by start-local-dms.ps1 -AddDmsInstance:" -ForegroundColor Cyan
+    Write-Host "Infrastructure was created by setup-local-dms.ps1:" -ForegroundColor Cyan
     Write-Host "  - 3 DMS instances registered in Config Service" -ForegroundColor Gray
     Write-Host "  - 3 PostgreSQL databases with DMS schema" -ForegroundColor Gray
     Write-Host "  - 3 Kafka connectors (postgresql-source-instance-1, 2, 3)" -ForegroundColor Gray
