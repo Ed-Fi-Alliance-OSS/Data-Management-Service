@@ -52,6 +52,7 @@ erDiagram
     ApiClient ||--o{ ApiClientDmsInstance : "can access"
     DmsInstance ||--o{ ApiClientDmsInstance : "accessible by"
     DmsInstance ||--o{ DmsInstanceRouteContext : "has"
+    DmsInstance ||--o{ DmsInstanceDerivative : "has"
 
     Application {
         bigint Id PK
@@ -85,6 +86,13 @@ erDiagram
         varchar ContextKey
         varchar ContextValue
     }
+
+    DmsInstanceDerivative {
+        bigint Id PK
+        bigint InstanceId FK
+        varchar DerivativeType
+        bytea ConnectionString
+    }
 ```
 
 #### DmsInstance
@@ -112,6 +120,23 @@ Stores context key-value pairs for route-based instance resolution.
 **Constraint:** `UNIQUE (InstanceId, ContextKey)` ensures each instance has
 only one value per context key.
 
+#### DmsInstanceDerivative
+
+Stores derivative instances (read replicas and snapshots) associated with a parent DMS instance.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| Id | BIGINT | Primary key |
+| InstanceId | BIGINT | Foreign key to parent DmsInstance |
+| DerivativeType | VARCHAR(50) | Type of derivative: "ReadReplica" or "Snapshot" |
+| ConnectionString | BYTEA | Encrypted database connection string |
+
+**Foreign Key:** CASCADE DELETE on `InstanceId` - when a parent DmsInstance is
+deleted, all its derivative instances are automatically deleted.
+
+**Index:** `idx_dmsinstancederivative_instanceid` on InstanceId for efficient
+queries.
+
 #### ApiClient
 
 Stores OAuth client credentials for applications.
@@ -131,6 +156,15 @@ Maps API clients to DMS instances they can access (many-to-many).
 |--------|------|-------------|
 | ApiClientId | BIGINT | Foreign key to ApiClient |
 | DmsInstanceId | BIGINT | Foreign key to DmsInstance |
+
+## DMS Instance Derivatives
+
+DMS Instance Derivatives are alternate database instances associated with a parent
+DMS instance, such as read replicas or snapshots. Read replicas distribute query
+load, while snapshots preserve point-in-time data for backup, testing, or analysis.
+
+Each derivative type is stored with its own encrypted connection string and is
+automatically deleted when its parent instance is removed (CASCADE DELETE).
 
 ### Configuration
 
