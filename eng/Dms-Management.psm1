@@ -570,9 +570,9 @@ function Add-DmsInstance {
     $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$PostgresUser;password=$PostgresPassword;database=$PostgresDbName;"
 
     $dmsInstanceData = @{
-        instanceType = $InstanceType
-        instanceName = $InstanceName
-        connectionString = $ConnectionString
+        InstanceType = $InstanceType
+        InstanceName = $InstanceName
+        ConnectionString = $ConnectionString
     }
 
     $invokeParams = @{

@@ -79,7 +79,9 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
             }
 
             // Delete instances (this also deletes route contexts)
-            foreach (var instanceId in context.InstanceIds)
+            // Skip instances 1, 2, 3 as they are pre-existing instances created by setup script
+            var instancesToDelete = context.InstanceIds.Where(id => id is not (1 or 2 or 3)).ToList();
+            foreach (var instanceId in instancesToDelete)
             {
                 _logger?.LogInformation("Deleting instance {InstanceId}", instanceId);
                 try
