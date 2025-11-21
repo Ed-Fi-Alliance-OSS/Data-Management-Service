@@ -1,0 +1,371 @@
+# Instance Routing Manual Test
+# Run ./build-dms.ps1 InstanceE2ETest first to set up the environment
+# This will test that data routes to the correct instance databases and Kafka topics
+
+@dmsUrl = http://localhost:8080
+@configUrl = http://localhost:8081
+
+# Config Service credentials (for creating API clients)
+@configClientId = DmsConfigurationService
+@configClientSecret = s3creT@09
+
+###############################################################################
+# STEP 1: Get Config Service Token
+###############################################################################
+
+### Get Config Service access token
+# @name configToken
+POST {{configUrl}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&client_id={{configClientId}}
+&client_secret={{configClientSecret}}
+&scope=edfi_dms_configuration_service_api
+
+###
+
+@configAccessToken = {{configToken.response.body.access_token}}
+
+###############################################################################
+# STEP 2: Create DMS Instances
+###############################################################################
+
+### Create Instance 1 - District 255901, School Year 2024
+# @name instance1
+POST {{configUrl}}/v2/dmsInstances/
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "instanceType": "District",
+  "instanceName": "District 255901 - School Year 2024",
+  "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2024;"
+}
+
+###
+
+@instance1Id = {{instance1.response.body.id}}
+
+### Create Instance 2 - District 255901, School Year 2025
+# @name instance2
+POST {{configUrl}}/v2/dmsInstances/
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "instanceType": "District",
+  "instanceName": "District 255901 - School Year 2025",
+  "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2025;"
+}
+
+###
+
+@instance2Id = {{instance2.response.body.id}}
+
+### Create Instance 3 - District 255902, School Year 2024
+# @name instance3
+POST {{configUrl}}/v2/dmsInstances/
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "instanceType": "District",
+  "instanceName": "District 255902 - School Year 2024",
+  "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255902_sy2024;"
+}
+
+###
+
+@instance3Id = {{instance3.response.body.id}}
+
+###############################################################################
+# STEP 3: Create Route Contexts for Instances
+###############################################################################
+
+### Add route context districtId=255901 to Instance 1
+POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance1Id}},
+  "contextKey": "districtId",
+  "contextValue": "255901"
+}
+
+###
+
+### Add route context schoolYear=2024 to Instance 1
+POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance1Id}},
+  "contextKey": "schoolYear",
+  "contextValue": "2024"
+}
+
+###
+
+### Add route context districtId=255901 to Instance 2
+POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance2Id}},
+  "contextKey": "districtId",
+  "contextValue": "255901"
+}
+
+###
+
+### Add route context schoolYear=2025 to Instance 2
+POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance2Id}},
+  "contextKey": "schoolYear",
+  "contextValue": "2025"
+}
+
+###
+
+### Add route context districtId=255902 to Instance 3
+POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance3Id}},
+  "contextKey": "districtId",
+  "contextValue": "255902"
+}
+
+###
+
+### Add route context schoolYear=2024 to Instance 3
+POST {{configUrl}}/v2/dmsinstanceroutecontexts/
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "instanceId": {{instance3Id}},
+  "contextKey": "schoolYear",
+  "contextValue": "2024"
+}
+
+###
+
+###############################################################################
+# STEP 4: Create Vendor
+###############################################################################
+
+### Create vendor
+# @name vendor
+POST {{configUrl}}/v2/vendors
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "company": "Manual Test Vendor",
+  "contactName": "Test User",
+  "contactEmailAddress": "test@example.com",
+  "namespacePrefixes": "uri://ed-fi.org,uri://test.example.com"
+}
+
+###
+
+@vendorId = {{vendor.response.body.id}}
+
+###############################################################################
+# STEP 5: Create Application
+###############################################################################
+
+### Create application
+# @name application
+POST {{configUrl}}/v2/applications
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "vendorId": {{vendorId}},
+  "applicationName": "Manual Test Application",
+  "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+  "educationOrganizationIds": [255901, 255902]
+}
+
+###
+
+@applicationId = {{application.response.body.id}}
+
+###############################################################################
+# STEP 6: Create API Client with Access to All Instances
+###############################################################################
+
+### Create API client for testing
+# @name apiClient
+POST {{configUrl}}/v2/apiClients
+Authorization: Bearer {{configAccessToken}}
+Content-Type: application/json
+
+{
+  "applicationId": {{applicationId}},
+  "name": "Manual Test Client",
+  "isApproved": true,
+  "dmsInstanceIds": [{{instance1Id}}, {{instance2Id}}, {{instance3Id}}]
+}
+
+###
+
+@clientKey = {{apiClient.response.body.key}}
+@clientSecret = {{apiClient.response.body.secret}}
+
+###############################################################################
+# STEP 7: Get DMS Access Token
+###############################################################################
+
+### Get DMS access token using the created API client
+# @name dmsToken
+POST {{dmsUrl}}/oauth/token
+Authorization: basic {{clientKey}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+
+@accessToken = {{dmsToken.response.body.access_token}}
+
+###############################################################################
+# STEP 8: Post to Instance 1 (districtId=255901, schoolYear=2024)
+# Expected: Data in edfi_datamanagementservice_d255901_sy2024
+# Expected: Kafka messages in edfi.dms.1.document
+###############################################################################
+
+### POST ContentClassDescriptor to Instance 1
+POST {{dmsUrl}}/255901/2024/data/ed-fi/contentClassDescriptors
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "codeValue": "Presentation-Instance1",
+  "shortDescription": "Presentation",
+  "description": "Test descriptor for instance 1",
+  "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+### Expected: 201 Created
+
+###
+
+### Verify it's in Instance 1
+GET {{dmsUrl}}/255901/2024/data/ed-fi/contentClassDescriptors
+Authorization: Bearer {{accessToken}}
+
+### Expected: Should see Presentation-Instance1
+
+###
+
+###############################################################################
+# STEP 9: Post to Instance 2 (districtId=255901, schoolYear=2025)
+# Expected: Data in edfi_datamanagementservice_d255901_sy2025
+# Expected: Kafka messages in edfi.dms.2.document
+###############################################################################
+
+### POST ContentClassDescriptor to Instance 2
+POST {{dmsUrl}}/255901/2025/data/ed-fi/contentClassDescriptors
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "codeValue": "Testing-Instance2",
+  "shortDescription": "Testing",
+  "description": "Test descriptor for instance 2",
+  "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+### Expected: 201 Created
+
+###
+
+### Verify it's in Instance 2
+GET {{dmsUrl}}/255901/2025/data/ed-fi/contentClassDescriptors
+Authorization: Bearer {{accessToken}}
+
+### Expected: Should see Testing-Instance2
+
+###
+
+###############################################################################
+# STEP 10: Post to Instance 3 (districtId=255902, schoolYear=2024)
+# Expected: Data in edfi_datamanagementservice_d255902_sy2024
+# Expected: Kafka messages in edfi.dms.3.document
+###############################################################################
+
+### POST ContentClassDescriptor to Instance 3
+POST {{dmsUrl}}/255902/2024/data/ed-fi/contentClassDescriptors
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "codeValue": "Assignment-Instance3",
+  "shortDescription": "Assignment",
+  "description": "Test descriptor for instance 3",
+  "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+### Expected: 201 Created
+
+###
+
+### Verify it's in Instance 3
+GET {{dmsUrl}}/255902/2024/data/ed-fi/contentClassDescriptors
+Authorization: Bearer {{accessToken}}
+
+### Expected: Should see Assignment-Instance3
+
+###
+
+###############################################################################
+# VERIFICATION COMMANDS (run in PowerShell)
+###############################################################################
+
+# Check document counts in each database:
+# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) as instance1_count FROM dms.document;"
+# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025 -c "SELECT COUNT(*) as instance2_count FROM dms.document;"
+# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024 -c "SELECT COUNT(*) as instance3_count FROM dms.document;"
+
+# Main database should have 0 new documents:
+# docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice -c "SELECT COUNT(*) as main_db_count FROM dms.document;"
+
+# Check Kafka topics at http://localhost:8090
+# - edfi.dms.1.document should have messages
+# - edfi.dms.2.document should have messages
+# - edfi.dms.3.document should have messages
+
+###############################################################################
+# CLEANUP
+###############################################################################
+
+### Delete from Instance 1
+DELETE {{dmsUrl}}/255901/2024/data/ed-fi/contentClassDescriptors/Presentation-Instance1
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Delete from Instance 2
+DELETE {{dmsUrl}}/255901/2025/data/ed-fi/contentClassDescriptors/Testing-Instance2
+Authorization: Bearer {{accessToken}}
+
+###
+
+### Delete from Instance 3
+DELETE {{dmsUrl}}/255902/2024/data/ed-fi/contentClassDescriptors/Assignment-Instance3
+Authorization: Bearer {{accessToken}}
+
+###

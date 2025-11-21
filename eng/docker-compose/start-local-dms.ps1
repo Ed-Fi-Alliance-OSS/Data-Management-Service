@@ -208,7 +208,7 @@ else {
     if($AddDmsInstance)
     {
         Import-Module ../Dms-Management.psm1 -Force
-        Write-Output "Creating initial DMS Instance..."
+        Write-Output "Creating 3 test DMS instances for Kafka topic-per-instance testing..."
 
         try {
             # Create system administrator credentials
@@ -217,13 +217,117 @@ else {
             # Get configuration service token
             $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!"
 
-            # Create DMS Instance using environment variables
-            $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development"
+            # Create Instance 1: District 255901 - School Year 2024
+            Write-Output "Creating Instance 1..."
+            $instance1Id = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName "edfi_datamanagementservice_d255901_sy2024" -InstanceName "District 255901 - School Year 2024" -InstanceType "District"
+            Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance1Id -ContextKey "districtId" -ContextValue "255901"
+            Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance1Id -ContextKey "schoolYear" -ContextValue "2024"
+            Write-Output "Instance 1 created with ID: $instance1Id"
 
-            Write-Output "DMS Instance created successfully with ID: $instanceId"
+            # Create Instance 2: District 255901 - School Year 2025
+            Write-Output "Creating Instance 2..."
+            $instance2Id = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName "edfi_datamanagementservice_d255901_sy2025" -InstanceName "District 255901 - School Year 2025" -InstanceType "District"
+            Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance2Id -ContextKey "districtId" -ContextValue "255901"
+            Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance2Id -ContextKey "schoolYear" -ContextValue "2025"
+            Write-Output "Instance 2 created with ID: $instance2Id"
+
+            # Create Instance 3: District 255902 - School Year 2024
+            Write-Output "Creating Instance 3..."
+            $instance3Id = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName "edfi_datamanagementservice_d255902_sy2024" -InstanceName "District 255902 - School Year 2024" -InstanceType "District"
+            Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance3Id -ContextKey "districtId" -ContextValue "255902"
+            Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance3Id -ContextKey "schoolYear" -ContextValue "2024"
+            Write-Output "Instance 3 created with ID: $instance3Id"
+
+            Write-Output "All 3 test instances created successfully with IDs: $instance1Id, $instance2Id, $instance3Id"
+
+            # Create the physical PostgreSQL databases for each instance
+            Write-Output "Creating PostgreSQL databases for instances..."
+            docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255901_sy2024;" 2>$null
+            docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255901_sy2025;" 2>$null
+            docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255902_sy2024;" 2>$null
+            Write-Output "Instance databases created"
+
+            # Run migrations to create DMS schema in each instance database
+            Write-Output "Running DMS migrations on instance databases..."
+            docker exec dms-local-dms-1 dotnet /app/Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c "host=dms-postgresql;port=5432;username=postgres;password=$($envValues.POSTGRES_PASSWORD);database=edfi_datamanagementservice_d255901_sy2024;" 2>$null
+            docker exec dms-local-dms-1 dotnet /app/Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c "host=dms-postgresql;port=5432;username=postgres;password=$($envValues.POSTGRES_PASSWORD);database=edfi_datamanagementservice_d255901_sy2025;" 2>$null
+            docker exec dms-local-dms-1 dotnet /app/Installer/EdFi.DataManagementService.Backend.Installer.dll -e postgresql -c "host=dms-postgresql;port=5432;username=postgres;password=$($envValues.POSTGRES_PASSWORD);database=edfi_datamanagementservice_d255902_sy2024;" 2>$null
+            Write-Output "Migrations completed"
+
+            # Create Kafka connectors using the separate setup script
+            Write-Output "Setting up Kafka connectors for instance databases..."
+            $instances = @(
+                @{ InstanceId = $instance1Id; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
+                @{ InstanceId = $instance2Id; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
+                @{ InstanceId = $instance3Id; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
+            )
+            ./setup-instance-kafka-connectors.ps1 -Instances $instances -EnvironmentFile $EnvironmentFile
+            Write-Output "Kafka connectors setup completed"
+
+            # Explicitly create Kafka topics for each instance
+            # This is required because Debezium only creates topics when publishing messages,
+            # and empty databases won't trigger topic creation during initial snapshot
+            Write-Output "Waiting for Kafka broker to be ready for topic creation..."
+
+            # Wait for Kafka to be ready to accept topic creation commands
+            $maxWaitAttempts = 12
+            $kafkaReady = $false
+            for ($i = 1; $i -le $maxWaitAttempts; $i++) {
+                try {
+                    # Use dms-kafka1:9092 because that's how Kafka advertises itself inside the container network
+                    $testResult = docker exec dms-kafka1 /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server dms-kafka1:9092 2>&1
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Output "Kafka broker is ready!"
+                        $kafkaReady = $true
+                        break
+                    }
+                }
+                catch {
+                    # Ignore errors, will retry
+                }
+                Write-Output "  Waiting for Kafka... ($i/$maxWaitAttempts)"
+                Start-Sleep -Seconds 5
+            }
+
+            if (-not $kafkaReady) {
+                Write-Warning "Kafka broker readiness check timed out. Topics may be auto-created by Debezium when first message is published."
+            }
+
+            Write-Output "Creating Kafka topics for instances..."
+            $topicsToCreate = @("edfi.dms.1.document", "edfi.dms.2.document", "edfi.dms.3.document")
+            $maxRetries = 3
+            $retryDelay = 5
+
+            foreach ($topic in $topicsToCreate) {
+                $created = $false
+                for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
+                    try {
+                        # Use dms-kafka1:9092 because that's how Kafka advertises itself inside the container network
+                        $result = docker exec dms-kafka1 /opt/kafka/bin/kafka-topics.sh --create --if-not-exists --topic $topic --bootstrap-server dms-kafka1:9092 --partitions 1 --replication-factor 1 2>&1
+                        if ($LASTEXITCODE -eq 0 -or $result -match "already exists") {
+                            Write-Output "  ✓ Topic created: $topic"
+                            $created = $true
+                            break
+                        }
+                    }
+                    catch {
+                        Write-Warning "  Attempt $attempt/$maxRetries failed for topic $topic"
+                    }
+
+                    if ($attempt -lt $maxRetries) {
+                        Write-Output "  Retrying in $retryDelay seconds..."
+                        Start-Sleep -Seconds $retryDelay
+                    }
+                }
+
+                if (-not $created) {
+                    Write-Warning "  Could not create topic $topic after $maxRetries attempts. Topic will be auto-created when first message is published."
+                }
+            }
+            Write-Output "Kafka topic creation completed"
         }
         catch {
-            Write-Warning "Failed to create DMS Instance: $($_.Exception.Message)"
+            Write-Warning "Failed to create DMS test instances: $($_.Exception.Message)"
         }
     }
 

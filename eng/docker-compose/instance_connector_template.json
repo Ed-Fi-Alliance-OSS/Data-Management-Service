@@ -11,7 +11,7 @@
 
     "publication.name": "to_debezium_instance_{{INSTANCE_ID}}",
     "slot.name": "debezium_instance_{{INSTANCE_ID}}",
-    "publication.autocreate.mode": "disabled",
+    "publication.autocreate.mode": "filtered",
 
     "snapshot.mode": "initial",
     "snapshot.locking.mode": "none",

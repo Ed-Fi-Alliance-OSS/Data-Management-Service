@@ -570,9 +570,9 @@ function Add-DmsInstance {
     $ConnectionString = "host=$PostgresHost;port=$PostgresPort;username=$PostgresUser;password=$PostgresPassword;database=$PostgresDbName;"
 
     $dmsInstanceData = @{
-        instanceType = $InstanceType
-        instanceName = $InstanceName
-        connectionString = $ConnectionString
+        InstanceType = $InstanceType
+        InstanceName = $InstanceName
+        ConnectionString = $ConnectionString
     }
 
     $invokeParams = @{
@@ -641,4 +641,73 @@ function Get-DmsInstances {
     return $response
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Invoke-Api
+<#
+.SYNOPSIS
+    Adds a route context to a DMS Instance.
+
+.DESCRIPTION
+    Associates a route context key-value pair with a specific DMS Instance to enable request routing.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server (e.g., http://localhost:8081).
+
+.PARAMETER AccessToken
+    The bearer token for authorization (mandatory).
+
+.PARAMETER InstanceId
+    The ID of the DMS Instance to add the route context to.
+
+.PARAMETER ContextKey
+    The context key (e.g., "districtId", "schoolYear").
+
+.PARAMETER ContextValue
+    The context value (e.g., "255901", "2024").
+
+.OUTPUTS
+    [long] Returns the route context ID.
+
+.EXAMPLE
+    Add-DmsInstanceRouteContext -AccessToken $token -InstanceId 1 -ContextKey "districtId" -ContextValue "255901"
+#>
+function Add-DmsInstanceRouteContext {
+    [CmdletBinding()]
+    param (
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [Parameter(Mandatory = $true)]
+        [string]$AccessToken,
+
+        [Parameter(Mandatory = $true)]
+        [long]$InstanceId,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ContextKey,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ContextValue
+    )
+
+    $routeContextData = @{
+        InstanceId = $InstanceId
+        ContextKey = $ContextKey
+        ContextValue = $ContextValue
+    }
+
+    $invokeParams = @{
+        BaseUrl      = $CmsUrl
+        RelativeUrl  = "v2/dmsinstanceroutecontexts/"
+        Method       = "Post"
+        ContentType  = "application/json"
+        Body         = ConvertTo-Json -InputObject $routeContextData -Depth 10
+        Headers      = @{ Authorization = "Bearer $AccessToken" }
+    }
+
+    $response = Invoke-Api @invokeParams
+
+    return $response.id
+}
+
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Add-DmsInstanceRouteContext, Invoke-Api

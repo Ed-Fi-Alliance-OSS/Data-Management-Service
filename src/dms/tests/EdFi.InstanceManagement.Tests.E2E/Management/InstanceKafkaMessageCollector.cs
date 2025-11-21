@@ -65,7 +65,7 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
         {
             BootstrapServers = _configuration.BootstrapServers,
             GroupId = _configuration.ConsumerGroupId,
-            AutoOffsetReset = AutoOffsetReset.Latest, // Only collect messages after we start
+            AutoOffsetReset = AutoOffsetReset.Earliest, // Read all messages from topic creation
             EnableAutoCommit = false,
             SessionTimeoutMs = 6000,
             HeartbeatIntervalMs = 2000,

@@ -62,10 +62,12 @@ try {
     Write-Host "  - Extension Security Metadata: Yes" -ForegroundColor Gray
     Write-Host "  - Route Qualifiers: districtId, schoolYear" -ForegroundColor Cyan
     Write-Host "  - Identity Provider: self-contained" -ForegroundColor Gray
+    Write-Host "  - Add Test DMS Instances: Yes (3 instances with IDs 1, 2, 3)" -ForegroundColor Cyan
     Write-Host ""
 
     # Run the start script with Route Context E2E configuration
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained
+    # -AddDmsInstance creates 3 test instances with route contexts for Kafka topic-per-instance testing
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained -AddDmsInstance
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"
