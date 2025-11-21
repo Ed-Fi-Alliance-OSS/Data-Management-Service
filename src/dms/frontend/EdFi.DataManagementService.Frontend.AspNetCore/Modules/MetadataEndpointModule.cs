@@ -7,7 +7,9 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
@@ -17,9 +19,61 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
 public partial class MetadataEndpointModule : IEndpointModule
 {
-    private static JsonArray GetServers(HttpContext httpContext)
+    private static JsonArray GetServers(HttpContext httpContext, IDmsInstanceProvider dmsInstanceProvider)
     {
-        return new JsonArray { new JsonObject { ["url"] = $"{httpContext.Request.RootUrl()}/data" } };
+        // Get all school years from DMS instances
+        var instances = dmsInstanceProvider.GetAll();
+        var schoolYears = instances
+            .SelectMany(instance => instance.RouteContext)
+            .Where(kvp => kvp.Key.Value.Equals("schoolYear", StringComparison.OrdinalIgnoreCase))
+            .Select(kvp => kvp.Value.Value)
+            .Distinct()
+            .OrderByDescending(year => year)
+            .ToList();
+
+        // If no school years are configured, return simple server URL
+        if (schoolYears.Count == 0)
+        {
+            return new JsonArray { new JsonObject { ["url"] = $"{httpContext.Request.RootUrl()}/data" } };
+        }
+
+        // Determine the current school year from the request path
+        string currentSchoolYear = schoolYears.FirstOrDefault() ?? string.Empty;
+        string pathBase = httpContext.Request.PathBase.Value ?? string.Empty;
+
+        // Try to extract school year from PathBase (e.g., "/2025" from path)
+        var pathSegments = pathBase.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var schoolYearFromPath = Array.Find(
+            [.. pathSegments],
+            segment => schoolYears.Contains(segment, StringComparer.OrdinalIgnoreCase)
+        );
+
+        if (!string.IsNullOrEmpty(schoolYearFromPath))
+        {
+            currentSchoolYear = schoolYearFromPath;
+        }
+
+        // Build the root URL without the school year segment
+        string scheme = httpContext.Request.Scheme;
+        string host = httpContext.Request.Host.ToString();
+        string baseUrl = $"{scheme}://{host}";
+
+        // Create the servers section with school year variable
+        var serverObject = new JsonObject
+        {
+            ["url"] = $"{baseUrl}/{{School Year Selection}}/data",
+            ["variables"] = new JsonObject
+            {
+                ["School Year Selection"] = new JsonObject
+                {
+                    ["default"] = currentSchoolYear,
+                    ["description"] = "School Year Selection",
+                    ["enum"] = new JsonArray(schoolYears.Select(y => JsonValue.Create(y)).ToArray()),
+                },
+            },
+        };
+
+        return new JsonArray { serverObject };
     }
 
     private sealed record SpecificationSection(string name, string prefix);
@@ -122,16 +176,24 @@ public partial class MetadataEndpointModule : IEndpointModule
         }
     }
 
-    internal static async Task GetResourceOpenApiSpec(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetResourceOpenApiSpec(
+        HttpContext httpContext,
+        IApiService apiService,
+        IDmsInstanceProvider dmsInstanceProvider
+    )
     {
-        JsonArray servers = GetServers(httpContext);
+        JsonArray servers = GetServers(httpContext, dmsInstanceProvider);
         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
-    internal static async Task GetDescriptorOpenApiSpec(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetDescriptorOpenApiSpec(
+        HttpContext httpContext,
+        IApiService apiService,
+        IDmsInstanceProvider dmsInstanceProvider
+    )
     {
-        JsonArray servers = GetServers(httpContext);
+        JsonArray servers = GetServers(httpContext, dmsInstanceProvider);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
@@ -157,7 +219,8 @@ public partial class MetadataEndpointModule : IEndpointModule
     internal async Task GetSectionMetadata(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IOptions<AppSettings> options
+        IOptions<Configuration.AppSettings> options,
+        IDmsInstanceProvider dmsInstanceProvider
     )
     {
         var request = httpContext.Request;
@@ -180,7 +243,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         )
         {
             var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
-            content["servers"] = GetServers(httpContext);
+            content["servers"] = GetServers(httpContext, dmsInstanceProvider);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else

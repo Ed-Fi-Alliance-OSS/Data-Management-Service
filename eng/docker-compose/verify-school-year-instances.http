@@ -1,0 +1,143 @@
+### Quick Test: School Year Instances Setup
+### This file demonstrates how to verify the school year instances were created correctly
+
+@configPort = 8081
+@dmsPort = 8080
+
+### ============================================================================
+### STEP 1: Get Configuration Service Token
+### ============================================================================
+
+### Get token for Configuration Service
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=dms-instance-admin
+&client_secret=DmsSetup1!
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken = {{configTokenRequest.response.body.access_token}}
+
+
+### ============================================================================
+### STEP 2: Verify DMS Instances Were Created
+### ============================================================================
+
+### List all DMS Instances
+# @name listInstances
+GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+Authorization: bearer {{configToken}}
+
+### Expected: You should see instances named "School Year 2022", "School Year 2023", etc.
+
+
+### ============================================================================
+### STEP 3: Verify Route Contexts Were Created
+### ============================================================================
+
+### List all Route Contexts
+# @name listRouteContexts
+GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts?offset=0&limit=50
+Authorization: bearer {{configToken}}
+
+### Expected: You should see route contexts with contextKey="schoolYear" and contextValue="2022", "2023", etc.
+
+
+### ============================================================================
+### STEP 4: Test DMS Discovery Endpoint
+### ============================================================================
+
+### Get DMS Discovery Information
+GET http://localhost:{{dmsPort}}
+
+### Expected: Should show available API endpoints
+
+
+### ============================================================================
+### STEP 5: Verify OpenAPI Spec Shows School Years
+### ============================================================================
+
+### Get Descriptors OpenAPI Specification
+GET http://localhost:{{dmsPort}}/metadata/specifications/descriptors-spec.json
+
+### Expected: The "servers" section should show school year variables with enum containing your years
+
+
+### Get Resources OpenAPI Specification
+GET http://localhost:{{dmsPort}}/metadata/specifications/resources-spec.json
+
+### Expected: The "servers" section should show school year variables with enum containing your years
+
+### ============================================================================
+### STEP 6: Create key and secret for Swagger UI - Optional
+### ============================================================================
+
+### Get token for Configuration Service
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id=dms-instance-admin
+&client_secret=DmsSetup1!
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken = {{configTokenRequest.response.body.access_token}}
+
+### Create a new vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "School Year Instance Test Vendor",
+    "contactName": "Test Admin",
+    "contactEmailAddress": "admin@testyear.edu",
+    "namespacePrefixes": "uri://ed-fi.org,uri://testyear.edu"
+}
+
+###
+@vendorLocation={{createVendor.response.headers.location}}
+
+### Retrieve the vendor so that we can extract the Id
+# @name getVendor
+GET {{vendorLocation}}
+Authorization: bearer {{configToken}}
+
+###
+@vendorId={{getVendor.response.body.id}}
+
+### List all DMS Instances
+GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+Authorization: bearer {{configToken}}
+
+### Create Application -- Instance 3 not configurable to see error handling
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Authorization: bearer {{configToken}}
+Content-Type: application/json
+
+{
+  "vendorId": {{vendorId}},
+  "applicationName": "School Year instance Test App",
+  "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+  "educationOrganizationIds": [255901, 255902],
+  "dmsInstanceIds": [1, 2]
+}
+
+### ============================================================================
+### STEP 7: Access Swagger UI
+### ============================================================================
+
+### Open in browser:
+### http://localhost:8082
+###
+### Expected:
+### - School year selector dropdown appears at the top
+### - Default selected year is the current school year (based on current date)
+### - You can switch between years 2022-2026 (or whatever range you specified)
