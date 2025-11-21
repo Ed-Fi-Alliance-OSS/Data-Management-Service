@@ -73,19 +73,8 @@ public class PostgresqlDocumentStoreRepository(
         try
         {
             await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
 
-            GetResult result = await _getDocumentById.GetById(getRequest, connection, transaction);
-
-            switch (result)
-            {
-                case GetResult.GetSuccess:
-                    await transaction.CommitAsync();
-                    break;
-                default:
-                    await transaction.RollbackAsync();
-                    break;
-            }
+            GetResult result = await _getDocumentById.GetById(getRequest, connection, null);
             return result;
         }
         catch (Exception ex)
@@ -183,21 +172,7 @@ public class PostgresqlDocumentStoreRepository(
 
         try
         {
-            await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
-            await using var transaction = await connection.BeginTransactionAsync(_isolationLevel);
-
-            QueryResult result = await _queryDocument.QueryDocuments(queryRequest, connection, transaction);
-
-            switch (result)
-            {
-                case QueryResult.QuerySuccess:
-                    await transaction.CommitAsync();
-                    break;
-                default:
-                    await transaction.RollbackAsync();
-                    break;
-            }
-            return result;
+            return await _queryDocument.QueryDocuments(queryRequest);
         }
         catch (Exception ex)
         {

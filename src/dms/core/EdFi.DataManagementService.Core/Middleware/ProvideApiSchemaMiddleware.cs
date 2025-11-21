@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -18,8 +19,11 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// resources to create a unified schema representation that supports both standard and
 /// extended Ed-Fi data models.
 /// </summary>
-internal class ProvideApiSchemaMiddleware(IApiSchemaProvider apiSchemaProvider, ILogger logger)
-    : IPipelineStep
+internal class ProvideApiSchemaMiddleware(
+    IApiSchemaProvider apiSchemaProvider,
+    ILogger logger,
+    ICompiledSchemaCache compiledSchemaCache
+) : IPipelineStep
 {
     // Lazy-loaded merged schema documents that refresh when schema is reloaded
     private readonly VersionedLazy<ApiSchemaDocuments> _apiSchemaDocuments =
@@ -61,13 +65,17 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider apiSchemaProvider, 
                     }
                 }
 
-                return new ApiSchemaDocuments(
+                var documents = new ApiSchemaDocuments(
                     apiSchemaNodes with
                     {
                         CoreApiSchemaRootNode = coreApiSchema,
                     },
                     logger
                 );
+
+                compiledSchemaCache.Prime(documents, apiSchemaProvider.ReloadId);
+
+                return documents;
             },
             () => apiSchemaProvider.ReloadId
         );
@@ -84,7 +92,9 @@ internal class ProvideApiSchemaMiddleware(IApiSchemaProvider apiSchemaProvider, 
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        requestInfo.ApiSchemaDocuments = _apiSchemaDocuments.Value;
+        var (documents, version) = _apiSchemaDocuments.GetValueAndVersion();
+        requestInfo.ApiSchemaDocuments = documents;
+        requestInfo.ApiSchemaReloadId = version;
         await next();
     }
 

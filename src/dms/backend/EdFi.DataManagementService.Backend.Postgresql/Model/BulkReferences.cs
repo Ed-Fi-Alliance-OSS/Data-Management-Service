@@ -24,5 +24,9 @@ public record BulkReferences(
     /// <summary>
     /// The ReferentialPartitionKeys on the Aliases table for all the references on this document
     /// </summary>
-    short[] ReferentialPartitionKeys
+    short[] ReferentialPartitionKeys,
+    /// <summary>
+    /// Indicates whether the operation is known to be an insert (no reference deletes possible).
+    /// </summary>
+    bool IsPureInsert = false
 );

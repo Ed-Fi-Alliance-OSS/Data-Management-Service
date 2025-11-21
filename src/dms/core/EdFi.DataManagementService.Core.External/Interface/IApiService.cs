@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.External.Interface;
 /// The facade a frontend uses to access DMS Core API services.
 ///
 /// The intent of this design is to provide a web framework-independent interface
-/// for 1) ease of testing and 2) ease of supporting future frontends e.g.
+/// for 1) ease of testing and 2) ease of supporting future front ends e.g.
 /// AWS Lambda, Azure functions, etc.
 /// </summary>
 public interface IApiService

@@ -25,7 +25,7 @@ public abstract class ContainerSetupBase
         await Task.Delay(2000);
 
         var hostConnectionString =
-            $"host=localhost;port={DbPortExternal};username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};";
+            $"host=localhost;port={DbPortExternal};username={PgAdminUser};password={PgAdminPassword};database={DatabaseName};NoResetOnClose=true;";
         using var conn = new NpgsqlConnection(hostConnectionString);
         await conn.OpenAsync();
 

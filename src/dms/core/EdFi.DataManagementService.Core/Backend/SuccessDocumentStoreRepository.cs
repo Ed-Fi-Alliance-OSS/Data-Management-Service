@@ -2,6 +2,7 @@
 // Licensed to the Ed-Fi Alliance under one or more agreements.
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -70,6 +71,16 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
             "QueryDocuments(): Backend repository has been configured to always report success - {TraceId}",
             queryRequest.TraceId
         );
-        return await Task.FromResult<QueryResult>(new QueryResult.QuerySuccess(TotalCount: 0, EdfiDocs: []));
+        QueryResult.QueryStreamWriter emptyStream = async (stream, cancellationToken) =>
+        {
+            await using var writer = new Utf8JsonWriter(stream);
+            writer.WriteStartArray();
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+        };
+
+        return await Task.FromResult<QueryResult>(
+            new QueryResult.QuerySuccess(StreamWriter: emptyStream, TotalCount: 0)
+        );
     }
 }

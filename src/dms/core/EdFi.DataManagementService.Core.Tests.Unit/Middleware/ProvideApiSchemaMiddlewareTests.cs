@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
 using Json.Schema;
@@ -33,6 +34,7 @@ public class ProvideApiSchemaMiddlewareTests
         private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
             .WithStartProject("Ed-Fi", "5.0.0")
             .WithStartResource("School")
+            .WithJsonSchemaForInsert(new JsonSchemaBuilder().Type(SchemaValueType.Object).Build())
             .WithEqualityConstraints(
                 [new(new JsonPath("$.schoolReference.schoolId"), new JsonPath("$.sessionReference.schoolId"))]
             )
@@ -178,7 +180,8 @@ public class ProvideApiSchemaMiddlewareTests
 
             _provideApiSchemaMiddleware = new ProvideApiSchemaMiddleware(
                 fakeApiSchemaProvider,
-                NullLogger<ProvideApiSchemaMiddleware>.Instance
+                NullLogger<ProvideApiSchemaMiddleware>.Instance,
+                new CompiledSchemaCache()
             );
         }
 
@@ -301,7 +304,8 @@ public class ProvideApiSchemaMiddlewareTests
             _mockProvider = A.Fake<IApiSchemaProvider>();
             _middleware = new ProvideApiSchemaMiddleware(
                 _mockProvider,
-                NullLogger<ProvideApiSchemaMiddleware>.Instance
+                NullLogger<ProvideApiSchemaMiddleware>.Instance,
+                new CompiledSchemaCache()
             );
         }
 

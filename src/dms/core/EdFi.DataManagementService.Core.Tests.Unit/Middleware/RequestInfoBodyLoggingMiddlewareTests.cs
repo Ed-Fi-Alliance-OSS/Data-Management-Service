@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -69,7 +70,10 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            {
+                ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontEndRequest.Body!)!,
+            };
 
             await Middleware(_logger!, true).Execute(_requestInfo, NullNext);
 
@@ -129,7 +133,10 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            {
+                ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontEndRequest.Body!)!,
+            };
 
             await Middleware(_logger!, false).Execute(_requestInfo, NullNext);
 
@@ -191,7 +198,10 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            {
+                ParsedBody = System.Text.Json.Nodes.JsonNode.Parse(frontEndRequest.Body!)!,
+            };
 
             await Middleware(_logger!, true).Execute(_requestInfo, NullNext);
 
@@ -251,7 +261,10 @@ public class RequestInfoBodyLoggingMiddlewareTests
                 RouteQualifiers: []
             );
 
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            {
+                ParsedBody = JsonNode.Parse(frontEndRequest.Body!)!,
+            };
 
             await Middleware(_logger!, true).Execute(_requestInfo, NullNext);
 

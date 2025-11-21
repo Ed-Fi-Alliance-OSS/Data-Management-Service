@@ -15,27 +15,40 @@ public class LoggingMiddleware(RequestDelegate next)
     public async Task Invoke(HttpContext context, ILogger<LoggingMiddleware> logger)
     {
         var stopwatch = Stopwatch.StartNew();
+        bool logInformation = logger.IsEnabled(LogLevel.Information);
+        string sanitizedMethod = logInformation
+            ? LoggingSanitizer.SanitizeForLogging(context.Request.Method)
+            : string.Empty;
+        string sanitizedPath = logInformation
+            ? LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)
+            : string.Empty;
 
-        logger.LogInformation(
-            "Request started: {Method} {Path} - TraceId: {TraceId}",
-            LoggingSanitizer.SanitizeForLogging(context.Request.Method),
-            LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value),
-            context.TraceIdentifier
-        );
+        if (logInformation)
+        {
+            logger.LogInformation(
+                "Request started: {Method} {Path} - TraceId: {TraceId}",
+                sanitizedMethod,
+                sanitizedPath,
+                context.TraceIdentifier
+            );
+        }
 
         try
         {
             await next(context);
 
             stopwatch.Stop();
-            logger.LogInformation(
-                "Request completed: {Method} {Path} - Status: {StatusCode} - Duration: {Duration}ms - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(context.Request.Method),
-                LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value),
-                context.Response.StatusCode,
-                stopwatch.ElapsedMilliseconds,
-                context.TraceIdentifier
-            );
+            if (logInformation)
+            {
+                logger.LogInformation(
+                    "Request completed: {Method} {Path} - Status: {StatusCode} - Duration: {Duration}ms - TraceId: {TraceId}",
+                    sanitizedMethod,
+                    sanitizedPath,
+                    context.Response.StatusCode,
+                    stopwatch.ElapsedMilliseconds,
+                    context.TraceIdentifier
+                );
+            }
         }
         catch (Exception ex)
         {
@@ -43,8 +56,12 @@ public class LoggingMiddleware(RequestDelegate next)
             logger.LogError(
                 ex,
                 "Request failed: {Method} {Path} - Duration: {Duration}ms - TraceId: {TraceId}",
-                LoggingSanitizer.SanitizeForLogging(context.Request.Method),
-                LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value),
+                sanitizedMethod.Length == 0
+                    ? LoggingSanitizer.SanitizeForLogging(context.Request.Method)
+                    : sanitizedMethod,
+                sanitizedPath.Length == 0
+                    ? LoggingSanitizer.SanitizeForLogging(context.Request.Path.Value)
+                    : sanitizedPath,
                 stopwatch.ElapsedMilliseconds,
                 context.TraceIdentifier
             );

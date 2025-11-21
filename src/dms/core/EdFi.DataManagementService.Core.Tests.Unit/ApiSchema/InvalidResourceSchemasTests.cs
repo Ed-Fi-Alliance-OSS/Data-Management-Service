@@ -125,7 +125,7 @@ public class InvalidResourceSchemasTests
             return new ApiService(
                 apiSchemaProvider,
                 new NoClaimsClaimSetProvider(NullLogger.Instance),
-                new DocumentValidator(),
+                new DocumentValidator(new CompiledSchemaCache()),
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 new DecimalValidator(),
@@ -137,7 +137,8 @@ public class InvalidResourceSchemasTests
                 apiSchemaUploadService,
                 serviceProvider,
                 A.Fake<ClaimSetsCache>(),
-                A.Fake<IResourceDependencyGraphMLFactory>()
+                A.Fake<IResourceDependencyGraphMLFactory>(),
+                new CompiledSchemaCache()
             );
         }
 

@@ -27,16 +27,14 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        if (requestInfo.FrontendRequest.Body != null)
+        if (requestInfo.ParsedBody != null)
         {
             try
             {
-                JsonNode? node = JsonNode.Parse(requestInfo.FrontendRequest.Body);
-
-                if (node is JsonObject jsonObject)
+                if (requestInfo.ParsedBody is JsonObject jsonObject)
                 {
                     // This validation will identify if the problem is at the first level. It does not identify if it is at a second or third level.
-                    _ = node[TestForDuplicateObjectKeyWorkaround];
+                    _ = requestInfo.ParsedBody[TestForDuplicateObjectKeyWorkaround];
 
                     // If you are in this line there are no First level exceptions, recursively check the rest of the body to find the first exception
                     CheckForDuplicateProperties(jsonObject, "$");
