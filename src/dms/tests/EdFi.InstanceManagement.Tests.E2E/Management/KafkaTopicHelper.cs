@@ -106,28 +106,32 @@ public static class KafkaTopicHelper
 
     /// <summary>
     /// Attempts to detect if a message contains data that appears to belong to a specific instance.
-    /// This is a heuristic check looking for instance-specific identifiers in the message payload.
+    /// Uses instance-specific test data markers (districtId and schoolYear combinations)
+    /// to accurately identify which instance's data is in the message.
     /// </summary>
     private static bool ContainsInstanceSpecificData(KafkaTestMessage message, long instanceId)
     {
-        // Check if the message value contains the instance ID as a string
-        // This is a simple heuristic - in production you might want more sophisticated checks
-        if (message.Value?.Contains(instanceId.ToString()) == true)
+        // Map instance IDs to their unique test data identifiers
+        // Based on the E2E test setup: each instance uses a unique codeValue pattern
+        // that combines district and year (e.g., "District255901-2024")
+        var instanceDataMarkers = new Dictionary<long, string>
         {
-            return true;
+            { 1, "District255901-2024" }, // Instance 1: District 255901 - School Year 2024
+            { 2, "District255901-2025" }, // Instance 2: District 255901 - School Year 2025
+            { 3, "District255902-2024" }, // Instance 3: District 255902 - School Year 2024
+        };
+
+        if (!instanceDataMarkers.TryGetValue(instanceId, out var marker))
+        {
+            return false;
         }
 
-        // Check JSON payload for instance-specific markers
-        if (message.ValueAsJson != null)
-        {
-            var jsonString = message.ValueAsJson.ToJsonString();
-            if (jsonString.Contains(instanceId.ToString()))
-            {
-                return true;
-            }
-        }
+        var messageContent = message.Value ?? string.Empty;
 
-        return false;
+        // Check if the message contains the instance-specific marker pattern
+        // This avoids false positives from timestamp fields that might contain
+        // the current year (e.g., "2025-11-21" in Kafka message metadata)
+        return messageContent.Contains(marker, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
