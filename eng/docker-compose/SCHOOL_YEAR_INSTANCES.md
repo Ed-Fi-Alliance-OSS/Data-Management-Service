@@ -17,6 +17,7 @@ To create DMS instances for a range of school years, use the `-SchoolYearRange` 
 ```
 
 This will:
+
 1. Start all required services (PostgreSQL, DMS, Configuration Service)
 2. Create 5 DMS instances: one for each year from 2022 to 2026
 3. Configure route contexts for each instance with `schoolYear` as the key
@@ -32,6 +33,7 @@ This will:
 The `SchoolYearRange` parameter uses the format: `StartYear-EndYear`
 
 Examples:
+
 - `"2022-2026"` - Creates instances for 2022, 2023, 2024, 2025, 2026
 - `"2024-2025"` - Creates instances for 2024, 2025
 - `"2025-2025"` - Creates a single instance for 2025
@@ -63,10 +65,12 @@ When you use the `-EnableSwaggerUI` flag along with `-SchoolYearRange`, the Swag
 ### Example
 
 If you're accessing Swagger UI in August 2025:
+
 - Default selected year: **2026** (because August > June)
 - Available years: All years from your range
 
 If you're accessing Swagger UI in March 2025:
+
 - Default selected year: **2025** (because March ≤ June)
 - Available years: All years from your range
 
@@ -83,7 +87,16 @@ If you're accessing Swagger UI in March 2025:
     -r
 ```
 
+> [!NOTE]
+> If you are using .env file don't forget to uncomment ROUTE_QUALIFIER_SEGMENTS
+> and set the value equals to schoolYear
+
+```
+ROUTE_QUALIFIER_SEGMENTS=schoolYear
+```
+
 This command:
+
 - Rebuilds images (`-r`)
 - Enables Configuration Service (`-EnableConfig`)
 - Loads seed data (`-LoadSeedData`)
@@ -99,6 +112,7 @@ If you don't specify `-SchoolYearRange`, the script will create a single default
 ```
 
 This creates:
+
 - **1 DMS Instance**: "Local Development Instance"
 - **No route contexts**: Accessible at `http://localhost:8080/data`
 
@@ -114,6 +128,7 @@ After creating instances with route contexts, the DMS may take a moment to refre
 
 1. Wait 20-30 seconds for the cache to refresh
 2. Restart the DMS container if needed:
+
    ```powershell
    docker restart dms-local-edfi-dm-1
    ```

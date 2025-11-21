@@ -174,10 +174,9 @@ window.EdFiSchoolYear = function () {
             padding: 20px;
             background-color: #fafafa;
             border-bottom: 1px solid #d4d4d4;
-            display: flex;
+            display: none;
             align-items: center;
             gap: 15px;
-            hidden: true;
         `;
 
         const label = document.createElement('label');
