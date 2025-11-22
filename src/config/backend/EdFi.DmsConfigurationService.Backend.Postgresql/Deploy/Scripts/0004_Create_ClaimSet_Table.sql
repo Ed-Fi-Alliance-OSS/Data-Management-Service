@@ -8,6 +8,10 @@ CREATE TABLE IF NOT EXISTS dmscs.ClaimSet
     Id bigint NOT NULL GENERATED ALWAYS AS IDENTITY ( INCREMENT 1 START 1 MINVALUE 1 MAXVALUE 9223372036854775807 CACHE 1 ),
     ClaimSetName VARCHAR(256) NOT NULL,
     IsSystemReserved BOOLEAN NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256),
     CONSTRAINT claimset_pkey PRIMARY KEY (id)
 );
 
@@ -21,3 +25,15 @@ COMMENT ON COLUMN dmscs.claimset.ClaimSetName
 
 COMMENT ON COLUMN dmscs.claimset.IsSystemReserved
     IS 'Is system reserved';
+
+COMMENT ON COLUMN dmscs.claimset.CreatedAt
+    IS 'Timestamp when the record was created (UTC)';
+
+COMMENT ON COLUMN dmscs.claimset.CreatedBy
+    IS 'User or client ID who created the record';
+
+COMMENT ON COLUMN dmscs.claimset.LastModifiedAt
+    IS 'Timestamp when the record was last modified (UTC)';
+
+COMMENT ON COLUMN dmscs.claimset.ModifiedBy
+    IS 'User or client ID who last modified the record';

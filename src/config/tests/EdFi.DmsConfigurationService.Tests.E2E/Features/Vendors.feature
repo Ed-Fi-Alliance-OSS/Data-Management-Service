@@ -29,14 +29,22 @@ Feature: Vendors endpoints
                           "company": "Test 11",
                           "contactName": "Test",
                           "contactEmailAddress": "test@gmail.com",
-                          "namespacePrefixes": "Test"
+                          "namespacePrefixes": "Test",
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       },
                       {
                           "id": {id},
                           "company": "Test 12",
                           "contactName": "Test",
                           "contactEmailAddress": "test@gmail.com",
-                          "namespacePrefixes": "Test"
+                          "namespacePrefixes": "Test",
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }]
                   """
 
@@ -64,7 +72,11 @@ Feature: Vendors endpoints
                       "company": "Test 16",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": "Test"
+                      "namespacePrefixes": "Test",
+                      "createdAt": "{*}",
+                      "createdBy": "{*}",
+                      "lastModifiedAt": null,
+                      "modifiedBy": null
                   }
                   """
 
@@ -84,11 +96,15 @@ Feature: Vendors endpoints
               And the response body is
                   """
                       {
-                      "id": {id},
-                      "company": "Test 17",
-                      "contactName": "Test",
-                      "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": "Test"
+                        "id": {id},
+                        "company": "Test 17",
+                        "contactName": "Test",
+                        "contactEmailAddress": "test@gmail.com",
+                        "namespacePrefixes": "Test",
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": null,
+                        "modifiedBy": null
                       }
                   """
 
@@ -121,7 +137,11 @@ Feature: Vendors endpoints
                        "company": "Test 18 updated",
                        "contactName": "Test",
                        "contactEmailAddress": "test@gmail.com",
-                       "namespacePrefixes": "Test"
+                       "namespacePrefixes": "Test",
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": "{*}",
+                        "modifiedBy": "{*}"
                    }
                   """
 
@@ -375,7 +395,11 @@ Feature: Vendors endpoints
                       "company": "Test 99",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": "Test"
+                      "namespacePrefixes": "Test",
+                      "createdAt": "{*}",
+                      "createdBy": "{*}",
+                      "lastModifiedAt": null,
+                      "modifiedBy": null
                   }
                   """
 

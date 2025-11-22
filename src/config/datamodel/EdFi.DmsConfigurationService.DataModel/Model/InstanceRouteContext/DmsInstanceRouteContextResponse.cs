@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
 
-public class DmsInstanceRouteContextResponse
+public class DmsInstanceRouteContextResponse : AuditableResponse
 {
     public long Id { get; set; }
     public long InstanceId { get; set; }

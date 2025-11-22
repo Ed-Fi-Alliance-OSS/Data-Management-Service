@@ -18,7 +18,8 @@ public class ApplicationTests : DatabaseTest
 {
     private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
         Configuration.DatabaseOptions,
-        NullLogger<ApplicationRepository>.Instance
+        NullLogger<ApplicationRepository>.Instance,
+        new TestAuditContext()
     );
 
     private long _vendorId;
@@ -35,7 +36,8 @@ public class ApplicationTests : DatabaseTest
         {
             IVendorRepository repository = new VendorRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<VendorRepository>.Instance
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext()
             );
 
             VendorInsertCommand vendor = new()
@@ -140,7 +142,8 @@ public class ApplicationTests : DatabaseTest
         {
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<VendorRepository>.Instance
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext()
             );
 
             VendorInsertCommand vendor = new()
@@ -197,7 +200,8 @@ public class ApplicationTests : DatabaseTest
         {
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<VendorRepository>.Instance
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext()
             );
 
             VendorInsertCommand vendor = new()
@@ -280,7 +284,8 @@ public class ApplicationTests : DatabaseTest
         {
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<VendorRepository>.Instance
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext()
             );
 
             VendorInsertCommand vendor = new()
@@ -382,7 +387,8 @@ public class ApplicationTests : DatabaseTest
         {
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<VendorRepository>.Instance
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext()
             );
 
             VendorInsertCommand vendor = new()
@@ -441,7 +447,8 @@ public class ApplicationTests : DatabaseTest
             // Create a second vendor
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<VendorRepository>.Instance
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext()
             );
 
             VendorInsertCommand secondVendor = new()
@@ -513,3 +520,4 @@ public class ApplicationTests : DatabaseTest
         }
     }
 }
+

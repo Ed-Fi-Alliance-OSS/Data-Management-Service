@@ -8,6 +8,7 @@ using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -16,7 +17,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
 public class ClaimsHierarchyRepository(
     IOptions<DatabaseOptions> databaseOptions,
-    ILogger<ClaimsHierarchyRepository> logger
+    ILogger<ClaimsHierarchyRepository> logger,
+    IAuditContext auditContext
 ) : IClaimsHierarchyRepository
 {
     public async Task<ClaimsHierarchyGetResult> GetClaimsHierarchy(DbTransaction? transaction = null)
@@ -111,10 +113,16 @@ public class ClaimsHierarchyRepository(
             {
                 const string InsertSql =
                     @"
-                    INSERT INTO dmscs.ClaimsHierarchy (hierarchy, lastmodifieddate)
-                    VALUES (@Hierarchy::jsonb, now());";
+                    INSERT INTO dmscs.ClaimsHierarchy (hierarchy, lastmodifieddate, CreatedBy)
+                    VALUES (@Hierarchy::jsonb, now(), @CreatedBy);";
 
-                await connection.ExecuteAsync(InsertSql, new { Hierarchy = hierarchyJson });
+                await connection.ExecuteAsync(
+                    InsertSql,
+                    new
+                    {
+                        Hierarchy = hierarchyJson,
+                        CreatedBy = auditContext.GetCurrentUser()
+                    });
             }
             else
             {
@@ -130,7 +138,9 @@ public class ClaimsHierarchyRepository(
                     @"
                     UPDATE dmscs.ClaimsHierarchy
                     SET hierarchy = @Hierarchy::jsonb,
-                        lastmodifieddate = now()
+                        lastmodifieddate = now(),
+                        LastModifiedAt = @LastModifiedAt,
+                        ModifiedBy = @ModifiedBy
                     WHERE id = @Id AND lastmodifieddate = @LastModifiedDate;";
 
                 int affectedRows = await connection.ExecuteAsync(
@@ -140,6 +150,8 @@ public class ClaimsHierarchyRepository(
                         Hierarchy = hierarchyJson,
                         Id = existingRecord.Id,
                         LastModifiedDate = existingLastModifiedDate,
+                        LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                        ModifiedBy = auditContext.GetCurrentUser()
                     }
                 );
 

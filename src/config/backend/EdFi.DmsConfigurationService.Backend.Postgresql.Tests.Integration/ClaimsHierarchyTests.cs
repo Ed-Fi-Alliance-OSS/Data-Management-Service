@@ -18,7 +18,8 @@ public class ClaimsHierarchyTests : DatabaseTest
 {
     private readonly IClaimsHierarchyRepository _repository = new ClaimsHierarchyRepository(
         Configuration.DatabaseOptions,
-        NullLogger<ClaimsHierarchyRepository>.Instance
+        NullLogger<ClaimsHierarchyRepository>.Instance,
+        new TestAuditContext()
     );
 
     [SetUp]

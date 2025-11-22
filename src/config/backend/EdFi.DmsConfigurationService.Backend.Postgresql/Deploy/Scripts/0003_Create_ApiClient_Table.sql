@@ -10,6 +10,10 @@ CREATE TABLE IF NOT EXISTS dmscs.ApiClient (
     IsApproved BOOLEAN NOT NULL DEFAULT false,
     ClientId VARCHAR(36) NOT NULL,
     ClientUuid UUID NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256),
     CONSTRAINT fk_apiclient_application FOREIGN KEY (ApplicationId) REFERENCES dmscs.Application(Id) ON DELETE CASCADE
 );
 
@@ -18,3 +22,7 @@ COMMENT ON COLUMN dmscs.ApiClient.ApplicationId IS 'Application Id';
 COMMENT ON COLUMN dmscs.ApiClient.ClientUuid IS 'Unique identifier of ApiClient';
 COMMENT ON COLUMN dmscs.ApiClient.Name IS 'Name of the API client';
 COMMENT ON COLUMN dmscs.ApiClient.IsApproved IS 'Indicates whether the API client is approved';
+COMMENT ON COLUMN dmscs.ApiClient.CreatedAt IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN dmscs.ApiClient.CreatedBy IS 'User or client ID who created the record';
+COMMENT ON COLUMN dmscs.ApiClient.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN dmscs.ApiClient.ModifiedBy IS 'User or client ID who last modified the record';

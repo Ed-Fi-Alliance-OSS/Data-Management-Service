@@ -6,7 +6,11 @@
 CREATE TABLE IF NOT EXISTS dmscs.AuthorizationStrategy (
     Id BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
     AuthorizationStrategyName VARCHAR(255) NOT NULL,
-    DisplayName VARCHAR(255) NOT NULL
+    DisplayName VARCHAR(255) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256)
 );
 
 DO $$
@@ -22,3 +26,7 @@ END$$;
 COMMENT ON COLUMN dmscs.AuthorizationStrategy.Id IS 'Authorization Strategy Identifier.';
 COMMENT ON COLUMN dmscs.AuthorizationStrategy.AuthorizationStrategyName IS 'Authorization Strategy Name';
 COMMENT ON COLUMN dmscs.AuthorizationStrategy.DisplayName IS 'Display Name';
+COMMENT ON COLUMN dmscs.AuthorizationStrategy.CreatedAt IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN dmscs.AuthorizationStrategy.CreatedBy IS 'User or client ID who created the record';
+COMMENT ON COLUMN dmscs.AuthorizationStrategy.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN dmscs.AuthorizationStrategy.ModifiedBy IS 'User or client ID who last modified the record';

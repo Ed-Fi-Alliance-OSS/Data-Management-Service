@@ -21,6 +21,7 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
@@ -116,6 +117,11 @@ public static class WebApplicationBuilderExtensions
             IConnectionStringEncryptionService,
             ConnectionStringEncryptionService
         >();
+
+        // Register audit context as transient to allow resolution from both singleton and scoped services
+        // Each repository will get a fresh instance that captures the current HTTP context (if available)
+        webApplicationBuilder.Services.AddHttpContextAccessor();
+        webApplicationBuilder.Services.AddTransient<IAuditContext, AuditContext>();
 
         Serilog.ILogger ConfigureLogging()
         {

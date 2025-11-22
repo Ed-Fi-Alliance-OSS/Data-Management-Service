@@ -6,7 +6,11 @@
 CREATE TABLE IF NOT EXISTS dmscs.ResourceClaim (
     Id BIGINT GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1) PRIMARY KEY,
     ResourceName VARCHAR(255) NOT NULL,
-    ClaimName VARCHAR(255) NOT NULL
+    ClaimName VARCHAR(255) NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256)
 );
 
 DO $$
@@ -22,3 +26,7 @@ END$$;
 COMMENT ON COLUMN dmscs.ResourceClaim.Id IS 'Resource Claim Identifier';
 COMMENT ON COLUMN dmscs.ResourceClaim.ResourceName IS 'Resource Name';
 COMMENT ON COLUMN dmscs.ResourceClaim.ClaimName IS 'Claim Name';
+COMMENT ON COLUMN dmscs.ResourceClaim.CreatedAt IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN dmscs.ResourceClaim.CreatedBy IS 'User or client ID who created the record';
+COMMENT ON COLUMN dmscs.ResourceClaim.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN dmscs.ResourceClaim.ModifiedBy IS 'User or client ID who last modified the record';

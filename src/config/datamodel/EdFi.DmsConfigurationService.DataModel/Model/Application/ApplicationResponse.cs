@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Application;
 
-public class ApplicationResponse
+public class ApplicationResponse : AuditableResponse
 {
     public long Id { get; set; }
     public required string ApplicationName { get; set; }
