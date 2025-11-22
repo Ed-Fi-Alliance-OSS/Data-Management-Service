@@ -24,7 +24,8 @@ public class DmsInstanceDerivativeTests : DatabaseTest
     {
         var routeContextRepository = new DmsInstanceRouteContextRepository(
             Configuration.DatabaseOptions,
-            NullLogger<DmsInstanceRouteContextRepository>.Instance
+            NullLogger<DmsInstanceRouteContextRepository>.Instance,
+            new TestAuditContext()
         );
 
         _repository = new DmsInstanceDerivativeRepository(
@@ -38,7 +39,8 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             NullLogger<DmsInstanceRepository>.Instance,
             new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
             routeContextRepository,
-            _repository
+            _repository,
+            new TestAuditContext()
         );
     }
 
