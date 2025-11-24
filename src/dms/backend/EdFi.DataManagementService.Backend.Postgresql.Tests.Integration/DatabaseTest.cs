@@ -495,6 +495,31 @@ public abstract class DatabaseTest : DatabaseTestBase
         return references.Select(x => CreateDescriptorReference(x)).ToArray();
     }
 
+    protected async Task<int> CountDocumentReferencesAsync(Guid documentUuid)
+    {
+        if (Connection is null)
+        {
+            throw new InvalidOperationException("Connection has not been initialized.");
+        }
+
+        await using NpgsqlCommand command = new(
+            """
+            SELECT COUNT(*)
+            FROM dms.Reference r
+            INNER JOIN dms.Document d
+                ON d.Id = r.ParentDocumentId
+               AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+            WHERE d.DocumentUuid = $1;
+            """,
+            Connection,
+            Transaction
+        );
+        command.Parameters.Add(new NpgsqlParameter { Value = documentUuid });
+
+        object? result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result);
+    }
+
     protected static IUpsertRequest CreateUpsertRequest(
         string resourceName,
         Guid documentUuidGuid,

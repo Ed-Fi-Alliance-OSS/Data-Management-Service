@@ -32,33 +32,6 @@ public class QueryDocument(
         {
             string resourceName = queryRequest.ResourceInfo.ResourceName.Value;
 
-            int? totalCount = null;
-
-            if (queryRequest.PaginationParameters.TotalCount)
-            {
-                await using var countConnection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
-                await using var countTransaction = await countConnection.BeginTransactionAsync(
-                    _databaseOptions.Value.IsolationLevel
-                );
-
-                try
-                {
-                    totalCount = await _sqlAction.GetTotalDocumentsForResourceName(
-                        resourceName,
-                        queryRequest,
-                        countConnection,
-                        countTransaction,
-                        queryRequest.TraceId
-                    );
-                    await countTransaction.CommitAsync();
-                }
-                catch
-                {
-                    await countTransaction.RollbackAsync();
-                    throw;
-                }
-            }
-
             await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
             await using var transaction = await connection.BeginTransactionAsync(
                 _databaseOptions.Value.IsolationLevel
@@ -66,6 +39,19 @@ public class QueryDocument(
 
             try
             {
+                int? totalCount = null;
+
+                if (queryRequest.PaginationParameters.TotalCount)
+                {
+                    totalCount = await _sqlAction.GetTotalDocumentsForResourceName(
+                        resourceName,
+                        queryRequest,
+                        connection,
+                        transaction,
+                        queryRequest.TraceId
+                    );
+                }
+
                 var documents = await _sqlAction.GetAllDocumentsByResourceNameAsync(
                     resourceName,
                     queryRequest,

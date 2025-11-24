@@ -88,7 +88,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             // InsertReferences repeats the lookup later to catch aliases that change between statements.
             // Pre-flight validation trims doomed requests before we touch heap/index storage.
             // InsertReferences repeats the lookup later to catch aliases that change between statements.
-            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferences(
+            Guid[] invalidReferentialIdsPreflight = await _sqlAction.FindInvalidReferences(
                 combinedReferentialIds,
                 combinedReferentialPartitionKeys,
                 connection,
@@ -96,13 +96,13 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 traceId
             );
 
-            if (invalidReferentialIds.Length > 0)
+            if (invalidReferentialIdsPreflight.Length > 0)
             {
                 _logger.LogDebug(
                     "Invalid references on Upsert as Insert - {TraceId}",
                     upsertRequest.TraceId.Value
                 );
-                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
+                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIdsPreflight);
             }
         }
 
@@ -259,7 +259,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
                 .ToArray();
 
-            Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferences(
+            Guid[] invalidReferentialIdsPreflight = await _sqlAction.FindInvalidReferences(
                 combinedReferentialIds,
                 combinedReferentialPartitionKeys,
                 connection,
@@ -267,13 +267,13 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 traceId
             );
 
-            if (invalidReferentialIds.Length > 0)
+            if (invalidReferentialIdsPreflight.Length > 0)
             {
                 _logger.LogDebug(
                     "Invalid references on Upsert as Update - {TraceId}",
                     upsertRequest.TraceId.Value
                 );
-                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
+                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIdsPreflight);
             }
 
             await _sqlAction.UpdateDocumentEdfiDoc(
@@ -307,30 +307,27 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
             );
         }
 
-        if (hasReferences)
-        {
-            // InsertReferences revalidates using the live snapshot to guard against aliases disappearing
-            // after the pre-check but before the write executes.
-            Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
-                new(
-                    ParentDocumentPartitionKey: documentPartitionKey,
-                    ParentDocumentId: documentId,
-                    ReferentialIds: combinedReferentialIds,
-                    ReferentialPartitionKeys: combinedReferentialPartitionKeys
-                ),
-                connection,
-                transaction,
-                traceId
-            );
+        // InsertReferences revalidates using the live snapshot to guard against aliases disappearing
+        // after the pre-check but before the write executes, and trims stale references when none remain.
+        Guid[] invalidReferentialIdsFromInsert = await _sqlAction.InsertReferences(
+            new(
+                ParentDocumentPartitionKey: documentPartitionKey,
+                ParentDocumentId: documentId,
+                ReferentialIds: combinedReferentialIds,
+                ReferentialPartitionKeys: combinedReferentialPartitionKeys
+            ),
+            connection,
+            transaction,
+            traceId
+        );
 
-            if (invalidReferentialIds.Length > 0)
-            {
-                _logger.LogDebug(
-                    "Foreign key violation on Upsert as Update - {TraceId}",
-                    upsertRequest.TraceId.Value
-                );
-                return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
-            }
+        if (invalidReferentialIdsFromInsert.Length > 0)
+        {
+            _logger.LogDebug(
+                "Foreign key violation on Upsert as Update - {TraceId}",
+                upsertRequest.TraceId.Value
+            );
+            return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIdsFromInsert);
         }
 
         if (upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.IsInEducationOrganizationHierarchy)

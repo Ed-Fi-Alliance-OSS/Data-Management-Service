@@ -211,7 +211,7 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
             {
                 // Pre-flight validation trims doomed requests before we touch heap/index storage.
                 // InsertReferences repeats the lookup later to catch aliases that change between statements.
-                Guid[] invalidReferentialIds = await _sqlAction.FindInvalidReferences(
+                Guid[] invalidReferentialIdsPreflight = await _sqlAction.FindInvalidReferences(
                     combinedReferentialIds,
                     combinedReferentialPartitionKeys,
                     connection,
@@ -219,13 +219,13 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                     updateRequest.TraceId
                 );
 
-                if (invalidReferentialIds.Length > 0)
+                if (invalidReferentialIdsPreflight.Length > 0)
                 {
                     _logger.LogDebug(
                         "Invalid references on UpdateById.UpdateDocumentById - {TraceId}",
                         updateRequest.TraceId.Value
                     );
-                    return ReportReferenceFailure(updateRequest.DocumentInfo, invalidReferentialIds);
+                    return ReportReferenceFailure(updateRequest.DocumentInfo, invalidReferentialIdsPreflight);
                 }
             }
 
@@ -285,30 +285,30 @@ public class UpdateDocumentById(ISqlAction _sqlAction, ILogger<UpdateDocumentByI
                 case 1:
                     long documentId = documentFromDb.Id.GetValueOrDefault();
 
-                    if (hasReferences)
-                    {
-                        // InsertReferences revalidates using the live snapshot to guard against aliases disappearing
-                        // after the pre-check but before the write executes.
-                        Guid[] invalidReferentialIds = await _sqlAction.InsertReferences(
-                            new(
-                                ParentDocumentPartitionKey: documentPartitionKey.Value,
-                                ParentDocumentId: documentId,
-                                ReferentialIds: combinedReferentialIds,
-                                ReferentialPartitionKeys: combinedReferentialPartitionKeys
-                            ),
-                            connection,
-                            transaction,
-                            updateRequest.TraceId
-                        );
+                    // InsertReferences revalidates using the live snapshot to guard against aliases disappearing
+                    // after the pre-check but before the write executes, and cleans up stale references when none remain.
+                    Guid[] invalidReferentialIdsFromInsert = await _sqlAction.InsertReferences(
+                        new(
+                            ParentDocumentPartitionKey: documentPartitionKey.Value,
+                            ParentDocumentId: documentId,
+                            ReferentialIds: combinedReferentialIds,
+                            ReferentialPartitionKeys: combinedReferentialPartitionKeys
+                        ),
+                        connection,
+                        transaction,
+                        updateRequest.TraceId
+                    );
 
-                        if (invalidReferentialIds.Length > 0)
-                        {
-                            _logger.LogDebug(
-                                "Foreign key violation on Update - {TraceId}",
-                                updateRequest.TraceId.Value
-                            );
-                            return ReportReferenceFailure(updateRequest.DocumentInfo, invalidReferentialIds);
-                        }
+                    if (invalidReferentialIdsFromInsert.Length > 0)
+                    {
+                        _logger.LogDebug(
+                            "Foreign key violation on Update - {TraceId}",
+                            updateRequest.TraceId.Value
+                        );
+                        return ReportReferenceFailure(
+                            updateRequest.DocumentInfo,
+                            invalidReferentialIdsFromInsert
+                        );
                     }
 
                     if (
