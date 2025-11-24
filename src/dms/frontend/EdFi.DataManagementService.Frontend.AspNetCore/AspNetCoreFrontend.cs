@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.IO;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -167,11 +168,13 @@ public static class AspNetCoreFrontend
             httpContext.Response.Headers.Append(header.Key, header.Value);
         }
 
-        return Results.Json(
-            data: frontendResponse.Body,
-            options: SharedSerializerOptions,
+        return Results.Content(
+            statusCode: frontendResponse.StatusCode,
+            content: frontendResponse.Body == null
+                ? null
+                : JsonSerializer.Serialize(frontendResponse.Body, SharedSerializerOptions),
             contentType: frontendResponse.ContentType,
-            statusCode: frontendResponse.StatusCode
+            contentEncoding: Encoding.UTF8
         );
     }
 
