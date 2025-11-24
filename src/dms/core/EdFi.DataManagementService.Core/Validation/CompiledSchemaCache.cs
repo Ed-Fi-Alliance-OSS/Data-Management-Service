@@ -40,17 +40,22 @@ internal sealed class CompiledSchemaCache : ICompiledSchemaCache
             foreach (var resourceNode in projectSchema.GetAllResourceSchemaNodes())
             {
                 ResourceSchema resourceSchema = new(resourceNode);
-                TryAddOrUpdate(resourceSchema, RequestMethod.POST, reloadId);
-                TryAddOrUpdate(resourceSchema, RequestMethod.PUT, reloadId);
+                TryAddOrUpdate(projectSchema.ProjectName, resourceSchema, RequestMethod.POST, reloadId);
+                TryAddOrUpdate(projectSchema.ProjectName, resourceSchema, RequestMethod.PUT, reloadId);
             }
         }
     }
 
-    private void TryAddOrUpdate(ResourceSchema resourceSchema, RequestMethod method, Guid reloadId)
+    private void TryAddOrUpdate(
+        ProjectName projectName,
+        ResourceSchema resourceSchema,
+        RequestMethod method,
+        Guid reloadId
+    )
     {
         try
         {
-            AddOrUpdate(resourceSchema, method, reloadId);
+            AddOrUpdate(projectName, resourceSchema, method, reloadId);
         }
         catch (Exception ex) when (ex is InvalidOperationException || ex is NullReferenceException)
         {
@@ -59,14 +64,14 @@ internal sealed class CompiledSchemaCache : ICompiledSchemaCache
         }
     }
 
-    private void AddOrUpdate(ResourceSchema resourceSchema, RequestMethod method, Guid reloadId)
+    private void AddOrUpdate(
+        ProjectName projectName,
+        ResourceSchema resourceSchema,
+        RequestMethod method,
+        Guid reloadId
+    )
     {
-        SchemaCacheKey key = new(
-            resourceSchema.ProjectName.Value,
-            resourceSchema.ResourceName.Value,
-            method,
-            reloadId
-        );
+        SchemaCacheKey key = new(projectName.Value, resourceSchema.ResourceName.Value, method, reloadId);
         _cache.GetOrAdd(key, _ => CompileSchema(resourceSchema, method));
     }
 

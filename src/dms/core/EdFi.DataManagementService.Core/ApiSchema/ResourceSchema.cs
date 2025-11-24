@@ -16,15 +16,6 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// </summary>
 internal class ResourceSchema(JsonNode _resourceSchemaNode)
 {
-    private readonly Lazy<ProjectName> _projectName = new(() =>
-        new ProjectName(
-            _resourceSchemaNode["projectName"]?.GetValue<string>()
-                ?? throw new InvalidOperationException(
-                    "Expected projectName to be on ResourceSchema, invalid ApiSchema"
-                )
-        )
-    );
-
     private readonly Lazy<ResourceName> _resourceName = new(() =>
     {
         return new ResourceName(
@@ -39,11 +30,6 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// The ResourceName of this resource, taken from the resourceName
     /// </summary>
     public ResourceName ResourceName => _resourceName.Value;
-
-    /// <summary>
-    /// The ProjectName that owns this resource schema.
-    /// </summary>
-    public ProjectName ProjectName => _projectName.Value;
 
     private readonly Lazy<bool> _isSchoolYearEnumeration = new(() =>
     {
