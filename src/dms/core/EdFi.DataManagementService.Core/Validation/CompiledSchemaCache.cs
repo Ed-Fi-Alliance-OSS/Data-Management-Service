@@ -18,6 +18,7 @@ internal sealed class CompiledSchemaCache : ICompiledSchemaCache
     private Guid _currentReloadId;
 
     public JsonSchema GetOrAdd(
+        ProjectName projectName,
         ResourceName resourceName,
         RequestMethod method,
         Guid reloadId,
@@ -26,7 +27,7 @@ internal sealed class CompiledSchemaCache : ICompiledSchemaCache
     {
         ResetIfReloadChanged(reloadId);
 
-        SchemaCacheKey key = new(resourceName.Value, method, reloadId);
+        SchemaCacheKey key = new(projectName.Value, resourceName.Value, method, reloadId);
         return _cache.GetOrAdd(key, _ => schemaFactory());
     }
 
@@ -60,7 +61,12 @@ internal sealed class CompiledSchemaCache : ICompiledSchemaCache
 
     private void AddOrUpdate(ResourceSchema resourceSchema, RequestMethod method, Guid reloadId)
     {
-        SchemaCacheKey key = new(resourceSchema.ResourceName.Value, method, reloadId);
+        SchemaCacheKey key = new(
+            resourceSchema.ProjectName.Value,
+            resourceSchema.ResourceName.Value,
+            method,
+            reloadId
+        );
         _cache.GetOrAdd(key, _ => CompileSchema(resourceSchema, method));
     }
 
@@ -82,5 +88,10 @@ internal sealed class CompiledSchemaCache : ICompiledSchemaCache
         _currentReloadId = reloadId;
     }
 
-    private readonly record struct SchemaCacheKey(string ResourceName, RequestMethod Method, Guid ReloadId);
+    private readonly record struct SchemaCacheKey(
+        string ProjectName,
+        string ResourceName,
+        RequestMethod Method,
+        Guid ReloadId
+    );
 }

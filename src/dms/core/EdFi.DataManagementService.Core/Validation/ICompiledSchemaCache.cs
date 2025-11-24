@@ -19,6 +19,7 @@ internal interface ICompiledSchemaCache
     /// Retrieves a compiled schema from the cache or adds it using the provided factory.
     /// </summary>
     JsonSchema GetOrAdd(
+        ProjectName projectName,
         ResourceName resourceName,
         RequestMethod method,
         Guid reloadId,

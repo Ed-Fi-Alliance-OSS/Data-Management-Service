@@ -40,6 +40,7 @@ internal class DocumentValidator(ICompiledSchemaCache schemaCache) : IDocumentVa
 
     private JsonSchema GetSchema(RequestInfo requestInfo) =>
         _schemaCache.GetOrAdd(
+            requestInfo.ProjectSchema.ProjectName,
             requestInfo.ResourceSchema.ResourceName,
             requestInfo.Method,
             requestInfo.ApiSchemaReloadId,

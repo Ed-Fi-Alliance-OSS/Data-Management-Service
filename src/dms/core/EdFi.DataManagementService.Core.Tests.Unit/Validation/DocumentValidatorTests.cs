@@ -87,6 +87,7 @@ public class DocumentValidatorTests
         public int FactoryInvocationCount => _factoryInvocationCount;
 
         public JsonSchema GetOrAdd(
+            ProjectName projectName,
             ResourceName resourceName,
             RequestMethod method,
             Guid reloadId,
@@ -94,6 +95,7 @@ public class DocumentValidatorTests
         )
         {
             return _inner.GetOrAdd(
+                projectName,
                 resourceName,
                 method,
                 reloadId,
