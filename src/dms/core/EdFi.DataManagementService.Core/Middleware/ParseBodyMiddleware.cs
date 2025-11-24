@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
@@ -69,7 +68,7 @@ namespace EdFi.DataManagementService.Core.Middleware
                     return;
                 }
 
-                JsonNode? body = JsonSerializer.Deserialize<JsonNode>(requestInfo.FrontendRequest.Body);
+                JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
 
                 Trace.Assert(body != null, "Unable to parse JSON");
 
