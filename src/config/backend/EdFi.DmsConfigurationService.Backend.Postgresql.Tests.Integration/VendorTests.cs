@@ -5,7 +5,6 @@
 
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
-using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
@@ -17,7 +16,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
     {
         private readonly IVendorRepository _repository = new VendorRepository(
             Configuration.DatabaseOptions,
-            NullLogger<VendorRepository>.Instance
+            NullLogger<VendorRepository>.Instance,
+            new TestAuditContext()
         );
 
         [TestFixture]
@@ -212,7 +212,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
             private long _vendorIdNotExist = 9999;
             private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
                 Configuration.DatabaseOptions,
-                NullLogger<ApplicationRepository>.Instance
+                NullLogger<ApplicationRepository>.Instance,
+                new TestAuditContext()
             );
 
             [SetUp]

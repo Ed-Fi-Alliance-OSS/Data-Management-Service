@@ -6,6 +6,7 @@
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceDerivative;
 using Microsoft.Extensions.Logging;
@@ -17,7 +18,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 public class DmsInstanceDerivativeRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<DmsInstanceDerivativeRepository> logger,
-    IConnectionStringEncryptionService encryptionService
+    IConnectionStringEncryptionService encryptionService,
+    IAuditContext auditContext
 ) : IDmsInstanceDerivativeRepository
 {
     public async Task<DmsInstanceDerivativeInsertResult> InsertDmsInstanceDerivative(
@@ -28,8 +30,8 @@ public class DmsInstanceDerivativeRepository(
         try
         {
             var sql = """
-                INSERT INTO dmscs.DmsInstanceDerivative (InstanceId, DerivativeType, ConnectionString)
-                VALUES (@InstanceId, @DerivativeType, @ConnectionString)
+                INSERT INTO dmscs.DmsInstanceDerivative (InstanceId, DerivativeType, ConnectionString, CreatedBy)
+                VALUES (@InstanceId, @DerivativeType, @ConnectionString, @CreatedBy)
                 RETURNING Id;
                 """;
 
@@ -38,6 +40,7 @@ public class DmsInstanceDerivativeRepository(
                 command.InstanceId,
                 command.DerivativeType,
                 ConnectionString = encryptionService.Encrypt(command.ConnectionString),
+                CreatedBy = auditContext.GetCurrentUser(),
             };
 
             var id = await connection.ExecuteScalarAsync<long>(sql, parameters);
@@ -62,7 +65,8 @@ public class DmsInstanceDerivativeRepository(
         try
         {
             var sql = """
-                SELECT Id, InstanceId, DerivativeType, ConnectionString
+                SELECT Id, InstanceId, DerivativeType, ConnectionString,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceDerivative
                 ORDER BY Id
                 LIMIT @Limit OFFSET @Offset;
@@ -72,7 +76,11 @@ public class DmsInstanceDerivativeRepository(
                 long Id,
                 long InstanceId,
                 string DerivativeType,
-                byte[]? ConnectionString
+                byte[]? ConnectionString,
+                DateTime CreatedAt,
+                string? CreatedBy,
+                DateTime? LastModifiedAt,
+                string? ModifiedBy
             )>(sql, query);
 
             var derivatives = results.Select(row => new DmsInstanceDerivativeResponse
@@ -81,6 +89,10 @@ public class DmsInstanceDerivativeRepository(
                 InstanceId = row.InstanceId,
                 DerivativeType = row.DerivativeType,
                 ConnectionString = encryptionService.Decrypt(row.ConnectionString),
+                CreatedAt = row.CreatedAt,
+                CreatedBy = row.CreatedBy,
+                LastModifiedAt = row.LastModifiedAt,
+                ModifiedBy = row.ModifiedBy,
             });
 
             return new DmsInstanceDerivativeQueryResult.Success(derivatives);
@@ -98,7 +110,8 @@ public class DmsInstanceDerivativeRepository(
         try
         {
             var sql = """
-                SELECT Id, InstanceId, DerivativeType, ConnectionString
+                SELECT Id, InstanceId, DerivativeType, ConnectionString,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceDerivative
                 WHERE Id = @Id;
                 """;
@@ -107,7 +120,11 @@ public class DmsInstanceDerivativeRepository(
                 long Id,
                 long InstanceId,
                 string DerivativeType,
-                byte[]? ConnectionString
+                byte[]? ConnectionString,
+                DateTime CreatedAt,
+                string? CreatedBy,
+                DateTime? LastModifiedAt,
+                string? ModifiedBy
             )?>(sql, new { Id = id });
 
             if (result == null)
@@ -121,6 +138,10 @@ public class DmsInstanceDerivativeRepository(
                 InstanceId = result.Value.InstanceId,
                 DerivativeType = result.Value.DerivativeType,
                 ConnectionString = encryptionService.Decrypt(result.Value.ConnectionString),
+                CreatedAt = result.Value.CreatedAt,
+                CreatedBy = result.Value.CreatedBy,
+                LastModifiedAt = result.Value.LastModifiedAt,
+                ModifiedBy = result.Value.ModifiedBy,
             };
 
             return new DmsInstanceDerivativeGetResult.Success(derivative);
@@ -141,7 +162,8 @@ public class DmsInstanceDerivativeRepository(
         {
             var sql = """
                 UPDATE dmscs.DmsInstanceDerivative
-                SET InstanceId = @InstanceId, DerivativeType = @DerivativeType, ConnectionString = @ConnectionString
+                SET InstanceId = @InstanceId, DerivativeType = @DerivativeType, ConnectionString = @ConnectionString,
+                    LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
                 WHERE Id = @Id;
                 """;
 
@@ -151,6 +173,8 @@ public class DmsInstanceDerivativeRepository(
                 command.InstanceId,
                 command.DerivativeType,
                 ConnectionString = encryptionService.Encrypt(command.ConnectionString),
+                LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                ModifiedBy = auditContext.GetCurrentUser(),
             };
 
             var affectedRows = await connection.ExecuteAsync(sql, parameters);
@@ -204,7 +228,8 @@ public class DmsInstanceDerivativeRepository(
         try
         {
             var sql = """
-                SELECT Id, InstanceId, DerivativeType, ConnectionString
+                SELECT Id, InstanceId, DerivativeType, ConnectionString,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceDerivative
                 WHERE InstanceId = @InstanceId
                 ORDER BY Id;
@@ -214,7 +239,11 @@ public class DmsInstanceDerivativeRepository(
                 long Id,
                 long InstanceId,
                 string DerivativeType,
-                byte[]? ConnectionString
+                byte[]? ConnectionString,
+                DateTime CreatedAt,
+                string? CreatedBy,
+                DateTime? LastModifiedAt,
+                string? ModifiedBy
             )>(sql, new { InstanceId = instanceId });
 
             var derivatives = results.Select(row => new DmsInstanceDerivativeResponse
@@ -223,6 +252,10 @@ public class DmsInstanceDerivativeRepository(
                 InstanceId = row.InstanceId,
                 DerivativeType = row.DerivativeType,
                 ConnectionString = encryptionService.Decrypt(row.ConnectionString),
+                CreatedAt = row.CreatedAt,
+                CreatedBy = row.CreatedBy,
+                LastModifiedAt = row.LastModifiedAt,
+                ModifiedBy = row.ModifiedBy,
             });
 
             return new InstanceDerivativeQueryByInstanceResult.Success(derivatives);
@@ -242,7 +275,8 @@ public class DmsInstanceDerivativeRepository(
         try
         {
             var sql = """
-                SELECT Id, InstanceId, DerivativeType, ConnectionString
+                SELECT Id, InstanceId, DerivativeType, ConnectionString,
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceDerivative
                 WHERE InstanceId = ANY(@InstanceIds)
                 ORDER BY InstanceId, Id;
@@ -252,7 +286,11 @@ public class DmsInstanceDerivativeRepository(
                 long Id,
                 long InstanceId,
                 string DerivativeType,
-                byte[]? ConnectionString
+                byte[]? ConnectionString,
+                DateTime CreatedAt,
+                string? CreatedBy,
+                DateTime? LastModifiedAt,
+                string? ModifiedBy
             )>(sql, new { InstanceIds = instanceIds });
 
             var derivatives = results.Select(row => new DmsInstanceDerivativeResponse
@@ -261,6 +299,10 @@ public class DmsInstanceDerivativeRepository(
                 InstanceId = row.InstanceId,
                 DerivativeType = row.DerivativeType,
                 ConnectionString = encryptionService.Decrypt(row.ConnectionString),
+                CreatedAt = row.CreatedAt,
+                CreatedBy = row.CreatedBy,
+                LastModifiedAt = row.LastModifiedAt,
+                ModifiedBy = row.ModifiedBy,
             });
 
             return new InstanceDerivativeQueryByInstanceIdsResult.Success(derivatives);

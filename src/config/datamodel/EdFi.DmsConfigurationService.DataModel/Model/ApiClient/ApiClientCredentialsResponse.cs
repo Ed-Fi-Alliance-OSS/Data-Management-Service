@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 
-public class ApiClientCredentialsResponse
+public class ApiClientCredentialsResponse : AuditableResponse
 {
     public long Id { get; set; }
     public required string Key { get; set; }

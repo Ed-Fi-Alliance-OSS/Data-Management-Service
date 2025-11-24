@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using Microsoft.Extensions.Logging;
@@ -15,7 +16,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
 public class ApplicationRepository(
     IOptions<DatabaseOptions> databaseOptions,
-    ILogger<ApplicationRepository> logger
+    ILogger<ApplicationRepository> logger,
+    IAuditContext auditContext
 ) : IApplicationRepository
 {
     public async Task<ApplicationInsertResult> InsertApplication(
@@ -29,29 +31,39 @@ public class ApplicationRepository(
         try
         {
             string sql = """
-                INSERT INTO dmscs.Application (ApplicationName, VendorId, ClaimSetName)
-                VALUES (@ApplicationName, @VendorId, @ClaimSetName)
+                INSERT INTO dmscs.Application (ApplicationName, VendorId, ClaimSetName, CreatedBy)
+                VALUES (@ApplicationName, @VendorId, @ClaimSetName, @CreatedBy)
                 RETURNING Id;
                 """;
 
-            long id = await connection.ExecuteScalarAsync<long>(sql, command);
+            long id = await connection.ExecuteScalarAsync<long>(
+                sql,
+                new
+                {
+                    command.ApplicationName,
+                    command.VendorId,
+                    command.ClaimSetName,
+                    CreatedBy = auditContext.GetCurrentUser()
+                });
 
             sql = """
-                INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId)
-                VALUES (@ApplicationId, @EducationOrganizationId);
+                INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId, CreatedBy)
+                VALUES (@ApplicationId, @EducationOrganizationId, @CreatedBy);
                 """;
 
+            var currentUser = auditContext.GetCurrentUser();
             var educationOrganizations = command.EducationOrganizationIds.Select(e => new
             {
                 ApplicationId = id,
                 EducationOrganizationId = e,
+                CreatedBy = currentUser
             });
 
             await connection.ExecuteAsync(sql, educationOrganizations);
 
             sql = """
-                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved)
-                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved)
+                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved, CreatedBy)
+                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy)
                 RETURNING Id;
                 """;
 
@@ -64,20 +76,22 @@ public class ApplicationRepository(
                     clientCommand.ClientUuid,
                     Name = command.ApplicationName,
                     IsApproved = true,
+                    CreatedBy = currentUser
                 }
             );
 
             if (command.DmsInstanceIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId)
-                    VALUES (@ApiClientId, @DmsInstanceId);
+                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId, CreatedBy)
+                    VALUES (@ApiClientId, @DmsInstanceId, @CreatedBy);
                     """;
 
                 var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
                 {
                     ApiClientId = apiClientId,
                     DmsInstanceId = dmsInstanceId,
+                    CreatedBy = currentUser
                 });
 
                 await connection.ExecuteAsync(sql, dmsInstanceMappings);
@@ -125,6 +139,7 @@ public class ApplicationRepository(
         {
             string sql = """
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
+                       a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy,
                        e.EducationOrganizationId, acd.DmsInstanceId
                 FROM (SELECT * FROM dmscs.Application ORDER BY Id LIMIT @Limit OFFSET @Offset) AS a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
@@ -185,6 +200,7 @@ public class ApplicationRepository(
         {
             string sql = """
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
+                       a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy,
                        e.EducationOrganizationId, acd.DmsInstanceId
                 FROM dmscs.Application a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
@@ -251,10 +267,21 @@ public class ApplicationRepository(
         {
             string sql = """
                 UPDATE dmscs.Application
-                SET ApplicationName=@ApplicationName, VendorId=@VendorId, ClaimSetName=@ClaimSetName
+                SET ApplicationName=@ApplicationName, VendorId=@VendorId, ClaimSetName=@ClaimSetName,
+                    LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
                 WHERE Id = @Id;
                 """;
-            int affectedRows = await connection.ExecuteAsync(sql, command);
+            int affectedRows = await connection.ExecuteAsync(
+                sql,
+                new
+                {
+                    command.ApplicationName,
+                    command.VendorId,
+                    command.ClaimSetName,
+                    command.Id,
+                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                    ModifiedBy = auditContext.GetCurrentUser()
+                });
 
             if (affectedRows == 0)
             {
@@ -265,24 +292,35 @@ public class ApplicationRepository(
             await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
 
             sql = """
-                INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId)
-                VALUES (@ApplicationId, @EducationOrganizationId);
+                INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId, CreatedBy)
+                VALUES (@ApplicationId, @EducationOrganizationId, @CreatedBy);
                 """;
 
+            var currentUser = auditContext.GetCurrentUser();
             var educationOrganizations = command.EducationOrganizationIds.Select(e => new
             {
                 ApplicationId = command.Id,
                 EducationOrganizationId = e,
+                CreatedBy = currentUser
             });
 
             await connection.ExecuteAsync(sql, educationOrganizations);
 
             string updateApiClientsql = """
                 UPDATE dmscs.ApiClient
-                SET ClientUuid=@ClientUuid WHERE ClientId = @ClientId;
+                SET ClientUuid=@ClientUuid, LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
+                WHERE ClientId = @ClientId;
                 """;
 
-            await connection.ExecuteAsync(updateApiClientsql, clientCommand);
+            await connection.ExecuteAsync(
+                updateApiClientsql,
+                new
+                {
+                    clientCommand.ClientUuid,
+                    clientCommand.ClientId,
+                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                    ModifiedBy = currentUser
+                });
 
             // Get ApiClient Id for DmsInstance relationship update
             sql = "SELECT Id FROM dmscs.ApiClient WHERE ClientId = @ClientId;";
@@ -296,14 +334,15 @@ public class ApplicationRepository(
             if (command.DmsInstanceIds.Length > 0)
             {
                 sql = """
-                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId)
-                    VALUES (@ApiClientId, @DmsInstanceId);
+                    INSERT INTO dmscs.ApiClientDmsInstance (ApiClientId, DmsInstanceId, CreatedBy)
+                    VALUES (@ApiClientId, @DmsInstanceId, @CreatedBy);
                     """;
 
                 var dmsInstanceMappings = command.DmsInstanceIds.Select(dmsInstanceId => new
                 {
                     ApiClientId = apiClientId,
                     DmsInstanceId = dmsInstanceId,
+                    CreatedBy = currentUser
                 });
 
                 await connection.ExecuteAsync(sql, dmsInstanceMappings);

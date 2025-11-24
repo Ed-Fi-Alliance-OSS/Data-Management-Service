@@ -41,13 +41,15 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
         _claimsHierarchyManager = new ClaimsHierarchyManager();
         _claimsHierarchyRepository = new ClaimsHierarchyRepository(
             databaseOptions,
-            NullLogger<ClaimsHierarchyRepository>.Instance
+            NullLogger<ClaimsHierarchyRepository>.Instance,
+            new TestAuditContext()
         );
         _claimSetRepository = new ClaimSetRepository(
             databaseOptions,
             NullLogger<ClaimSetRepository>.Instance,
             _claimsHierarchyRepository,
-            _claimsHierarchyManager
+            _claimsHierarchyManager,
+            new TestAuditContext()
         );
 
         // Configure ClaimsProvider to use the embedded resource from PostgreSQL assembly

@@ -8,7 +8,11 @@ CREATE TABLE IF NOT EXISTS dmscs.DmsInstanceRouteContext (
     InstanceId BIGINT NOT NULL,
     ContextKey VARCHAR(256) NOT NULL,
     ContextValue VARCHAR(256) NOT NULL,
-        CONSTRAINT fk_dmsinstanceroutecontext_instance FOREIGN KEY (InstanceId) REFERENCES dmscs.dmsInstance(Id) ON DELETE CASCADE
+    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256),
+    CONSTRAINT fk_dmsinstanceroutecontext_instance FOREIGN KEY (InstanceId) REFERENCES dmscs.dmsInstance(Id) ON DELETE CASCADE
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dms_instance_routecontext_unique ON dmscs.DmsInstanceRouteContext (InstanceId, ContextKey);
@@ -18,3 +22,7 @@ COMMENT ON COLUMN dmscs.DmsInstanceRouteContext.Id IS 'Instance route context id
 COMMENT ON COLUMN dmscs.DmsInstanceRouteContext.InstanceId IS 'Instance id this route context belongs to';
 COMMENT ON COLUMN dmscs.DmsInstanceRouteContext.ContextKey IS 'Context key for routing (e.g., schoolYear, districtId)';
 COMMENT ON COLUMN dmscs.DmsInstanceRouteContext.ContextValue IS 'Context value for routing (e.g., 2024, 255901)';
+COMMENT ON COLUMN dmscs.DmsInstanceRouteContext.CreatedAt IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN dmscs.DmsInstanceRouteContext.CreatedBy IS 'User or client ID who created the record';
+COMMENT ON COLUMN dmscs.DmsInstanceRouteContext.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN dmscs.DmsInstanceRouteContext.ModifiedBy IS 'User or client ID who last modified the record';

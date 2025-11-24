@@ -15,7 +15,11 @@ CREATE TABLE IF NOT EXISTS dmscs.OpenIddictToken (
     Type varchar(50),
     ReferenceId varchar(100),
     ExpirationDate timestamp without time zone,
-    Status varchar(50) DEFAULT 'valid'
+    Status varchar(50) DEFAULT 'valid',
+    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(256),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(256)
 );
 
 COMMENT ON TABLE dmscs.OpenIddictToken IS 'OpenIddict tokens storage.';
@@ -39,6 +43,10 @@ COMMENT ON COLUMN dmscs.OpenIddictToken.Payload IS 'Token payload (JWT content).
 COMMENT ON COLUMN dmscs.OpenIddictToken.Properties IS 'Additional token properties (JSON).';
 COMMENT ON COLUMN dmscs.OpenIddictToken.RedemptionDate IS 'Token redemption timestamp.';
 COMMENT ON COLUMN dmscs.OpenIddictToken.Status IS 'Token status (valid, revoked, expired).';
+COMMENT ON COLUMN dmscs.OpenIddictToken.CreatedAt IS 'Timestamp when the record was created (UTC)';
+COMMENT ON COLUMN dmscs.OpenIddictToken.CreatedBy IS 'User or client ID who created the record';
+COMMENT ON COLUMN dmscs.OpenIddictToken.LastModifiedAt IS 'Timestamp when the record was last modified (UTC)';
+COMMENT ON COLUMN dmscs.OpenIddictToken.ModifiedBy IS 'User or client ID who last modified the record';
 
 
 -- Add index for better performance

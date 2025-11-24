@@ -8,7 +8,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceDerivative;
 /// <summary>
 /// A derivative instance (read replica or snapshot) associated with a DMS instance
 /// </summary>
-public class DmsInstanceDerivativeResponse
+public class DmsInstanceDerivativeResponse : AuditableResponse
 {
     /// <summary>
     /// The unique identifier for the derivative instance

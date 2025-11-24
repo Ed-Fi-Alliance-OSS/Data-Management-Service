@@ -20,7 +20,11 @@ Feature: DmsInstances endpoints
                           "instanceName": "Test Instance",
                           "connectionString": "Server=localhost;Database=TestDb;",
                           "dmsInstanceRouteContexts": [],
-                          "dmsInstanceDerivatives": []
+                          "dmsInstanceDerivatives": [],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       },
                       {
                           "id": {id},
@@ -28,7 +32,11 @@ Feature: DmsInstances endpoints
                           "instanceName": "Dev Instance",
                           "connectionString": "Server=dev;Database=DevDb;",
                           "dmsInstanceRouteContexts": [],
-                          "dmsInstanceDerivatives": []
+                          "dmsInstanceDerivatives": [],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }]
                   """
 
@@ -56,7 +64,11 @@ Feature: DmsInstances endpoints
                         "instanceName": "New Test Instance",
                         "connectionString": "Server=newtest;Database=NewTestDb;",
                         "dmsInstanceRouteContexts": [],
-                        "dmsInstanceDerivatives": []
+                        "dmsInstanceDerivatives": [],
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": null,
+                        "modifiedBy": null
                     }
                   """
 
@@ -80,7 +92,11 @@ Feature: DmsInstances endpoints
                           "instanceName": "Retrieved Instance",
                           "connectionString": "Server=retrieved;Database=RetrievedDb;",
                           "dmsInstanceRouteContexts": [],
-                          "dmsInstanceDerivatives": []
+                          "dmsInstanceDerivatives": [],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }
                   """
 
@@ -112,7 +128,11 @@ Feature: DmsInstances endpoints
                         "instanceName": "Updated Instance",
                         "connectionString": "Server=updated;Database=UpdatedDb;",
                         "dmsInstanceRouteContexts": [],
-                        "dmsInstanceDerivatives": []
+                        "dmsInstanceDerivatives": [],
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": "{*}",
+                        "modifiedBy": "{*}"
                     }
                   """
 
@@ -367,6 +387,10 @@ Feature: DmsInstances endpoints
                                 "derivativeType": "Snapshot",
                                 "connectionString": "Server=snapshot;Database=SnapshotDb;"
                             }
-                        ]
+                        ],
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": null,
+                        "modifiedBy": null
                     }
                   """

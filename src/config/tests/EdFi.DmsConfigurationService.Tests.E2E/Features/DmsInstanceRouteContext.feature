@@ -35,7 +35,11 @@ Feature: DMS Instance Route Context
                             "id": {id},
                             "instanceId": {dmsInstanceId},
                             "contextKey": "schoolYear",
-                            "contextValue": "2022"
+                            "contextValue": "2022",
+                            "createdAt": "{*}",
+                            "createdBy": "{*}",
+                            "lastModifiedAt": null,
+                            "modifiedBy": null
                   }
                   """
              When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
@@ -61,7 +65,11 @@ Feature: DMS Instance Route Context
                           "id": {id},
                           "instanceId": {dmsInstanceId},
                           "contextKey": "schoolYear",
-                          "contextValue": "2022"
+                          "contextValue": "2022",
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }]
                   """
              When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
@@ -89,7 +97,11 @@ Feature: DMS Instance Route Context
                        "id": {id},
                        "instanceId": {dmsInstanceId},
                        "contextKey": "schoolYear",
-                       "contextValue": "2022"
+                       "contextValue": "2022",
+                       "createdAt": "{*}",
+                       "createdBy": "{*}",
+                       "lastModifiedAt": null,
+                       "modifiedBy": null
                   }
                   """
              When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
@@ -124,7 +136,11 @@ Feature: DMS Instance Route Context
                        "id": {id},
                        "instanceId": {dmsInstanceId},
                        "contextKey": "schoolYear",
-                       "contextValue": "2023"
+                       "contextValue": "2023",
+                       "createdAt": "{*}",
+                       "createdBy": "{*}",
+                       "lastModifiedAt": "{*}",
+                       "modifiedBy": "{*}"
                   }
                   """
              When a DELETE request is made to "/v2/dmsInstanceRouteContexts/{dmsInstanceRouteContextId}"
@@ -252,7 +268,11 @@ Feature: DMS Instance Route Context
                                "contextValue": "2024"
                            }
                        ],
-                        "dmsInstanceDerivatives": []
+                       "dmsInstanceDerivatives": [],
+                       "createdAt": "{*}",
+                       "createdBy": "{*}",
+                       "lastModifiedAt": null,
+                       "modifiedBy": null
                   }
                   """
              When a DELETE request is made to "/v2/dmsInstances/{dmsInstanceId}"

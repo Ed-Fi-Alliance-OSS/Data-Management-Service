@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
@@ -14,7 +15,10 @@ using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 {
-    public class VendorRepository(IOptions<DatabaseOptions> databaseOptions, ILogger<VendorRepository> logger)
+    public class VendorRepository(
+        IOptions<DatabaseOptions> databaseOptions,
+        ILogger<VendorRepository> logger,
+        IAuditContext auditContext)
         : IVendorRepository
     {
         public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command)
@@ -36,7 +40,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 {
                     sql = """
                         UPDATE dmscs.Vendor
-                        SET ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress
+                        SET ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress,
+                            LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
                         WHERE Id = @Id;
                         """;
                     await connection.ExecuteAsync(
@@ -46,6 +51,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                             command.ContactName,
                             command.ContactEmailAddress,
                             Id = existingVendorId.Value,
+                            LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                            ModifiedBy = auditContext.GetCurrentUser()
                         }
                     );
 
@@ -56,26 +63,35 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 else
                 {
                     sql = """
-                        INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress)
-                        VALUES (@Company, @ContactName, @ContactEmailAddress)
+                        INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress, CreatedBy)
+                        VALUES (@Company, @ContactName, @ContactEmailAddress, @CreatedBy)
                         RETURNING Id;
                         """;
 
-                    id = await connection.ExecuteScalarAsync<long>(sql, command);
+                    id = await connection.ExecuteScalarAsync<long>(
+                        sql,
+                        new
+                        {
+                            command.Company,
+                            command.ContactName,
+                            command.ContactEmailAddress,
+                            CreatedBy = auditContext.GetCurrentUser()
+                        });
                     isNewVendor = true;
                 }
 
                 sql = """
-                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix)
-                    VALUES (@VendorId, @NamespacePrefix);
+                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix, CreatedBy)
+                    VALUES (@VendorId, @NamespacePrefix, @CreatedBy);
                     """;
 
+                var currentUser = auditContext.GetCurrentUser();
                 var namespacePrefixes = command
                     .NamespacePrefixes.Split(
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     )
-                    .Select(p => new { VendorId = id, NamespacePrefix = p.Trim() });
+                    .Select(p => new { VendorId = id, NamespacePrefix = p.Trim(), CreatedBy = currentUser });
 
                 await connection.ExecuteAsync(sql, namespacePrefixes);
                 await transaction.CommitAsync();
@@ -102,7 +118,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = """
-                    SELECT Id, Company, ContactName, ContactEmailAddress, NamespacePrefix
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, NamespacePrefix
                     FROM (SELECT * FROM dmscs.Vendor ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v
                     LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
                     """;
@@ -141,7 +157,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = """
-                    SELECT Id, Company, ContactName, ContactEmailAddress, NamespacePrefix
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, NamespacePrefix
                     FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
                     WHERE v.Id = @Id;
                     """;
@@ -183,7 +199,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
         {
             var sql = """
                 UPDATE dmscs.Vendor
-                SET Company=@Company, ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress
+                SET Company=@Company, ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress,
+                    LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
                 WHERE Id = @Id;
                 """;
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -191,7 +208,17 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             await using var transaction = await connection.BeginTransactionAsync();
             try
             {
-                var affectedRows = await connection.ExecuteAsync(sql, command);
+                var affectedRows = await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        command.Company,
+                        command.ContactName,
+                        command.ContactEmailAddress,
+                        command.Id,
+                        LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                        ModifiedBy = auditContext.GetCurrentUser()
+                    });
 
                 if (affectedRows == 0)
                 {
@@ -202,16 +229,17 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 await connection.ExecuteAsync(sql, new { VendorId = command.Id });
 
                 sql = """
-                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix)
-                    VALUES (@VendorId, @NamespacePrefix);
+                    INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix, CreatedBy)
+                    VALUES (@VendorId, @NamespacePrefix, @CreatedBy);
                     """;
 
+                var currentUser = auditContext.GetCurrentUser();
                 var namespacePrefixes = command
                     .NamespacePrefixes.Split(
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     )
-                    .Select(p => new { VendorId = command.Id, NamespacePrefix = p.Trim() });
+                    .Select(p => new { VendorId = command.Id, NamespacePrefix = p.Trim(), CreatedBy = currentUser });
 
                 await connection.ExecuteAsync(sql, namespacePrefixes);
                 await transaction.CommitAsync();
