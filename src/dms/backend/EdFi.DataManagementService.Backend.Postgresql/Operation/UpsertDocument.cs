@@ -86,8 +86,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
 
             // Pre-flight validation trims doomed requests before we touch heap/index storage.
             // InsertReferences repeats the lookup later to catch aliases that change between statements.
-            // Pre-flight validation trims doomed requests before we touch heap/index storage.
-            // InsertReferences repeats the lookup later to catch aliases that change between statements.
             Guid[] invalidReferentialIdsPreflight = await _sqlAction.FindInvalidReferences(
                 combinedReferentialIds,
                 combinedReferentialPartitionKeys,
@@ -259,6 +257,7 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 .ReferentialPartitionKeys.Concat(descriptorReferenceIds.ReferentialPartitionKeys)
                 .ToArray();
 
+            // A quick probe to short circuit running the full InsertReferences pathway
             Guid[] invalidReferentialIdsPreflight = await _sqlAction.FindInvalidReferences(
                 combinedReferentialIds,
                 combinedReferentialPartitionKeys,
