@@ -440,7 +440,6 @@ src/dms/EdFi.DataStandard52.ApiSchema/
 
 # Local Claude configuration files
 CLAUDE.local.md
-AGENTS.md
 .mcp.json
 .plans/
 .claude/
