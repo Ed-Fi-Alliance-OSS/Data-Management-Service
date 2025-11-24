@@ -3,10 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Buffers;
-using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
 
@@ -19,43 +16,47 @@ internal class RequestInfoBodyLoggingMiddleware(ILogger _logger, bool _maskReque
 
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
-        if (!_logger.IsEnabled(LogLevel.Debug) || requestInfo.ParsedBody == null)
+        if (_logger.IsEnabled(LogLevel.Debug) && !string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
         {
-            await next();
-            return;
+            _logger.LogDebug(
+                "Entering RequestInfoBodyLoggingMiddleware - {TraceId}",
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            string body = UtilityService.MinifyRegex().Replace(requestInfo.FrontendRequest.Body, "$1");
+
+            if (!_maskRequestBodyInLogs)
+            {
+                _logger.LogDebug(
+                    MessageBody,
+                    requestInfo.Method,
+                    requestInfo.FrontendRequest.Path,
+                    body,
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+            }
+            else
+            {
+                _logger.LogDebug(
+                    MessageBody,
+                    requestInfo.Method,
+                    requestInfo.FrontendRequest.Path,
+                    MaskRequestBody(body, _logger),
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+            }
         }
-
-        _logger.LogDebug(
-            "Entering RequestInfoBodyLoggingMiddleware - {TraceId}",
-            requestInfo.FrontendRequest.TraceId.Value
-        );
-
-        string payload = _maskRequestBodyInLogs
-            ? MaskRequestBody(requestInfo.ParsedBody, _logger)
-            : requestInfo.ParsedBody.ToJsonString();
-
-        _logger.LogDebug(
-            MessageBody,
-            requestInfo.Method,
-            requestInfo.FrontendRequest.Path,
-            payload,
-            requestInfo.FrontendRequest.TraceId.Value
-        );
-
         await next();
     }
 
-    private static string MaskRequestBody(JsonNode node, ILogger logger)
+    private static string MaskRequestBody(string body, ILogger logger)
     {
         try
         {
-            var buffer = new ArrayBufferWriter<byte>();
-            using (var writer = new Utf8JsonWriter(buffer))
-            {
-                WriteMaskedNode(node, writer);
-            }
-
-            return Encoding.UTF8.GetString(buffer.WrittenSpan);
+            // Deserialize the JSON body in a dynamic object
+            JsonDocument jsonDoc = JsonDocument.Parse(body);
+            JsonElement maskedJson = MaskJsonElement(jsonDoc.RootElement);
+            return JsonSerializer.Serialize(maskedJson);
         }
         catch (JsonException ex)
         {
@@ -64,36 +65,25 @@ internal class RequestInfoBodyLoggingMiddleware(ILogger _logger, bool _maskReque
         }
     }
 
-    private static void WriteMaskedNode(JsonNode? node, Utf8JsonWriter writer)
+    private static JsonElement MaskJsonElement(JsonElement element)
     {
-        switch (node)
+        switch (element.ValueKind)
         {
-            case JsonObject obj:
-                writer.WriteStartObject();
-                foreach (var (key, value) in obj)
+            case JsonValueKind.Object:
+                Dictionary<string, JsonElement> dictionary = new();
+                foreach (var property in element.EnumerateObject())
                 {
-                    writer.WritePropertyName(key);
-                    WriteMaskedNode(value, writer);
+                    dictionary[property.Name] = MaskJsonElement(property.Value);
                 }
-                writer.WriteEndObject();
-                break;
-            case JsonArray array:
-                writer.WriteStartArray();
-                foreach (var item in array)
-                {
-                    WriteMaskedNode(item, writer);
-                }
-                writer.WriteEndArray();
-                break;
-            case JsonValue:
-                writer.WriteStringValue("*");
-                break;
-            case null:
-                writer.WriteNullValue();
-                break;
+                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(dictionary));
+
+            case JsonValueKind.Array:
+                List<JsonElement> maskedArray = [];
+                maskedArray.AddRange(element.EnumerateArray().Select(MaskJsonElement));
+                return JsonSerializer.Deserialize<JsonElement>(JsonSerializer.Serialize(maskedArray));
+
             default:
-                writer.WriteStringValue("*");
-                break;
+                return JsonSerializer.Deserialize<JsonElement>("\"*\"");
         }
     }
 }
