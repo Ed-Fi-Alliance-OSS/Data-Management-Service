@@ -34,7 +34,11 @@ Feature: DmsInstanceDerivatives endpoints
                         "id": {id},
                         "instanceId": {dmsInstanceId},
                         "derivativeType": "ReadReplica",
-                        "connectionString": "Server=newreplica;Database=NewReplicaDb;"
+                        "connectionString": "Server=newreplica;Database=NewReplicaDb;",
+                       "createdAt": "{*}",
+                       "createdBy": "{*}",
+                       "lastModifiedAt": null,
+                       "modifiedBy": null
                     }
                   """
 
@@ -54,7 +58,11 @@ Feature: DmsInstanceDerivatives endpoints
                         "id": {id},
                         "instanceId": {dmsInstanceId},
                         "derivativeType": "Snapshot",
-                        "connectionString": "Server=newsnapshot;Database=NewSnapshotDb;"
+                        "connectionString": "Server=newsnapshot;Database=NewSnapshotDb;",
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": null,
+                        "modifiedBy": null
                     }
                   """
 
@@ -76,7 +84,11 @@ Feature: DmsInstanceDerivatives endpoints
                           "id": {id},
                           "instanceId": {dmsInstanceId},
                           "derivativeType": "ReadReplica",
-                          "connectionString": "Server=retrieved;Database=RetrievedDb;"
+                          "connectionString": "Server=retrieved;Database=RetrievedDb;",
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
                       }
                   """
 
@@ -106,7 +118,11 @@ Feature: DmsInstanceDerivatives endpoints
                         "id": {id},
                         "instanceId": {dmsInstanceId},
                         "derivativeType": "Snapshot",
-                        "connectionString": "Server=updated;Database=UpdatedDb;"
+                        "connectionString": "Server=updated;Database=UpdatedDb;",
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": "{*}",
+                        "modifiedBy": "{*}"
                     }
                   """
 

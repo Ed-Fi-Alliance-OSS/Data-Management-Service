@@ -9,7 +9,6 @@ using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceDerivative;
-using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -31,7 +30,8 @@ public class DmsInstanceDerivativeTests : DatabaseTest
         _repository = new DmsInstanceDerivativeRepository(
             Configuration.DatabaseOptions,
             NullLogger<DmsInstanceDerivativeRepository>.Instance,
-            new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+            new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+            new TestAuditContext()
         );
 
         _instanceRepository = new DmsInstanceRepository(
@@ -94,6 +94,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             derivativeFromDb
                 .ConnectionString.Should()
                 .Be("Server=replica;Database=ReplicaDb;User Id=user;Password=pass;");
+            derivativeFromDb.CreatedAt.Should().NotBeNull();
+            derivativeFromDb.CreatedBy.Should().Be("test-user");
+            derivativeFromDb.LastModifiedAt.Should().BeNull();
+            derivativeFromDb.ModifiedBy.Should().BeNull();
         }
 
         [Test]
@@ -110,6 +114,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             derivativeFromDb
                 .ConnectionString.Should()
                 .Be("Server=replica;Database=ReplicaDb;User Id=user;Password=pass;");
+            derivativeFromDb.CreatedAt.Should().NotBeNull();
+            derivativeFromDb.CreatedBy.Should().Be("test-user");
+            derivativeFromDb.LastModifiedAt.Should().BeNull();
+            derivativeFromDb.ModifiedBy.Should().BeNull();
         }
     }
 
@@ -156,6 +164,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
                 (DmsInstanceDerivativeGetResult.Success)getByIdResult
             ).DmsInstanceDerivativeResponse;
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
+            derivativeFromDb.CreatedAt.Should().NotBeNull();
+            derivativeFromDb.CreatedBy.Should().Be("test-user");
+            derivativeFromDb.LastModifiedAt.Should().BeNull();
+            derivativeFromDb.ModifiedBy.Should().BeNull();
         }
     }
 
@@ -202,6 +214,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
                 (DmsInstanceDerivativeGetResult.Success)getByIdResult
             ).DmsInstanceDerivativeResponse;
             derivativeFromDb.ConnectionString.Should().BeNull();
+            derivativeFromDb.CreatedAt.Should().NotBeNull();
+            derivativeFromDb.CreatedBy.Should().Be("test-user");
+            derivativeFromDb.LastModifiedAt.Should().BeNull();
+            derivativeFromDb.ModifiedBy.Should().BeNull();
         }
     }
 
@@ -262,6 +278,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             ).DmsInstanceDerivativeResponses.First();
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
             derivativeFromDb.ConnectionString.Should().Be("Server=updated;Database=UpdatedDb;");
+            derivativeFromDb.CreatedAt.Should().NotBeNull();
+            derivativeFromDb.CreatedBy.Should().Be("test-user");
+            derivativeFromDb.LastModifiedAt.Should().NotBeNull();
+            derivativeFromDb.ModifiedBy.Should().Be("test-user");
         }
 
         [Test]
@@ -275,6 +295,10 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             ).DmsInstanceDerivativeResponse;
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
             derivativeFromDb.ConnectionString.Should().Be("Server=updated;Database=UpdatedDb;");
+            derivativeFromDb.CreatedAt.Should().NotBeNull();
+            derivativeFromDb.CreatedBy.Should().Be("test-user");
+            derivativeFromDb.LastModifiedAt.Should().NotBeNull();
+            derivativeFromDb.ModifiedBy.Should().Be("test-user");
         }
     }
 

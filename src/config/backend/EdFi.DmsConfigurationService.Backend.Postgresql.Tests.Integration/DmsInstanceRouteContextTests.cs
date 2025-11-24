@@ -36,7 +36,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             var derivativeRepository = new DmsInstanceDerivativeRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceDerivativeRepository>.Instance,
-                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TestAuditContext()
             );
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
@@ -119,7 +120,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             var derivativeRepository = new DmsInstanceDerivativeRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceDerivativeRepository>.Instance,
-                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TestAuditContext()
             );
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
@@ -187,7 +189,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             var derivativeRepository = new DmsInstanceDerivativeRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceDerivativeRepository>.Instance,
-                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TestAuditContext()
             );
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,
@@ -243,7 +246,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
             var derivativeRepository = new DmsInstanceDerivativeRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceDerivativeRepository>.Instance,
-                new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+                new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+                new TestAuditContext()
             );
             var instanceRepository = new DmsInstanceRepository(
                 Configuration.DatabaseOptions,

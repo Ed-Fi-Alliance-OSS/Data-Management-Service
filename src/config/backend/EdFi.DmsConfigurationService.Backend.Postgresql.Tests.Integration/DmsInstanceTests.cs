@@ -6,10 +6,8 @@
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
-using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
-using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -28,7 +26,8 @@ public class DmsInstanceTests : DatabaseTest
         new DmsInstanceDerivativeRepository(
             Configuration.DatabaseOptions,
             NullLogger<DmsInstanceDerivativeRepository>.Instance,
-            new ConnectionStringEncryptionService(Configuration.DatabaseOptions)
+            new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
+            new TestAuditContext()
         );
 
     private readonly IDmsInstanceRepository _repository;
