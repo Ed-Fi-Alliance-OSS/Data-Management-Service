@@ -317,8 +317,8 @@ Feature: ApiClients endpoints
                     "dmsInstanceIds": [{dmsInstanceId}],
                     "createdAt": "{*}",
                     "createdBy": "{*}",
-                    "lastModifiedAt": null,
-                    "modifiedBy": null
+                    "lastModifiedAt": "{*}",
+                    "modifiedBy": "{*}"
                   }
                   """
 

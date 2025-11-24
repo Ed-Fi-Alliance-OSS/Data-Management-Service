@@ -387,6 +387,10 @@ Feature: DmsInstances endpoints
                                 "derivativeType": "Snapshot",
                                 "connectionString": "Server=snapshot;Database=SnapshotDb;"
                             }
-                        ]
+                        ],
+                        "createdAt": "{*}",
+                        "createdBy": "{*}",
+                        "lastModifiedAt": null,
+                        "modifiedBy": null
                     }
                   """

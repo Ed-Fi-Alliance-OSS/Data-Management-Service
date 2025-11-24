@@ -268,7 +268,7 @@ Feature: DMS Instance Route Context
                                "contextValue": "2024"
                            }
                        ],
-                       "dmsInstanceDerivatives": []
+                       "dmsInstanceDerivatives": [],
                        "createdAt": "{*}",
                        "createdBy": "{*}",
                        "lastModifiedAt": null,
