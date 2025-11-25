@@ -1,36 +1,53 @@
-# InsertReferences Integration SQL Tests
+# InsertReferences2 SQL Test Suite
 
-These manual SQL scripts exercise the `dms.InsertReferences` Postgres function across common scenarios. Each script:
+This suite exercises the `dms.InsertReferences` stored procedure to verify the behavior of the CTE-based implementation matches the existing temp-table version.
 
-- Enables `ON_ERROR_STOP` to fail fast.
-- Wraps commands in `BEGIN … ROLLBACK` so the database is unchanged after execution.
-- Emits descriptive `\echo` headers to make terminal output self-documenting.
+## Files
 
-## Prerequisites
+- `000_setup.sql` – idempotent helper data (document row + aliases).
+- `010_pure_insert.sql` – pure insert path returns `(true, {})`.
+- `020_update_noop.sql` – non-pure call that detects no changes and skips DML yet still returns success.
+- `030_update_with_change.sql` – update that swaps one alias; ensures upsert/delete path still returns success.
+- `040_invalid_ids.sql` – payload with an unresolved referentialId returns `(false, invalid_uuid)`.
+- `050_duplicate_payload.sql` – duplicate referential pair raises the `reference_stage_pkey` violation (SQLSTATE 23505).
+- `060_null_inputs.sql` – null referentialId/partition key inputs raise the 23502 constraint violation.
+- `070_partition_variation.sql` – repeats the pure-insert scenario on parent partition 7 to confirm partition-targeted DML selection.
+- `080_insert_delete_mix.sql` – invokes InsertReferences twice in one transaction to cover the delete/orphan cleanup branch.
+- `085_partial_failure_cleanup.sql` – mixed resolved/unresolved ids returns `(false, invalid_uuid)`, leaves no references, and clears `dms.ReferenceStage`.
+- `090_high_cardinality.sql` – feeds ~25 references (selected from seeded aliases) to mirror real payload sizes.
+- `100_rollback_safety.sql` – forces an error after the call and verifies reference row counts remain unchanged.
+- `200_pgbench_concurrency.sql` – pgbench workload file for stressing InsertReferences under concurrent sessions.
 
-- `uuid-ossp` extension installed in the target database (`CREATE EXTENSION IF NOT EXISTS "uuid-ossp";`).
-- Appropriate connection credentials (default scripts assume `postgres` superuser).
-- A shell with `psql` available and access to the DMS database.
+## Running
 
-## Running the suite
+1. Ensure the desired version of `dms.InsertReferences` is deployed.
+2. Set `PGPASSWORD`/connection env vars as needed, then execute the scripts in order via `psql`, e.g.:
+   ```bash
+   psql -h localhost -p 5432 -U postgres -d edfi_datamanagementservice -f 000_setup.sql
+   psql ... -f 010_pure_insert.sql
+   # ...and so on
+   ```
+3. Each script uses `BEGIN/ROLLBACK` (or anonymous DO blocks) so the test data is not persisted.
+4. For concurrent load testing, run `200_pgbench_concurrency.sql` with pgbench. Basic example:
+   ```bash
+   PGPASSWORD='...' pgbench -h localhost -p 5432 -U postgres -d edfi_datamanagementservice \
+       -f 200_pgbench_concurrency.sql \
+       -c 16   # concurrent clients
+       -j 4    # worker threads
+       -t 2000 # transactions per client
+       --progress=10 --no-vacuum
+   ```
+   Longer runs just scale those knobs. For example, a 10-minute soak with 32 clients:
+   ```bash
+   PGPASSWORD='...' pgbench -h localhost -p 5432 -U postgres -d edfi_datamanagementservice \
+       -f 200_pgbench_concurrency.sql \
+       -c 32 -j 8 -T 600 --progress=30 --no-vacuum
+   ```
+   Useful pgbench switches:
+   - `-c/--client`: parallel sessions.
+   - `-j/--jobs`: threads (usually <= cores).
+   - `-t/--transactions`: count per client (total calls = clients × transactions).
+   - `-T/--time`: run for N seconds instead of a fixed count.
+   - `-P/--progress`: status interval, `--no-vacuum` skips pgbench’s setup tables.
 
-From the repository root:
-
-```bash
-export PGPASSWORD="<password>"
-PGPASSWORD="$PGPASSWORD" psql \
-  --host=localhost --port=5432 --username=postgres --dbname=edfi_datamanagementservice \
-  --file=src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/sql/InsertReferences/<script>.sql
-```
-
-Run each script individually in numeric order (`01_*.sql` through `05_*.sql`). The scripts print key results at the end of each test block.
-
-## Script overview & expected outcomes
-
-1. **01_insert_valid.sql** – Inserts one parent and one resolved alias. Expect `insert_result = t` and one reference row for the parent/partition.
-2. **02_update_existing_reference.sql** – After initial insert, reassigns the alias to a different document and reruns the function. Expect both calls to return `t` and the stored reference to point to the new document (partition key `6`).
-3. **03_deduplicate_duplicates.sql** – Supplies the same referential ID twice. Expect `result = t` and the final reference count to be `1`, demonstrating deduplication.
-4. **04_partial_success.sql** – Mixes one valid and one missing alias. Expect `success = f`, `invalid_ids` to contain the missing UUID, no references persisted for the parent, and `dms.ReferenceStage` already cleared after the call.
-5. **05_delete_missing_references.sql** – Initial call registers two references; second call supplies only one. Expect `initial_result = t` with count `2`, `pruned_result = t`, and the remaining reference list containing only the kept alias.
-
-Each script finishes with `ROLLBACK`, so repeat runs are idempotent.
+The scripts print the procedure output (or NOTICEs for expected failures) so regressions in success flags, invalid-id handling, or error semantics are easy to spot.

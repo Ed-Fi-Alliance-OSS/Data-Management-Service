@@ -101,7 +101,6 @@ internal static class BidirectionalGraphExtensions
     /// <summary>
     /// Validates that the graph is free of cycles, and throws a <see cref="NonAcyclicGraphException"/> otherwise.
     ///
-    /// Used in testing
     /// </summary>
     /// <typeparam name="TVertex">The <see cref="Type" /> of the vertices of the graph.</typeparam>
     /// <typeparam name="TEdge">The <see cref="Type" /> of the edges of the graph.</typeparam>
