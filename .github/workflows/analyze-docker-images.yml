@@ -79,6 +79,14 @@ jobs:
           echo "IMAGENAME=${{ matrix.dockerfile.name }}:${{ steps.versions.outputs.VERSION }}" >> $GITHUB_ENV
         shell: bash
 
+      - name: Generate SBOM with Docker Scout (SPDX format)
+        uses: docker/scout-action@b23590dc1e4d09febc00cfcbc51e9e8c0f7ee9f3 # v1.16.1
+        with:
+          command: sbom
+          image: ${{ env.IMAGENAME }}
+          format: spdx
+          output: sbom-${{ matrix.dockerfile.name }}-${{ steps.versions.outputs.VERSION }}.spdx.json
+
       - name: Analyze for CVEs
         uses: docker/scout-action@b23590dc1e4d09febc00cfcbc51e9e8c0f7ee9f3 # v1.16.1
         with:
@@ -101,7 +109,9 @@ jobs:
         uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5
         with:
           name: ${{ steps.set-artifact-name.outputs.ARTIFACT_NAME }}
-          path: sarif-${{ matrix.dockerfile.name }}-${{ steps.versions.outputs.VERSION }}.output.json
+          path: |
+            sarif-${{ matrix.dockerfile.name }}-${{ steps.versions.outputs.VERSION }}.output.json
+            sbom-${{ matrix.dockerfile.name }}-${{ steps.versions.outputs.VERSION }}.spdx.json
 
       - name: Upload SARIF result
         id: upload-sarif
