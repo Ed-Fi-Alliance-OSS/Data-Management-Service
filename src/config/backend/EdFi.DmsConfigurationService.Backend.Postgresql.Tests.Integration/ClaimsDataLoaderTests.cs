@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Postgresql.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -49,7 +50,8 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
             NullLogger<ClaimSetRepository>.Instance,
             _claimsHierarchyRepository,
             _claimsHierarchyManager,
-            new TestAuditContext()
+            new TestAuditContext(),
+            new TenantContextProvider()
         );
 
         // Configure ClaimsProvider to use the embedded resource from PostgreSQL assembly

@@ -118,11 +118,8 @@ public class ClaimsHierarchyRepository(
 
                 await connection.ExecuteAsync(
                     InsertSql,
-                    new
-                    {
-                        Hierarchy = hierarchyJson,
-                        CreatedBy = auditContext.GetCurrentUser()
-                    });
+                    new { Hierarchy = hierarchyJson, CreatedBy = auditContext.GetCurrentUser() }
+                );
             }
             else
             {
@@ -151,7 +148,7 @@ public class ClaimsHierarchyRepository(
                         Id = existingRecord.Id,
                         LastModifiedDate = existingLastModifiedDate,
                         LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                        ModifiedBy = auditContext.GetCurrentUser()
+                        ModifiedBy = auditContext.GetCurrentUser(),
                     }
                 );
 
