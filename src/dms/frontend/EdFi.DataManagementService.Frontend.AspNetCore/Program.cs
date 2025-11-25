@@ -3,17 +3,21 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using EdFi.DataManagementService.Backend.Deploy;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
-using EdFi.DataManagementService.Core.External.Model;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
-using EdFi.DataManagementService.Core.Response;
+using ResponseCompressionDefaults = Microsoft.AspNetCore.ResponseCompression.ResponseCompressionDefaults;
 
 // Disable reload to work around .NET file watcher bug on Linux. See:
 // https://github.com/dotnet/runtime/issues/62869
@@ -23,6 +27,33 @@ Environment.SetEnvironmentVariable("DOTNET_hostBuilder:reloadConfigOnChange", "f
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHttpClient();
 builder.AddServices();
+
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Encoder = EdFi.DataManagementService
+        .Frontend
+        .AspNetCore
+        .AspNetCoreFrontend
+        .SharedSerializerOptions
+        .Encoder;
+    options.SerializerOptions.DefaultIgnoreCondition = EdFi.DataManagementService
+        .Frontend
+        .AspNetCore
+        .AspNetCoreFrontend
+        .SharedSerializerOptions
+        .DefaultIgnoreCondition;
+});
+
+bool enableAspNetCompression = builder.Configuration.GetValue<bool>("AppSettings:EnableAspNetCompression");
+
+if (enableAspNetCompression)
+{
+    builder.Services.AddResponseCompression(options =>
+    {
+        options.EnableForHttps = true;
+        options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[] { "application/json" });
+    });
+}
 
 // Configure request size limits for schema upload
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
@@ -88,6 +119,10 @@ if (!ReportInvalidConfiguration(app))
     InitializeDatabase(app);
     await RetrieveAndCacheClaimSets(app);
 
+    if (enableAspNetCompression)
+    {
+        app.UseResponseCompression();
+    }
     app.UseRouting();
 
     if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())

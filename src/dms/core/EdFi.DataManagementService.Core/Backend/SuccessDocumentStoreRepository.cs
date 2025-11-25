@@ -70,6 +70,6 @@ internal class SuccessDocumentStoreRepository(ILogger<SuccessDocumentStoreReposi
             "QueryDocuments(): Backend repository has been configured to always report success - {TraceId}",
             queryRequest.TraceId
         );
-        return await Task.FromResult<QueryResult>(new QueryResult.QuerySuccess(TotalCount: 0, EdfiDocs: []));
+        return await Task.FromResult<QueryResult>(new QueryResult.QuerySuccess(EdfiDocs: [], TotalCount: 0));
     }
 }

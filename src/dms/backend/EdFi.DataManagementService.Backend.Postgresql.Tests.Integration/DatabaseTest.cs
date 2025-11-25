@@ -4,23 +4,96 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using System.Threading;
+using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Backend.Postgresql.Operation;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using ImpromptuInterface;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
+/// <summary>
+/// Minimal <see cref="IHostApplicationLifetime"/> implementation for tests so the cache
+/// can observe lifecycle callbacks without bootstrapping a full host.
+/// </summary>
+file sealed class TestHostApplicationLifetime : IHostApplicationLifetime
+{
+    public CancellationToken ApplicationStarted => CancellationToken.None;
+    public CancellationToken ApplicationStopping => CancellationToken.None;
+    public CancellationToken ApplicationStopped => CancellationToken.None;
+
+    public void StopApplication()
+    {
+        // No-op for integration tests
+    }
+}
+
+/// <summary>
+/// Simple logger used inside integration tests to surface backend errors in console output.
+/// </summary>
+file sealed class NUnitTestLogger<T> : ILogger<T>
+{
+    IDisposable ILogger.BeginScope<TState>(TState state)
+    {
+        return NullLoggerScope.Instance;
+    }
+
+    bool ILogger.IsEnabled(LogLevel logLevel)
+    {
+        return logLevel >= LogLevel.Error;
+    }
+
+    void ILogger.Log<TState>(
+        LogLevel logLevel,
+        EventId eventId,
+        TState state,
+        Exception? exception,
+        Func<TState, Exception?, string> formatter
+    )
+    {
+        if (logLevel < LogLevel.Error)
+        {
+            return;
+        }
+
+        string message = formatter(state, exception);
+        Console.Error.WriteLine($"[{typeof(T).Name}] {logLevel}: {message}");
+
+        if (exception != null)
+        {
+            Console.Error.WriteLine(exception.ToString());
+        }
+    }
+}
+
+/// <summary>
+/// Lightweight scope placeholder so ILogger scope calls remain no-ops in tests.
+/// </summary>
+file sealed class NullLoggerScope : IDisposable
+{
+    public static readonly NullLoggerScope Instance = new();
+
+    private NullLoggerScope() { }
+
+    public void Dispose() { }
+}
+
 public abstract class DatabaseTest : DatabaseTestBase
 {
     protected NpgsqlConnection? Connection { get; set; }
     protected NpgsqlTransaction? Transaction { get; set; }
+    private NpgsqlDataSourceCache? _dataSourceCache; // Lazily instantiated cache reused for per-test providers
 
     private static readonly JsonNode _apiSchemaRootNode =
         JsonNode.Parse(
@@ -196,6 +269,29 @@ public abstract class DatabaseTest : DatabaseTestBase
     {
         Transaction?.Dispose();
         Connection?.Dispose();
+        _dataSourceCache?.Dispose();
+        _dataSourceCache = null;
+        // Note: DataSource disposed in DatabaseTestBase
+    }
+
+    /// <summary>
+    /// Commits the current fixture transaction so data seeded during setup becomes visible
+    /// to operations that execute on freshly opened connections (e.g., QueryDocument).
+    /// Optionally starts a new transaction so subsequent assertions can continue to share one.
+    /// </summary>
+    protected async Task CommitTestTransactionAsync(bool beginNewTransaction = true)
+    {
+        if (Transaction is null || Connection is null)
+        {
+            return;
+        }
+
+        await Transaction.CommitAsync();
+        await Transaction.DisposeAsync();
+
+        Transaction = beginNewTransaction
+            ? await Connection.BeginTransactionAsync(ConfiguredIsolationLevel)
+            : null;
     }
 
     protected static SqlAction CreateSqlAction()
@@ -205,7 +301,7 @@ public abstract class DatabaseTest : DatabaseTestBase
 
     protected static UpsertDocument CreateUpsert()
     {
-        return new UpsertDocument(CreateSqlAction(), NullLogger<UpsertDocument>.Instance);
+        return new UpsertDocument(CreateSqlAction(), new NUnitTestLogger<UpsertDocument>());
     }
 
     protected static UpdateDocumentById CreateUpdate()
@@ -218,9 +314,54 @@ public abstract class DatabaseTest : DatabaseTestBase
         return new GetDocumentById(CreateSqlAction(), NullLogger<GetDocumentById>.Instance);
     }
 
-    protected static QueryDocument CreateQueryDocument()
+    protected static IOptions<DatabaseOptions> CreateDatabaseOptions()
     {
-        return new QueryDocument(CreateSqlAction(), NullLogger<QueryDocument>.Instance);
+        return Options.Create(new DatabaseOptions { IsolationLevel = ConfiguredIsolationLevel });
+    }
+
+    protected QueryDocument CreateQueryDocument()
+    {
+        return new QueryDocument(
+            CreateSqlAction(),
+            NullLogger<QueryDocument>.Instance,
+            CreateDataSourceProvider(),
+            CreateDatabaseOptions()
+        );
+    }
+
+    /// <summary>
+    /// Builds a concrete <see cref="NpgsqlDataSourceProvider"/> that mirrors production wiring
+    /// so queries open their own connections using the configured connection string.
+    /// </summary>
+    protected NpgsqlDataSourceProvider CreateDataSourceProvider()
+    {
+        string connectionString =
+            Configuration.DatabaseConnectionString
+            ?? throw new InvalidOperationException("Database connection string is not configured.");
+
+        var dmsInstanceSelection = new DmsInstanceSelection();
+        dmsInstanceSelection.SetSelectedDmsInstance(
+            new DmsInstance(
+                Id: 1,
+                InstanceType: "integration",
+                InstanceName: "IntegrationTestInstance",
+                ConnectionString: connectionString,
+                RouteContext: []
+            )
+        );
+
+        _dataSourceCache ??= new NpgsqlDataSourceCache(
+            new TestHostApplicationLifetime(),
+            NullLogger<NpgsqlDataSourceCache>.Instance
+        );
+
+        // Returning the concrete provider ensures query code paths
+        // open their own connections rather than reusing the fixture’s transaction.
+        return new NpgsqlDataSourceProvider(
+            dmsInstanceSelection,
+            _dataSourceCache,
+            NullLogger<NpgsqlDataSourceProvider>.Instance
+        );
     }
 
     protected static DeleteDocumentById CreateDeleteById()
@@ -352,6 +493,31 @@ public abstract class DatabaseTest : DatabaseTestBase
     protected static DescriptorReference[] CreateDescriptorReferences(Reference[] references)
     {
         return references.Select(x => CreateDescriptorReference(x)).ToArray();
+    }
+
+    protected async Task<int> CountDocumentReferencesAsync(Guid documentUuid)
+    {
+        if (Connection is null)
+        {
+            throw new InvalidOperationException("Connection has not been initialized.");
+        }
+
+        await using NpgsqlCommand command = new(
+            """
+            SELECT COUNT(*)
+            FROM dms.Reference r
+            INNER JOIN dms.Document d
+                ON d.Id = r.ParentDocumentId
+               AND d.DocumentPartitionKey = r.ParentDocumentPartitionKey
+            WHERE d.DocumentUuid = $1;
+            """,
+            Connection,
+            Transaction
+        );
+        command.Parameters.Add(new NpgsqlParameter { Value = documentUuid });
+
+        object? result = await command.ExecuteScalarAsync();
+        return Convert.ToInt32(result);
     }
 
     protected static IUpsertRequest CreateUpsertRequest(

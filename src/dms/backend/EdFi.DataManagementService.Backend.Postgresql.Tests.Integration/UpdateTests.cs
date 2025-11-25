@@ -1021,14 +1021,77 @@ public class UpdateTests : DatabaseTest
                     .Be("111");
             }
         }
+
+        [TestFixture]
+        public class Given_An_Update_That_Removes_All_References : UpdateTests
+        {
+            private UpdateResult? _updateResult;
+            private int _referenceCountBeforeUpdate;
+            private int _referenceCountAfterUpdate;
+
+            private static readonly Guid _referencedDocumentUuid = Guid.NewGuid();
+            private static readonly Guid _referencedReferentialId = Guid.NewGuid();
+            private static readonly Guid _referencingDocumentUuid = Guid.NewGuid();
+            private static readonly Guid _referencingReferentialId = Guid.NewGuid();
+
+            [SetUp]
+            public async Task Setup()
+            {
+                await CreateUpsert()
+                    .Upsert(
+                        CreateUpsertRequest(
+                            _defaultResourceName,
+                            _referencedDocumentUuid,
+                            _referencedReferentialId,
+                            """{"abc":101}"""
+                        ),
+                        Connection!,
+                        Transaction!
+                    );
+
+                Reference[] references = [new(_defaultResourceName, _referencedReferentialId)];
+
+                await CreateUpsert()
+                    .Upsert(
+                        CreateUpsertRequest(
+                            _defaultResourceName,
+                            _referencingDocumentUuid,
+                            _referencingReferentialId,
+                            """{"abc":202}""",
+                            documentReferences: CreateDocumentReferences(references)
+                        ),
+                        Connection!,
+                        Transaction!
+                    );
+
+                _referenceCountBeforeUpdate = await CountDocumentReferencesAsync(_referencingDocumentUuid);
+
+                IUpdateRequest removeReferencesRequest = CreateUpdateRequest(
+                    _defaultResourceName,
+                    _referencingDocumentUuid,
+                    _referencingReferentialId,
+                    """{"abc":303}""",
+                    documentReferences: Array.Empty<DocumentReference>()
+                );
+
+                _updateResult = await CreateUpdate()
+                    .UpdateById(removeReferencesRequest, Connection!, Transaction!);
+
+                _referenceCountAfterUpdate = await CountDocumentReferencesAsync(_referencingDocumentUuid);
+            }
+
+            [Test]
+            public void It_should_update_successfully_when_references_are_removed()
+            {
+                _updateResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
+            }
+
+            [Test]
+            public void It_should_remove_all_reference_rows_after_update()
+            {
+                _referenceCountBeforeUpdate.Should().Be(1);
+                _referenceCountAfterUpdate.Should().Be(0);
+            }
+        }
     }
-    // Future tests - from Meadowlark
-
-    // given an update of a document that tries to reference an existing descriptor
-
-    // given an update of a document that tries to reference a nonexisting descriptor
-
-    // Future tests - new concurrency-based
-
-    // given an update of a document that tries to reference an existing document that is concurrently deleted
 }

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -59,7 +60,10 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            {
+                ParsedBody = JsonNode.Parse(jsonBody)!,
+            };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -124,7 +128,10 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            {
+                ParsedBody = JsonNode.Parse(jsonBody)!,
+            };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -191,7 +198,10 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            {
+                ParsedBody = JsonNode.Parse(jsonBody)!,
+            };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -256,7 +266,10 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            {
+                ParsedBody = JsonNode.Parse(jsonBody)!,
+            };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -321,7 +334,10 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.POST);
+            _requestInfo = new(frontEndRequest, RequestMethod.POST)
+            {
+                ParsedBody = JsonNode.Parse(jsonBody)!,
+            };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -376,7 +392,7 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.PUT);
+            _requestInfo = new(frontEndRequest, RequestMethod.PUT) { ParsedBody = JsonNode.Parse(jsonBody)! };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 
@@ -444,7 +460,7 @@ public class DuplicatePropertiesMiddlewareTest
                 TraceId: new TraceId("traceId"),
                 RouteQualifiers: []
             );
-            _requestInfo = new(frontEndRequest, RequestMethod.PUT);
+            _requestInfo = new(frontEndRequest, RequestMethod.PUT) { ParsedBody = JsonNode.Parse(jsonBody)! };
             await Middleware().Execute(_requestInfo, NullNext);
         }
 

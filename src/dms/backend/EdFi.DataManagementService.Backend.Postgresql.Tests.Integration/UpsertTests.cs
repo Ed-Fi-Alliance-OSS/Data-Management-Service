@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -253,6 +254,80 @@ public class UpsertTests : DatabaseTest
                     Transaction!
                 );
             (getResult! as GetResult.GetSuccess)!.EdfiDoc.ToJsonString().Should().Contain("\"abc\":2");
+        }
+    }
+
+    [TestFixture]
+    public class Given_An_Upsert_That_Removes_All_References : UpsertTests
+    {
+        private UpsertResult? _removalResult;
+        private int _referenceCountAfterInsert;
+        private int _referenceCountAfterRemoval;
+
+        private static readonly Guid _referencedDocumentUuid = Guid.NewGuid();
+        private static readonly Guid _referencedReferentialId = Guid.NewGuid();
+        private static readonly Guid _referencingDocumentUuid = Guid.NewGuid();
+        private static readonly Guid _referencingReferentialId = Guid.NewGuid();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await CreateUpsert()
+                .Upsert(
+                    CreateUpsertRequest(
+                        _defaultResourceName,
+                        _referencedDocumentUuid,
+                        _referencedReferentialId,
+                        """{"abc":1}"""
+                    ),
+                    Connection!,
+                    Transaction!
+                );
+
+            Reference[] references = [new(_defaultResourceName, _referencedReferentialId)];
+
+            await CreateUpsert()
+                .Upsert(
+                    CreateUpsertRequest(
+                        _defaultResourceName,
+                        _referencingDocumentUuid,
+                        _referencingReferentialId,
+                        """{"abc":2}""",
+                        documentReferences: CreateDocumentReferences(references)
+                    ),
+                    Connection!,
+                    Transaction!
+                );
+
+            _referenceCountAfterInsert = await CountDocumentReferencesAsync(_referencingDocumentUuid);
+
+            _removalResult = await CreateUpsert()
+                .Upsert(
+                    CreateUpsertRequest(
+                        _defaultResourceName,
+                        _referencingDocumentUuid,
+                        _referencingReferentialId,
+                        """{"abc":3}""",
+                        documentReferences: Array.Empty<DocumentReference>()
+                    ),
+                    Connection!,
+                    Transaction!
+                );
+
+            _referenceCountAfterRemoval = await CountDocumentReferencesAsync(_referencingDocumentUuid);
+        }
+
+        [Test]
+        public void It_should_report_update_success_when_references_are_removed()
+        {
+            _removalResult.Should().BeOfType<UpsertResult.UpdateSuccess>();
+        }
+
+        [Test]
+        public void It_should_remove_reference_rows_when_no_references_are_sent()
+        {
+            _referenceCountAfterInsert.Should().Be(1);
+            _referenceCountAfterRemoval.Should().Be(0);
         }
     }
 

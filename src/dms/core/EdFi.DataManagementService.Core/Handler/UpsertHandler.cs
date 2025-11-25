@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
+using SecurityDriven;
 using static EdFi.DataManagementService.Core.External.Backend.UpsertResult;
 using static EdFi.DataManagementService.Core.Handler.Utility;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
@@ -40,7 +41,7 @@ internal class UpsertHandler(
         var upsertResult = await _resiliencePipeline.ExecuteAsync(async t =>
         {
             // A document uuid that will be assigned if this is a new document
-            DocumentUuid candidateDocumentUuid = new(Guid.NewGuid());
+            DocumentUuid candidateDocumentUuid = new(FastGuid.NewPostgreSqlGuid());
 
             var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
