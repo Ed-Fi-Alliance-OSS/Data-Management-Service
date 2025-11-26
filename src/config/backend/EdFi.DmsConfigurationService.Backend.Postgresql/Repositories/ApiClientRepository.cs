@@ -46,7 +46,7 @@ public class ApiClientRepository(
                     clientCommand.ClientUuid,
                     command.Name,
                     command.IsApproved,
-                    CreatedBy = auditContext.GetCurrentUser()
+                    CreatedBy = auditContext.GetCurrentUser(),
                 },
                 transaction
             );
@@ -63,7 +63,7 @@ public class ApiClientRepository(
                 {
                     ApiClientId = apiClientId,
                     DmsInstanceId = dmsInstanceId,
-                    CreatedBy = currentUser
+                    CreatedBy = currentUser,
                 });
 
                 await connection.ExecuteAsync(sql, dmsInstanceMappings, transaction);
@@ -273,7 +273,7 @@ public class ApiClientRepository(
                     command.Name,
                     command.IsApproved,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                    ModifiedBy = auditContext.GetCurrentUser()
+                    ModifiedBy = auditContext.GetCurrentUser(),
                 },
                 transaction
             );
@@ -295,7 +295,7 @@ public class ApiClientRepository(
                 {
                     ApiClientId = command.Id,
                     DmsInstanceId = dmsInstanceId,
-                    CreatedBy = currentUser
+                    CreatedBy = currentUser,
                 });
 
                 await connection.ExecuteAsync(insertSql, dmsInstanceMappings, transaction);

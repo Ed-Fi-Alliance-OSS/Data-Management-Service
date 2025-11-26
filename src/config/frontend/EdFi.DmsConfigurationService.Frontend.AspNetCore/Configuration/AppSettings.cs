@@ -13,6 +13,7 @@ public class AppSettings
     public bool DeployDatabaseOnStartup { get; set; }
     public required string Datastore { get; set; }
     public required string IdentityProvider { get; set; }
+    public bool MultiTenancy { get; set; }
 }
 
 public class AppSettingsValidator : IValidateOptions<AppSettings>

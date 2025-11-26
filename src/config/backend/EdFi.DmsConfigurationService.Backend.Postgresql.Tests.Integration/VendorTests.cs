@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
@@ -17,7 +18,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
         private readonly IVendorRepository _repository = new VendorRepository(
             Configuration.DatabaseOptions,
             NullLogger<VendorRepository>.Instance,
-            new TestAuditContext()
+            new TestAuditContext(),
+            new TenantContextProvider()
         );
 
         [TestFixture]

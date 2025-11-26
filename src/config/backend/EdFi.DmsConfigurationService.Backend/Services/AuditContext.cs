@@ -6,13 +6,15 @@
 using System.Security.Claims;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Services;
 
 /// <summary>
 /// Provides audit context information by extracting the current authenticated user from the HTTP context.
 /// </summary>
-public class AuditContext(IHttpContextAccessor httpContextAccessor) : IAuditContext
+public class AuditContext(IHttpContextAccessor httpContextAccessor, ILogger<AuditContext> logger)
+    : IAuditContext
 {
     /// <summary>
     /// Gets the identifier of the current authenticated user or client.
@@ -34,8 +36,8 @@ public class AuditContext(IHttpContextAccessor httpContextAccessor) : IAuditCont
             var claimsPrincipal = httpContext.User;
 
             // Check for "sub" claim (subject - standard JWT claim)
-            var subClaim = claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)
-                           ?? claimsPrincipal.FindFirst("sub");
+            var subClaim =
+                claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier) ?? claimsPrincipal.FindFirst("sub");
             if (subClaim != null && !string.IsNullOrWhiteSpace(subClaim.Value))
             {
                 return TruncateIfNeeded(subClaim.Value);
@@ -49,8 +51,7 @@ public class AuditContext(IHttpContextAccessor httpContextAccessor) : IAuditCont
             }
 
             // Check for "name" claim
-            var nameClaim = claimsPrincipal.FindFirst(ClaimTypes.Name)
-                            ?? claimsPrincipal.FindFirst("name");
+            var nameClaim = claimsPrincipal.FindFirst(ClaimTypes.Name) ?? claimsPrincipal.FindFirst("name");
             if (nameClaim != null && !string.IsNullOrWhiteSpace(nameClaim.Value))
             {
                 return TruncateIfNeeded(nameClaim.Value);
@@ -59,9 +60,10 @@ public class AuditContext(IHttpContextAccessor httpContextAccessor) : IAuditCont
             // Fallback to "system" if no identifiable claim is found
             return "system";
         }
-        catch
+        catch (Exception ex)
         {
-            // If any exception occurs during claim extraction, return "system" to ensure audit logging continues
+            // If any exception occurs during claim extraction, log and return "system" to ensure audit logging continues
+            logger.LogDebug(ex, "Unable to determine current user from HTTP context, defaulting to 'system'");
             return "system";
         }
     }

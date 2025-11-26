@@ -117,6 +117,8 @@ public static class WebApplicationBuilderExtensions
             IConnectionStringEncryptionService,
             ConnectionStringEncryptionService
         >();
+        webApplicationBuilder.Services.AddTransient<ITenantRepository, TenantRepository>();
+        webApplicationBuilder.Services.AddScoped<ITenantContextProvider, TenantContextProvider>();
 
         // Register audit context as transient to allow resolution from both singleton and scoped services
         // Each repository will get a fresh instance that captures the current HTTP context (if available)

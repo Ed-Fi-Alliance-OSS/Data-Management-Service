@@ -8,6 +8,7 @@ using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
@@ -26,9 +27,14 @@ public class ClaimSetRepository(
     ILogger<ClaimSetRepository> logger,
     IClaimsHierarchyRepository claimsHierarchyRepository,
     IClaimsHierarchyManager claimsHierarchyManager,
-    IAuditContext auditContext
+    IAuditContext auditContext,
+    ITenantContextProvider tenantContextProvider
 ) : IClaimSetRepository
 {
+    private TenantContext TenantContext => tenantContextProvider.Context;
+
+    private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
+
     public IEnumerable<Action> GetActions()
     {
         var actions = new Action[]
@@ -73,12 +79,13 @@ public class ClaimSetRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string sql = """
-                  SELECT Id, AuthorizationStrategyName, DisplayName
-                  FROM dmscs.AuthorizationStrategy;
+            string sql = $"""
+                SELECT Id, AuthorizationStrategyName, DisplayName
+                FROM dmscs.AuthorizationStrategy
+                WHERE {TenantContext.TenantWhereClause()};
                 """;
 
-            var authorizationStrategies = await connection.QueryAsync(sql);
+            var authorizationStrategies = await connection.QueryAsync(sql, new { TenantId });
 
             var authStratResponse = authorizationStrategies
                 .Select(row => new AuthorizationStrategy
@@ -107,8 +114,8 @@ public class ClaimSetRepository(
         try
         {
             string sql = """
-                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy)
-                   VALUES(@ClaimSetName, @IsSystemReserved, @CreatedBy)
+                   INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy, TenantId)
+                   VALUES(@ClaimSetName, @IsSystemReserved, @CreatedBy, @TenantId)
                    RETURNING Id;
                 """;
 
@@ -116,7 +123,8 @@ public class ClaimSetRepository(
             {
                 ClaimSetName = command.Name,
                 IsSystemReserved = command.IsSystemReserved,
-                CreatedBy = auditContext.GetCurrentUser()
+                CreatedBy = auditContext.GetCurrentUser(),
+                TenantId,
             };
 
             long id = await connection.ExecuteScalarAsync<long>(sql, parameters);
@@ -145,16 +153,29 @@ public class ClaimSetRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string sql = """
+            string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
-                        FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
+                        FROM dmscs.application a
+                        INNER JOIN dmscs.vendor v ON a.VendorId = v.Id
+                        WHERE a.ClaimSetName = c.ClaimSetName AND {TenantContext.TenantWhereClause(
+                    "v"
+                )}) as applications
                 FROM dmscs.ClaimSet c
+                WHERE {TenantContext.TenantWhereClause("c")}
                 ORDER BY c.Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
 
-            var claimSets = await connection.QueryAsync(sql, param: query);
+            var claimSets = await connection.QueryAsync(
+                sql,
+                param: new
+                {
+                    query.Limit,
+                    query.Offset,
+                    TenantId,
+                }
+            );
 
             var items = claimSets
                 .Select(row => new ClaimSetResponse
@@ -181,15 +202,21 @@ public class ClaimSetRepository(
 
         try
         {
-            string sql = """
+            string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
-                        FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
+                        FROM dmscs.application a
+                        INNER JOIN dmscs.vendor v ON a.VendorId = v.Id
+                        WHERE a.ClaimSetName = c.ClaimSetName AND {TenantContext.TenantWhereClause(
+                    "v"
+                )}) as applications
                 FROM dmscs.ClaimSet c
-                WHERE c.Id = @Id
+                WHERE c.Id = @Id AND {TenantContext.TenantWhereClause("c")}
                 """;
 
-            var claimSets = (await connection.QueryAsync<dynamic>(sql, param: new { Id = id })).ToList();
+            var claimSets = (
+                await connection.QueryAsync<dynamic>(sql, param: new { Id = id, TenantId })
+            ).ToList();
 
             if (claimSets.Count == 0)
             {
@@ -224,18 +251,16 @@ public class ClaimSetRepository(
         try
         {
             // Get the current claim set name
-            string getClaimSetSql = """
+            string getClaimSetSql = $"""
                 SELECT ClaimSetName, IsSystemReserved
                 FROM dmscs.ClaimSet
-                WHERE Id = @Id;
+                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
-
-            var getClaimSetParameters = new { Id = command.Id };
 
             var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
                 string claimSetName,
                 bool isSystemReserved
-            )>(getClaimSetSql, getClaimSetParameters, transaction);
+            )>(getClaimSetSql, new { Id = command.Id, TenantId }, transaction);
 
             if (existingClaimSet == default)
             {
@@ -249,25 +274,24 @@ public class ClaimSetRepository(
 
             string? oldClaimSetName = existingClaimSet.claimSetName;
 
-            string renameClaimSetSql = """
+            string renameClaimSetSql = $"""
                 UPDATE dmscs.ClaimSet
                 SET ClaimSetName=@ClaimSetName, LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                WHERE Id = @Id;
+                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
 
             string newClaimSetName = command.Name;
 
-            var renameClaimSetParameters = new
-            {
-                command.Id,
-                ClaimSetName = newClaimSetName,
-                LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                ModifiedBy = auditContext.GetCurrentUser()
-            };
-
             int affectedRows = await connection.ExecuteAsync(
                 renameClaimSetSql,
-                renameClaimSetParameters,
+                new
+                {
+                    command.Id,
+                    ClaimSetName = newClaimSetName,
+                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                    ModifiedBy = auditContext.GetCurrentUser(),
+                    TenantId,
+                },
                 transaction
             );
 
@@ -276,19 +300,26 @@ public class ClaimSetRepository(
                 return new ClaimSetUpdateResult.FailureNotFound();
             }
 
-            var updateApplicationParameters = new
-            {
-                NewClaimSetName = newClaimSetName,
-                OldClaimSetName = oldClaimSetName,
-            };
-
-            string updateApplicationSql = """
-                UPDATE dmscs.Application
+            // Update applications belonging to vendors in the same tenant
+            string updateApplicationSql = $"""
+                UPDATE dmscs.Application a
                 SET ClaimSetName = @NewClaimSetName
-                WHERE ClaimSetName = @OldClaimSetName;
+                FROM dmscs.Vendor v
+                WHERE a.VendorId = v.Id
+                  AND a.ClaimSetName = @OldClaimSetName
+                  AND {TenantContext.TenantWhereClause("v")};
                 """;
 
-            await connection.ExecuteAsync(updateApplicationSql, updateApplicationParameters, transaction);
+            await connection.ExecuteAsync(
+                updateApplicationSql,
+                new
+                {
+                    NewClaimSetName = newClaimSetName,
+                    OldClaimSetName = oldClaimSetName,
+                    TenantId,
+                },
+                transaction
+            );
 
             // Polly retry policy for handling multi-user conflicts
             AsyncRetryPolicy<ClaimsHierarchySaveResult> retryPolicy = Policy
@@ -432,18 +463,16 @@ public class ClaimSetRepository(
         try
         {
             // Get the current claim set name to distinguish between Not Found and System Reserved responses
-            string getClaimSetSql = """
+            string getClaimSetSql = $"""
                 SELECT ClaimSetName, IsSystemReserved
                 FROM dmscs.ClaimSet
-                WHERE Id = @Id;
+                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
-
-            var getClaimSetParameters = new { Id = id };
 
             var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
                 string claimSetName,
                 bool isSystemReserved
-            )>(getClaimSetSql, getClaimSetParameters);
+            )>(getClaimSetSql, new { Id = id, TenantId });
 
             if (existingClaimSet == default)
             {
@@ -455,10 +484,10 @@ public class ClaimSetRepository(
                 return new ClaimSetDeleteResult.FailureSystemReserved();
             }
 
-            string sql = """
-                DELETE FROM dmscs.ClaimSet WHERE Id = @Id
+            string sql = $"""
+                DELETE FROM dmscs.ClaimSet WHERE Id = @Id AND {TenantContext.TenantWhereClause()}
                 """;
-            int affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
+            int affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
 
             return affectedRows > 0
                 ? new ClaimSetDeleteResult.Success()
@@ -476,14 +505,18 @@ public class ClaimSetRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            string sql = """
+            string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
-                        FROM dmscs.application a WHERE a.ClaimSetName = c.ClaimSetName ) as applications
+                        FROM dmscs.application a
+                        INNER JOIN dmscs.vendor v ON a.VendorId = v.Id
+                        WHERE a.ClaimSetName = c.ClaimSetName AND {TenantContext.TenantWhereClause(
+                    "v"
+                )}) as applications
                 FROM dmscs.ClaimSet c
-                WHERE c.Id = @Id
+                WHERE c.Id = @Id AND {TenantContext.TenantWhereClause("c")}
                 """;
-            var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id });
+            var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id, TenantId });
 
             if (!claimSets.Any())
             {
@@ -520,13 +553,13 @@ public class ClaimSetRepository(
 
         try
         {
-            // Check if the claim set already exists
-            string checkSql = """
-                    SELECT Id FROM dmscs.ClaimSet WHERE ClaimSetName = @ClaimSetName;
+            // Check if the claim set already exists for this tenant
+            string checkSql = $"""
+                    SELECT Id FROM dmscs.ClaimSet WHERE ClaimSetName = @ClaimSetName AND {TenantContext.TenantWhereClause()};
                 """;
             var existingClaimSetId = await connection.QuerySingleOrDefaultAsync<long?>(
                 checkSql,
-                new { ClaimSetName = command.Name },
+                new { ClaimSetName = command.Name, TenantId },
                 transaction
             );
 
@@ -537,19 +570,19 @@ public class ClaimSetRepository(
 
             // Insert new claim set
             string insertSql = """
-                    INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy)
-                    VALUES(@ClaimSetName, @IsSystemReserved, @CreatedBy)
+                    INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy, TenantId)
+                    VALUES(@ClaimSetName, @IsSystemReserved, @CreatedBy, @TenantId)
                     RETURNING Id;
                 """;
-            var parameters = new
-            {
-                ClaimSetName = command.Name,
-                IsSystemReserved = false,
-                CreatedBy = auditContext.GetCurrentUser()
-            };
             existingClaimSetId = await connection.ExecuteScalarAsync<long>(
                 insertSql,
-                parameters,
+                new
+                {
+                    ClaimSetName = command.Name,
+                    IsSystemReserved = false,
+                    CreatedBy = auditContext.GetCurrentUser(),
+                    TenantId,
+                },
                 transaction
             );
 
@@ -664,15 +697,15 @@ public class ClaimSetRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            string selectSql = """
+            string selectSql = $"""
                 SELECT ClaimSetName, IsSystemReserved
                 FROM dmscs.ClaimSet
-                WHERE Id = @OriginalId;
+                WHERE Id = @OriginalId AND {TenantContext.TenantWhereClause()};
                 """;
 
             var originalClaimSet = await connection.QuerySingleOrDefaultAsync(
                 selectSql,
-                new { command.OriginalId },
+                new { command.OriginalId, TenantId },
                 transaction
             );
 
@@ -682,8 +715,8 @@ public class ClaimSetRepository(
             }
 
             string insertSql = """
-                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy)
-                VALUES (@ClaimSetName, @IsSystemReserved, @CreatedBy)
+                INSERT INTO dmscs.ClaimSet (ClaimSetName, IsSystemReserved, CreatedBy, TenantId)
+                VALUES (@ClaimSetName, @IsSystemReserved, @CreatedBy, @TenantId)
                 RETURNING Id;
                 """;
 
@@ -693,7 +726,8 @@ public class ClaimSetRepository(
                 {
                     ClaimSetName = command.Name,
                     IsSystemReserved = (bool)originalClaimSet.issystemreserved,
-                    CreatedBy = auditContext.GetCurrentUser()
+                    CreatedBy = auditContext.GetCurrentUser(),
+                    TenantId,
                 },
                 transaction
             );

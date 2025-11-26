@@ -22,17 +22,22 @@ public class DmsInstanceRepository(
     IConnectionStringEncryptionService encryptionService,
     IDmsInstanceRouteContextRepository routeContextRepository,
     IDmsInstanceDerivativeRepository derivativeRepository,
-    IAuditContext auditContext
+    IAuditContext auditContext,
+    ITenantContextProvider tenantContextProvider
 ) : IDmsInstanceRepository
 {
+    private TenantContext TenantContext => tenantContextProvider.Context;
+
+    private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
+
     public async Task<DmsInstanceInsertResult> InsertDmsInstance(DmsInstanceInsertCommand command)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
             var sql = """
-                INSERT INTO dmscs.DmsInstance (InstanceType, InstanceName, ConnectionString, CreatedBy)
-                VALUES (@InstanceType, @InstanceName, @ConnectionString, @CreatedBy)
+                INSERT INTO dmscs.DmsInstance (InstanceType, InstanceName, ConnectionString, CreatedBy, TenantId)
+                VALUES (@InstanceType, @InstanceName, @ConnectionString, @CreatedBy, @TenantId)
                 RETURNING Id;
                 """;
 
@@ -41,7 +46,8 @@ public class DmsInstanceRepository(
                 command.InstanceType,
                 command.InstanceName,
                 ConnectionString = encryptionService.Encrypt(command.ConnectionString),
-                CreatedBy = auditContext.GetCurrentUser()
+                CreatedBy = auditContext.GetCurrentUser(),
+                TenantId,
             };
 
             var id = await connection.ExecuteScalarAsync<long>(sql, parameters);
@@ -59,10 +65,11 @@ public class DmsInstanceRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
+            var sql = $"""
                 SELECT Id, InstanceType, InstanceName, ConnectionString,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy, TenantId
                 FROM dmscs.DmsInstance
+                WHERE {TenantContext.TenantWhereClause()}
                 ORDER BY Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
@@ -75,8 +82,17 @@ public class DmsInstanceRepository(
                 DateTime CreatedAt,
                 string? CreatedBy,
                 DateTime? LastModifiedAt,
-                string? ModifiedBy
-            )>(sql, query);
+                string? ModifiedBy,
+                long? TenantId
+            )>(
+                sql,
+                new
+                {
+                    query.Limit,
+                    query.Offset,
+                    TenantId,
+                }
+            );
 
             var instancesList = results.ToList();
             if (!instancesList.Any())
@@ -144,7 +160,8 @@ public class DmsInstanceRepository(
                 CreatedAt = row.CreatedAt,
                 CreatedBy = row.CreatedBy,
                 LastModifiedAt = row.LastModifiedAt,
-                ModifiedBy = row.ModifiedBy
+                ModifiedBy = row.ModifiedBy,
+                TenantId = row.TenantId,
             });
             return new DmsInstanceQueryResult.Success(instances);
         }
@@ -160,11 +177,11 @@ public class DmsInstanceRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
+            var sql = $"""
                 SELECT Id, InstanceType, InstanceName, ConnectionString,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
+                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy, TenantId
                 FROM dmscs.DmsInstance
-                WHERE Id = @Id;
+                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
 
             var result = await connection.QuerySingleOrDefaultAsync<(
@@ -175,8 +192,9 @@ public class DmsInstanceRepository(
                 DateTime CreatedAt,
                 string? CreatedBy,
                 DateTime? LastModifiedAt,
-                string? ModifiedBy
-            )?>(sql, new { Id = id });
+                string? ModifiedBy,
+                long? TenantId
+            )?>(sql, new { Id = id, TenantId });
             if (result == null)
             {
                 return new DmsInstanceGetResult.FailureNotFound();
@@ -221,7 +239,8 @@ public class DmsInstanceRepository(
                 CreatedAt = result.Value.CreatedAt,
                 CreatedBy = result.Value.CreatedBy,
                 LastModifiedAt = result.Value.LastModifiedAt,
-                ModifiedBy = result.Value.ModifiedBy
+                ModifiedBy = result.Value.ModifiedBy,
+                TenantId = result.Value.TenantId,
             };
             return new DmsInstanceGetResult.Success(instance);
         }
@@ -237,11 +256,11 @@ public class DmsInstanceRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
+            var sql = $"""
                 UPDATE dmscs.DmsInstance
                 SET InstanceType = @InstanceType, InstanceName = @InstanceName, ConnectionString = @ConnectionString,
                     LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
-                WHERE Id = @Id;
+                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
 
             var parameters = new
@@ -251,7 +270,8 @@ public class DmsInstanceRepository(
                 command.InstanceName,
                 ConnectionString = encryptionService.Encrypt(command.ConnectionString),
                 LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                ModifiedBy = auditContext.GetCurrentUser()
+                ModifiedBy = auditContext.GetCurrentUser(),
+                TenantId,
             };
 
             var affectedRows = await connection.ExecuteAsync(sql, parameters);
@@ -273,8 +293,10 @@ public class DmsInstanceRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = "DELETE FROM dmscs.DmsInstance WHERE Id = @Id;";
-            var affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
+            var sql =
+                $"DELETE FROM dmscs.DmsInstance WHERE Id = @Id AND {TenantContext.TenantWhereClause()};";
+
+            var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
             if (affectedRows > 0)
             {
                 return new DmsInstanceDeleteResult.Success();
@@ -298,13 +320,13 @@ public class DmsInstanceRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
+            var sql = $"""
                 SELECT Id
                 FROM dmscs.DmsInstance
-                WHERE Id = ANY(@Ids);
+                WHERE Id = ANY(@Ids) AND {TenantContext.TenantWhereClause()};
                 """;
 
-            var existingIds = await connection.QueryAsync<long>(sql, new { Ids = ids });
+            var existingIds = await connection.QueryAsync<long>(sql, new { Ids = ids, TenantId });
             return new DmsInstanceIdsExistResult.Success([.. existingIds]);
         }
         catch (Exception ex)

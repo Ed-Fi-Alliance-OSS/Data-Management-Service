@@ -41,8 +41,9 @@ public class DmsInstanceRouteContextRepository(
                     command.InstanceId,
                     command.ContextKey,
                     command.ContextValue,
-                    CreatedBy = auditContext.GetCurrentUser()
-                });
+                    CreatedBy = auditContext.GetCurrentUser(),
+                }
+            );
 
             return new DmsInstanceRouteContextInsertResult.Success(id);
         }
@@ -154,8 +155,9 @@ public class DmsInstanceRouteContextRepository(
                     command.ContextKey,
                     command.ContextValue,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                    ModifiedBy = auditContext.GetCurrentUser()
-                });
+                    ModifiedBy = auditContext.GetCurrentUser(),
+                }
+            );
 
             if (affectedRows == 0)
             {

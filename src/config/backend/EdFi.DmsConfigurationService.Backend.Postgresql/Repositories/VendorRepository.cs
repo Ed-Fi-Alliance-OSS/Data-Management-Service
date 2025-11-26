@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
@@ -18,9 +19,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
     public class VendorRepository(
         IOptions<DatabaseOptions> databaseOptions,
         ILogger<VendorRepository> logger,
-        IAuditContext auditContext)
-        : IVendorRepository
+        IAuditContext auditContext,
+        ITenantContextProvider tenantContextProvider
+    ) : IVendorRepository
     {
+        private TenantContext TenantContext => tenantContextProvider.Context;
+
+        private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
+
         public async Task<VendorInsertResult> InsertVendor(VendorInsertCommand command)
         {
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -30,20 +36,24 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             {
                 long id = 0;
                 bool isNewVendor = false;
-                var sql = "SELECT Id FROM dmscs.Vendor WHERE Company = @Company";
+                // Check for existing vendor by Company (and TenantId if multi-tenancy is enabled)
+                var sql =
+                    $"SELECT Id FROM dmscs.Vendor WHERE Company = @Company AND {TenantContext.TenantWhereClause()}";
+
                 var existingVendorId = await connection.ExecuteScalarAsync<long?>(
                     sql,
-                    new { command.Company }
+                    new { command.Company, TenantId }
                 );
 
                 if (existingVendorId.HasValue)
                 {
-                    sql = """
+                    sql = $"""
                         UPDATE dmscs.Vendor
                         SET ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress,
                             LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                        WHERE Id = @Id;
+                        WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                         """;
+
                     await connection.ExecuteAsync(
                         sql,
                         new
@@ -52,7 +62,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                             command.ContactEmailAddress,
                             Id = existingVendorId.Value,
                             LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                            ModifiedBy = auditContext.GetCurrentUser()
+                            ModifiedBy = auditContext.GetCurrentUser(),
+                            TenantId,
                         }
                     );
 
@@ -63,8 +74,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 else
                 {
                     sql = """
-                        INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress, CreatedBy)
-                        VALUES (@Company, @ContactName, @ContactEmailAddress, @CreatedBy)
+                        INSERT INTO dmscs.Vendor (Company, ContactName, ContactEmailAddress, CreatedBy, TenantId)
+                        VALUES (@Company, @ContactName, @ContactEmailAddress, @CreatedBy, @TenantId)
                         RETURNING Id;
                         """;
 
@@ -75,8 +86,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                             command.Company,
                             command.ContactName,
                             command.ContactEmailAddress,
-                            CreatedBy = auditContext.GetCurrentUser()
-                        });
+                            CreatedBy = auditContext.GetCurrentUser(),
+                            TenantId,
+                        }
+                    );
                     isNewVendor = true;
                 }
 
@@ -91,7 +104,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     )
-                    .Select(p => new { VendorId = id, NamespacePrefix = p.Trim(), CreatedBy = currentUser });
+                    .Select(p => new
+                    {
+                        VendorId = id,
+                        NamespacePrefix = p.Trim(),
+                        CreatedBy = currentUser,
+                    });
 
                 await connection.ExecuteAsync(sql, namespacePrefixes);
                 await transaction.CommitAsync();
@@ -117,9 +135,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             try
             {
-                var sql = """
-                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, NamespacePrefix
-                    FROM (SELECT * FROM dmscs.Vendor ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v
+                var sql = $"""
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, TenantId, NamespacePrefix
+                    FROM (SELECT * FROM dmscs.Vendor WHERE {TenantContext.TenantWhereClause()} ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v
                     LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
                     """;
                 var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
@@ -129,7 +147,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         vendor.NamespacePrefixes = namespacePrefix;
                         return vendor;
                     },
-                    param: query,
+                    param: new
+                    {
+                        query.Limit,
+                        query.Offset,
+                        TenantId,
+                    },
                     splitOn: "NamespacePrefix"
                 );
 
@@ -156,10 +179,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             try
             {
-                var sql = """
-                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, NamespacePrefix
+                var sql = $"""
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, TenantId, NamespacePrefix
                     FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
-                    WHERE v.Id = @Id;
+                    WHERE v.Id = @Id AND {TenantContext.TenantWhereClause("v")};
                     """;
                 var vendors = await connection.QueryAsync<VendorResponse, string, VendorResponse>(
                     sql,
@@ -168,7 +191,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         vendor.NamespacePrefixes = namespacePrefix;
                         return vendor;
                     },
-                    param: new { Id = id },
+                    param: new { Id = id, TenantId },
                     splitOn: "NamespacePrefix"
                 );
 
@@ -197,12 +220,13 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 
         public async Task<VendorUpdateResult> UpdateVendor(VendorUpdateCommand command)
         {
-            var sql = """
+            var sql = $"""
                 UPDATE dmscs.Vendor
                 SET Company=@Company, ContactName=@ContactName, ContactEmailAddress=@ContactEmailAddress,
                     LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                WHERE Id = @Id;
+                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
+
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             await connection.OpenAsync();
             await using var transaction = await connection.BeginTransactionAsync();
@@ -212,13 +236,15 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                     sql,
                     new
                     {
+                        command.Id,
                         command.Company,
                         command.ContactName,
                         command.ContactEmailAddress,
-                        command.Id,
                         LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                        ModifiedBy = auditContext.GetCurrentUser()
-                    });
+                        ModifiedBy = auditContext.GetCurrentUser(),
+                        TenantId,
+                    }
+                );
 
                 if (affectedRows == 0)
                 {
@@ -239,7 +265,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         ',',
                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     )
-                    .Select(p => new { VendorId = command.Id, NamespacePrefix = p.Trim(), CreatedBy = currentUser });
+                    .Select(p => new
+                    {
+                        VendorId = command.Id,
+                        NamespacePrefix = p.Trim(),
+                        CreatedBy = currentUser,
+                    });
 
                 await connection.ExecuteAsync(sql, namespacePrefixes);
                 await transaction.CommitAsync();
@@ -271,12 +302,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             try
             {
-                var sql = """
-                    DELETE FROM dmscs.Vendor where Id = @Id;
-                    DELETE from dmscs.VendorNamespacePrefix WHERE VendorId = @Id;
+                var sql = $"""
+                    DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId IN (
+                        SELECT Id FROM dmscs.Vendor WHERE Id = @Id AND {TenantContext.TenantWhereClause()}
+                    );
+                    DELETE FROM dmscs.Vendor WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                     """;
 
-                var affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
+                var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
                 return affectedRows > 0
                     ? new VendorDeleteResult.Success()
                     : new VendorDeleteResult.FailureNotExists();
@@ -294,14 +327,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 // First get applications with edOrgs
-                string sqlEdOrgs = """
-                        SELECT
-                            v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName,
-                            eo.EducationOrganizationId
-                        FROM dmscs.vendor v
-                        LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId
-                        LEFT OUTER JOIN dmscs.ApplicationEducationOrganization eo ON a.Id = eo.ApplicationId
-                        WHERE v.Id = @VendorId;
+                string sqlEdOrgs = $"""
+                    SELECT
+                        v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName,
+                        eo.EducationOrganizationId
+                    FROM dmscs.vendor v
+                    LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId
+                    LEFT OUTER JOIN dmscs.ApplicationEducationOrganization eo ON a.Id = eo.ApplicationId
+                    WHERE v.Id = @VendorId AND {TenantContext.TenantWhereClause("v")};
                     """;
 
                 bool vendorExists = false;
@@ -336,7 +369,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
 
                         return application;
                     },
-                    param: new { VendorId = vendorId },
+                    param: new { VendorId = vendorId, TenantId },
                     splitOn: "EducationOrganizationId"
                 );
 

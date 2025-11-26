@@ -59,6 +59,7 @@ if (useReverseProxyHeaders)
 }
 
 app.UseMiddleware<RequestLoggingMiddleware>();
+app.UseMiddleware<TenantResolutionMiddleware>();
 
 if (!ReportInvalidConfiguration(app))
 {

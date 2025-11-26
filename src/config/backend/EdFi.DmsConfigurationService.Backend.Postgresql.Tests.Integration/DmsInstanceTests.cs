@@ -40,7 +40,8 @@ public class DmsInstanceTests : DatabaseTest
             new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
             _routeContextRepository,
             _derivativeRepository,
-            new TestAuditContext()
+            new TestAuditContext(),
+            new TenantContextProvider()
         );
     }
 

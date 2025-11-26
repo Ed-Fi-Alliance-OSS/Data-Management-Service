@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
@@ -37,7 +38,8 @@ public class ApplicationTests : DatabaseTest
             IVendorRepository repository = new VendorRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<VendorRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             VendorInsertCommand vendor = new()
@@ -143,7 +145,8 @@ public class ApplicationTests : DatabaseTest
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<VendorRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             VendorInsertCommand vendor = new()
@@ -201,7 +204,8 @@ public class ApplicationTests : DatabaseTest
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<VendorRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             VendorInsertCommand vendor = new()
@@ -285,7 +289,8 @@ public class ApplicationTests : DatabaseTest
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<VendorRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             VendorInsertCommand vendor = new()
@@ -388,7 +393,8 @@ public class ApplicationTests : DatabaseTest
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<VendorRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             VendorInsertCommand vendor = new()
@@ -448,7 +454,8 @@ public class ApplicationTests : DatabaseTest
             IVendorRepository vendorRepository = new VendorRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<VendorRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             VendorInsertCommand secondVendor = new()
@@ -520,4 +527,3 @@ public class ApplicationTests : DatabaseTest
         }
     }
 }
-
