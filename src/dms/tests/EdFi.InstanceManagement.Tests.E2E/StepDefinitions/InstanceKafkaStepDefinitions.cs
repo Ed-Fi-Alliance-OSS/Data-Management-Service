@@ -113,6 +113,8 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
 
     [When("I wait {int} second for Kafka messages")]
     [When("I wait {int} seconds for Kafka messages")]
+    [Then("I wait {int} second for Kafka messages")]
+    [Then("I wait {int} seconds for Kafka messages")]
     public void WhenIWaitSecondsForKafkaMessages(int seconds)
     {
         _logger.LogDebug("Waiting {Seconds} second(s) to ensure Kafka message delivery", seconds);

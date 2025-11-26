@@ -138,59 +138,21 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
             return;
         }
 
-        // Create instances if they don't exist
+        // Use pre-existing instances created by setup script (IDs 1, 2, 3)
+        // These instances were created by start-local-dms.ps1 with -AddDmsInstance flag
         await GivenAVendorExists();
 
-        // Instance 1: District 255901, Year 2024
-        var instance1 = await _configClient!.CreateInstanceAsync(
-            new InstanceRequest(
-                "District",
-                "District 255901 - School Year 2024",
-                "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2024;"
-            )
-        );
-        context.InstanceIds.Add(instance1.Id);
-        context.RouteQualifierToInstanceId["255901/2024"] = instance1.Id;
-        await _configClient.CreateRouteContextAsync(
-            new RouteContextRequest(instance1.Id, "districtId", "255901")
-        );
-        await _configClient.CreateRouteContextAsync(
-            new RouteContextRequest(instance1.Id, "schoolYear", "2024")
-        );
+        // Instance 1: District 255901, Year 2024 (ID = 1)
+        context.InstanceIds.Add(1);
+        context.RouteQualifierToInstanceId["255901/2024"] = 1;
 
-        // Instance 2: District 255901, Year 2025
-        var instance2 = await _configClient.CreateInstanceAsync(
-            new InstanceRequest(
-                "District",
-                "District 255901 - School Year 2025",
-                "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255901_sy2025;"
-            )
-        );
-        context.InstanceIds.Add(instance2.Id);
-        context.RouteQualifierToInstanceId["255901/2025"] = instance2.Id;
-        await _configClient.CreateRouteContextAsync(
-            new RouteContextRequest(instance2.Id, "districtId", "255901")
-        );
-        await _configClient.CreateRouteContextAsync(
-            new RouteContextRequest(instance2.Id, "schoolYear", "2025")
-        );
+        // Instance 2: District 255901, Year 2025 (ID = 2)
+        context.InstanceIds.Add(2);
+        context.RouteQualifierToInstanceId["255901/2025"] = 2;
 
-        // Instance 3: District 255902, Year 2024
-        var instance3 = await _configClient.CreateInstanceAsync(
-            new InstanceRequest(
-                "District",
-                "District 255902 - School Year 2024",
-                "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice_d255902_sy2024;"
-            )
-        );
-        context.InstanceIds.Add(instance3.Id);
-        context.RouteQualifierToInstanceId["255902/2024"] = instance3.Id;
-        await _configClient.CreateRouteContextAsync(
-            new RouteContextRequest(instance3.Id, "districtId", "255902")
-        );
-        await _configClient.CreateRouteContextAsync(
-            new RouteContextRequest(instance3.Id, "schoolYear", "2024")
-        );
+        // Instance 3: District 255902, Year 2024 (ID = 3)
+        context.InstanceIds.Add(3);
+        context.RouteQualifierToInstanceId["255902/2024"] = 3;
     }
 
     [When("I create an application with the following details:")]

@@ -473,126 +473,45 @@ function Wait-ForPostgreSQL {
     }
 }
 
-function Setup-InstanceManagementDatabases {
-    Write-Host "Creating test databases for multi-instance routing..." -ForegroundColor Cyan
+# Setup-InstanceManagementDatabases function removed
+# This is now handled by start-local-dms.ps1 -AddDmsInstance
+# which creates databases, runs migrations, and sets up Kafka connectors
 
-    # Create the three test databases
-    docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255901_sy2024;" 2>&1
-    Write-Host "Created database: edfi_datamanagementservice_d255901_sy2024" -ForegroundColor Green
+function Wait-ForKafkaConnect {
+    Write-Host "Waiting for Kafka Connect to be ready..." -ForegroundColor Cyan
 
-    docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255901_sy2025;" 2>&1
-    Write-Host "Created database: edfi_datamanagementservice_d255901_sy2025" -ForegroundColor Green
+    $maxAttempts = 30
+    $attempt = 0
+    $ready = $false
 
-    docker exec dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_datamanagementservice_d255902_sy2024;" 2>&1
-    Write-Host "Created database: edfi_datamanagementservice_d255902_sy2024" -ForegroundColor Green
+    while (-not $ready -and $attempt -lt $maxAttempts) {
+        $attempt++
+        Write-Host "Attempt $attempt of $maxAttempts..." -ForegroundColor Gray
 
-    Write-Host "Exporting schema from main database..." -ForegroundColor Cyan
+        try {
+            $response = Invoke-WebRequest -Uri "http://localhost:8083/connectors" -Method GET -UseBasicParsing -TimeoutSec 5 -ErrorAction SilentlyContinue
+            if ($response.StatusCode -eq 200) {
+                $ready = $true
+                Write-Host "Kafka Connect is ready!" -ForegroundColor Green
+            }
+        }
+        catch {
+            Write-Host "Kafka Connect not ready yet: $_" -ForegroundColor Yellow
+        }
 
-    # Export schema from main database to a temporary location
-    $tempSchemaFile = [System.IO.Path]::GetTempFileName()
-    docker exec dms-postgresql pg_dump -U postgres -d edfi_datamanagementservice --schema-only > $tempSchemaFile
-    Write-Host "Schema exported successfully" -ForegroundColor Green
+        if (-not $ready) {
+            Start-Sleep -Seconds 2
+        }
+    }
 
-    Write-Host "Applying schema to test databases..." -ForegroundColor Cyan
-
-    # Apply schema to each test database
-    Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024
-    Write-Host "Schema applied to: edfi_datamanagementservice_d255901_sy2024" -ForegroundColor Green
-
-    Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025
-    Write-Host "Schema applied to: edfi_datamanagementservice_d255901_sy2025" -ForegroundColor Green
-
-    Get-Content $tempSchemaFile | docker exec -i dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024
-    Write-Host "Schema applied to: edfi_datamanagementservice_d255902_sy2024" -ForegroundColor Green
-
-    # Clean up temp file
-    Remove-Item $tempSchemaFile -ErrorAction SilentlyContinue
-
-    # Verify schema was applied (should show tables in dms schema)
-    Write-Host "`nVerifying schema deployment..." -ForegroundColor Cyan
-    docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "SELECT COUNT(*) as table_count FROM information_schema.tables WHERE table_schema = 'dms';"
-
-    # Create PostgreSQL publications for Debezium CDC (one per instance for topic-per-instance)
-    Write-Host "`nCreating PostgreSQL publications for Debezium CDC..." -ForegroundColor Cyan
-
-    docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2024 -c "CREATE PUBLICATION to_debezium_instance_1 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;" 2>&1 | Out-Null
-    Write-Host "Created publication: to_debezium_instance_1 (database: edfi_datamanagementservice_d255901_sy2024)" -ForegroundColor Green
-
-    docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255901_sy2025 -c "CREATE PUBLICATION to_debezium_instance_2 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;" 2>&1 | Out-Null
-    Write-Host "Created publication: to_debezium_instance_2 (database: edfi_datamanagementservice_d255901_sy2025)" -ForegroundColor Green
-
-    docker exec dms-postgresql psql -U postgres -d edfi_datamanagementservice_d255902_sy2024 -c "CREATE PUBLICATION to_debezium_instance_3 FOR TABLE dms.document, dms.educationorganizationhierarchytermslookup;" 2>&1 | Out-Null
-    Write-Host "Created publication: to_debezium_instance_3 (database: edfi_datamanagementservice_d255902_sy2024)" -ForegroundColor Green
-
-    Write-Host "PostgreSQL publications created successfully!" -ForegroundColor Green
+    if (-not $ready) {
+        throw "Kafka Connect did not become ready within the timeout period"
+    }
 }
 
-function Setup-InstanceKafkaConnectors {
-    Write-Host "Setting up Kafka connectors for topic-per-instance architecture..." -ForegroundColor Cyan
-
-    # Define instance configurations matching the test databases
-    # These must align with the instance IDs that will be created in the tests
-    # For E2E tests, we use simple sequential IDs (1, 2, 3)
-    $instances = @(
-        @{ InstanceId = 1; DatabaseName = "edfi_datamanagementservice_d255901_sy2024" },
-        @{ InstanceId = 2; DatabaseName = "edfi_datamanagementservice_d255901_sy2025" },
-        @{ InstanceId = 3; DatabaseName = "edfi_datamanagementservice_d255902_sy2024" }
-    )
-
-    $connectorSetupScript = "$solutionRoot/../eng/docker-compose/setup-instance-kafka-connectors.ps1"
-
-    if (-not (Test-Path $connectorSetupScript)) {
-        Write-Host "WARNING: Kafka connector setup script not found at: $connectorSetupScript" -ForegroundColor Yellow
-        Write-Host "Skipping Kafka connector configuration. Topic-per-instance tests may fail." -ForegroundColor Yellow
-        return
-    }
-
-    # Determine environment file path (look for .env.e2e or .env.routeContext.e2e)
-    $possibleEnvFiles = @(
-        "$solutionRoot/../eng/docker-compose/.env.routeContext.e2e",
-        "$solutionRoot/../eng/docker-compose/.env.e2e",
-        "$solutionRoot/../eng/docker-compose/.env"
-    )
-
-    $envFile = $null
-    foreach ($file in $possibleEnvFiles) {
-        if (Test-Path $file) {
-            $envFile = $file
-            break
-        }
-    }
-
-    if ($null -eq $envFile) {
-        Write-Host "WARNING: Could not find environment file in docker-compose directory" -ForegroundColor Yellow
-        Write-Host "Skipping Kafka connector configuration." -ForegroundColor Yellow
-        return
-    }
-
-    Write-Host "Using environment file: $envFile" -ForegroundColor Gray
-
-    # Change to docker-compose directory to run the setup script
-    Push-Location "$solutionRoot/../eng/docker-compose"
-
-    try {
-        # Run the connector setup script
-        & $connectorSetupScript -EnvironmentFile $envFile -Instances $instances
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "WARNING: Kafka connector setup completed with warnings or errors" -ForegroundColor Yellow
-            Write-Host "Topic-per-instance tests may fail if connectors are not properly configured" -ForegroundColor Yellow
-        }
-        else {
-            Write-Host "Kafka connectors configured successfully for topic-per-instance architecture!" -ForegroundColor Green
-        }
-    }
-    catch {
-        Write-Host "WARNING: Failed to setup Kafka connectors: $($_.Exception.Message)" -ForegroundColor Yellow
-        Write-Host "Topic-per-instance tests may fail" -ForegroundColor Yellow
-    }
-    finally {
-        Pop-Location
-    }
-}
+# Setup-InstanceKafkaConnectors function removed
+# This is now handled by start-local-dms.ps1 -AddDmsInstance
+# which creates Kafka connectors via setup-instance-kafka-connectors.ps1
 
 function RunInstanceE2E {
     # Run only the instance management E2E tests
@@ -632,17 +551,17 @@ function InstanceE2ETests {
     # Restart DMS so it can authenticate with the registered clients
     Invoke-Step { Restart-DmsContainer }
 
-    # Wait for PostgreSQL to be ready
-    Invoke-Step { Wait-ForPostgreSQL }
-
-    # Create and configure test databases
-    Invoke-Step { Setup-InstanceManagementDatabases }
-
-    # Setup Kafka connectors for topic-per-instance architecture
-    Invoke-Step { Setup-InstanceKafkaConnectors }
+    Write-Host "`nInstance E2E setup complete!" -ForegroundColor Green
+    Write-Host "Infrastructure was created by setup-local-dms.ps1:" -ForegroundColor Cyan
+    Write-Host "  - 3 DMS instances registered in Config Service" -ForegroundColor Gray
+    Write-Host "  - 3 PostgreSQL databases with DMS schema" -ForegroundColor Gray
+    Write-Host "  - 3 Kafka connectors (postgresql-source-instance-1, 2, 3)" -ForegroundColor Gray
+    Write-Host "  - 3 Kafka topics (edfi.dms.1.document, edfi.dms.2.document, edfi.dms.3.document)" -ForegroundColor Gray
 
     # Run the instance management E2E tests
     Invoke-Step { RunInstanceE2E }
+
+    Write-Host "`nTests complete!" -ForegroundColor Green
 }
 
 function RunNuGetPack {
