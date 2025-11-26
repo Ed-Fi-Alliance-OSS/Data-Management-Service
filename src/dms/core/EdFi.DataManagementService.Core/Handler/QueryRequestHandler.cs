@@ -65,7 +65,7 @@ internal class QueryRequestHandler(
                 Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
                 Headers: []
             ),
-            _ => new(
+            _ => new FrontendResponse(
                 StatusCode: 500,
                 Body: ToJsonError("Unknown QueryResult", requestInfo.FrontendRequest.TraceId),
                 Headers: []

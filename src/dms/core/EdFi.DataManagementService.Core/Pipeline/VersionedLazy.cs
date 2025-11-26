@@ -32,20 +32,35 @@ internal class VersionedLazy<T>(Func<T> valueFactory, Func<Guid> versionProvider
     {
         get
         {
-            lock (_lock)
+            return GetFreshValueAndVersion().Value;
+        }
+    }
+
+    /// <summary>
+    /// Returns the cached value along with the version that produced it.
+    /// </summary>
+    public (T Value, Guid Version) GetValueAndVersion()
+    {
+        return GetFreshValueAndVersion();
+    }
+
+    /// <summary>
+    /// Returns the cached value and version, refreshing under lock when the version changes.
+    /// </summary>
+    private (T Value, Guid Version) GetFreshValueAndVersion()
+    {
+        lock (_lock)
+        {
+            Guid currentVersion = _versionProvider();
+
+            if (!_hasValue || _cachedVersion != currentVersion)
             {
-                Guid currentVersion = _versionProvider();
-
-                // If we don't have a value yet or the version has changed, recompute
-                if (!_hasValue || _cachedVersion != currentVersion)
-                {
-                    _cachedValue = _valueFactory();
-                    _cachedVersion = currentVersion;
-                    _hasValue = true;
-                }
-
-                return _cachedValue!;
+                _cachedValue = _valueFactory();
+                _cachedVersion = currentVersion;
+                _hasValue = true;
             }
+
+            return (_cachedValue!, _cachedVersion);
         }
     }
 }

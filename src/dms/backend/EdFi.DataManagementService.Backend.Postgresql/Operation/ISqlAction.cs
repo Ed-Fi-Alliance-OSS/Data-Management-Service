@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -24,7 +25,7 @@ public interface ISqlAction
         string resourceName,
         PartitionKey partitionKey,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
+        NpgsqlTransaction? transaction,
         TraceId traceId
     );
 
@@ -36,12 +37,13 @@ public interface ISqlAction
         TraceId traceId
     );
 
-    public Task<JsonArray> GetAllDocumentsByResourceName(
+    public Task<JsonArray> GetAllDocumentsByResourceNameAsync(
         string resourceName,
         IQueryRequest queryRequest,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        TraceId traceId
+        TraceId traceId,
+        CancellationToken cancellationToken
     );
 
     public Task<int> GetTotalDocumentsForResourceName(
@@ -108,6 +110,14 @@ public interface ISqlAction
         TraceId traceId
     );
 
+    public Task<Guid[]> FindInvalidReferences(
+        Guid[] referentialIds,
+        short[] referentialPartitionKeys,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        TraceId traceId
+    );
+
     public Task<int> DeleteDocumentByDocumentUuid(
         PartitionKey documentPartitionKey,
         DocumentUuid documentUuid,
@@ -166,31 +176,31 @@ public interface ISqlAction
     public Task<long[]> GetAncestorEducationOrganizationIds(
         long[] educationOrganizationIds,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<JsonElement?> GetStudentSchoolAuthorizationEducationOrganizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<JsonElement?> GetStudentEdOrgResponsibilityAuthorizationIds(
         string studentUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<JsonElement?> GetContactStudentSchoolAuthorizationEducationOrganizationIds(
         string contactUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<JsonElement?> GetStaffEducationOrganizationAuthorizationEdOrgIds(
         string staffUniqueId,
         NpgsqlConnection connection,
-        NpgsqlTransaction transaction
+        NpgsqlTransaction? transaction
     );
 
     public Task<int> InsertStudentSecurableDocument(

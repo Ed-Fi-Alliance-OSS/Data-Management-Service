@@ -2,6 +2,9 @@ Feature: Identity Conflict validation
 
         Background:
             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "255901001"
+            And the system has these descriptors
+                  | descriptorValue                                             |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Postsecondary         |
             Given the system has these "localEducationAgencies"
                   | localEducationAgencyId | nameOfInstitution | localEducationAgencyCategoryDescriptor                             | categories                                                                                                                               |
                   | 155901                 | Grand Bend ISD    | uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent | [{ "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider" }] |

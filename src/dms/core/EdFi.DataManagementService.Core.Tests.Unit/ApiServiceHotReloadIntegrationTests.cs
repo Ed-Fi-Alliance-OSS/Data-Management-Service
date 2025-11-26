@@ -123,7 +123,7 @@ public class ApiServiceHotReloadIntegrationTests
 
         var serviceProvider = services.BuildServiceProvider();
         var claimSetProvider = new NoClaimsClaimSetProvider(NullLogger.Instance);
-        var documentValidator = new DocumentValidator();
+        var documentValidator = new DocumentValidator(new CompiledSchemaCache());
         var matchingDocumentUuidsValidator = new MatchingDocumentUuidsValidator();
         var equalityConstraintValidator = new EqualityConstraintValidator();
         var decimalValidator = new DecimalValidator();
@@ -150,7 +150,8 @@ public class ApiServiceHotReloadIntegrationTests
             apiSchemaUploadService,
             serviceProvider,
             A.Fake<ClaimSetsCache>(),
-            A.Fake<IResourceDependencyGraphMLFactory>()
+            A.Fake<IResourceDependencyGraphMLFactory>(),
+            new CompiledSchemaCache()
         );
     }
 
@@ -387,7 +388,7 @@ public class ApiServiceHotReloadIntegrationTests
             var apiServiceWithDisabledEndpoints = new ApiService(
                 _apiSchemaFileLoader,
                 new NoClaimsClaimSetProvider(NullLogger.Instance),
-                new DocumentValidator(),
+                new DocumentValidator(new CompiledSchemaCache()),
                 new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 new DecimalValidator(),
@@ -399,7 +400,8 @@ public class ApiServiceHotReloadIntegrationTests
                 apiSchemaUploadService,
                 new ServiceCollection().BuildServiceProvider(),
                 A.Fake<ClaimSetsCache>(),
-                A.Fake<IResourceDependencyGraphMLFactory>()
+                A.Fake<IResourceDependencyGraphMLFactory>(),
+                new CompiledSchemaCache()
             );
 
             await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Student", "5.0.0"));

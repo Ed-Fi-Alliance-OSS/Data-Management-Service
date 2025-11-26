@@ -90,7 +90,7 @@ public class ValidateDocumentMiddlewareTests
 
     internal static IPipelineStep Middleware()
     {
-        var documentValidator = new DocumentValidator();
+        var documentValidator = new DocumentValidator(new CompiledSchemaCache());
         return new ValidateDocumentMiddleware(NullLogger.Instance, documentValidator);
     }
 
