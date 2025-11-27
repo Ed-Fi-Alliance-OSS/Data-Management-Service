@@ -79,14 +79,6 @@ jobs:
             --load \
             .
 
-      - name: Generate SBOM with Docker Scout (SPDX format)
-        uses: docker/scout-action@b23590dc1e4d09febc00cfcbc51e9e8c0f7ee9f3 # v1.16.1
-        with:
-          command: sbom
-          image: local://${{ matrix.dockerfile.name }}:pr-test
-          format: spdx
-          output: sbom-${{ matrix.dockerfile.name }}.spdx.json
-
       - name: Analyze with Docker Scout
         uses: docker/scout-action@b23590dc1e4d09febc00cfcbc51e9e8c0f7ee9f3 # v1.16.1
         with:
@@ -111,7 +103,6 @@ jobs:
           name: docker-scout-analysis-${{ matrix.dockerfile.name }}
           path: |
             sarif-${{ matrix.dockerfile.name }}.output.json
-            sbom-${{ matrix.dockerfile.name }}.spdx.json
 
       - name: Check for Critical and High vulnerabilities
         run: |
