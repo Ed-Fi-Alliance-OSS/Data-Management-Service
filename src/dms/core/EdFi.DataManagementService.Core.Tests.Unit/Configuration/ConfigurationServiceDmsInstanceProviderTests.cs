@@ -71,7 +71,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             _provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
@@ -166,7 +166,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             _provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
@@ -211,7 +211,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
             var handler = new TestHttpMessageHandler(HttpStatusCode.Unauthorized, "");
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             var provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
@@ -233,7 +233,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
             var handler = new TestHttpMessageHandler(HttpStatusCode.InternalServerError, "");
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             var provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
@@ -298,7 +298,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             _provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
@@ -384,7 +384,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             _provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
@@ -504,7 +504,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             _provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
@@ -594,7 +594,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             _provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
@@ -644,7 +644,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             _provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
@@ -709,7 +709,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
 
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
             var apiClient = new ConfigurationServiceApiClient(httpClient);
-            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope", tenant: "");
 
             _provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,

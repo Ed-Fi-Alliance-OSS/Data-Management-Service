@@ -98,7 +98,7 @@ public class SecurityMetadataProviderTests
             configServiceApiClient.Client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", expectedToken);
 
-            var configContext = new ConfigurationServiceContext(clientId, clientSecret, scope);
+            var configContext = new ConfigurationServiceContext(clientId, clientSecret, scope, tenant: "");
 
             var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
             A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope)).Returns(expectedToken);
@@ -215,7 +215,7 @@ public class SecurityMetadataProviderTests
             _configServiceApiClient.Client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", expectedToken);
 
-            var configContext = new ConfigurationServiceContext(clientId, clientSecret, scope);
+            var configContext = new ConfigurationServiceContext(clientId, clientSecret, scope, tenant: "");
 
             var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
             A.CallTo(() => tokenHandler.GetTokenAsync(clientId, clientSecret, scope)).Returns(expectedToken);
