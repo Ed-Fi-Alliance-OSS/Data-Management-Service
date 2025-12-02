@@ -26,7 +26,11 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
             "s3creT@09"
         );
 
-        _configClient = new ConfigServiceClient(TestConfiguration.ConfigServiceUrl, context.ConfigToken);
+        _configClient = new ConfigServiceClient(
+            TestConfiguration.ConfigServiceUrl,
+            context.ConfigToken,
+            TestConfiguration.TenantName
+        );
     }
 
     [When("I create a vendor with the following details:")]

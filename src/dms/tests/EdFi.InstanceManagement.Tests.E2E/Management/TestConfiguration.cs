@@ -26,4 +26,10 @@ public static class TestConfiguration
     /// Default route qualifier segments from environment
     /// </summary>
     public static string[] RouteQualifierSegments => ["districtId", "schoolYear"];
+
+    /// <summary>
+    /// Tenant name for multi-tenant Configuration Service calls.
+    /// When specified, this value is passed as a "Tenant" header to all Configuration Service API calls.
+    /// </summary>
+    public static string? TenantName => Environment.GetEnvironmentVariable("CONFIG_SERVICE_TENANT");
 }

@@ -12,10 +12,27 @@ namespace EdFi.InstanceManagement.Tests.E2E.Management;
 /// <summary>
 /// Client for interacting with the Configuration Service API
 /// </summary>
-public class ConfigServiceClient(string baseUrl, string accessToken)
+public class ConfigServiceClient
 {
-    private readonly HttpClient _httpClient = new() { BaseAddress = new Uri(baseUrl) };
-    private readonly string _accessToken = accessToken;
+    private readonly HttpClient _httpClient;
+    private readonly string _accessToken;
+
+    /// <summary>
+    /// Creates a new ConfigServiceClient
+    /// </summary>
+    /// <param name="baseUrl">Base URL of the Configuration Service</param>
+    /// <param name="accessToken">Bearer token for authentication</param>
+    /// <param name="tenantName">Optional tenant name for multi-tenant support</param>
+    public ConfigServiceClient(string baseUrl, string accessToken, string? tenantName = null)
+    {
+        _httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
+        _accessToken = accessToken;
+
+        if (!string.IsNullOrEmpty(tenantName))
+        {
+            _httpClient.DefaultRequestHeaders.Add("Tenant", tenantName);
+        }
+    }
 
     /// <summary>
     /// Create a new vendor
