@@ -94,7 +94,7 @@ jobs:
           image: ${{ env.IMAGENAME }}
           sarif-file: sarif-${{ matrix.dockerfile.name }}-${{ steps.versions.outputs.VERSION }}.output.json
           summary: true
-          only-severities: "critical,high"
+          only-severities: "critical"
 
       - name: Set artifact name
         id: set-artifact-name

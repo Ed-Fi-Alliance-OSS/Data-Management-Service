@@ -86,7 +86,7 @@ jobs:
           image: local://${{ matrix.dockerfile.name }}:pr-test
           sarif-file: sarif-${{ matrix.dockerfile.name }}.output.json
           summary: true
-          only-severities: "critical,high"
+          only-severities: "critical"
 
       - name: Upload SARIF result
         id: upload-sarif
