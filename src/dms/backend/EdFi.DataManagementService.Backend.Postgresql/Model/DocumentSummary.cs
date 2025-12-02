@@ -17,10 +17,6 @@ public record DocumentSummary(
     /// </summary>
     JsonElement EdfiDoc,
     /// <summary>
-    /// The SecurityElements JSON field from the database
-    /// </summary>
-    JsonElement SecurityElements,
-    /// <summary>
     /// The datetime this document was last modified in the database
     /// </summary>
     DateTime LastModifiedAt,
