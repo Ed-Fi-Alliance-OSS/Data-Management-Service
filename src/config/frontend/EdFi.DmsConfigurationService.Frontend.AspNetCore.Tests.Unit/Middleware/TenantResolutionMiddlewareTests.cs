@@ -336,5 +336,120 @@ internal class TenantResolutionMiddlewareTests
             httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
             A.CallTo(() => _next(httpContext)).MustNotHaveHappened();
         }
+
+        [Test]
+        public async Task It_allows_connect_register_endpoint_without_tenant_header()
+        {
+            // Arrange
+            var middleware = new TenantResolutionMiddleware(_next);
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Path = "/connect/register";
+            // No Tenant header
+
+            // Act
+            await middleware.Invoke(
+                httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+
+            // Assert
+            A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_allows_connect_token_endpoint_without_tenant_header()
+        {
+            // Arrange
+            var middleware = new TenantResolutionMiddleware(_next);
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Path = "/connect/token";
+            // No Tenant header
+
+            // Act
+            await middleware.Invoke(
+                httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+
+            // Assert
+            A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_allows_connect_endpoint_case_insensitive()
+        {
+            // Arrange
+            var middleware = new TenantResolutionMiddleware(_next);
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Path = "/CONNECT/TOKEN";
+            // No Tenant header
+
+            // Act
+            await middleware.Invoke(
+                httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+
+            // Assert
+            A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_allows_tenants_endpoint_without_tenant_header()
+        {
+            // Arrange
+            var middleware = new TenantResolutionMiddleware(_next);
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Path = "/v2/tenants";
+            // No Tenant header
+
+            // Act
+            await middleware.Invoke(
+                httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+
+            // Assert
+            A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_allows_tenants_endpoint_with_id_without_tenant_header()
+        {
+            // Arrange
+            var middleware = new TenantResolutionMiddleware(_next);
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Path = "/v2/tenants/123";
+            // No Tenant header
+
+            // Act
+            await middleware.Invoke(
+                httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+
+            // Assert
+            A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+        }
     }
 }

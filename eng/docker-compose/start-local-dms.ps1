@@ -220,6 +220,21 @@ else {
             # Get configuration service token
             $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!"
 
+            # Create tenant if multi-tenancy is enabled
+            if ($envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and $envValues.CONFIG_SERVICE_TENANT) {
+                Write-Output "Multi-tenancy is enabled. Creating tenant: $($envValues.CONFIG_SERVICE_TENANT)"
+                try {
+                    $tenantId = Add-Tenant -CmsUrl "http://localhost:8081" -AccessToken $configToken -TenantName $envValues.CONFIG_SERVICE_TENANT
+                    Write-Output "Tenant created successfully with ID: $tenantId"
+                }
+                catch {
+                    Write-Warning "Failed to create tenant (may already exist): $($_.Exception.Message)"
+                }
+            }
+
+            # Get tenant from environment (for multi-tenant support)
+            $tenant = $envValues.CONFIG_SERVICE_TENANT
+
             # Handle school year range instances
             if ($SchoolYearRange) {
                 Write-Output "Creating DMS Instances for school year range: $SchoolYearRange"
@@ -236,7 +251,8 @@ else {
                         -StartYear $startYear `
                         -EndYear $endYear `
                         -PostgresPassword $envValues.POSTGRES_PASSWORD `
-                        -PostgresDbName $envValues.POSTGRES_DB_NAME
+                        -PostgresDbName $envValues.POSTGRES_DB_NAME `
+                        -Tenant $tenant
 
                     Write-Output "Created $($instances.Count) school year instances successfully"
                 }
@@ -249,13 +265,13 @@ else {
                 Write-Output "Creating initial DMS Instance..."
 
                 # Create DMS Instance using environment variables
-                $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development"
+                $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development" -Tenant $tenant
 
                 Write-Output "DMS Instance created successfully with ID: $instanceId"
             }
         }
         catch {
-            Write-Warning "Failed to create DMS Instance(s): $($_.Exception.Message)"
+            Write-Warning "Failed to create DMS Instance(s): $($_.Exception.Message)  Did you add the Tenant header?"
         }
     }
 
