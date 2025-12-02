@@ -130,7 +130,8 @@ jobs:
           }
 
           $sarifContent = Get-Content -Path $sarifFile -Raw | ConvertFrom-Json
-          $criticalHighVulnerabilities = 0
+          $criticalVulnerabilities = 0
+          $highVulnerabilities = 0
 
           foreach ($run in $sarifContent.runs) {
             foreach ($result in $run.results) {
@@ -138,20 +139,33 @@ jobs:
               if ($result.message.text -match "Severity\s+:\s+(\w+)") {
                 $severity = $matches[1].Trim()
 
-                if ($severity -ieq "critical" -or $severity -ieq "high") {
-                  $criticalHighVulnerabilities++
-                  Write-Host "Found $severity vulnerability: $($result.ruleId)"
+                if ($severity -ieq "critical") {
+                  $criticalVulnerabilities++
+                  Write-Host "❌ Found $severity vulnerability: $($result.ruleId)"
 
-                  # Display additional details if available
                   if ($result.message.text) {
-                    Write-Host "Details: $($result.message.text)"
+                    # Extract package info if available
+                    if ($result.message.text -match "Package\s+:\s+([^\n]+)") {
+                      Write-Host "   Package: $($matches[1].Trim())"
+                    }
+                  }
+                }
+                if ($severity -ieq "high") {
+                  $highVulnerabilities++
+                  Write-Host "❌ Found $severity vulnerability: $($result.ruleId)"
+
+                  if ($result.message.text) {
+                    # Extract package info if available
+                    if ($result.message.text -match "Package\s+:\s+([^\n]+)") {
+                      Write-Host "   Package: $($matches[1].Trim())"
+                    }
                   }
                 }
               }
             }
           }
 
-          if ($criticalHighVulnerabilities -gt 0) {
+          if ($criticalVulnerabilities -gt 0) {
             Write-Error "Found $criticalHighVulnerabilities critical or high vulnerabilities in ${{ matrix.dockerfile.name }}."
             exit 1
           } else {

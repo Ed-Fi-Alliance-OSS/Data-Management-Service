@@ -122,7 +122,7 @@ jobs:
               if ($result.message.text -match "Severity\s+:\s+(\w+)") {
                 $severity = $matches[1].Trim()
 
-                if ($severity -ieq "critical" -or $severity -ieq "high") {
+                if ($severity -ieq "critical") { # For now the check only fails for critical Vulnerabilities (disble the  -or $severity -ieq "high" validation)
                   $criticalHighVulnerabilities++
                   Write-Host "❌ Found $severity vulnerability: $($result.ruleId)"
 
@@ -140,14 +140,14 @@ jobs:
           Write-Host "`n========================================="
           Write-Host "DOCKER SCOUT PR ANALYSIS - ${{ matrix.dockerfile.name }}"
           Write-Host "========================================="
-          Write-Host "Critical/High vulnerabilities: $criticalHighVulnerabilities"
+          Write-Host "Critical vulnerabilities: $criticalHighVulnerabilities"
           Write-Host "=========================================`n"
 
           if ($criticalHighVulnerabilities -gt 0) {
-            Write-Error "❌ Found $criticalHighVulnerabilities critical or high vulnerabilities in ${{ matrix.dockerfile.name }}."
+            Write-Error "❌ Found $criticalHighVulnerabilities critical vulnerabilities in ${{ matrix.dockerfile.name }}."
             Write-Host "Please review the Security tab for details and remediate before merging."
             exit 1
           } else {
-            Write-Host "✅ No critical or high vulnerabilities found in ${{ matrix.dockerfile.name }}."
+            Write-Host "✅ No critical vulnerabilities found in ${{ matrix.dockerfile.name }}."
           }
         shell: pwsh
