@@ -166,10 +166,10 @@ jobs:
           }
 
           if ($criticalVulnerabilities -gt 0) {
-            Write-Error "Found $criticalHighVulnerabilities critical or high vulnerabilities in ${{ matrix.dockerfile.name }}."
+            Write-Error "Found $criticalVulnerabilities critical vulnerabilities in ${{ matrix.dockerfile.name }}."
             exit 1
           } else {
-            Write-Host "✅ No critical or high vulnerabilities found in ${{ matrix.dockerfile.name }}."
+            Write-Host "✅ No critical vulnerabilities found in ${{ matrix.dockerfile.name }}."
           }
         shell: pwsh
 
