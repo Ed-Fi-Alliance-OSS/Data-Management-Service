@@ -45,7 +45,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 _repository,
                 derivativeRepository,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -129,7 +130,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 _repository,
                 derivativeRepository,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -198,7 +200,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 _repository,
                 derivativeRepository,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -255,7 +258,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
                 new ConnectionStringEncryptionService(Configuration.DatabaseOptions),
                 _repository,
                 derivativeRepository,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
             var instanceInsert = new DmsInstanceInsertCommand
             {
@@ -300,4 +304,3 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         }
     }
 }
-

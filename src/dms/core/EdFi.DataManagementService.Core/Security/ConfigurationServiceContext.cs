@@ -17,5 +17,10 @@ public record ConfigurationServiceContext(
     /// <summary>
     /// The authorization scope required for accessing the Configuration service endpoints.
     /// </summary>
-    string scope
+    string scope,
+    /// <summary>
+    /// Optional tenant identifier. When not empty, this value is passed as a "Tenant" header
+    /// to all Configuration Service API calls, enabling multi-tenant routing.
+    /// </summary>
+    string tenant
 );

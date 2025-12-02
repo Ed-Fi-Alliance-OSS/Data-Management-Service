@@ -20,10 +20,12 @@ public static class WebApplicationExtensions
             .Where(p => moduleInterface.IsAssignableFrom(p) && p.IsClass && !p.IsGenericType);
 
         var identityProvider = application.Configuration["AppSettings:IdentityProvider"];
+        var multiTenancyEnabled = application.Configuration.GetValue<bool>("AppSettings:MultiTenancy");
         var modules = new List<IEndpointModule>();
 
         foreach (var moduleClass in moduleClasses)
         {
+            // Exclude OpenID modules when not using self-contained identity provider
             if (!string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
             {
                 if (
@@ -34,6 +36,13 @@ public static class WebApplicationExtensions
                     continue;
                 }
             }
+
+            // Exclude TenantModule when multi-tenancy is disabled
+            if (!multiTenancyEnabled && moduleClass.Name == typeof(TenantModule).Name)
+            {
+                continue;
+            }
+
             if (Activator.CreateInstance(moduleClass) is IEndpointModule module)
             {
                 modules.Add(module);

@@ -8,6 +8,7 @@ using EdFi.DmsConfigurationService.Backend.Services;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Services;
 
@@ -15,6 +16,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Services;
 public class AuditContextTests
 {
     private IHttpContextAccessor _httpContextAccessor = null!;
+    private ILogger<AuditContext> _logger = null!;
     private AuditContext _auditContext = null!;
     private HttpContext _httpContext = null!;
 
@@ -22,9 +24,10 @@ public class AuditContextTests
     public void Setup()
     {
         _httpContextAccessor = A.Fake<IHttpContextAccessor>();
+        _logger = A.Fake<ILogger<AuditContext>>();
         _httpContext = new DefaultHttpContext();
         A.CallTo(() => _httpContextAccessor.HttpContext).Returns(_httpContext);
-        _auditContext = new AuditContext(_httpContextAccessor);
+        _auditContext = new AuditContext(_httpContextAccessor, _logger);
     }
 
     [TestFixture]
@@ -38,7 +41,7 @@ public class AuditContextTests
             {
                 new("sub", "test-user-123"),
                 new("client_id", "client-456"),
-                new("name", "Test User")
+                new("name", "Test User"),
             };
             _httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
 
@@ -53,11 +56,7 @@ public class AuditContextTests
         public void When_sub_missing_but_client_id_exists_returns_client_id()
         {
             // Arrange
-            var claims = new List<Claim>
-            {
-                new("client_id", "client-456"),
-                new("name", "Test User")
-            };
+            var claims = new List<Claim> { new("client_id", "client-456"), new("name", "Test User") };
             _httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
 
             // Act
@@ -71,10 +70,7 @@ public class AuditContextTests
         public void When_sub_and_client_id_missing_but_name_exists_returns_name()
         {
             // Arrange
-            var claims = new List<Claim>
-            {
-                new("name", "Test User")
-            };
+            var claims = new List<Claim> { new("name", "Test User") };
             _httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
 
             // Act
@@ -88,10 +84,7 @@ public class AuditContextTests
         public void When_no_relevant_claims_exist_returns_system()
         {
             // Arrange
-            var claims = new List<Claim>
-            {
-                new("some_other_claim", "value")
-            };
+            var claims = new List<Claim> { new("some_other_claim", "value") };
             _httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
 
             // Act
@@ -131,11 +124,7 @@ public class AuditContextTests
         public void When_sub_claim_is_empty_falls_back_to_next_claim()
         {
             // Arrange
-            var claims = new List<Claim>
-            {
-                new("sub", ""),
-                new("client_id", "client-789")
-            };
+            var claims = new List<Claim> { new("sub", ""), new("client_id", "client-789") };
             _httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
 
             // Act
@@ -149,11 +138,7 @@ public class AuditContextTests
         public void When_sub_claim_is_whitespace_falls_back_to_next_claim()
         {
             // Arrange
-            var claims = new List<Claim>
-            {
-                new("sub", "   "),
-                new("name", "John Doe")
-            };
+            var claims = new List<Claim> { new("sub", "   "), new("name", "John Doe") };
             _httpContext.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Bearer"));
 
             // Act
@@ -204,7 +189,9 @@ public class AuditContextTests
 
             // Assert
             var difference = (auditTime - systemTime).TotalSeconds;
-            Math.Abs(difference).Should().BeLessThan(1.0, "timestamp should be within 1 second of system time");
+            Math.Abs(difference)
+                .Should()
+                .BeLessThan(1.0, "timestamp should be within 1 second of system time");
         }
     }
 }

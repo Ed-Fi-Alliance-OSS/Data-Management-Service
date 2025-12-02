@@ -14,6 +14,12 @@ public class ConfigurationServiceSettings
     public required string ClientSecret { get; set; }
     public required string Scope { get; set; }
     public required int CacheExpirationMinutes { get; set; }
+
+    /// <summary>
+    /// Optional tenant identifier. When specified, this value is passed as a "Tenant" header
+    /// to all Configuration Service API calls, enabling multi-tenant routing.
+    /// </summary>
+    public string Tenant { get; set; } = string.Empty;
 }
 
 public class ConfigurationServiceSettingsValidator : IValidateOptions<ConfigurationServiceSettings>

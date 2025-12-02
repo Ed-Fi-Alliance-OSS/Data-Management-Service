@@ -26,11 +26,38 @@ file.
 | IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
 | RouteQualifierSegments | Comma separated list of route qualifier context segments as defined by `dmsInstanceRouteContexts` in Configuration Service. Example: "districtId,schoolYear" |
 
+## Configuration Service AppSettings
+
+The following parameters apply to the DMS Configuration Service (`appsettings.json`).
+
+| Parameter                    | Description                                                                                                                                                                                               |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Datastore                    | The primary datastore used by the Configuration Service. Valid values are `postgresql` and `mssql`                                                                                                        |
+| DeployDatabaseOnStartup      | When `true` the database will be created and initialized on startup.                                                                                                                                      |
+| IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` and `self-contained`. Default: `self-contained`                                                                                        |
+| MultiTenancy                 | When `true`, enables multi-tenancy support in the Configuration Service. Default: `false`                                                                                                                 |
+| PathBase                     | Segment of the URL to use as base for all requests.                                                                                                                                                       |
+| TokenRequestTimeoutSeconds   | Timeout in seconds for token requests. Default: `30`                                                                                                                                                      |
+| UseReverseProxyHeaders       | When `true`, the application will respect reverse proxy headers for URL generation. Default: `false`                                                                                                      |
+
 ## DatabaseOptions
 
 | Parameter      | Description                                                                                                                                                              |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | IsolationLevel | The `System.Data.IsolationLevel` to use for transaction locks. See [documentation](https://learn.microsoft.com/en-us/dotnet/api/system.data.isolationlevel?view=net-8.0) |
+
+## ConfigurationServiceSettings
+
+These settings configure how the DMS API connects to the Configuration Service to retrieve claim sets, DMS instances, and other metadata.
+
+| Parameter              | Description                                                                                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| BaseUrl                | The base URL of the Configuration Service. Example: `http://dms-config-service:8081`                                                                                     |
+| ClientId               | The client identifier (client ID) used to access the Configuration Service endpoints.                                                                                    |
+| ClientSecret           | The client secret associated with the client ID for accessing the Configuration Service endpoints.                                                                       |
+| Scope                  | The authorization scope required for accessing the Configuration Service endpoints. Example: `edfi_admin_api/authMetadata_readonly_access`                               |
+| CacheExpirationMinutes | The duration in minutes before cached claim sets and other metadata expire and are refreshed from the Configuration Service.                                             |
+| Tenant                 | Optional tenant identifier. When specified, this value is passed as a "Tenant" header to all Configuration Service API calls, enabling multi-tenant routing. Default: empty (no header sent) |
 
 ## RateLimit
 
