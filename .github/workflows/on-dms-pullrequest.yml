@@ -300,6 +300,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
           DMS_API_URL: http://localhost:8080
+          CONFIG_SERVICE_TENANT: Tenant1
         run: |
           # Build script handles Docker environment setup, database configuration, and test execution
           ./build-dms.ps1 InstanceE2ETest -Configuration ${{ env.CONFIGURATION }}

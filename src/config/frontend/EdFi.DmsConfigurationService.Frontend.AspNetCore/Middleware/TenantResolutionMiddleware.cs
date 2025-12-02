@@ -32,9 +32,11 @@ public class TenantResolutionMiddleware(RequestDelegate next)
 
         // Allow /connect endpoints without tenant header (for system administrator authentication)
         // Allow /v2/tenants endpoints without tenant header (for tenant management before tenants exist)
+        // Allow /.well-known endpoints without tenant header (standard OIDC discovery endpoints)
         if (
             context.Request.Path.StartsWithSegments("/connect", StringComparison.OrdinalIgnoreCase)
             || context.Request.Path.StartsWithSegments("/v2/tenants", StringComparison.OrdinalIgnoreCase)
+            || context.Request.Path.StartsWithSegments("/.well-known", StringComparison.OrdinalIgnoreCase)
         )
         {
             await _next(context);

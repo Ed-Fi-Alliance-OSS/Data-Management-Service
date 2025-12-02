@@ -90,25 +90,38 @@ try {
         # Get configuration service token
         $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!"
 
+        # Create tenant if multi-tenancy is enabled
+        $tenant = $envValues.CONFIG_SERVICE_TENANT
+        if ($envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and $tenant) {
+            Write-Output "Multi-tenancy is enabled. Creating tenant: $tenant"
+            try {
+                $tenantId = Add-Tenant -CmsUrl "http://localhost:8081" -AccessToken $configToken -TenantName $tenant
+                Write-Output "Tenant created successfully with ID: $tenantId"
+            }
+            catch {
+                Write-Warning "Failed to create tenant (may already exist): $($_.Exception.Message)"
+            }
+        }
+
         # Create Instance 1: District 255901 - School Year 2024
         Write-Output "Creating Instance 1..."
-        $instance1Id = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName "edfi_datamanagementservice_d255901_sy2024" -InstanceName "District 255901 - School Year 2024" -InstanceType "District"
-        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance1Id -ContextKey "districtId" -ContextValue "255901"
-        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance1Id -ContextKey "schoolYear" -ContextValue "2024"
+        $instance1Id = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName "edfi_datamanagementservice_d255901_sy2024" -InstanceName "District 255901 - School Year 2024" -InstanceType "District" -Tenant $tenant
+        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance1Id -ContextKey "districtId" -ContextValue "255901" -Tenant $tenant
+        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance1Id -ContextKey "schoolYear" -ContextValue "2024" -Tenant $tenant
         Write-Output "Instance 1 created with ID: $instance1Id"
 
         # Create Instance 2: District 255901 - School Year 2025
         Write-Output "Creating Instance 2..."
-        $instance2Id = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName "edfi_datamanagementservice_d255901_sy2025" -InstanceName "District 255901 - School Year 2025" -InstanceType "District"
-        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance2Id -ContextKey "districtId" -ContextValue "255901"
-        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance2Id -ContextKey "schoolYear" -ContextValue "2025"
+        $instance2Id = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName "edfi_datamanagementservice_d255901_sy2025" -InstanceName "District 255901 - School Year 2025" -InstanceType "District" -Tenant $tenant
+        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance2Id -ContextKey "districtId" -ContextValue "255901" -Tenant $tenant
+        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance2Id -ContextKey "schoolYear" -ContextValue "2025" -Tenant $tenant
         Write-Output "Instance 2 created with ID: $instance2Id"
 
         # Create Instance 3: District 255902 - School Year 2024
         Write-Output "Creating Instance 3..."
-        $instance3Id = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName "edfi_datamanagementservice_d255902_sy2024" -InstanceName "District 255902 - School Year 2024" -InstanceType "District"
-        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance3Id -ContextKey "districtId" -ContextValue "255902"
-        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance3Id -ContextKey "schoolYear" -ContextValue "2024"
+        $instance3Id = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName "edfi_datamanagementservice_d255902_sy2024" -InstanceName "District 255902 - School Year 2024" -InstanceType "District" -Tenant $tenant
+        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance3Id -ContextKey "districtId" -ContextValue "255902" -Tenant $tenant
+        Add-DmsInstanceRouteContext -CmsUrl "http://localhost:8081" -AccessToken $configToken -InstanceId $instance3Id -ContextKey "schoolYear" -ContextValue "2024" -Tenant $tenant
         Write-Output "Instance 3 created with ID: $instance3Id"
 
         Write-Output "All 3 test instances created successfully with IDs: $instance1Id, $instance2Id, $instance3Id"

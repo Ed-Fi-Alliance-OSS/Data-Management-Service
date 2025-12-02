@@ -55,7 +55,11 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
             return;
         }
 
-        var configClient = new ConfigServiceClient(TestConfiguration.ConfigServiceUrl, context.ConfigToken);
+        var configClient = new ConfigServiceClient(
+            TestConfiguration.ConfigServiceUrl,
+            context.ConfigToken,
+            TestConfiguration.TenantName
+        );
 
         try
         {
