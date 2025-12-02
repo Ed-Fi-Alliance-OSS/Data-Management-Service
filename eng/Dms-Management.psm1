@@ -293,7 +293,9 @@ function Add-Vendor {
         [string]$NamespacePrefixes = "uri://ed-fi.org, uri://gbisd.edu",
 
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken
+        [string]$AccessToken,
+
+        [string]$Tenant = ""
     )
 
     $vendorData = @{
@@ -303,13 +305,18 @@ function Add-Vendor {
         namespacePrefixes   = $NamespacePrefixes
     }
 
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
+
     $invokeParams = @{
         BaseUrl      = $CmsUrl
         RelativeUrl  = "v2/vendors"
         Method       = "Post"
         ContentType  = "application/json"
         Body         = ConvertTo-Json -InputObject $vendorData -Depth 10
-        Headers      = @{ Authorization = "Bearer $AccessToken" }
+        Headers      = $headers
     }
 
     $response = Invoke-Api @invokeParams
@@ -378,7 +385,9 @@ function Add-Application {
         $EducationOrganizationIds = @(255901, 19255901),
 
         [long[]]
-        $DmsInstanceIds = @()
+        $DmsInstanceIds = @(),
+
+        [string]$Tenant = ""
     )
 
     $applicationData = @{
@@ -389,13 +398,18 @@ function Add-Application {
         dmsInstanceIds = $DmsInstanceIds
     }
 
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
+
     $invokeParams = @{
         BaseUrl      = $CmsUrl
         RelativeUrl  = "v2/applications"
         Method       = "Post"
         ContentType  = "application/json"
         Body         = ConvertTo-Json -InputObject $applicationData -Depth 10
-        Headers      = @{ Authorization = "Bearer $AccessToken" }
+        Headers      = $headers
     }
 
     $response = Invoke-Api @invokeParams
@@ -529,12 +543,20 @@ function Get-CurrentSchoolYear {
 .PARAMETER AccessToken
     The bearer token for authorization (mandatory).
 
+.PARAMETER Tenant
+    Optional tenant identifier. When specified, this value is passed as a "Tenant" header
+    to enable multi-tenant routing.
+
 .OUTPUTS
     [long] Returns the DMS Instance ID of the newly created instance.
 
 .EXAMPLE
     # Create DMS Instance
     $instanceId = Add-DmsInstance -AccessToken $token -PostgresPassword "secret123"
+
+.EXAMPLE
+    # Create DMS Instance with tenant
+    $instanceId = Add-DmsInstance -AccessToken $token -PostgresPassword "secret123" -Tenant "Tenant1"
 #>
 function Add-DmsInstance {
     [CmdletBinding()]
@@ -563,7 +585,9 @@ function Add-DmsInstance {
         [string]$PostgresUser = "postgres",
 
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken
+        [string]$AccessToken,
+
+        [string]$Tenant = ""
     )
 
     # Build connection string from individual parameters
@@ -575,13 +599,18 @@ function Add-DmsInstance {
         connectionString = $ConnectionString
     }
 
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
+
     $invokeParams = @{
         BaseUrl      = $CmsUrl
         RelativeUrl  = "v2/dmsInstances"
         Method       = "Post"
         ContentType  = "application/json"
         Body         = ConvertTo-Json -InputObject $dmsInstanceData -Depth 10
-        Headers      = @{ Authorization = "Bearer $AccessToken" }
+        Headers      = $headers
     }
 
     $response = Invoke-Api @invokeParams
@@ -608,6 +637,10 @@ function Add-DmsInstance {
 .PARAMETER Limit
     The limit for paging. Defaults to 100.
 
+.PARAMETER Tenant
+    Optional tenant identifier. When specified, this value is passed as a "Tenant" header
+    to enable multi-tenant routing.
+
 .OUTPUTS
     Array of DMS Instance objects.
 
@@ -625,15 +658,22 @@ function Get-DmsInstances {
 
         [int]$Offset = 0,
 
-        [int]$Limit = 100
+        [int]$Limit = 100,
+
+        [string]$Tenant = ""
     )
+
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
 
     $invokeParams = @{
         BaseUrl      = $CmsUrl
         RelativeUrl  = "v2/dmsInstances?offset=$Offset&limit=$Limit"
         Method       = "Get"
         ContentType  = "application/json"
-        Headers      = @{ Authorization = "Bearer $AccessToken" }
+        Headers      = $headers
     }
 
     $response = Invoke-Api @invokeParams
@@ -663,6 +703,10 @@ function Get-DmsInstances {
 .PARAMETER AccessToken
     The bearer token for authorization (mandatory).
 
+.PARAMETER Tenant
+    Optional tenant identifier. When specified, this value is passed as a "Tenant" header
+    to enable multi-tenant routing.
+
 .OUTPUTS
     [long] Returns the Route Context ID of the newly created route context.
 
@@ -688,7 +732,9 @@ function Add-DmsInstanceRouteContext {
         [string]$ContextValue,
 
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken
+        [string]$AccessToken,
+
+        [string]$Tenant = ""
     )
 
     $routeContextData = @{
@@ -697,13 +743,18 @@ function Add-DmsInstanceRouteContext {
         contextValue = $ContextValue
     }
 
+    $headers = @{ Authorization = "Bearer $AccessToken" }
+    if ($Tenant) {
+        $headers["Tenant"] = $Tenant
+    }
+
     $invokeParams = @{
         BaseUrl      = $CmsUrl
         RelativeUrl  = "v2/dmsInstanceRouteContexts"
         Method       = "Post"
         ContentType  = "application/json"
         Body         = ConvertTo-Json -InputObject $routeContextData -Depth 10
-        Headers      = @{ Authorization = "Bearer $AccessToken" }
+        Headers      = $headers
     }
 
     $response = Invoke-Api @invokeParams
@@ -746,6 +797,10 @@ function Add-DmsInstanceRouteContext {
 .PARAMETER AccessToken
     The bearer token for authorization (mandatory).
 
+.PARAMETER Tenant
+    Optional tenant identifier. When specified, this value is passed as a "Tenant" header
+    to enable multi-tenant routing.
+
 .OUTPUTS
     Array of hashtables containing InstanceId and Year for each created instance.
 
@@ -780,7 +835,9 @@ function Add-DmsSchoolYearInstances {
         [string]$PostgresUser = "postgres",
 
         [Parameter(Mandatory = $true)]
-        [string]$AccessToken
+        [string]$AccessToken,
+
+        [string]$Tenant = ""
     )
 
     # Validate year range
@@ -805,7 +862,8 @@ function Add-DmsSchoolYearInstances {
             -PostgresHost $PostgresHost `
             -PostgresPort $PostgresPort `
             -PostgresUser $PostgresUser `
-            -AccessToken $AccessToken
+            -AccessToken $AccessToken `
+            -Tenant $Tenant
 
         Write-Host "    Instance created with ID: $instanceId" -ForegroundColor Green
 
@@ -815,7 +873,8 @@ function Add-DmsSchoolYearInstances {
             -InstanceId $instanceId `
             -ContextKey "schoolYear" `
             -ContextValue $year.ToString() `
-            -AccessToken $AccessToken
+            -AccessToken $AccessToken `
+            -Tenant $Tenant
 
         Write-Host "    Route context created with ID: $routeContextId (schoolYear=$year)" -ForegroundColor Green
 
@@ -831,4 +890,60 @@ function Add-DmsSchoolYearInstances {
     return $createdInstances
 }
 
-Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Add-DmsInstanceRouteContext, Add-DmsSchoolYearInstances, Invoke-Api
+<#
+.SYNOPSIS
+    Creates a new Tenant by sending a POST request to the Configuration Service.
+
+.DESCRIPTION
+    Adds a new Tenant with the specified name. This is required before creating
+    DMS Instances when multi-tenancy is enabled.
+
+.PARAMETER CmsUrl
+    The base URL of the Config server (e.g., http://localhost:8081).
+
+.PARAMETER TenantName
+    The name of the tenant to create (mandatory).
+
+.PARAMETER AccessToken
+    The bearer token for authorization (mandatory).
+
+.OUTPUTS
+    [long] Returns the Tenant ID of the newly created tenant.
+
+.EXAMPLE
+    # Create a tenant
+    $tenantId = Add-Tenant -AccessToken $token -TenantName "Tenant1"
+#>
+function Add-Tenant {
+    [CmdletBinding()]
+    param (
+        [ValidateNotNullOrEmpty()]
+        [string]$CmsUrl = "http://localhost:8081",
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TenantName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AccessToken
+    )
+
+    $tenantData = @{
+        name = $TenantName
+    }
+
+    $invokeParams = @{
+        BaseUrl      = $CmsUrl
+        RelativeUrl  = "v2/tenants"
+        Method       = "Post"
+        ContentType  = "application/json"
+        Body         = ConvertTo-Json -InputObject $tenantData -Depth 10
+        Headers      = @{ Authorization = "Bearer $AccessToken" }
+    }
+
+    $response = Invoke-Api @invokeParams
+
+    return $response.id
+}
+
+Export-ModuleMember -Function Add-CmsClient, Get-CmsToken, Add-Vendor, Add-Application, Get-DmsToken, Get-CurrentSchoolYear, Add-DmsInstance, Get-DmsInstances, Add-DmsInstanceRouteContext, Add-DmsSchoolYearInstances, Add-Tenant, Invoke-Api

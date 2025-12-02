@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Postgresql.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
@@ -23,15 +24,16 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 public class ClaimSetTests : DatabaseTest
 {
     private readonly IClaimSetRepository _repository = new ClaimSetRepository(
-            Configuration.DatabaseOptions,
-            NullLogger<ClaimSetRepository>.Instance,
+        Configuration.DatabaseOptions,
+        NullLogger<ClaimSetRepository>.Instance,
         new ClaimsHierarchyRepository(
             Configuration.DatabaseOptions,
             NullLogger<ClaimsHierarchyRepository>.Instance,
             new TestAuditContext()
         ),
         new ClaimsHierarchyManager(),
-        new TestAuditContext()
+        new TestAuditContext(),
+        new TenantContextProvider()
     );
 
     protected async Task EnsureClaimsDataLoaded()
@@ -160,7 +162,8 @@ public class ClaimSetTests : DatabaseTest
             IVendorRepository repository = new VendorRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<VendorRepository>.Instance,
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             VendorInsertCommand vendor = new()
@@ -212,10 +215,10 @@ public class ClaimSetTests : DatabaseTest
 
             // Initialize claims hierarchy
             _claimsHierarchyRepository = new ClaimsHierarchyRepository(
-            Configuration.DatabaseOptions,
-            NullLogger<ClaimsHierarchyRepository>.Instance,
-            new TestAuditContext()
-        );
+                Configuration.DatabaseOptions,
+                NullLogger<ClaimsHierarchyRepository>.Instance,
+                new TestAuditContext()
+            );
 
             // Get the existing claims hierarchy
             var existingHierarchyGetResult = await _claimsHierarchyRepository.GetClaimsHierarchy();
@@ -419,11 +422,12 @@ public class ClaimSetTests : DatabaseTest
             );
 
             var claimSetRepository = new ClaimSetRepository(
-            Configuration.DatabaseOptions,
-            NullLogger<ClaimSetRepository>.Instance,
+                Configuration.DatabaseOptions,
+                NullLogger<ClaimSetRepository>.Instance,
                 claimsHierarchyRepository,
                 new ClaimsHierarchyManager(),
-                new TestAuditContext()
+                new TestAuditContext(),
+                new TenantContextProvider()
             );
 
             // Act
@@ -454,10 +458,10 @@ public class ClaimSetTests : DatabaseTest
         {
             // Initialize claims hierarchy
             var claimsHierarchyRepository = new ClaimsHierarchyRepository(
-            Configuration.DatabaseOptions,
-            NullLogger<ClaimsHierarchyRepository>.Instance,
-            new TestAuditContext()
-        );
+                Configuration.DatabaseOptions,
+                NullLogger<ClaimsHierarchyRepository>.Instance,
+                new TestAuditContext()
+            );
 
             return claimsHierarchyRepository;
         }
@@ -469,10 +473,10 @@ public class ClaimSetTests : DatabaseTest
         {
             private readonly IClaimsHierarchyRepository _multiUserClaimsHierarchyRepository =
                 new ClaimsHierarchyRepository(
-            Configuration.DatabaseOptions,
-            NullLogger<ClaimsHierarchyRepository>.Instance,
-            new TestAuditContext()
-        );
+                    Configuration.DatabaseOptions,
+                    NullLogger<ClaimsHierarchyRepository>.Instance,
+                    new TestAuditContext()
+                );
 
             private int _remainingConflictingUpdateCount = _conflictingUpdateCount;
 
@@ -754,5 +758,3 @@ public class ClaimSetTests : DatabaseTest
         }
     }
 }
-
-

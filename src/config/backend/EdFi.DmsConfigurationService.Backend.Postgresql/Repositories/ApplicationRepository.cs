@@ -43,8 +43,9 @@ public class ApplicationRepository(
                     command.ApplicationName,
                     command.VendorId,
                     command.ClaimSetName,
-                    CreatedBy = auditContext.GetCurrentUser()
-                });
+                    CreatedBy = auditContext.GetCurrentUser(),
+                }
+            );
 
             sql = """
                 INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId, CreatedBy)
@@ -56,7 +57,7 @@ public class ApplicationRepository(
             {
                 ApplicationId = id,
                 EducationOrganizationId = e,
-                CreatedBy = currentUser
+                CreatedBy = currentUser,
             });
 
             await connection.ExecuteAsync(sql, educationOrganizations);
@@ -76,7 +77,7 @@ public class ApplicationRepository(
                     clientCommand.ClientUuid,
                     Name = command.ApplicationName,
                     IsApproved = true,
-                    CreatedBy = currentUser
+                    CreatedBy = currentUser,
                 }
             );
 
@@ -91,7 +92,7 @@ public class ApplicationRepository(
                 {
                     ApiClientId = apiClientId,
                     DmsInstanceId = dmsInstanceId,
-                    CreatedBy = currentUser
+                    CreatedBy = currentUser,
                 });
 
                 await connection.ExecuteAsync(sql, dmsInstanceMappings);
@@ -280,8 +281,9 @@ public class ApplicationRepository(
                     command.ClaimSetName,
                     command.Id,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                    ModifiedBy = auditContext.GetCurrentUser()
-                });
+                    ModifiedBy = auditContext.GetCurrentUser(),
+                }
+            );
 
             if (affectedRows == 0)
             {
@@ -301,7 +303,7 @@ public class ApplicationRepository(
             {
                 ApplicationId = command.Id,
                 EducationOrganizationId = e,
-                CreatedBy = currentUser
+                CreatedBy = currentUser,
             });
 
             await connection.ExecuteAsync(sql, educationOrganizations);
@@ -319,8 +321,9 @@ public class ApplicationRepository(
                     clientCommand.ClientUuid,
                     clientCommand.ClientId,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                    ModifiedBy = currentUser
-                });
+                    ModifiedBy = currentUser,
+                }
+            );
 
             // Get ApiClient Id for DmsInstance relationship update
             sql = "SELECT Id FROM dmscs.ApiClient WHERE ClientId = @ClientId;";
@@ -342,7 +345,7 @@ public class ApplicationRepository(
                 {
                     ApiClientId = apiClientId,
                     DmsInstanceId = dmsInstanceId,
-                    CreatedBy = currentUser
+                    CreatedBy = currentUser,
                 });
 
                 await connection.ExecuteAsync(sql, dmsInstanceMappings);

@@ -39,6 +39,7 @@ services:
       ConfigurationServiceSettings__Scope: ${CONFIG_SERVICE_CLIENT_SCOPE:-edfi_admin_api/authMetadata_readonly_access}
       ConfigurationServiceSettings__ClientSecret: ${CONFIG_SERVICE_CLIENT_SECRET}
       ConfigurationServiceSettings__CacheExpirationMinutes: ${CACHE_EXPIRATION_MINUTES:-10}
+      ConfigurationServiceSettings__Tenant: ${CONFIG_SERVICE_TENANT:-}
       AppSettings__UseApiSchemaPath: ${USE_API_SCHEMA_PATH:-false}
       AppSettings__ApiSchemaPath: ${API_SCHEMA_PATH:-}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
