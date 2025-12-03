@@ -153,6 +153,7 @@ public class ClaimSetRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
+            // Use includeShared: true to include system claim sets (TenantId IS NULL) as shared across all tenants
             string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
@@ -162,7 +163,7 @@ public class ClaimSetRepository(
                     "v"
                 )}) as applications
                 FROM dmscs.ClaimSet c
-                WHERE {TenantContext.TenantWhereClause("c")}
+                WHERE {TenantContext.TenantWhereClause("c", includeShared: true)}
                 ORDER BY c.Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
@@ -202,6 +203,7 @@ public class ClaimSetRepository(
 
         try
         {
+            // Use includeShared: true to allow tenants to read shared/system claim sets
             string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
@@ -211,7 +213,7 @@ public class ClaimSetRepository(
                     "v"
                 )}) as applications
                 FROM dmscs.ClaimSet c
-                WHERE c.Id = @Id AND {TenantContext.TenantWhereClause("c")}
+                WHERE c.Id = @Id AND {TenantContext.TenantWhereClause("c", includeShared: true)}
                 """;
 
             var claimSets = (
@@ -505,6 +507,7 @@ public class ClaimSetRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
+            // Use includeShared: true to allow tenants to export shared/system claim sets
             string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
@@ -514,7 +517,7 @@ public class ClaimSetRepository(
                     "v"
                 )}) as applications
                 FROM dmscs.ClaimSet c
-                WHERE c.Id = @Id AND {TenantContext.TenantWhereClause("c")}
+                WHERE c.Id = @Id AND {TenantContext.TenantWhereClause("c", includeShared: true)}
                 """;
             var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id, TenantId });
 
