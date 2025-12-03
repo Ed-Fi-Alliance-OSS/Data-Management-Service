@@ -21,6 +21,7 @@ public class ConfigurationServiceDmsInstanceProvider(
     ILogger<ConfigurationServiceDmsInstanceProvider> logger
 ) : IDmsInstanceProvider
 {
+    private const string TenantHeaderName = "Tenant";
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     private IList<DmsInstance> _instances = new List<DmsInstance>();
@@ -32,7 +33,8 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// <summary>
     /// Loads DMS instances from the Configuration Service API and stores them in memory
     /// </summary>
-    public async Task<IList<DmsInstance>> LoadDmsInstances()
+    /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
+    public async Task<IList<DmsInstance>> LoadDmsInstances(string? tenant = null)
     {
         logger.LogInformation(
             "Requesting authentication token from Configuration Service at {BaseUrl}",
@@ -50,6 +52,9 @@ public class ConfigurationServiceDmsInstanceProvider(
 
             configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", configurationServiceToken);
+
+            // Set tenant header for multi-tenant environments
+            SetTenantHeader(tenant);
 
             logger.LogInformation("Fetching DMS instances from Configuration Service");
 
@@ -168,6 +173,19 @@ public class ConfigurationServiceDmsInstanceProvider(
                 )
             ))
             .ToList();
+    }
+
+    /// <summary>
+    /// Sets the Tenant header for multi-tenant API calls
+    /// </summary>
+    /// <param name="tenant">The tenant identifier, or null to remove the header</param>
+    private void SetTenantHeader(string? tenant)
+    {
+        configurationServiceApiClient.Client.DefaultRequestHeaders.Remove(TenantHeaderName);
+        if (!string.IsNullOrEmpty(tenant))
+        {
+            configurationServiceApiClient.Client.DefaultRequestHeaders.Add(TenantHeaderName, tenant);
+        }
     }
 
     /// <summary>

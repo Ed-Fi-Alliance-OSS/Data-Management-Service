@@ -13,8 +13,9 @@ public interface IDmsInstanceProvider
     /// <summary>
     /// Loads DMS instances from the Configuration Service and stores them in memory
     /// </summary>
+    /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
     /// <returns>A list of loaded DMS instances</returns>
-    Task<IList<DmsInstance>> LoadDmsInstances();
+    Task<IList<DmsInstance>> LoadDmsInstances(string? tenant = null);
 
     /// <summary>
     /// Gets all stored DMS instances

@@ -72,7 +72,7 @@ internal class ResolveDmsInstanceMiddleware(
 
             try
             {
-                await dmsInstanceProvider.LoadDmsInstances();
+                await dmsInstanceProvider.LoadDmsInstances(requestInfo.FrontendRequest.Tenant);
 
                 // Retry matching after reload
                 matchedInstance = await TryFindMatchingInstance(

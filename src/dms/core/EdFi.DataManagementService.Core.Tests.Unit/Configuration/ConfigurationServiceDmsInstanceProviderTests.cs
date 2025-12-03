@@ -732,6 +732,113 @@ public class ConfigurationServiceDmsInstanceProviderTests
         }
     }
 
+    [TestFixture]
+    public class Given_Tenant_Parameter_Provided
+    {
+        private TestHttpMessageHandler? _handler;
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
+
+            var httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+            );
+            await _provider.LoadDmsInstances("TenantA");
+        }
+
+        [Test]
+        public void It_should_set_tenant_header_on_request()
+        {
+            _handler!.LastTenantHeader.Should().Be("TenantA");
+        }
+    }
+
+    [TestFixture]
+    public class Given_No_Tenant_Parameter
+    {
+        private TestHttpMessageHandler? _handler;
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
+
+            var httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+            );
+            await _provider.LoadDmsInstances();
+        }
+
+        [Test]
+        public void It_should_not_set_tenant_header_on_request()
+        {
+            _handler!.LastTenantHeader.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Different_Tenants_Called_Sequentially
+    {
+        [Test]
+        public async Task It_should_update_tenant_header_for_each_call()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
+
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            var provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+            );
+
+            // First call with TenantA
+            await provider.LoadDmsInstances("TenantA");
+            handler.LastTenantHeader.Should().Be("TenantA");
+
+            // Second call with TenantB
+            await provider.LoadDmsInstances("TenantB");
+            handler.LastTenantHeader.Should().Be("TenantB");
+
+            // Third call with no tenant
+            await provider.LoadDmsInstances();
+            handler.LastTenantHeader.Should().BeNull();
+        }
+    }
+
     /// <summary>
     /// Test HTTP message handler that returns predefined responses
     /// </summary>
@@ -740,6 +847,11 @@ public class ConfigurationServiceDmsInstanceProviderTests
     {
         private readonly Dictionary<string, object> _responses = new();
         private readonly Dictionary<string, string> _jsonResponses = new();
+
+        /// <summary>
+        /// Gets the value of the Tenant header from the last request, or null if not present
+        /// </summary>
+        public string? LastTenantHeader { get; private set; }
 
         public void SetResponse(string path, object response)
         {
@@ -756,6 +868,11 @@ public class ConfigurationServiceDmsInstanceProviderTests
             CancellationToken cancellationToken
         )
         {
+            // Capture tenant header from request
+            LastTenantHeader = request.Headers.TryGetValues("Tenant", out var values)
+                ? values.FirstOrDefault()
+                : null;
+
             var path = request.RequestUri?.PathAndQuery.TrimStart('/') ?? "";
 
             string content = defaultContent;
