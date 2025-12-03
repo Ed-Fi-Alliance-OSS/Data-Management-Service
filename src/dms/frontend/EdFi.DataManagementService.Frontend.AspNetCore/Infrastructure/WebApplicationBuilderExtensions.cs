@@ -50,6 +50,9 @@ public static class WebApplicationBuilderExtensions
                 webAppBuilder.Configuration.GetSection("AppSettings")
             )
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
+            .Configure<ConfigurationServiceSettings>(
+                webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
+            )
             .AddSingleton<
                 IValidateOptions<Frontend.AspNetCore.Configuration.AppSettings>,
                 AppSettingsValidator

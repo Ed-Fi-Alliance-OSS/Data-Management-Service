@@ -7,12 +7,15 @@ using System.Net;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class XsdMetadataEndpointModule : IEndpointModule
+public partial class XsdMetadataEndpointModule(IOptions<ConfigurationServiceSettings> configServiceSettings)
+    : IEndpointModule
 {
     [GeneratedRegex(@"\/(?<section>[^/]+)\/files?")]
     private static partial Regex PathExpressionRegex();
@@ -24,9 +27,14 @@ public partial class XsdMetadataEndpointModule : IEndpointModule
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/metadata/xsd", GetSections);
-        endpoints.MapGet("/metadata/xsd/{section}/files", GetXsdMetadataFiles);
-        endpoints.MapGet("/metadata/xsd/{section}/{fileName}.xsd", GetXsdMetadataFileContent);
+        var tenantPrefix = configServiceSettings.Value.MultiTenancy ? "/{tenant}" : "";
+
+        endpoints.MapGet($"{tenantPrefix}/metadata/xsd", GetSections);
+        endpoints.MapGet($"{tenantPrefix}/metadata/xsd/{{section}}/files", GetXsdMetadataFiles);
+        endpoints.MapGet(
+            $"{tenantPrefix}/metadata/xsd/{{section}}/{{fileName}}.xsd",
+            GetXsdMetadataFileContent
+        );
     }
 
     internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
