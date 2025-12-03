@@ -10,25 +10,33 @@ namespace EdFi.DataManagementService.Core.Security;
 
 /// <summary>
 /// Memory cache wrapper for storing and retrieving claim sets with configurable expiration.
+/// Supports tenant-keyed caching for multi-tenant scenarios.
 /// </summary>
 public record ClaimSetsCache(IMemoryCache memoryCache, TimeSpan expiration)
 {
-    // Constant cache identifier used to store and retrieve claim sets from the cache
-    private const string CacheId = "ClaimSetsCache";
+    // Base cache identifier prefix for storing and retrieving claim sets from the cache
+    private const string CacheIdPrefix = "ClaimSetsCache";
 
-    public void CacheClaimSets(IList<ClaimSet> claimSets)
+    /// <summary>
+    /// Generates a cache key based on the tenant identifier.
+    /// When tenant is null, uses the base cache ID for single-tenant mode.
+    /// </summary>
+    internal static string GetCacheKey(string? tenant) =>
+        string.IsNullOrEmpty(tenant) ? CacheIdPrefix : $"{CacheIdPrefix}:{tenant}";
+
+    public void CacheClaimSets(IList<ClaimSet> claimSets, string? tenant = null)
     {
-        memoryCache.Set(CacheId, claimSets, expiration);
+        memoryCache.Set(GetCacheKey(tenant), claimSets, expiration);
     }
 
-    public IList<ClaimSet>? GetCachedClaimSets()
+    public IList<ClaimSet>? GetCachedClaimSets(string? tenant = null)
     {
-        memoryCache.TryGetValue(CacheId, out IList<ClaimSet>? claimSets);
+        memoryCache.TryGetValue(GetCacheKey(tenant), out IList<ClaimSet>? claimSets);
         return claimSets;
     }
 
-    public void ClearCache()
+    public void ClearCache(string? tenant = null)
     {
-        memoryCache.Remove(CacheId);
+        memoryCache.Remove(GetCacheKey(tenant));
     }
 }

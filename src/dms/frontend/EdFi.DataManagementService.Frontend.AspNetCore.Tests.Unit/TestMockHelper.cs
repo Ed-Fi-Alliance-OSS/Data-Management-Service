@@ -23,7 +23,7 @@ public static class TestMockHelper
     {
         // Mock IClaimSetProvider
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets()).Returns([]);
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored)).Returns([]);
         services.AddTransient(x => claimSetProvider);
 
         // Mock IDmsInstanceProvider
