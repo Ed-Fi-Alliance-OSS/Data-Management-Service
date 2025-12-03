@@ -14,11 +14,11 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class MetadataEndpointModule(IOptions<ConfigurationServiceSettings> configServiceSettings)
-    : IEndpointModule
+public partial class MetadataEndpointModule(IOptions<AppSettings> appSettings) : IEndpointModule
 {
     private static JsonArray GetServers(HttpContext httpContext, IDmsInstanceProvider dmsInstanceProvider)
     {
@@ -93,7 +93,7 @@ public partial class MetadataEndpointModule(IOptions<ConfigurationServiceSetting
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        var tenantPrefix = configServiceSettings.Value.MultiTenancy ? "/{tenant}" : "";
+        var tenantPrefix = appSettings.Value.MultiTenancy ? "/{tenant}" : "";
 
         endpoints.MapGet($"{tenantPrefix}/metadata", GetMetadata);
         // Combine the conflicting routes into a single MapGet

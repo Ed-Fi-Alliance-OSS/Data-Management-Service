@@ -129,12 +129,9 @@ public static class AspNetCoreFrontend
     /// Extracts the tenant identifier from the HttpRequest route values when multitenancy is enabled.
     /// Returns null if multitenancy is disabled or tenant is not found in route.
     /// </summary>
-    private static string? ExtractTenantFrom(
-        HttpRequest request,
-        IOptions<ConfigurationServiceSettings> configServiceSettings
-    )
+    private static string? ExtractTenantFrom(HttpRequest request, IOptions<AppSettings> appSettings)
     {
-        if (!configServiceSettings.Value.MultiTenancy)
+        if (!appSettings.Value.MultiTenancy)
         {
             return null;
         }
@@ -154,7 +151,6 @@ public static class AspNetCoreFrontend
         HttpRequest httpRequest,
         string dmsPath,
         IOptions<AppSettings> appSettings,
-        IOptions<ConfigurationServiceSettings> configServiceSettings,
         bool includeBody
     )
     {
@@ -165,7 +161,7 @@ public static class AspNetCoreFrontend
             QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
             TraceId: ExtractTraceIdFrom(httpRequest, appSettings),
             RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, appSettings),
-            Tenant: ExtractTenantFrom(httpRequest, configServiceSettings)
+            Tenant: ExtractTenantFrom(httpRequest, appSettings)
         );
     }
 
@@ -210,24 +206,16 @@ public static class AspNetCoreFrontend
     /// <param name="apiService">The injected DMS core facade</param>
     /// <param name="dmsPath">The portion of the request path relevant to DMS</param>
     /// <param name="appSettings">Application settings</param>
-    /// <param name="configServiceSettings">Configuration service settings</param>
     public static async Task<IResult> Upsert(
         HttpContext httpContext,
         IApiService apiService,
         string dmsPath,
-        IOptions<AppSettings> appSettings,
-        IOptions<ConfigurationServiceSettings> configServiceSettings
+        IOptions<AppSettings> appSettings
     )
     {
         return ToResult(
             await apiService.Upsert(
-                await FromRequest(
-                    httpContext.Request,
-                    dmsPath,
-                    appSettings,
-                    configServiceSettings,
-                    includeBody: true
-                )
+                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: true)
             ),
             httpContext,
             dmsPath
@@ -241,19 +229,12 @@ public static class AspNetCoreFrontend
         HttpContext httpContext,
         IApiService apiService,
         string dmsPath,
-        IOptions<AppSettings> appSettings,
-        IOptions<ConfigurationServiceSettings> configServiceSettings
+        IOptions<AppSettings> appSettings
     )
     {
         return ToResult(
             await apiService.Get(
-                await FromRequest(
-                    httpContext.Request,
-                    dmsPath,
-                    appSettings,
-                    configServiceSettings,
-                    includeBody: false
-                )
+                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: false)
             ),
             httpContext,
             dmsPath
@@ -267,19 +248,12 @@ public static class AspNetCoreFrontend
         HttpContext httpContext,
         IApiService apiService,
         string dmsPath,
-        IOptions<AppSettings> appSettings,
-        IOptions<ConfigurationServiceSettings> configServiceSettings
+        IOptions<AppSettings> appSettings
     )
     {
         return ToResult(
             await apiService.UpdateById(
-                await FromRequest(
-                    httpContext.Request,
-                    dmsPath,
-                    appSettings,
-                    configServiceSettings,
-                    includeBody: true
-                )
+                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: true)
             ),
             httpContext,
             dmsPath
@@ -293,19 +267,12 @@ public static class AspNetCoreFrontend
         HttpContext httpContext,
         IApiService apiService,
         string dmsPath,
-        IOptions<AppSettings> appSettings,
-        IOptions<ConfigurationServiceSettings> configServiceSettings
+        IOptions<AppSettings> appSettings
     )
     {
         return ToResult(
             await apiService.DeleteById(
-                await FromRequest(
-                    httpContext.Request,
-                    dmsPath,
-                    appSettings,
-                    configServiceSettings,
-                    includeBody: false
-                )
+                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: false)
             ),
             httpContext,
             dmsPath

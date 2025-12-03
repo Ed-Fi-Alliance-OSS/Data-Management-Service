@@ -14,8 +14,7 @@ using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class XsdMetadataEndpointModule(IOptions<ConfigurationServiceSettings> configServiceSettings)
-    : IEndpointModule
+public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings) : IEndpointModule
 {
     [GeneratedRegex(@"\/(?<section>[^/]+)\/files?")]
     private static partial Regex PathExpressionRegex();
@@ -27,7 +26,7 @@ public partial class XsdMetadataEndpointModule(IOptions<ConfigurationServiceSett
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        var tenantPrefix = configServiceSettings.Value.MultiTenancy ? "/{tenant}" : "";
+        var tenantPrefix = appSettings.Value.MultiTenancy ? "/{tenant}" : "";
 
         endpoints.MapGet($"{tenantPrefix}/metadata/xsd", GetSections);
         endpoints.MapGet($"{tenantPrefix}/metadata/xsd/{{section}}/files", GetXsdMetadataFiles);

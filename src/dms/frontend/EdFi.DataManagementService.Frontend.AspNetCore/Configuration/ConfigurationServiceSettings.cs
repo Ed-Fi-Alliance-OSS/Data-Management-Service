@@ -14,11 +14,6 @@ public class ConfigurationServiceSettings
     public required string ClientSecret { get; set; }
     public required string Scope { get; set; }
     public required int CacheExpirationMinutes { get; set; }
-
-    /// <summary>
-    /// When true, enables multi-tenancy mode where the tenant identifier is extracted from the URL route.
-    /// </summary>
-    public bool MultiTenancy { get; set; } = false;
 }
 
 public class ConfigurationServiceSettingsValidator : IValidateOptions<ConfigurationServiceSettings>

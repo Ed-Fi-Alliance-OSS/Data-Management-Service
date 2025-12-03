@@ -9,17 +9,14 @@ using static EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public class CoreEndpointModule(
-    IOptions<AppSettings> appSettings,
-    IOptions<ConfigurationServiceSettings> configServiceSettings
-) : IEndpointModule
+public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         // Build the route pattern based on configured route qualifier segments and multitenancy
         string routePattern = BuildRoutePattern(
             appSettings.Value.GetRouteQualifierSegmentsArray(),
-            configServiceSettings.Value.MultiTenancy
+            appSettings.Value.MultiTenancy
         );
 
         endpoints.MapPost(routePattern, Upsert);
