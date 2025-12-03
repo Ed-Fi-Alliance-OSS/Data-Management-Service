@@ -178,7 +178,10 @@ internal class ResolveDmsInstanceMiddleware(
         foreach (DmsInstanceId dmsInstanceId in requestInfo.ClientAuthorizations.DmsInstanceIds)
 #pragma warning restore S3267
         {
-            DmsInstance? dmsInstance = dmsInstanceProvider.GetById(dmsInstanceId.Value);
+            DmsInstance? dmsInstance = dmsInstanceProvider.GetById(
+                dmsInstanceId.Value,
+                requestInfo.FrontendRequest.Tenant
+            );
 
             if (dmsInstance == null)
             {

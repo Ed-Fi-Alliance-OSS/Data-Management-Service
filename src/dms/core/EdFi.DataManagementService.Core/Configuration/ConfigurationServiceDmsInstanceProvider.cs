@@ -24,11 +24,12 @@ public class ConfigurationServiceDmsInstanceProvider(
     private const string TenantHeaderName = "Tenant";
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    private IList<DmsInstance> _instances = new List<DmsInstance>();
-    private volatile bool _isLoaded;
+    private readonly Dictionary<string, IList<DmsInstance>> _instancesByTenant = new();
+    private readonly HashSet<string> _loadedTenants = new();
+    private readonly object _lock = new();
 
     /// <inheritdoc />
-    public bool IsLoaded => _isLoaded;
+    public bool IsLoaded(string? tenant = null) => _loadedTenants.Contains(GetTenantKey(tenant));
 
     /// <summary>
     /// Loads DMS instances from the Configuration Service API and stores them in memory
@@ -62,8 +63,13 @@ public class ConfigurationServiceDmsInstanceProvider(
 
             logger.LogInformation("Successfully fetched {InstanceCount} DMS instances", instances.Count);
 
-            // Store instances
-            _instances = instances;
+            // Store instances by tenant
+            string tenantKey = GetTenantKey(tenant);
+            lock (_lock)
+            {
+                _instancesByTenant[tenantKey] = instances;
+                _loadedTenants.Add(tenantKey);
+            }
 
             foreach (DmsInstance instance in instances)
             {
@@ -75,9 +81,10 @@ public class ConfigurationServiceDmsInstanceProvider(
                 );
             }
 
-            _isLoaded = true;
-
-            logger.LogInformation("DMS instance cache updated successfully");
+            logger.LogInformation(
+                "DMS instance cache updated successfully for tenant {Tenant}",
+                tenant ?? "(default)"
+            );
 
             return instances;
         }
@@ -110,16 +117,33 @@ public class ConfigurationServiceDmsInstanceProvider(
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<DmsInstance> GetAll()
+    public IReadOnlyList<DmsInstance> GetAll(string? tenant = null)
     {
-        return _instances.ToList().AsReadOnly();
+        string tenantKey = GetTenantKey(tenant);
+        lock (_lock)
+        {
+            return _instancesByTenant.TryGetValue(tenantKey, out var instances)
+                ? instances.ToList().AsReadOnly()
+                : new List<DmsInstance>().AsReadOnly();
+        }
     }
 
     /// <inheritdoc />
-    public DmsInstance? GetById(long id)
+    public DmsInstance? GetById(long id, string? tenant = null)
     {
-        return _instances.FirstOrDefault(instance => instance.Id == id);
+        string tenantKey = GetTenantKey(tenant);
+        lock (_lock)
+        {
+            return _instancesByTenant.TryGetValue(tenantKey, out var instances)
+                ? instances.FirstOrDefault(instance => instance.Id == id)
+                : null;
+        }
     }
+
+    /// <summary>
+    /// Gets the cache key for a tenant, using empty string for null/empty tenant
+    /// </summary>
+    private static string GetTenantKey(string? tenant) => tenant ?? string.Empty;
 
     /// <summary>
     /// Fetches DMS instances from the Configuration Service API

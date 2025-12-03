@@ -18,20 +18,24 @@ public interface IDmsInstanceProvider
     Task<IList<DmsInstance>> LoadDmsInstances(string? tenant = null);
 
     /// <summary>
-    /// Gets all stored DMS instances
+    /// Gets all stored DMS instances for a tenant
     /// </summary>
-    /// <returns>A read-only list of all DMS instances</returns>
-    IReadOnlyList<DmsInstance> GetAll();
+    /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
+    /// <returns>A read-only list of all DMS instances for the tenant</returns>
+    IReadOnlyList<DmsInstance> GetAll(string? tenant = null);
 
     /// <summary>
-    /// Gets a DMS instance by its ID
+    /// Gets a DMS instance by its ID for a tenant
     /// </summary>
     /// <param name="id">The instance ID</param>
+    /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
     /// <returns>The DMS instance if found, otherwise null</returns>
-    DmsInstance? GetById(long id);
+    DmsInstance? GetById(long id, string? tenant = null);
 
     /// <summary>
-    /// Indicates whether instances have been loaded
+    /// Indicates whether instances have been loaded for a tenant
     /// </summary>
-    bool IsLoaded { get; }
+    /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
+    /// <returns>True if instances have been loaded for the tenant, otherwise false</returns>
+    bool IsLoaded(string? tenant = null);
 }

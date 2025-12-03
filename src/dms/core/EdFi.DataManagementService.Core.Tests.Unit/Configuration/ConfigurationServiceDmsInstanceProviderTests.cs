@@ -92,7 +92,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
         [Test]
         public void It_should_set_is_loaded_flag()
         {
-            _provider!.IsLoaded.Should().BeTrue();
+            _provider!.IsLoaded().Should().BeTrue();
         }
 
         [Test]
@@ -187,7 +187,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
         [Test]
         public void It_should_set_is_loaded_flag()
         {
-            _provider!.IsLoaded.Should().BeTrue();
+            _provider!.IsLoaded().Should().BeTrue();
         }
 
         [Test]
