@@ -53,27 +53,6 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
                 return new GetResult.GetFailureNotExists();
             }
 
-            var securityElements = documentSummary.SecurityElements.ToDocumentSecurityElements()!;
-
-            ResourceAuthorizationResult getAuthorizationResult =
-                await getRequest.ResourceAuthorizationHandler.Authorize(
-                    securityElements,
-                    OperationType.Get,
-                    getRequest.TraceId
-                );
-
-            if (getAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
-            {
-                if (notAuthorized is ResourceAuthorizationResult.NotAuthorized.WithHint notAuthorizedWithHint)
-                {
-                    return new GetResult.GetFailureNotAuthorized(
-                        notAuthorizedWithHint.ErrorMessages,
-                        notAuthorizedWithHint.Hints
-                    );
-                }
-                return new GetResult.GetFailureNotAuthorized(notAuthorized.ErrorMessages);
-            }
-
             return new GetResult.GetSuccess(
                 getRequest.DocumentUuid,
                 documentSummary.EdfiDoc.Deserialize<JsonNode>()!,
