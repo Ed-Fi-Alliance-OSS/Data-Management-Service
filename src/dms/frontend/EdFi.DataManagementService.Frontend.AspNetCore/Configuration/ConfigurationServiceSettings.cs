@@ -16,10 +16,9 @@ public class ConfigurationServiceSettings
     public required int CacheExpirationMinutes { get; set; }
 
     /// <summary>
-    /// Optional tenant identifier. When specified, this value is passed as a "Tenant" header
-    /// to all Configuration Service API calls, enabling multi-tenant routing.
+    /// When true, enables multi-tenancy mode where the tenant identifier is extracted from the URL route.
     /// </summary>
-    public string Tenant { get; set; } = string.Empty;
+    public bool MultiTenancy { get; set; } = false;
 }
 
 public class ConfigurationServiceSettingsValidator : IValidateOptions<ConfigurationServiceSettings>
