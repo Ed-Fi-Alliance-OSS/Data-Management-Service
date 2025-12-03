@@ -35,6 +35,19 @@ public class ClaimSetRepository(
 
     private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
 
+    /// <summary>
+    /// Gets the SQL WHERE clause for ClaimSet queries that includes system-reserved claimsets.
+    /// System-reserved claimsets are always visible regardless of tenant.
+    /// Non-system-reserved claimsets are filtered by tenant.
+    /// </summary>
+    private string ClaimSetWhereClause(string? tableAlias = null)
+    {
+        var isSystemReservedColumn = string.IsNullOrEmpty(tableAlias)
+            ? "IsSystemReserved"
+            : $"{tableAlias}.IsSystemReserved";
+        return $"({isSystemReservedColumn} = true OR {TenantContext.TenantWhereClause(tableAlias)})";
+    }
+
     public IEnumerable<Action> GetActions()
     {
         var actions = new Action[]
@@ -153,7 +166,6 @@ public class ClaimSetRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            // Use includeShared: true to include system claim sets (TenantId IS NULL) as shared across all tenants
             string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
@@ -163,7 +175,7 @@ public class ClaimSetRepository(
                     "v"
                 )}) as applications
                 FROM dmscs.ClaimSet c
-                WHERE {TenantContext.TenantWhereClause("c", includeShared: true)}
+                WHERE {ClaimSetWhereClause("c")}
                 ORDER BY c.Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
@@ -203,7 +215,6 @@ public class ClaimSetRepository(
 
         try
         {
-            // Use includeShared: true to allow tenants to read shared/system claim sets
             string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
@@ -213,7 +224,7 @@ public class ClaimSetRepository(
                     "v"
                 )}) as applications
                 FROM dmscs.ClaimSet c
-                WHERE c.Id = @Id AND {TenantContext.TenantWhereClause("c", includeShared: true)}
+                WHERE c.Id = @Id AND {ClaimSetWhereClause("c")}
                 """;
 
             var claimSets = (
@@ -252,11 +263,11 @@ public class ClaimSetRepository(
 
         try
         {
-            // Get the current claim set name
+            // Get the current claim set (including system-reserved for proper error messages)
             string getClaimSetSql = $"""
                 SELECT ClaimSetName, IsSystemReserved
                 FROM dmscs.ClaimSet
-                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                WHERE Id = @Id AND {ClaimSetWhereClause()};
                 """;
 
             var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
@@ -464,11 +475,11 @@ public class ClaimSetRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            // Get the current claim set name to distinguish between Not Found and System Reserved responses
+            // Get the current claim set (including system-reserved for proper error messages)
             string getClaimSetSql = $"""
                 SELECT ClaimSetName, IsSystemReserved
                 FROM dmscs.ClaimSet
-                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                WHERE Id = @Id AND {ClaimSetWhereClause()};
                 """;
 
             var existingClaimSet = await connection.QuerySingleOrDefaultAsync<(
@@ -507,7 +518,6 @@ public class ClaimSetRepository(
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            // Use includeShared: true to allow tenants to export shared/system claim sets
             string sql = $"""
                 SELECT c.Id, c.ClaimSetName, c.IsSystemReserved
                     ,(SELECT jsonb_agg(jsonb_build_object('applicationName', a.ApplicationName))
@@ -517,7 +527,7 @@ public class ClaimSetRepository(
                     "v"
                 )}) as applications
                 FROM dmscs.ClaimSet c
-                WHERE c.Id = @Id AND {TenantContext.TenantWhereClause("c", includeShared: true)}
+                WHERE c.Id = @Id AND {ClaimSetWhereClause("c")}
                 """;
             var claimSets = await connection.QueryAsync<dynamic>(sql, param: new { Id = id, TenantId });
 
@@ -556,9 +566,9 @@ public class ClaimSetRepository(
 
         try
         {
-            // Check if the claim set already exists for this tenant
+            // Check if the claim set already exists (including system-reserved to prevent naming conflicts)
             string checkSql = $"""
-                    SELECT Id FROM dmscs.ClaimSet WHERE ClaimSetName = @ClaimSetName AND {TenantContext.TenantWhereClause()};
+                    SELECT Id FROM dmscs.ClaimSet WHERE ClaimSetName = @ClaimSetName AND {ClaimSetWhereClause()};
                 """;
             var existingClaimSetId = await connection.QuerySingleOrDefaultAsync<long?>(
                 checkSql,
@@ -700,10 +710,11 @@ public class ClaimSetRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
+            // Include system-reserved claimsets so users can copy from them
             string selectSql = $"""
                 SELECT ClaimSetName, IsSystemReserved
                 FROM dmscs.ClaimSet
-                WHERE Id = @OriginalId AND {TenantContext.TenantWhereClause()};
+                WHERE Id = @OriginalId AND {ClaimSetWhereClause()};
                 """;
 
             var originalClaimSet = await connection.QuerySingleOrDefaultAsync(
