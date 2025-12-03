@@ -41,10 +41,10 @@ public class ConfigurationServiceSettingsValidator : IValidateOptions<Configurat
         {
             return ValidateOptionsResult.Fail("Missing required ConfigurationServiceSettings value: Scope");
         }
-        if (options.CacheExpirationMinutes > 0)
+        if (options.CacheExpirationMinutes <= 0)
         {
             return ValidateOptionsResult.Fail(
-                "Missing required ConfigurationServiceSettings value: CacheExpirationMinutes"
+                "ConfigurationServiceSettings value CacheExpirationMinutes must be greater than 0"
             );
         }
 
