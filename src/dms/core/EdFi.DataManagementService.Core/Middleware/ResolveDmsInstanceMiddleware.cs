@@ -37,7 +37,8 @@ internal class ResolveDmsInstanceMiddleware(
         if (requestInfo.ClientAuthorizations.DmsInstanceIds.Count == 0)
         {
             logger.LogError(
-                "No DMS instances authorized for client - TraceId: {TraceId}",
+                "No DMS instances authorized for client - Tenant: {Tenant}, TraceId: {TraceId}",
+                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Tenant ?? "(none)"),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -116,9 +117,10 @@ internal class ResolveDmsInstanceMiddleware(
                 .ToList();
 
             logger.LogError(
-                "No DMS instance matches route qualifiers [{QualifierDetails}] from authorized instances [{InstanceIds}] - TraceId: {TraceId}",
+                "No DMS instance matches route qualifiers [{QualifierDetails}] from authorized instances [{InstanceIds}] - Tenant: {Tenant}, TraceId: {TraceId}",
                 qualifierDetails,
                 LoggingSanitizer.SanitizeForLogging(string.Join(", ", checkedInstanceIds)),
+                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Tenant ?? "(none)"),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -135,8 +137,9 @@ internal class ResolveDmsInstanceMiddleware(
         if (string.IsNullOrWhiteSpace(matchedInstance.ConnectionString))
         {
             logger.LogError(
-                "DMS instance {DmsInstanceId} has no connection string configured - TraceId: {TraceId}",
+                "DMS instance {DmsInstanceId} has no connection string configured - Tenant: {Tenant}, TraceId: {TraceId}",
                 LoggingSanitizer.SanitizeForLogging(matchedInstance.Id.ToString()),
+                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Tenant ?? "(none)"),
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
