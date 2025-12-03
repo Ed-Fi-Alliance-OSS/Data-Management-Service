@@ -21,12 +21,14 @@ public class DmsApiClient : IDisposable
     private readonly HttpClient _httpClient;
     private readonly string _baseUrl;
     private readonly string _accessToken;
+    private readonly string? _tenant;
     private bool _disposed;
 
-    public DmsApiClient(string baseUrl, string accessToken)
+    public DmsApiClient(string baseUrl, string accessToken, string? tenant = null)
     {
         _baseUrl = baseUrl;
         _accessToken = accessToken;
+        _tenant = tenant;
 
         // Create and configure HttpClient with base URL and authorization header
         _httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
@@ -43,6 +45,18 @@ public class DmsApiClient : IDisposable
     }
 
     /// <summary>
+    /// Builds a URL path with optional tenant prefix
+    /// </summary>
+    private string BuildPath(string path)
+    {
+        if (string.IsNullOrEmpty(_tenant))
+        {
+            return path;
+        }
+        return $"/{_tenant}{path}";
+    }
+
+    /// <summary>
     /// POST a resource to DMS with route qualifiers
     /// </summary>
     public async Task<HttpResponseMessage> PostResourceAsync(
@@ -52,7 +66,7 @@ public class DmsApiClient : IDisposable
         object body
     )
     {
-        var url = $"/{districtId}/{schoolYear}/data/ed-fi/{resource}";
+        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}");
         var response = await _httpClient.PostAsJsonAsync(url, body);
 
         return response;
@@ -67,7 +81,7 @@ public class DmsApiClient : IDisposable
         string resource
     )
     {
-        var url = $"/{districtId}/{schoolYear}/data/ed-fi/{resource}";
+        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}");
         var response = await _httpClient.GetAsync(url);
 
         return response;
@@ -88,7 +102,7 @@ public class DmsApiClient : IDisposable
     /// </summary>
     public async Task<HttpResponseMessage> GetResourceWithoutQualifiersAsync(string resource)
     {
-        var url = $"/data/ed-fi/{resource}";
+        var url = BuildPath($"/data/ed-fi/{resource}");
         var response = await _httpClient.GetAsync(url);
 
         return response;

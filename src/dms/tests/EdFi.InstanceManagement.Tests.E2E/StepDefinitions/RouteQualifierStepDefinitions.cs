@@ -75,7 +75,11 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
             context.ClientSecret!
         );
 
-        context.DmsClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken);
+        context.DmsClient = new DmsApiClient(
+            TestConfiguration.DmsApiUrl,
+            context.DmsToken,
+            TestConfiguration.TenantName
+        );
     }
 
     [When("a POST request is made to instance {string} and resource {string} with body:")]
