@@ -174,6 +174,20 @@ else {
     {
         Write-Output "Init db public and private keys for OpenIddict..."
         ./setup-openiddict.ps1 -InitDb -InsertData:$false -EnvironmentFile $EnvironmentFile
+
+        # Create OpenIddict clients BEFORE starting DMS containers
+        # This is required because DMS tries to authenticate to Config Service on startup
+        # to load DMS instances, and needs the CMSAuthMetadataReadOnlyAccess client to exist
+        Write-Output "Pre-seeding OpenIddict clients before DMS startup..."
+
+        # Create client with default edfi_admin_api/full_access scope
+        ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
+
+        # Create client with edfi_admin_api/readonly_access scope
+        ./setup-openiddict.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
+
+        # Create client with edfi_admin_api/authMetadata_readonly_access scope (required for DMS startup)
+        ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
     }
     docker compose $files --env-file $EnvironmentFile -p dms-local up $upArgs
 
@@ -182,18 +196,7 @@ else {
     }
 
     Start-Sleep 20
-    if($IdentityProvider -eq "self-contained")
-    {
-        Write-Output "Starting self-contained initialization script..."
-        # Create client with default edfi_admin_api/full_access scope
-        ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
 
-        # Create client with edfi_admin_api/readonly_access scope
-        ./setup-openiddict.ps1 -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -EnvironmentFile $EnvironmentFile
-
-        # Create client with edfi_admin_api/authMetadata_readonly_access scope
-        ./setup-openiddict.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access" -EnvironmentFile $EnvironmentFile
-    }
     Write-Output "Running connector setup..."
     ./setup-connectors.ps1 $EnvironmentFile
 
