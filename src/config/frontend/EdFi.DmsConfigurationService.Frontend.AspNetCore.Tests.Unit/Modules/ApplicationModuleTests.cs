@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
@@ -37,7 +38,10 @@ public class ApplicationModuleTests
             {
                 // Use the new test authentication extension that mimics production setup
                 collection.AddTestAuthentication();
-
+                collection.Configure<AppSettings>(options =>
+                {
+                    options.EnableApplicationResetEndpoint = true;
+                });
                 collection
                     .AddTransient((_) => _applicationRepository)
                     .AddTransient((_) => _clientRepository)
