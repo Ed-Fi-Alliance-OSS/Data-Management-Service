@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.InstanceManagement.Tests.E2E.Infrastructure;
+
 namespace EdFi.InstanceManagement.Tests.E2E.Management;
 
 /// <summary>
@@ -24,6 +26,16 @@ public class InstanceManagementContext
     /// Mapping from route qualifier (e.g., "255901/2024") to instance ID
     /// </summary>
     public Dictionary<string, int> RouteQualifierToInstanceId { get; } = new();
+
+    /// <summary>
+    /// Tracks instance ID to database name mapping for infrastructure cleanup
+    /// </summary>
+    public Dictionary<int, string> InstanceIdToDatabaseName { get; } = new();
+
+    /// <summary>
+    /// Infrastructure manager for Kafka/Debezium lifecycle
+    /// </summary>
+    public InstanceInfrastructureManager? InfrastructureManager { get; set; }
 
     /// <summary>
     /// Application ID created during tests
@@ -83,6 +95,7 @@ public class InstanceManagementContext
         VendorId = null;
         InstanceIds.Clear();
         RouteQualifierToInstanceId.Clear();
+        InstanceIdToDatabaseName.Clear();
         ApplicationId = null;
         ClientKey = null;
         ClientSecret = null;

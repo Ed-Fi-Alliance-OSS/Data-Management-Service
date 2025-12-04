@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.InstanceManagement.Tests.E2E.Configuration;
+using EdFi.InstanceManagement.Tests.E2E.Infrastructure;
 using EdFi.InstanceManagement.Tests.E2E.Management;
 using EdFi.InstanceManagement.Tests.E2E.Models;
 using FluentAssertions;
@@ -11,7 +13,10 @@ using Reqnroll;
 namespace EdFi.InstanceManagement.Tests.E2E.StepDefinitions;
 
 [Binding]
-public class InstanceSetupStepDefinitions(InstanceManagementContext context)
+public class InstanceSetupStepDefinitions(
+    InstanceManagementContext context,
+    InstanceInfrastructureManager infrastructureManager
+)
 {
     public ConfigServiceClient? _configClient;
     private InstanceResponse? _lastCreatedInstance;
@@ -31,6 +36,12 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
             context.ConfigToken,
             TestConfiguration.TenantName
         );
+
+        // Ensure the tenant exists before any other operations
+        if (!string.IsNullOrEmpty(TestConfiguration.TenantName))
+        {
+            await _configClient.EnsureTenantExistsAsync(TestConfiguration.TenantName);
+        }
     }
 
     [When("I create a vendor with the following details:")]
@@ -142,21 +153,71 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
             return;
         }
 
-        // Use pre-existing instances created by setup script (IDs 1, 2, 3)
-        // These instances were created by start-local-dms.ps1 with -AddDmsInstance flag
+        // Create instances dynamically with their Kafka infrastructure
         await GivenAVendorExists();
 
-        // Instance 1: District 255901, Year 2024 (ID = 1)
-        context.InstanceIds.Add(1);
-        context.RouteQualifierToInstanceId["255901/2024"] = 1;
+        // Store the infrastructure manager in context for cleanup
+        context.InfrastructureManager = infrastructureManager;
 
-        // Instance 2: District 255901, Year 2025 (ID = 2)
-        context.InstanceIds.Add(2);
-        context.RouteQualifierToInstanceId["255901/2025"] = 2;
+        var instanceConfigs = new[]
+        {
+            (
+                Name: "District 255901 - School Year 2024",
+                DbIndex: 1,
+                DistrictId: "255901",
+                SchoolYear: "2024"
+            ),
+            (
+                Name: "District 255901 - School Year 2025",
+                DbIndex: 2,
+                DistrictId: "255901",
+                SchoolYear: "2025"
+            ),
+            (
+                Name: "District 255902 - School Year 2024",
+                DbIndex: 3,
+                DistrictId: "255902",
+                SchoolYear: "2024"
+            ),
+        };
 
-        // Instance 3: District 255902, Year 2024 (ID = 3)
-        context.InstanceIds.Add(3);
-        context.RouteQualifierToInstanceId["255902/2024"] = 3;
+        foreach (var config in instanceConfigs.Take(count))
+        {
+            var connectionString = TestConstants.GetConnectionString(config.DbIndex);
+            var databaseName = TestConstants.GetDatabaseName(config.DbIndex);
+
+            // Create instance via Config Service
+            var instance = await _configClient!.CreateInstanceAsync(
+                new InstanceRequest(
+                    InstanceType: "District",
+                    InstanceName: config.Name,
+                    ConnectionString: connectionString
+                )
+            );
+
+            context.InstanceIds.Add(instance.Id);
+            context.InstanceIdToDatabaseName[instance.Id] = databaseName;
+            context.RouteQualifierToInstanceId[$"{config.DistrictId}/{config.SchoolYear}"] = instance.Id;
+
+            // Add route contexts
+            await _configClient.CreateRouteContextAsync(
+                new RouteContextRequest(
+                    InstanceId: instance.Id,
+                    ContextKey: "districtId",
+                    ContextValue: config.DistrictId
+                )
+            );
+            await _configClient.CreateRouteContextAsync(
+                new RouteContextRequest(
+                    InstanceId: instance.Id,
+                    ContextKey: "schoolYear",
+                    ContextValue: config.SchoolYear
+                )
+            );
+
+            // Setup Kafka topic and Debezium connector
+            await infrastructureManager.SetupInstanceInfrastructureAsync(instance.Id, databaseName);
+        }
     }
 
     [When("I create an application with the following details:")]

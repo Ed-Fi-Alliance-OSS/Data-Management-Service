@@ -12,7 +12,10 @@ using Reqnroll;
 namespace EdFi.InstanceManagement.Tests.E2E.StepDefinitions;
 
 [Binding]
-public class RouteQualifierStepDefinitions(InstanceManagementContext context)
+public class RouteQualifierStepDefinitions(
+    InstanceManagementContext context,
+    InstanceSetupStepDefinitions setupSteps
+)
 {
     [Given("the system is configured with route qualifiers")]
     public void GivenTheSystemIsConfiguredWithRouteQualifiers()
@@ -30,8 +33,6 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
     [Given("I have completed instance setup with {int} instances")]
     public async Task GivenIHaveCompletedInstanceSetupWithInstances(int count)
     {
-        var setupSteps = new InstanceSetupStepDefinitions(context);
-
         // Authenticate to Config Service
         await setupSteps.GivenIAmAuthenticatedToTheConfigurationServiceAsSystemAdmin();
 

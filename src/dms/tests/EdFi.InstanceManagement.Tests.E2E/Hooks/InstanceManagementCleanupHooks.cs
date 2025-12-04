@@ -63,7 +63,7 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
 
         try
         {
-            // Delete application
+            // Delete application first
             if (context.ApplicationId.HasValue)
             {
                 _logger?.LogInformation("Deleting application {ApplicationId}", context.ApplicationId);
@@ -82,10 +82,24 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
                 }
             }
 
-            // Delete instances (this also deletes route contexts)
-            // Skip instances 1, 2, 3 as they are pre-existing instances created by setup script
-            var instancesToDelete = context.InstanceIds.Where(id => id is not (1 or 2 or 3)).ToList();
-            foreach (var instanceId in instancesToDelete)
+            // Teardown Kafka/Debezium infrastructure for all instances
+            if (context.InfrastructureManager != null)
+            {
+                _logger?.LogInformation("Tearing down Kafka/Debezium infrastructure");
+                try
+                {
+                    await context.InfrastructureManager.TeardownAllAsync();
+                    _logger?.LogInformation("Infrastructure teardown completed");
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to teardown infrastructure");
+                }
+            }
+
+            // Delete instances from Config Service (this also deletes route contexts)
+            // Now we delete ALL instances since they are created dynamically by tests
+            foreach (var instanceId in context.InstanceIds.OrderByDescending(id => id))
             {
                 _logger?.LogInformation("Deleting instance {InstanceId}", instanceId);
                 try

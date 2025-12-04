@@ -15,6 +15,7 @@ namespace EdFi.InstanceManagement.Tests.E2E.Management;
 public class ConfigServiceClient
 {
     private readonly HttpClient _httpClient;
+    private readonly string _baseUrl;
     private readonly string _accessToken;
 
     /// <summary>
@@ -25,6 +26,7 @@ public class ConfigServiceClient
     /// <param name="tenantName">Optional tenant name for multi-tenant support</param>
     public ConfigServiceClient(string baseUrl, string accessToken, string? tenantName = null)
     {
+        _baseUrl = baseUrl;
         _httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
         _accessToken = accessToken;
 
@@ -32,6 +34,77 @@ public class ConfigServiceClient
         {
             _httpClient.DefaultRequestHeaders.Add("Tenant", tenantName);
         }
+    }
+
+    /// <summary>
+    /// Create a tenant. This is a system-level operation that doesn't require the Tenant header.
+    /// </summary>
+    public async Task<TenantResponse> CreateTenantAsync(TenantRequest request)
+    {
+        // Tenant operations don't use the Tenant header - create a fresh client
+        using var client = new HttpClient { BaseAddress = new Uri(_baseUrl) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+
+        var response = await client.PostAsJsonAsync("/v2/tenants/", request);
+
+        // If tenant already exists (400 Bad Request with duplicate name), try to get existing tenant
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+        {
+            var existingTenants = await GetTenantsAsync();
+            var existing = Array.Find(
+                existingTenants,
+                t => t.Name.Equals(request.Name, StringComparison.OrdinalIgnoreCase)
+            );
+            if (existing != null)
+            {
+                return existing;
+            }
+        }
+
+        response.EnsureSuccessStatusCode();
+
+        var tenant =
+            await response.Content.ReadFromJsonAsync<TenantResponse>()
+            ?? throw new InvalidOperationException("Failed to deserialize tenant response");
+
+        return tenant;
+    }
+
+    /// <summary>
+    /// Get all tenants. This is a system-level operation that doesn't require the Tenant header.
+    /// </summary>
+    public async Task<TenantResponse[]> GetTenantsAsync()
+    {
+        // Tenant operations don't use the Tenant header - create a fresh client
+        using var client = new HttpClient { BaseAddress = new Uri(_baseUrl) };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
+
+        var response = await client.GetAsync("/v2/tenants/");
+        response.EnsureSuccessStatusCode();
+
+        var tenants =
+            await response.Content.ReadFromJsonAsync<TenantResponse[]>()
+            ?? throw new InvalidOperationException("Failed to deserialize tenants response");
+
+        return tenants;
+    }
+
+    /// <summary>
+    /// Ensure a tenant exists, creating it if necessary.
+    /// </summary>
+    public async Task<TenantResponse> EnsureTenantExistsAsync(string tenantName)
+    {
+        var existingTenants = await GetTenantsAsync();
+        var existing = Array.Find(
+            existingTenants,
+            t => t.Name.Equals(tenantName, StringComparison.OrdinalIgnoreCase)
+        );
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        return await CreateTenantAsync(new TenantRequest(tenantName));
     }
 
     /// <summary>
