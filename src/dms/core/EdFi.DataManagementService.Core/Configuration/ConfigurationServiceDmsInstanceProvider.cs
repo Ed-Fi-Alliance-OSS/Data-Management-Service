@@ -7,6 +7,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Configuration;
@@ -176,7 +177,7 @@ public class ConfigurationServiceDmsInstanceProvider(
 
             foreach (string tenant in tenants)
             {
-                logger.LogDebug("Found tenant: {TenantName}", SanitizeForLog(tenant));
+                logger.LogDebug("Found tenant: {TenantName}", LoggingSanitizer.SanitizeForLogging(tenant));
             }
 
             return tenants;
@@ -249,31 +250,6 @@ public class ConfigurationServiceDmsInstanceProvider(
         }
 
         return tenantResponses.Select(t => t.Name).ToList();
-    }
-
-    /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
-    /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// </summary>
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
-        );
     }
 
     /// <summary>
