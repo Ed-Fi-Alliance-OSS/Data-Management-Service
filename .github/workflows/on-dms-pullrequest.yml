@@ -461,6 +461,11 @@ jobs:
     name: Validate Resources Spec
     runs-on: ubuntu-latest
     needs: build-and-start-dms
+    services:
+      swagger-editor:
+        image: swaggerapi/swagger-editor
+        ports:
+          - 80:8080
     steps:
       - name: Download Resources Spec
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
@@ -471,25 +476,19 @@ jobs:
       - name: Validate Resources Spec
         uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
         with:
+          swagger-editor-url: http://localhost/
           definition-file: specs/resources-spec.json
-          default-timeout: 45000 # 45 seconds
-
-      - name: Download Resources Spec
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
-        with:
-          name: descriptors-spec
-          path: specs
-
-      - name: Validate Descriptors Spec
-        uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
-        with:
-          definition-file: specs/descriptors-spec.json
           default-timeout: 45000
 
   validate-descriptors-spec:
     name: Validate Descriptors Spec
     runs-on: ubuntu-latest
     needs: build-and-start-dms
+    services:
+      swagger-editor:
+        image: swaggerapi/swagger-editor
+        ports:
+          - 80:8080
     steps:
       - name: Download Descriptors Spec
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
@@ -500,6 +499,7 @@ jobs:
       - name: Validate Descriptors Spec
         uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
         with:
+          swagger-editor-url: http://localhost/
           definition-file: specs/descriptors-spec.json
           default-timeout: 45000
 
@@ -507,6 +507,11 @@ jobs:
     name: Validate Discovery Spec
     runs-on: ubuntu-latest
     needs: build-and-start-dms
+    services:
+      swagger-editor:
+        image: swaggerapi/swagger-editor
+        ports:
+          - 80:8080
     steps:
       - name: Download Discovery Spec
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
@@ -517,8 +522,9 @@ jobs:
       - name: Validate Discovery Spec
         uses: swaggerexpert/swagger-editor-validate@54b85e2f5c1fcdee85308dd57cad8c8ec19d3970
         with:
+          swagger-editor-url: http://localhost/
           definition-file: specs/discovery-spec.json
-          default-timeout: 45000 # 45 seconds
+          default-timeout: 45000
 
   event_file:
     name: Upload Event File
