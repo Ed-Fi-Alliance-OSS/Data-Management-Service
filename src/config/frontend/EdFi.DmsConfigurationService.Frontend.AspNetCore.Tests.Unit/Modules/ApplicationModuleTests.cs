@@ -1095,4 +1095,132 @@ public class ApplicationModuleTests
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
     }
+
+    [TestFixture]
+    public class ResetCredentialEndpointEnabledTests : ApplicationModuleTests
+    {
+        /// <summary>
+        /// Tests that verify the reset-credential endpoint is available when
+        /// EnableApplicationResetEndpoint is true (the default in production).
+        /// </summary>
+        [SetUp]
+        public void SetUp()
+        {
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([new ApiClient("1", Guid.NewGuid())]));
+
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.Success("NEW_SECRET"));
+        }
+
+        [Test]
+        public async Task Should_successfully_reset_credentials_when_endpoint_enabled()
+        {
+            // Arrange
+            using var client = SetUpClient();
+
+            // Act
+            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var responseBody = await resetResponse.Content.ReadAsStringAsync();
+            var actualResponse = JsonNode.Parse(responseBody);
+            actualResponse.Should().NotBeNull();
+            actualResponse!["id"]!.GetValue<long>().Should().Be(1);
+            actualResponse!["key"]!.GetValue<string>().Should().Be("1");
+            actualResponse!["secret"]!.GetValue<string>().Should().Be("NEW_SECRET");
+        }
+
+        [Test]
+        public async Task Should_return_not_found_when_application_has_no_api_clients()
+        {
+            // Arrange
+            using var client = SetUpClient();
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<long>.Ignored))
+                .Returns(new ApplicationApiClientsResult.Success([]));
+
+            // Act
+            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
+    [TestFixture]
+    public class ResetCredentialEndpointDisabledTests : ApplicationModuleTests
+    {
+        /// <summary>
+        /// Tests that verify the reset-credential endpoint returns 404 when
+        /// EnableApplicationResetEndpoint is false. This scenario is typical when
+        /// using multiple API clients per application to avoid credential confusion.
+        /// </summary>
+        private HttpClient SetUpClientWithEndpointDisabled()
+        {
+            var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTestAuthentication();
+
+                    // Override AppSettings to disable the reset endpoint
+                    collection.Configure<EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration.AppSettings>(options =>
+                    {
+                        options.EnableApplicationResetEndpoint = false;
+                    });
+
+                    collection
+                        .AddTransient((_) => _applicationRepository)
+                        .AddTransient((_) => _clientRepository)
+                        .AddTransient((_) => _vendorRepository);
+                });
+            });
+            var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+            return client;
+        }
+
+        [Test]
+        public async Task Should_return_not_found_when_endpoint_disabled()
+        {
+            // Arrange
+            using var client = SetUpClientWithEndpointDisabled();
+
+            // Act
+            var resetResponse = await client.PutAsync("/v2/applications/1/reset-credential", null);
+
+            // Assert
+            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task Should_still_allow_other_application_endpoints_when_reset_disabled()
+        {
+            // Arrange
+            using var client = SetUpClientWithEndpointDisabled();
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<long>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse()
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "ClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DmsInstanceIds = [1],
+                        }
+                    )
+                );
+
+            // Act - Verify GET still works
+            var getResponse = await client.GetAsync("/v2/applications/1");
+
+            // Assert
+            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+    }
 }
