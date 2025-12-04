@@ -14,7 +14,7 @@ public class AppSettings
     public required string Datastore { get; set; }
     public required string IdentityProvider { get; set; }
     public bool MultiTenancy { get; set; }
-    public bool EnableApplicationResetEndpoint { get; set; }
+    public bool EnableApplicationResetEndpoint { get; set; } = true;
 }
 
 public class AppSettingsValidator : IValidateOptions<AppSettings>
