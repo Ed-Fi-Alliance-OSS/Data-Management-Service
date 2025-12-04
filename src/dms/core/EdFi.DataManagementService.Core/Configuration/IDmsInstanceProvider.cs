@@ -38,4 +38,11 @@ public interface IDmsInstanceProvider
     /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
     /// <returns>True if instances have been loaded for the tenant, otherwise false</returns>
     bool IsLoaded(string? tenant = null);
+
+    /// <summary>
+    /// Loads all tenant names from the Configuration Service.
+    /// Used at startup when multi-tenancy is enabled to pre-populate the instance cache for all tenants.
+    /// </summary>
+    /// <returns>A list of tenant names</returns>
+    Task<IList<string>> LoadTenants();
 }

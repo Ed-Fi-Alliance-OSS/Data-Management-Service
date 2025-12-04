@@ -30,6 +30,7 @@ public static class TestMockHelper
         var dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
         var mockInstance = new DmsInstance(1, "Test", "TestInstance", "test-connection-string", []);
         A.CallTo(() => dmsInstanceProvider.LoadDmsInstances(A<string?>.Ignored)).Returns([mockInstance]);
+        A.CallTo(() => dmsInstanceProvider.LoadTenants()).Returns(new List<string> { "TestTenant" });
         A.CallTo(() => dmsInstanceProvider.GetAll(A<string?>.Ignored)).Returns([mockInstance]);
         A.CallTo(() => dmsInstanceProvider.GetById(A<long>.Ignored, A<string?>.Ignored))
             .Returns(mockInstance);

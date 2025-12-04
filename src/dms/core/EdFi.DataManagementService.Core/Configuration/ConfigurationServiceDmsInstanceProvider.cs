@@ -145,6 +145,137 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// </summary>
     private static string GetTenantKey(string? tenant) => tenant ?? string.Empty;
 
+    /// <inheritdoc />
+    public async Task<IList<string>> LoadTenants()
+    {
+        logger.LogInformation(
+            "Requesting authentication token from Configuration Service at {BaseUrl}",
+            configurationServiceApiClient.Client.BaseAddress
+        );
+
+        try
+        {
+            // Get token for the Configuration Service API
+            string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
+                configurationServiceContext.clientId,
+                configurationServiceContext.clientSecret,
+                configurationServiceContext.scope
+            );
+
+            configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", configurationServiceToken);
+
+            // Note: /v2/tenants endpoint does not require Tenant header
+            SetTenantHeader(null);
+
+            logger.LogInformation("Fetching tenants from Configuration Service");
+
+            IList<string> tenants = await FetchTenants();
+
+            logger.LogInformation("Successfully fetched {TenantCount} tenants", tenants.Count);
+
+            foreach (string tenant in tenants)
+            {
+                logger.LogDebug("Found tenant: {TenantName}", SanitizeForLog(tenant));
+            }
+
+            return tenants;
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to load tenants from Configuration Service. Ensure the Configuration Service is running and accessible at {BaseUrl}",
+                configurationServiceApiClient.Client.BaseAddress
+            );
+            throw new InvalidOperationException(
+                $"Unable to connect to Configuration Service at {configurationServiceApiClient.Client.BaseAddress}. "
+                    + "Verify that the service is running and the ConfigurationServiceSettings are configured correctly. "
+                    + $"Error: {ex.Message}",
+                ex
+            );
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to deserialize tenants response from Configuration Service. The API response format may have changed."
+            );
+            throw new InvalidOperationException(
+                "Configuration Service returned an invalid response format for tenants. "
+                    + "This may indicate an API version mismatch or corrupted data.",
+                ex
+            );
+        }
+    }
+
+    /// <summary>
+    /// Fetches tenant names from the Configuration Service API
+    /// </summary>
+    private async Task<IList<string>> FetchTenants()
+    {
+        const string TenantsEndpoint = "v2/tenants/";
+
+        logger.LogDebug("Sending GET request to {Endpoint}", TenantsEndpoint);
+
+        HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(TenantsEndpoint);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            logger.LogWarning(
+                "Configuration Service returned status code {StatusCode} for tenants endpoint",
+                response.StatusCode
+            );
+        }
+
+        response.EnsureSuccessStatusCode();
+
+        string tenantsJson = await response.Content.ReadAsStringAsync();
+
+        logger.LogDebug(
+            "Received response from Configuration Service, deserializing {ByteCount} bytes",
+            tenantsJson.Length
+        );
+
+        List<TenantResponse>? tenantResponses = JsonSerializer.Deserialize<List<TenantResponse>>(
+            tenantsJson,
+            _jsonOptions
+        );
+
+        if (tenantResponses == null)
+        {
+            logger.LogWarning("Deserialization returned null - treating as empty tenant list");
+            return [];
+        }
+
+        return tenantResponses.Select(t => t.Name).ToList();
+    }
+
+    /// <summary>
+    /// Sanitizes a string for safe logging by allowing only safe characters.
+    /// Uses a whitelist approach to prevent log injection and log forging attacks.
+    /// </summary>
+    private static string SanitizeForLog(string? input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return string.Empty;
+        }
+        return new string(
+            input
+                .Where(c =>
+                    char.IsLetterOrDigit(c)
+                    || c == ' '
+                    || c == '_'
+                    || c == '-'
+                    || c == '.'
+                    || c == ':'
+                    || c == '/'
+                )
+                .ToArray()
+        );
+    }
+
     /// <summary>
     /// Fetches DMS instances from the Configuration Service API
     /// </summary>
@@ -233,5 +364,14 @@ public class ConfigurationServiceDmsInstanceProvider(
         public long InstanceId { get; init; } = 0;
         public string ContextKey { get; init; } = string.Empty;
         public string ContextValue { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Response model for tenant data from the Configuration Service API
+    /// </summary>
+    private sealed class TenantResponse
+    {
+        public long Id { get; init; } = 0;
+        public string Name { get; init; } = string.Empty;
     }
 }

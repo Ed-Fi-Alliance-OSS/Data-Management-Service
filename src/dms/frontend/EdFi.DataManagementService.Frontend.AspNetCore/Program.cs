@@ -242,7 +242,27 @@ async Task RetrieveAndCacheClaimSets(WebApplication app)
     app.Logger.LogInformation("Retrieving and caching required claim sets");
     try
     {
-        await app.Services.GetRequiredService<IClaimSetProvider>().GetAllClaimSets();
+        var claimSetProvider = app.Services.GetRequiredService<IClaimSetProvider>();
+        var multiTenancyEnabled = app.Configuration.GetValue<bool>("AppSettings:MultiTenancy");
+
+        if (multiTenancyEnabled)
+        {
+            var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
+            IList<string> tenants = await dmsInstanceProvider.LoadTenants();
+
+            foreach (string tenant in tenants)
+            {
+                app.Logger.LogInformation(
+                    "Caching claim sets for tenant: {TenantName}",
+                    SanitizeForLog(tenant)
+                );
+                await claimSetProvider.GetAllClaimSets(tenant);
+            }
+        }
+        else
+        {
+            await claimSetProvider.GetAllClaimSets();
+        }
     }
     catch (Exception ex)
     {
@@ -261,30 +281,15 @@ async Task InitializeDmsInstances(WebApplication app)
     try
     {
         var dmsInstanceProvider = app.Services.GetRequiredService<IDmsInstanceProvider>();
+        var multiTenancyEnabled = app.Configuration.GetValue<bool>("AppSettings:MultiTenancy");
 
-        IList<DmsInstance> instances = await dmsInstanceProvider.LoadDmsInstances();
-
-        if (instances.Count == 0)
+        if (multiTenancyEnabled)
         {
-            app.Logger.LogCritical(
-                "No DMS instances were loaded from Configuration Service. DMS cannot start without instance configuration."
-            );
-            Environment.Exit(-1);
+            await InitializeDmsInstancesForMultiTenancy(app, dmsInstanceProvider);
         }
-
-        app.Logger.LogInformation("Successfully loaded {InstanceCount} DMS instances", instances.Count);
-
-        // Log instance details for debugging
-        foreach (var instance in instances)
+        else
         {
-            var hasConnectionString = !string.IsNullOrWhiteSpace(instance.ConnectionString);
-            app.Logger.LogInformation(
-                "DMS Instance: ID={InstanceId}, Name='{InstanceName}', Type='{InstanceType}', HasConnectionString={HasConnectionString}",
-                instance.Id,
-                instance.InstanceName,
-                instance.InstanceType,
-                hasConnectionString
-            );
+            await InitializeDmsInstancesForSingleTenancy(app, dmsInstanceProvider);
         }
     }
     catch (Exception ex)
@@ -295,6 +300,106 @@ async Task InitializeDmsInstances(WebApplication app)
         );
         Environment.Exit(-1);
     }
+}
+
+async Task InitializeDmsInstancesForMultiTenancy(WebApplication app, IDmsInstanceProvider dmsInstanceProvider)
+{
+    app.Logger.LogInformation("Multi-tenancy is enabled. Fetching tenants from Configuration Service.");
+
+    IList<string> tenants = await dmsInstanceProvider.LoadTenants();
+
+    if (tenants.Count == 0)
+    {
+        // When multi-tenancy is enabled, having 0 tenants at startup is not fatal.
+        // Tenants may be created after DMS starts, and the cache-miss fallback will load instances on demand.
+        app.Logger.LogWarning(
+            "No tenants found in Configuration Service. DMS instances will be loaded on-demand when tenants are created and requests arrive."
+        );
+        return;
+    }
+
+    app.Logger.LogInformation(
+        "Found {TenantCount} tenants. Loading DMS instances for each tenant.",
+        tenants.Count
+    );
+
+    int totalInstances = 0;
+    foreach (string tenant in tenants)
+    {
+        app.Logger.LogInformation("Loading DMS instances for tenant: {TenantName}", SanitizeForLog(tenant));
+
+        IList<DmsInstance> instances = await dmsInstanceProvider.LoadDmsInstances(tenant);
+        totalInstances += instances.Count;
+
+        app.Logger.LogInformation(
+            "Loaded {InstanceCount} DMS instances for tenant {TenantName}",
+            instances.Count,
+            SanitizeForLog(tenant)
+        );
+
+        LogInstanceDetails(app, instances);
+    }
+
+    app.Logger.LogInformation(
+        "Successfully loaded {TotalInstanceCount} total DMS instances across {TenantCount} tenants",
+        totalInstances,
+        tenants.Count
+    );
+}
+
+async Task InitializeDmsInstancesForSingleTenancy(
+    WebApplication app,
+    IDmsInstanceProvider dmsInstanceProvider
+)
+{
+    IList<DmsInstance> instances = await dmsInstanceProvider.LoadDmsInstances();
+
+    if (instances.Count == 0)
+    {
+        app.Logger.LogCritical(
+            "No DMS instances were loaded from Configuration Service. DMS cannot start without instance configuration."
+        );
+        Environment.Exit(-1);
+    }
+
+    app.Logger.LogInformation("Successfully loaded {InstanceCount} DMS instances", instances.Count);
+    LogInstanceDetails(app, instances);
+}
+
+void LogInstanceDetails(WebApplication app, IList<DmsInstance> instances)
+{
+    foreach (var instance in instances)
+    {
+        var hasConnectionString = !string.IsNullOrWhiteSpace(instance.ConnectionString);
+        app.Logger.LogInformation(
+            "DMS Instance: ID={InstanceId}, Name='{InstanceName}', Type='{InstanceType}', HasConnectionString={HasConnectionString}",
+            instance.Id,
+            instance.InstanceName,
+            instance.InstanceType,
+            hasConnectionString
+        );
+    }
+}
+
+string SanitizeForLog(string? input)
+{
+    if (string.IsNullOrEmpty(input))
+    {
+        return string.Empty;
+    }
+    return new string(
+        input
+            .Where(c =>
+                char.IsLetterOrDigit(c)
+                || c == ' '
+                || c == '_'
+                || c == '-'
+                || c == '.'
+                || c == ':'
+                || c == '/'
+            )
+            .ToArray()
+    );
 }
 
 public partial class Program
