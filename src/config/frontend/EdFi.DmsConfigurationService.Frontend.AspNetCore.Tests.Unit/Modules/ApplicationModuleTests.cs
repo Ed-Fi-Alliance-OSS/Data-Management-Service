@@ -1101,7 +1101,7 @@ public class ApplicationModuleTests
     {
         /// <summary>
         /// Tests that verify the reset-credential endpoint is available when
-        /// EnableApplicationResetEndpoint is true (the default in production).
+        /// EnableApplicationResetEndpoint is true.
         /// </summary>
         [SetUp]
         public void SetUp()

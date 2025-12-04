@@ -29,7 +29,7 @@ services:
       AppSettings__TokenRequestTimeoutSeconds: ${DMS_CONFIG_TOKEN_TIMEOUT_SECONDS:-30}
       AppSettings__IdentityProvider: ${DMS_CONFIG_IDENTITY_PROVIDER:-keycloak}
       AppSettings__MultiTenancy: ${DMS_CONFIG_MULTI_TENANCY:-false}
-      AppSettings__EnableApplicationResetEndpoint: ${DMS_CONFIG_ENABLE_APPLICATION_RESET_ENDPOINT:-true}
+      AppSettings__EnableApplicationResetEndpoint: ${DMS_CONFIG_ENABLE_APPLICATION_RESET_ENDPOINT:-false}
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       AppSettings__PathBase: ${DMS_CONFIG_PATH_BASE:-}
       AppSettings__UseReverseProxyHeaders: ${DMS_CONFIG_USE_REVERSE_PROXY_HEADERS:-false}
