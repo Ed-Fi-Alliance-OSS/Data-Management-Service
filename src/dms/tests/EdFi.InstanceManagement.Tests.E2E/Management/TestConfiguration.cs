@@ -30,8 +30,7 @@ public static class TestConfiguration
     /// <summary>
     /// Tenant name for multi-tenant Configuration Service calls.
     /// When specified, this value is passed as a "Tenant" header to all Configuration Service API calls.
-    /// Defaults to "Tenant1" for instance management tests which require multi-tenancy.
+    /// This must be explicitly set via environment variable or in step definitions.
     /// </summary>
-    public static string? TenantName =>
-        Environment.GetEnvironmentVariable("CONFIG_SERVICE_TENANT") ?? "Tenant1";
+    public static string? TenantName => Environment.GetEnvironmentVariable("CONFIG_SERVICE_TENANT");
 }

@@ -9,8 +9,17 @@ Feature: Route Qualifier Error Handling
 
     Background:
         Given the system is configured with route qualifiers
-        And I have completed instance setup with 3 instances
-        And I am authenticated to DMS with application credentials
+          And I am authenticated to the Configuration Service as system admin
+          And tenant "Tenant_255901" is set up with a vendor and instances:
+              | Route       |
+              | 255901/2024 |
+              | 255901/2025 |
+          And tenant "Tenant_255901" has an application for district "255901"
+          And tenant "Tenant_255902" is set up with a vendor and instances:
+              | Route       |
+              | 255902/2024 |
+          And tenant "Tenant_255902" has an application for district "255902"
+          And I am authenticated to DMS with application credentials
 
     Scenario: Invalid district ID returns 404
         When a GET request is made to instance "999999/2024" and resource "contentClassDescriptors"

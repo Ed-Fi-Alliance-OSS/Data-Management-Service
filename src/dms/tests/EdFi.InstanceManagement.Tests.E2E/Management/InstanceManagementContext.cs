@@ -13,14 +13,39 @@ namespace EdFi.InstanceManagement.Tests.E2E.Management;
 public class InstanceManagementContext
 {
     /// <summary>
-    /// Vendor ID created during tests
+    /// Vendor ID created during tests (legacy single-tenant support)
     /// </summary>
     public int? VendorId { get; set; }
+
+    /// <summary>
+    /// Vendor IDs per tenant (tenantName -> vendorId)
+    /// </summary>
+    public Dictionary<string, int> VendorIdsByTenant { get; } = new();
+
+    /// <summary>
+    /// List of tenant names created during tests
+    /// </summary>
+    public List<string> TenantNames { get; } = [];
+
+    /// <summary>
+    /// Currently selected tenant for explicit tenant operations
+    /// </summary>
+    public string? CurrentTenant { get; set; }
+
+    /// <summary>
+    /// Config service clients per tenant (tenantName -> ConfigServiceClient)
+    /// </summary>
+    public Dictionary<string, ConfigServiceClient> ConfigClientsByTenant { get; } = new();
 
     /// <summary>
     /// List of instance IDs created during tests
     /// </summary>
     public List<int> InstanceIds { get; } = [];
+
+    /// <summary>
+    /// Maps instance ID to the tenant it belongs to
+    /// </summary>
+    public Dictionary<int, string> InstanceIdToTenant { get; } = new();
 
     /// <summary>
     /// Mapping from route qualifier (e.g., "255901/2024") to instance ID
@@ -38,7 +63,12 @@ public class InstanceManagementContext
     public InstanceInfrastructureManager? InfrastructureManager { get; set; }
 
     /// <summary>
-    /// Application ID created during tests
+    /// Application IDs per tenant (tenantName -> applicationId)
+    /// </summary>
+    public Dictionary<string, int> ApplicationIdsByTenant { get; } = new();
+
+    /// <summary>
+    /// Application ID created during tests (legacy single-tenant support)
     /// </summary>
     public int? ApplicationId { get; set; }
 
@@ -93,9 +123,15 @@ public class InstanceManagementContext
     public void Reset()
     {
         VendorId = null;
+        VendorIdsByTenant.Clear();
+        TenantNames.Clear();
+        CurrentTenant = null;
+        ConfigClientsByTenant.Clear();
         InstanceIds.Clear();
+        InstanceIdToTenant.Clear();
         RouteQualifierToInstanceId.Clear();
         InstanceIdToDatabaseName.Clear();
+        ApplicationIdsByTenant.Clear();
         ApplicationId = null;
         ClientKey = null;
         ClientSecret = null;

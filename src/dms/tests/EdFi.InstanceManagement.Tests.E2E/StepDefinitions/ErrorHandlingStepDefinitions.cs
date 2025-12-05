@@ -20,7 +20,7 @@ public class ErrorHandlingStepDefinitions(InstanceManagementContext context)
             context.DmsClient = new DmsApiClient(
                 TestConfiguration.DmsApiUrl,
                 context.DmsToken,
-                TestConfiguration.TenantName
+                context.CurrentTenant
             );
         }
     }
@@ -31,7 +31,7 @@ public class ErrorHandlingStepDefinitions(InstanceManagementContext context)
         context.DmsClient ??= new DmsApiClient(
             TestConfiguration.DmsApiUrl,
             context.DmsToken ?? "",
-            TestConfiguration.TenantName
+            context.CurrentTenant
         );
 
         context.LastResponse = await context.DmsClient.GetResourceWithoutQualifiersAsync(resource);

@@ -5,17 +5,13 @@
 
 using System.Text.Json;
 using EdFi.InstanceManagement.Tests.E2E.Management;
-using EdFi.InstanceManagement.Tests.E2E.Models;
 using FluentAssertions;
 using Reqnroll;
 
 namespace EdFi.InstanceManagement.Tests.E2E.StepDefinitions;
 
 [Binding]
-public class RouteQualifierStepDefinitions(
-    InstanceManagementContext context,
-    InstanceSetupStepDefinitions setupSteps
-)
+public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 {
     [Given("the system is configured with route qualifiers")]
     public void GivenTheSystemIsConfiguredWithRouteQualifiers()
@@ -28,34 +24,6 @@ public class RouteQualifierStepDefinitions(
             $"Route qualifier segments configured: {string.Join(", ", TestConfiguration.RouteQualifierSegments)}"
         );
         Console.WriteLine($"DMS API URL: {TestConfiguration.DmsApiUrl}");
-    }
-
-    [Given("I have completed instance setup with {int} instances")]
-    public async Task GivenIHaveCompletedInstanceSetupWithInstances(int count)
-    {
-        // Authenticate to Config Service
-        await setupSteps.GivenIAmAuthenticatedToTheConfigurationServiceAsSystemAdmin();
-
-        // Create vendor
-        await setupSteps.GivenAVendorExists();
-
-        // Create instances with route contexts
-        await setupSteps.GivenInstancesExistWithRouteContexts(count);
-
-        // Create application
-        var edOrgIds = new[] { 255901, 255902 };
-        var application = await setupSteps._configClient!.CreateApplicationAsync(
-            new ApplicationRequest(
-                context.VendorId!.Value,
-                "Multi-District Test App",
-                "E2E-NoFurtherAuthRequiredClaimSet",
-                edOrgIds,
-                [.. context.InstanceIds]
-            )
-        );
-        context.ApplicationId = application.Id;
-        context.ClientKey = application.Key;
-        context.ClientSecret = application.Secret;
     }
 
     [Given("I am authenticated to DMS with application credentials")]
@@ -79,7 +47,7 @@ public class RouteQualifierStepDefinitions(
         context.DmsClient = new DmsApiClient(
             TestConfiguration.DmsApiUrl,
             context.DmsToken,
-            TestConfiguration.TenantName
+            context.CurrentTenant
         );
     }
 
