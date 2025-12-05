@@ -26,7 +26,21 @@ public class ApplicationModule : IEndpointModule
         endpoints.MapSecuredGet($"/v2/applications/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v2/applications/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v2/applications/{{id}}", Delete);
-        endpoints.MapSecuredPut($"/v2/applications/{{id}}/reset-credential", ResetCredential);
+
+        // Only register the reset-credential endpoint if the feature flag is enabled.
+        // It is recommended to disable this endpoint when using multiple API clients for a single application.
+        // This avoids confusion and potential credential mismatches when resetting credentials, since
+        // the reset operation only affects the first API client found.
+        var enableResetEndpoint = endpoints
+            .ServiceProvider
+            .GetRequiredService<IOptions<AppSettings>>()
+            .Value
+            .EnableApplicationResetEndpoint;
+
+        if (enableResetEndpoint)
+        {
+            endpoints.MapSecuredPut($"/v2/applications/{{id}}/reset-credential", ResetCredential);
+        }
     }
 
     private async Task<IResult> InsertApplication(

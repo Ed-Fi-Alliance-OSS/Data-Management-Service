@@ -12,19 +12,20 @@ file.
 
 ## AppSettings
 
-| Parameter                    | Description                                                                                                                                                                                               |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Datastore                    | The primary datastore used by the DataManagementService. Valid values are `postgresql` and `mssql`                                                                                                        |
-| QueryHandler                 | The query handling datastore used by the DataManagementService. Valid values: `postgresql`                                                                                            |
-| DeployDatabaseOnStartup      | When `true` the database will be created and initialized on startup.                                                                                            |
-| BypassStringTypeCoercion     | String type coercion attempts to coerce boolean and numeric strings to their proper type on `POST` and `PUT` requests. For example `"true"` becomes `true`. This setting bypasses that for performance.   |
-| AllowIdentityUpdateOverrides | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                                                           |
-| MaskRequestBodyInLogs        | Controls whether to mask HTTP request bodies in log statements to avoid potentially logging PII. This setting only applies to `DEBUG` logging where requests are logged.                                  |
-| UseApiSchemaPath             | When set to `true`, the application will use the `UseApiSchemaPath` configuration to load core data standard and extension artifacts. The `ApiSchemaDownloader` CLI can be used to download and extract the published `ApiSchema` packages. |
-| ApiSchemaPath                | Specifies the directory where core and extension ApiSchema.json files are located. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages. |
-| DomainsExcludedFromOpenApi   | Comma separated list of domain names to exclude from OpenAPI documentation generation. Domains listed here will not appear in the generated OpenAPI specifications. Case insensitive. |
-| IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
-| RouteQualifierSegments | Comma separated list of route qualifier context segments as defined by `dmsInstanceRouteContexts` in Configuration Service. Example: "districtId,schoolYear" |
+| Parameter                        | Description                                                                                                                                                                                                                   |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Datastore                        | The primary datastore used by the DataManagementService. Valid values are `postgresql` and `mssql`                                                                                                        |
+| QueryHandler                     | The query handling datastore used by the DataManagementService. Valid values: `postgresql`                                                                                            |
+| DeployDatabaseOnStartup          | When `true` the database will be created and initialized on startup.                                                                                            |
+| BypassStringTypeCoercion         | String type coercion attempts to coerce boolean and numeric strings to their proper type on `POST` and `PUT` requests. For example `"true"` becomes `true`. This setting bypasses that for performance.   |
+| AllowIdentityUpdateOverrides     | Comma separated list of resource names that allow identity updates, overriding the default behavior to reject identity updates.                                                                           |
+| MaskRequestBodyInLogs            | Controls whether to mask HTTP request bodies in log statements to avoid potentially logging PII. This setting only applies to `DEBUG` logging where requests are logged.                                  |
+| UseApiSchemaPath                 | When set to `true`, the application will use the `UseApiSchemaPath` configuration to load core data standard and extension artifacts. The `ApiSchemaDownloader` CLI can be used to download and extract the published `ApiSchema` packages. |
+| ApiSchemaPath                    | Specifies the directory where core and extension ApiSchema.json files are located. The ApiSchemaDownloader CLI can be used to download and extract the published ApiSchema packages. |
+| DomainsExcludedFromOpenApi       | Comma separated list of domain names to exclude from OpenAPI documentation generation. Domains listed here will not appear in the generated OpenAPI specifications. Case insensitive. |
+| IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
+| RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dmsInstanceRouteContexts` in Configuration Service. Example: "districtId,schoolYear" |
+| EnableApplicationResetEndpoint   | When `true`, enables the `/v2/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
 
 ## Configuration Service AppSettings
 
