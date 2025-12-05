@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Model;
@@ -25,12 +26,10 @@ public class ConfigurationServiceDmsInstanceProvider(
     private const string TenantHeaderName = "Tenant";
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    private readonly Dictionary<string, IList<DmsInstance>> _instancesByTenant = new();
-    private readonly HashSet<string> _loadedTenants = new();
-    private readonly object _lock = new();
+    private readonly ConcurrentDictionary<string, IList<DmsInstance>> _instancesByTenant = new();
 
     /// <inheritdoc />
-    public bool IsLoaded(string? tenant = null) => _loadedTenants.Contains(GetTenantKey(tenant));
+    public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));
 
     /// <summary>
     /// Loads DMS instances from the Configuration Service API and stores them in memory
@@ -65,12 +64,7 @@ public class ConfigurationServiceDmsInstanceProvider(
             logger.LogInformation("Successfully fetched {InstanceCount} DMS instances", instances.Count);
 
             // Store instances by tenant
-            string tenantKey = GetTenantKey(tenant);
-            lock (_lock)
-            {
-                _instancesByTenant[tenantKey] = instances;
-                _loadedTenants.Add(tenantKey);
-            }
+            _instancesByTenant[GetTenantKey(tenant)] = instances;
 
             foreach (DmsInstance instance in instances)
             {
@@ -118,28 +112,16 @@ public class ConfigurationServiceDmsInstanceProvider(
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<DmsInstance> GetAll(string? tenant = null)
-    {
-        string tenantKey = GetTenantKey(tenant);
-        lock (_lock)
-        {
-            return _instancesByTenant.TryGetValue(tenantKey, out var instances)
-                ? instances.ToList().AsReadOnly()
-                : new List<DmsInstance>().AsReadOnly();
-        }
-    }
+    public IReadOnlyList<DmsInstance> GetAll(string? tenant = null) =>
+        _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var instances)
+            ? instances.ToList().AsReadOnly()
+            : new List<DmsInstance>().AsReadOnly();
 
     /// <inheritdoc />
-    public DmsInstance? GetById(long id, string? tenant = null)
-    {
-        string tenantKey = GetTenantKey(tenant);
-        lock (_lock)
-        {
-            return _instancesByTenant.TryGetValue(tenantKey, out var instances)
-                ? instances.FirstOrDefault(instance => instance.Id == id)
-                : null;
-        }
-    }
+    public DmsInstance? GetById(long id, string? tenant = null) =>
+        _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var instances)
+            ? instances.FirstOrDefault(instance => instance.Id == id)
+            : null;
 
     /// <summary>
     /// Gets the cache key for a tenant, using empty string for null/empty tenant
