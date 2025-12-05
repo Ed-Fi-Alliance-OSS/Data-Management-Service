@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text;
-
 namespace EdFi.DataManagementService.Core.Utilities;
 
 /// <summary>
@@ -13,7 +11,9 @@ namespace EdFi.DataManagementService.Core.Utilities;
 public static class LoggingSanitizer
 {
     /// <summary>
-    /// Sanitizes input strings to prevent log injection attacks by removing or encoding potentially dangerous characters
+    /// Sanitizes input strings to prevent log injection attacks using a whitelist approach.
+    /// Only allows alphanumeric characters, spaces, and safe punctuation (_-.:/).
+    /// This prevents log forging, template injection, and other log-based attacks.
     /// </summary>
     /// <param name="input">The input string to sanitize</param>
     /// <returns>A sanitized string safe for logging</returns>
@@ -24,44 +24,18 @@ public static class LoggingSanitizer
             return string.Empty;
         }
 
-        // Early return optimization - check if sanitization is needed
-        var needsSanitization = false;
-        foreach (char c in input)
-        {
-            if (c is '\r' or '\n' or '\t' || (char.IsControl(c) && c != ' '))
-            {
-                needsSanitization = true;
-                break;
-            }
-        }
-
-        if (!needsSanitization)
-        {
-            // Even when no sanitization is required, return a new string instance to avoid returning user input by reference
-            return new string(input);
-        }
-
-        // Only allocate StringBuilder if sanitization is actually needed
-        var sanitized = new StringBuilder(input.Length);
-        foreach (char c in input)
-        {
-            switch (c)
-            {
-                case '\r' or '\n' or '\t':
-                    sanitized.Append(' ');
-                    break;
-                default:
-                    if (char.IsControl(c) && c != ' ')
-                    {
-                        sanitized.Append('?');
-                    }
-                    else
-                    {
-                        sanitized.Append(c);
-                    }
-                    break;
-            }
-        }
-        return sanitized.ToString();
+        return new string(
+            input
+                .Where(c =>
+                    char.IsLetterOrDigit(c)
+                    || c == ' '
+                    || c == '_'
+                    || c == '-'
+                    || c == '.'
+                    || c == ':'
+                    || c == '/'
+                )
+                .ToArray()
+        );
     }
 }

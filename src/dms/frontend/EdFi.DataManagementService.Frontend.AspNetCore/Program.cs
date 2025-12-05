@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.AspNetCore.Http.Json;
@@ -254,7 +255,7 @@ async Task RetrieveAndCacheClaimSets(WebApplication app)
             {
                 app.Logger.LogInformation(
                     "Caching claim sets for tenant: {TenantName}",
-                    SanitizeForLog(tenant)
+                    LoggingSanitizer.SanitizeForLogging(tenant)
                 );
                 await claimSetProvider.GetAllClaimSets(tenant);
             }
@@ -326,7 +327,10 @@ async Task InitializeDmsInstancesForMultiTenancy(WebApplication app, IDmsInstanc
     int totalInstances = 0;
     foreach (string tenant in tenants)
     {
-        app.Logger.LogInformation("Loading DMS instances for tenant: {TenantName}", SanitizeForLog(tenant));
+        app.Logger.LogInformation(
+            "Loading DMS instances for tenant: {TenantName}",
+            LoggingSanitizer.SanitizeForLogging(tenant)
+        );
 
         IList<DmsInstance> instances = await dmsInstanceProvider.LoadDmsInstances(tenant);
         totalInstances += instances.Count;
@@ -334,7 +338,7 @@ async Task InitializeDmsInstancesForMultiTenancy(WebApplication app, IDmsInstanc
         app.Logger.LogInformation(
             "Loaded {InstanceCount} DMS instances for tenant {TenantName}",
             instances.Count,
-            SanitizeForLog(tenant)
+            LoggingSanitizer.SanitizeForLogging(tenant)
         );
 
         LogInstanceDetails(app, instances);
@@ -379,27 +383,6 @@ void LogInstanceDetails(WebApplication app, IList<DmsInstance> instances)
             hasConnectionString
         );
     }
-}
-
-string SanitizeForLog(string? input)
-{
-    if (string.IsNullOrEmpty(input))
-    {
-        return string.Empty;
-    }
-    return new string(
-        input
-            .Where(c =>
-                char.IsLetterOrDigit(c)
-                || c == ' '
-                || c == '_'
-                || c == '-'
-                || c == '.'
-                || c == ':'
-                || c == '/'
-            )
-            .ToArray()
-    );
 }
 
 public partial class Program
