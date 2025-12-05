@@ -463,7 +463,7 @@ jobs:
     needs: build-and-start-dms
     services:
       swagger-editor:
-        image: swaggerapi/swagger-editor:v5.0.1
+        image: swaggerapi/swagger-editor:v4.14.8
         ports:
           - 80:8080
         options: >-
@@ -491,7 +491,7 @@ jobs:
     needs: build-and-start-dms
     services:
       swagger-editor:
-        image: swaggerapi/swagger-editor:v5.0.1
+        image: swaggerapi/swagger-editor:v4.14.8
         ports:
           - 80:8080
         options: >-
@@ -519,7 +519,7 @@ jobs:
     needs: build-and-start-dms
     services:
       swagger-editor:
-        image: swaggerapi/swagger-editor:v5.0.1
+        image: swaggerapi/swagger-editor:v4.14.8
         ports:
           - 80:8080
         options: >-
