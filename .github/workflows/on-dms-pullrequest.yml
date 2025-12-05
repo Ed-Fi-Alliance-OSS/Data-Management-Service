@@ -466,6 +466,11 @@ jobs:
         image: swaggerapi/swagger-editor
         ports:
           - 80:8080
+        options: >-
+          --health-cmd="wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
     steps:
       - name: Download Resources Spec
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
@@ -489,6 +494,11 @@ jobs:
         image: swaggerapi/swagger-editor
         ports:
           - 80:8080
+        options: >-
+          --health-cmd="wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
     steps:
       - name: Download Descriptors Spec
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
@@ -512,6 +522,11 @@ jobs:
         image: swaggerapi/swagger-editor
         ports:
           - 80:8080
+        options: >-
+          --health-cmd="wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=10
     steps:
       - name: Download Discovery Spec
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
