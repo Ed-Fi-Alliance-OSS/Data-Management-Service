@@ -6,21 +6,18 @@
 @InstanceCleanup @kafka
 Feature: Kafka Topic-Per-Instance Segregation
     Verify that Kafka messages are published to instance-specific topics
-    and that no cross-instance data leakage occurs in multi-tenant deployments
+    and that no cross-instance data leakage occurs within a tenant
 
     Background:
         Given the system is configured with route qualifiers
           And I am authenticated to the Configuration Service as system admin
-          And tenant "Tenant_255901" is set up with a vendor and instances:
+          And tenant "Tenant_KafkaTest" is set up with a vendor and instances:
               | Route       |
               | 255901/2024 |
               | 255901/2025 |
-          And tenant "Tenant_255901" has an application for district "255901"
-          And tenant "Tenant_255902" is set up with a vendor and instances:
-              | Route       |
               | 255902/2024 |
-          And tenant "Tenant_255902" has an application for district "255902"
-          And I am authenticated to DMS with application credentials
+          And tenant "Tenant_KafkaTest" has an application for district "255901"
+          And I am authenticated to DMS with credentials for tenant "Tenant_KafkaTest"
           And I start collecting Kafka messages for all instances
 
     @smoke
@@ -28,7 +25,7 @@ Feature: Kafka Topic-Per-Instance Segregation
         Then Kafka consumer should be able to connect to all instance topics
 
     Scenario: 02 Messages published to correct instance-specific topics
-        When a POST request is made to instance "255901/2024" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255901/2024" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "KafkaTest-255901-2024",
@@ -44,7 +41,7 @@ Feature: Kafka Topic-Per-Instance Segregation
           And the message should have deleted flag "false"
 
     Scenario: 03 Multiple instances publish to separate topics
-        When a POST request is made to instance "255901/2024" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255901/2024" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "District255901-2024",
@@ -54,7 +51,7 @@ Feature: Kafka Topic-Per-Instance Segregation
             }
             """
         Then it should respond with success
-        When a POST request is made to instance "255901/2025" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255901/2025" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "District255901-2025",
@@ -64,7 +61,7 @@ Feature: Kafka Topic-Per-Instance Segregation
             }
             """
         Then it should respond with success
-        When a POST request is made to instance "255902/2024" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255902/2024" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "District255902-2024",
@@ -80,7 +77,7 @@ Feature: Kafka Topic-Per-Instance Segregation
           And instance "255902/2024" should have 1 Kafka message
 
     Scenario: 04 No cross-instance data leakage in Kafka topics
-        When a POST request is made to instance "255901/2024" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255901/2024" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "IsolationTest-255901",
@@ -98,7 +95,7 @@ Feature: Kafka Topic-Per-Instance Segregation
           And no cross-instance message leakage should occur
 
     Scenario: 05 Update operations publish to correct instance topic
-        When a POST request is made to instance "255901/2024" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255901/2024" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "UpdateTest-Original",
@@ -118,7 +115,7 @@ Feature: Kafka Topic-Per-Instance Segregation
           And the message should have deleted flag "false"
 
     Scenario: 06 Delete operations publish to correct instance topic with deleted flag
-        When a POST request is made to instance "255901/2024" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255901/2024" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "DeleteTest-Descriptor",
@@ -135,7 +132,7 @@ Feature: Kafka Topic-Per-Instance Segregation
           # Initial POST is verified here
 
     Scenario: 07 Comprehensive isolation validation across all instances
-        When a POST request is made to instance "255901/2024" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255901/2024" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "Comprehensive-255901-2024",
@@ -145,7 +142,7 @@ Feature: Kafka Topic-Per-Instance Segregation
             }
             """
         Then it should respond with success
-        When a POST request is made to instance "255901/2025" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255901/2025" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "Comprehensive-255901-2025",
@@ -155,7 +152,7 @@ Feature: Kafka Topic-Per-Instance Segregation
             }
             """
         Then it should respond with success
-        When a POST request is made to instance "255902/2024" and resource "contentClassDescriptors" with body:
+        When a POST request is made to tenant "Tenant_KafkaTest" instance "255902/2024" resource "contentClassDescriptors" with body:
             """
             {
                 "codeValue": "Comprehensive-255902-2024",

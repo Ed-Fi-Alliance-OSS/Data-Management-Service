@@ -51,6 +51,27 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         );
     }
 
+    [Given("I am authenticated to DMS with credentials for tenant {string}")]
+    public async Task GivenIAmAuthenticatedToDmsWithCredentialsForTenant(string tenantName)
+    {
+        context
+            .CredentialsByTenant.Should()
+            .ContainKey(tenantName, $"Credentials for tenant {tenantName} must exist");
+
+        var (key, secret) = context.CredentialsByTenant[tenantName];
+
+        var tokenUrl = "http://localhost:8081/connect/token/";
+
+        context.DmsToken = await TokenHelper.GetDmsTokenAsync(tokenUrl, key, secret);
+
+        // Set current tenant for the DMS client
+        context.CurrentTenant = tenantName;
+        context.DmsClient?.Dispose();
+        context.DmsClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken, tenantName);
+
+        Console.WriteLine($"Authenticated to DMS with credentials for tenant: {tenantName}");
+    }
+
     [When("a POST request is made to instance {string} and resource {string} with body:")]
     public async Task WhenAPostRequestIsMadeToInstanceAndResourceWithBody(
         string instanceRoute,
@@ -142,6 +163,73 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         Console.WriteLine($"GET from instance route: {instanceRoute}, resource: {resource}");
 
         context.LastResponse = await context.DmsClient!.GetResourceAsync(districtId, schoolYear, resource);
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
+    }
+
+    [When("a POST request is made to tenant {string} instance {string} resource {string} with body:")]
+    public async Task WhenAPostRequestIsMadeToTenantInstanceResourceWithBody(
+        string tenantName,
+        string instanceRoute,
+        string resource,
+        string jsonBody
+    )
+    {
+        context.DmsToken.Should().NotBeNullOrEmpty("Must be authenticated to DMS first");
+
+        var parts = instanceRoute.Split('/');
+        parts.Should().HaveCount(2, "Instance route must be in format districtId/schoolYear");
+
+        var districtId = parts[0];
+        var schoolYear = parts[1];
+
+        Console.WriteLine($"POST to tenant: {tenantName}, instance: {instanceRoute}, resource: {resource}");
+        Console.WriteLine($"Request body: {jsonBody}");
+
+        // Create a client specifically for this tenant URL
+        using var tenantClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken!, tenantName);
+
+        var body = JsonSerializer.Deserialize<JsonElement>(jsonBody);
+        context.LastResponse = await tenantClient.PostResourceAsync(districtId, schoolYear, resource, body);
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
+    }
+
+    [When("a GET request is made to tenant {string} instance {string} resource {string}")]
+    public async Task WhenAGetRequestIsMadeToTenantInstanceResource(
+        string tenantName,
+        string instanceRoute,
+        string resource
+    )
+    {
+        context.DmsToken.Should().NotBeNullOrEmpty("Must be authenticated to DMS first");
+
+        var parts = instanceRoute.Split('/');
+        parts.Should().HaveCount(2, "Instance route must be in format districtId/schoolYear");
+
+        var districtId = parts[0];
+        var schoolYear = parts[1];
+
+        Console.WriteLine($"GET from tenant: {tenantName}, instance: {instanceRoute}, resource: {resource}");
+
+        // Create a client specifically for this tenant URL
+        using var tenantClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken!, tenantName);
+
+        context.LastResponse = await tenantClient.GetResourceAsync(districtId, schoolYear, resource);
 
         Console.WriteLine(
             $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"

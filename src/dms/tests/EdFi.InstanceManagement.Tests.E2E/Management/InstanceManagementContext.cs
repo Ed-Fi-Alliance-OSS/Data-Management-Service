@@ -68,6 +68,11 @@ public class InstanceManagementContext
     public Dictionary<string, int> ApplicationIdsByTenant { get; } = new();
 
     /// <summary>
+    /// Application credentials per tenant (tenantName -> (key, secret))
+    /// </summary>
+    public Dictionary<string, (string Key, string Secret)> CredentialsByTenant { get; } = new();
+
+    /// <summary>
     /// Application ID created during tests (legacy single-tenant support)
     /// </summary>
     public int? ApplicationId { get; set; }
@@ -132,6 +137,7 @@ public class InstanceManagementContext
         RouteQualifierToInstanceId.Clear();
         InstanceIdToDatabaseName.Clear();
         ApplicationIdsByTenant.Clear();
+        CredentialsByTenant.Clear();
         ApplicationId = null;
         ClientKey = null;
         ClientSecret = null;

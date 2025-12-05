@@ -314,6 +314,10 @@ public class InstanceSetupStepDefinitions(
         // Get or create the tenant client
         var tenantClient = await GetOrCreateTenantClientAsync(tenantName);
 
+        // Set the current tenant and update _configClient for subsequent steps
+        context.CurrentTenant = tenantName;
+        _configClient = tenantClient;
+
         // Create vendor for this tenant if not exists
         if (!context.VendorIdsByTenant.ContainsKey(tenantName))
         {
@@ -401,8 +405,9 @@ public class InstanceSetupStepDefinitions(
         );
 
         context.ApplicationIdsByTenant[tenantName] = application.Id;
+        context.CredentialsByTenant[tenantName] = (application.Key, application.Secret);
 
-        // Store first application's credentials for DMS authentication
+        // Store first application's credentials for DMS authentication (legacy support)
         if (context.ClientKey == null)
         {
             context.ApplicationId = application.Id;
