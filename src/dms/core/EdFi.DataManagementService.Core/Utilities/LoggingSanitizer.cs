@@ -24,18 +24,53 @@ public static class LoggingSanitizer
             return string.Empty;
         }
 
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
+        // First pass: check if sanitization is needed and count safe characters
+        int safeCount = 0;
+        bool needsSanitization = false;
+
+        foreach (char c in input)
+        {
+            if (IsAllowedChar(c))
+            {
+                safeCount++;
+            }
+            else
+            {
+                needsSanitization = true;
+            }
+        }
+
+        if (!needsSanitization)
+        {
+            // All characters are safe - return a new string to avoid returning user input by reference
+            return new string(input);
+        }
+
+        if (safeCount == 0)
+        {
+            return string.Empty;
+        }
+
+        // Second pass: build the sanitized string with exact allocation
+#pragma warning disable S3267 // Loop intentionally avoids LINQ for performance - no intermediate allocations
+        return string.Create(
+            safeCount,
+            input,
+            static (span, source) =>
+            {
+                int index = 0;
+                foreach (char c in source)
+                {
+                    if (IsAllowedChar(c))
+                    {
+                        span[index++] = c;
+                    }
+                }
+            }
         );
+#pragma warning restore S3267
     }
+
+    private static bool IsAllowedChar(char c) =>
+        char.IsLetterOrDigit(c) || c is ' ' or '_' or '-' or '.' or ':' or '/';
 }
