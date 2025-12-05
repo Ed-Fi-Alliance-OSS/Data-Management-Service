@@ -22,7 +22,7 @@ internal partial class TenantValidationMiddleware(bool multiTenancyEnabled, ILog
     /// <summary>
     /// Maximum allowed length for a tenant identifier
     /// </summary>
-    private const int MaxTenantLength = 100;
+    private const int MaxTenantLength = 256;
 
     /// <summary>
     /// Regex pattern for valid tenant identifiers: alphanumeric, hyphens, and underscores only

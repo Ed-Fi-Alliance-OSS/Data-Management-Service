@@ -327,7 +327,7 @@ public class TenantValidationMiddlewareTests
         {
             // Arrange
             var middleware = CreateMiddleware(multiTenancyEnabled: true);
-            var longTenant = new string('a', 101); // 101 characters exceeds the 100 character limit
+            var longTenant = new string('a', 257); // 257 characters exceeds the 256 character limit
             var requestInfo = CreateRequestInfo(tenant: longTenant);
             var nextCalled = false;
 
@@ -352,7 +352,7 @@ public class TenantValidationMiddlewareTests
         {
             // Arrange
             var middleware = CreateMiddleware(multiTenancyEnabled: true);
-            var maxLengthTenant = new string('a', 100); // Exactly 100 characters
+            var maxLengthTenant = new string('a', 256); // Exactly 256 characters
             var requestInfo = CreateRequestInfo(tenant: maxLengthTenant);
             var nextCalled = false;
 

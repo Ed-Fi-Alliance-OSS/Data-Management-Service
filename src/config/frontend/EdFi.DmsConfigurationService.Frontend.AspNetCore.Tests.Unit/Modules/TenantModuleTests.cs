@@ -123,7 +123,7 @@ public class TenantModuleTests
                                 new TenantResponse()
                                 {
                                     Id = 1,
-                                    Name = "Test Tenant",
+                                    Name = "Test_Tenant",
                                     CreatedAt = DateTime.UtcNow,
                                 },
                             ]
@@ -136,7 +136,7 @@ public class TenantModuleTests
                             new TenantResponse()
                             {
                                 Id = 1,
-                                Name = "Test Tenant",
+                                Name = "Test_Tenant",
                                 CreatedAt = DateTime.UtcNow,
                             }
                         )
@@ -156,7 +156,7 @@ public class TenantModuleTests
                     new StringContent(
                         """
                         {
-                          "name": "Test Tenant"
+                          "name": "Test_Tenant"
                         }
                         """,
                         Encoding.UTF8,
@@ -268,7 +268,7 @@ public class TenantModuleTests
                     new StringContent(
                         """
                         {
-                          "name": "Duplicate Tenant"
+                          "name": "Duplicate_Tenant"
                         }
                         """,
                         Encoding.UTF8,
@@ -352,7 +352,7 @@ public class TenantModuleTests
                     new StringContent(
                         """
                         {
-                          "name": "Test Tenant"
+                          "name": "Test_Tenant"
                         }
                         """,
                         Encoding.UTF8,
@@ -396,7 +396,7 @@ public class TenantModuleTests
                     new StringContent(
                         """
                         {
-                          "name": "Test Tenant"
+                          "name": "Test_Tenant"
                         }
                         """,
                         Encoding.UTF8,
@@ -429,7 +429,7 @@ public class TenantModuleTests
                 new StringContent(
                     """
                     {
-                      "name": "Test Tenant"
+                      "name": "Test_Tenant"
                     }
                     """,
                     Encoding.UTF8,
@@ -482,7 +482,7 @@ public class TenantModuleTests
                 new StringContent(
                     """
                     {
-                      "name": "Test Tenant"
+                      "name": "Test_Tenant"
                     }
                     """,
                     Encoding.UTF8,
