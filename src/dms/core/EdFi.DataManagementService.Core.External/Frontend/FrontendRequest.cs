@@ -37,5 +37,10 @@ public record FrontendRequest(
     /// that determine which DMS instance to route the request to.
     /// Empty if no route qualifiers are configured.
     /// </summary>
-    Dictionary<RouteQualifierName, RouteQualifierValue> RouteQualifiers
+    Dictionary<RouteQualifierName, RouteQualifierValue> RouteQualifiers,
+    /// <summary>
+    /// The tenant identifier extracted from the URL path when multitenancy is enabled.
+    /// Null when multitenancy is disabled.
+    /// </summary>
+    string? Tenant = null
 );

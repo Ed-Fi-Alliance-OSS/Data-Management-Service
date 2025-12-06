@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -125,12 +126,31 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
+    /// Extracts the tenant identifier from the HttpRequest route values when multitenancy is enabled.
+    /// Returns null if multitenancy is disabled or tenant is not found in route.
+    /// </summary>
+    private static string? ExtractTenantFrom(HttpRequest request, IOptions<AppSettings> appSettings)
+    {
+        if (!appSettings.Value.MultiTenancy)
+        {
+            return null;
+        }
+
+        if (request.RouteValues.TryGetValue("tenant", out object? value) && value is string tenant)
+        {
+            return tenant;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Converts an AspNetCore HttpRequest to a DMS FrontendRequest
     /// </summary>
     private static async Task<FrontendRequest> FromRequest(
         HttpRequest httpRequest,
         string dmsPath,
-        IOptions<AppSettings> options,
+        IOptions<AppSettings> appSettings,
         bool includeBody
     )
     {
@@ -139,8 +159,9 @@ public static class AspNetCoreFrontend
             Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
-            TraceId: ExtractTraceIdFrom(httpRequest, options),
-            RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, options)
+            TraceId: ExtractTraceIdFrom(httpRequest, appSettings),
+            RouteQualifiers: ExtractRouteQualifiersFrom(httpRequest, appSettings),
+            Tenant: ExtractTenantFrom(httpRequest, appSettings)
         );
     }
 
@@ -184,16 +205,17 @@ public static class AspNetCoreFrontend
     /// <param name="httpContext">The HttpContext for the request</param>
     /// <param name="apiService">The injected DMS core facade</param>
     /// <param name="dmsPath">The portion of the request path relevant to DMS</param>
+    /// <param name="appSettings">Application settings</param>
     public static async Task<IResult> Upsert(
         HttpContext httpContext,
         IApiService apiService,
         string dmsPath,
-        IOptions<AppSettings> options
+        IOptions<AppSettings> appSettings
     )
     {
         return ToResult(
             await apiService.Upsert(
-                await FromRequest(httpContext.Request, dmsPath, options, includeBody: true)
+                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: true)
             ),
             httpContext,
             dmsPath
@@ -207,12 +229,12 @@ public static class AspNetCoreFrontend
         HttpContext httpContext,
         IApiService apiService,
         string dmsPath,
-        IOptions<AppSettings> options
+        IOptions<AppSettings> appSettings
     )
     {
         return ToResult(
             await apiService.Get(
-                await FromRequest(httpContext.Request, dmsPath, options, includeBody: false)
+                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: false)
             ),
             httpContext,
             dmsPath
@@ -226,12 +248,12 @@ public static class AspNetCoreFrontend
         HttpContext httpContext,
         IApiService apiService,
         string dmsPath,
-        IOptions<AppSettings> options
+        IOptions<AppSettings> appSettings
     )
     {
         return ToResult(
             await apiService.UpdateById(
-                await FromRequest(httpContext.Request, dmsPath, options, includeBody: true)
+                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: true)
             ),
             httpContext,
             dmsPath
@@ -245,12 +267,12 @@ public static class AspNetCoreFrontend
         HttpContext httpContext,
         IApiService apiService,
         string dmsPath,
-        IOptions<AppSettings> options
+        IOptions<AppSettings> appSettings
     )
     {
         return ToResult(
             await apiService.DeleteById(
-                await FromRequest(httpContext.Request, dmsPath, options, includeBody: false)
+                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: false)
             ),
             httpContext,
             dmsPath

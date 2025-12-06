@@ -60,7 +60,7 @@ public class ApiServiceJwtAuthenticationTests
         services.AddSingleton<IApplicationContextProvider>(fakeApplicationContextProvider);
 
         var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-        A.CallTo(() => fakeDmsInstanceProvider.GetById(A<long>._))
+        A.CallTo(() => fakeDmsInstanceProvider.GetById(A<long>._, A<string?>.Ignored))
             .Returns(
                 new DmsInstance(
                     Id: 1,
@@ -121,9 +121,10 @@ public class ApiServiceJwtAuthenticationTests
         var steps = (List<IPipelineStep>)getCommonInitialStepsMethod!.Invoke(apiService, null)!;
 
         // Assert
-        steps.Should().HaveCount(4); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + JwtAuthenticationMiddleware + ResolveDmsInstanceMiddleware
-        steps[2].Should().BeOfType<JwtAuthenticationMiddleware>();
-        steps[3].Should().BeOfType<ResolveDmsInstanceMiddleware>();
+        steps.Should().HaveCount(5); // RequestResponseLoggingMiddleware + CoreExceptionLoggingMiddleware + TenantValidationMiddleware + JwtAuthenticationMiddleware + ResolveDmsInstanceMiddleware
+        steps[2].Should().BeOfType<TenantValidationMiddleware>();
+        steps[3].Should().BeOfType<JwtAuthenticationMiddleware>();
+        steps[4].Should().BeOfType<ResolveDmsInstanceMiddleware>();
     }
 
     [Test]

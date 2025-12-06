@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Confluent.Kafka;
+using EdFi.InstanceManagement.Tests.E2E.Infrastructure;
 using EdFi.InstanceManagement.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -54,7 +55,7 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
         _logger.LogInformation(
             "Starting Kafka message collection for {InstanceCount} instances using {BootstrapServers}",
             context.InstanceIds.Count,
-            SanitizeForLog(bootstrapServers)
+            LogSanitizer.Sanitize(bootstrapServers)
         );
         _logger.LogDebug(
             "Consumer start time: {StartTime} UTC",
@@ -96,7 +97,7 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
         _logger.LogInformation(
             "Starting Kafka message collection for instance {InstanceId} using {BootstrapServers}",
             instanceId,
-            SanitizeForLog(bootstrapServers)
+            LogSanitizer.Sanitize(bootstrapServers)
         );
 
         context.KafkaCollector = new InstanceKafkaMessageCollector(
@@ -169,7 +170,7 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
             _logger.LogWarning(
                 "No Kafka messages found for instance {InstanceId} (route: {RouteQualifier})",
                 instanceId,
-                SanitizeForLog(instanceRouteQualifier)
+                LogSanitizer.Sanitize(instanceRouteQualifier)
             );
             context.KafkaCollector.LogDiagnostics();
         }
@@ -376,7 +377,7 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
 
             foreach (var expectedTopic in expectedTopics)
             {
-                _logger.LogInformation("Checking for topic: {Topic}", SanitizeForLog(expectedTopic));
+                _logger.LogInformation("Checking for topic: {Topic}", LogSanitizer.Sanitize(expectedTopic));
 
                 // Note: Topics might not exist yet if no messages have been published
                 // This is expected in CDC architectures where topics are auto-created on first message
@@ -429,37 +430,12 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
         if (!context.RouteQualifierToInstanceId.TryGetValue(routeQualifier, out int instanceId))
         {
             throw new InvalidOperationException(
-                $"No instance found for route qualifier '{SanitizeForLog(routeQualifier)}'. "
-                    + $"Available routes: {string.Join(", ", context.RouteQualifierToInstanceId.Keys.Select(SanitizeForLog))}"
+                $"No instance found for route qualifier '{LogSanitizer.Sanitize(routeQualifier)}'. "
+                    + $"Available routes: {string.Join(", ", context.RouteQualifierToInstanceId.Keys.Select(LogSanitizer.Sanitize))}"
             );
         }
 
         return instanceId;
-    }
-
-    /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
-    /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// </summary>
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
-        );
     }
 
     public void Dispose()

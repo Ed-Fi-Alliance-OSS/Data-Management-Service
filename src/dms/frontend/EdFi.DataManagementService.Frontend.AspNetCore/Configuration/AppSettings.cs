@@ -18,6 +18,11 @@ public class AppSettings
     public string RouteQualifierSegments { get; set; } = string.Empty;
 
     /// <summary>
+    /// When true, enables multi-tenancy mode where the tenant identifier is extracted from the URL route.
+    /// </summary>
+    public bool MultiTenancy { get; set; } = false;
+
+    /// <summary>
     /// Gets the route qualifier segments as an array by splitting the comma-separated string.
     /// Returns empty array if RouteQualifierSegments is null or empty.
     /// </summary>

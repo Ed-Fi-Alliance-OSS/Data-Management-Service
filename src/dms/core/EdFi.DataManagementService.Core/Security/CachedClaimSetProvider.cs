@@ -11,28 +11,30 @@ namespace EdFi.DataManagementService.Core.Security;
 /// Decorator that adds caching functionality to claim set retrieval.
 /// This service wraps another IClaimSetProvider implementation and caches its results
 /// to improve performance by avoiding repeated calls to the underlying provider.
+/// Supports tenant-keyed caching for multi-tenant scenarios.
 /// </summary>
 public class CachedClaimSetProvider(IClaimSetProvider claimSetProvider, ClaimSetsCache claimSetsCache)
     : IClaimSetProvider
 {
     /// <summary>
     /// Retrieves claim sets from cache if available, otherwise fetches from the provider
-    /// and caches the result for future requests.
+    /// and caches the result for future requests. Uses tenant-specific cache keys in multi-tenant mode.
     /// </summary>
-    public async Task<IList<ClaimSet>> GetAllClaimSets()
+    /// <param name="tenant">Optional tenant identifier for multi-tenant scenarios.</param>
+    public async Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
     {
-        // Try to get claim sets from cache first
-        var cachedClaimSets = claimSetsCache.GetCachedClaimSets();
+        // Try to get claim sets from cache first (using tenant-specific key)
+        var cachedClaimSets = claimSetsCache.GetCachedClaimSets(tenant);
         if (cachedClaimSets != null)
         {
             return cachedClaimSets;
         }
 
         // Cache miss - fetch from the provider
-        var claimSets = await claimSetProvider.GetAllClaimSets();
+        var claimSets = await claimSetProvider.GetAllClaimSets(tenant);
         if (claimSets.Count > 0)
         {
-            claimSetsCache.CacheClaimSets(claimSets);
+            claimSetsCache.CacheClaimSets(claimSets, tenant);
         }
 
         return claimSets;

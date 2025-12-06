@@ -451,5 +451,28 @@ internal class TenantResolutionMiddlewareTests
             A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
             A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
         }
+
+        [Test]
+        public async Task It_allows_well_known_endpoint_without_tenant_header()
+        {
+            // Arrange
+            var middleware = new TenantResolutionMiddleware(_next);
+            var httpContext = new DefaultHttpContext();
+            httpContext.Request.Path = "/.well-known/openid-configuration";
+            // No Tenant header
+
+            // Act
+            await middleware.Invoke(
+                httpContext,
+                _appSettings,
+                _tenantContextProvider,
+                _tenantRepository,
+                _logger
+            );
+
+            // Assert
+            A.CallTo(() => _next(httpContext)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _tenantRepository.GetTenantByName(A<string>.Ignored)).MustNotHaveHappened();
+        }
     }
 }

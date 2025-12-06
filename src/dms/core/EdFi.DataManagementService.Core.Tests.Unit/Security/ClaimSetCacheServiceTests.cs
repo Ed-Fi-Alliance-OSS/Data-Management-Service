@@ -29,7 +29,8 @@ public class ClaimSetCacheServiceTests
         public async Task Setup()
         {
             _expectedClaims = [new("ClaimSet1", []), new("ClaimSet2", [])];
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets()).Returns(_expectedClaims);
+            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns(_expectedClaims);
 
             object? cached = null;
             A.CallTo(() => _memoryCache.TryGetValue(A<object>.Ignored, out cached)).Returns(false);
@@ -46,8 +47,9 @@ public class ClaimSetCacheServiceTests
             _claims.Should().NotBeNull();
             _claims!.Count.Should().Be(2);
             _claims[0].Name.Should().Be("ClaimSet1");
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets()).MustHaveHappenedOnceExactly();
-            A.CallTo(() => _memoryCache.CreateEntry(A<string>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _memoryCache.CreateEntry(A<object>.Ignored)).MustHaveHappenedOnceExactly();
         }
     }
 
@@ -65,7 +67,8 @@ public class ClaimSetCacheServiceTests
         public async Task Setup()
         {
             _expectedClaims = [new("ClaimSet1", []), new("ClaimSet2", [])];
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets()).Returns(_expectedClaims);
+            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns(_expectedClaims);
 
             object? cached = _expectedClaims;
             A.CallTo(() => _memoryCache.TryGetValue(A<object>.Ignored, out cached)).Returns(true);
@@ -82,8 +85,9 @@ public class ClaimSetCacheServiceTests
             _claims.Should().NotBeNull();
             _claims!.Count.Should().Be(2);
             _claims[0].Name.Should().Be("ClaimSet1");
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets()).MustNotHaveHappened();
-            A.CallTo(() => _memoryCache.CreateEntry(A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .MustNotHaveHappened();
+            A.CallTo(() => _memoryCache.CreateEntry(A<object>.Ignored)).MustNotHaveHappened();
         }
     }
 
@@ -147,7 +151,7 @@ public class ClaimSetCacheServiceTests
 
         private void SetClaimSetCacheService(HttpStatusCode statusCode)
         {
-            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets())
+            A.CallTo(() => _securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
                 .Throws(
                     new HttpRequestException(
                         $"Error response from http://localhost. Error message: error. StatusCode: {statusCode}"
@@ -160,6 +164,138 @@ public class ClaimSetCacheServiceTests
             var claimSetCache = new ClaimSetsCache(_memoryCache, TimeSpan.FromMinutes(10));
 
             _service = new CachedClaimSetProvider(_securityMetadataProvider, claimSetCache);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_GetCacheKey_Tests : ClaimSetCacheServiceTests
+    {
+        [Test]
+        public void When_Tenant_Is_Null_Should_Return_Base_Cache_Key()
+        {
+            var cacheKey = ClaimSetsCache.GetCacheKey(null);
+            cacheKey.Should().Be("ClaimSetsCache");
+        }
+
+        [Test]
+        public void When_Tenant_Is_Empty_Should_Return_Base_Cache_Key()
+        {
+            var cacheKey = ClaimSetsCache.GetCacheKey("");
+            cacheKey.Should().Be("ClaimSetsCache");
+        }
+
+        [Test]
+        public void When_Tenant_Is_Specified_Should_Return_Tenant_Keyed_Cache_Key()
+        {
+            var cacheKey = ClaimSetsCache.GetCacheKey("Tenant1");
+            cacheKey.Should().Be("ClaimSetsCache:Tenant1");
+        }
+
+        [Test]
+        public void When_Different_Tenants_Should_Return_Different_Cache_Keys()
+        {
+            var cacheKey1 = ClaimSetsCache.GetCacheKey("TenantA");
+            var cacheKey2 = ClaimSetsCache.GetCacheKey("TenantB");
+
+            cacheKey1.Should().NotBe(cacheKey2);
+            cacheKey1.Should().Be("ClaimSetsCache:TenantA");
+            cacheKey2.Should().Be("ClaimSetsCache:TenantB");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Tenant_Specific_Caching : ClaimSetCacheServiceTests
+    {
+        [Test]
+        public async Task Should_Fetch_Different_Claims_For_Different_Tenants()
+        {
+            // Arrange
+            var memoryCache = A.Fake<IMemoryCache>();
+            var securityMetadataProvider = A.Fake<IClaimSetProvider>();
+
+            var expectedTenant1Claims = new List<ClaimSet> { new("Tenant1ClaimSet", []) };
+            var expectedTenant2Claims = new List<ClaimSet> { new("Tenant2ClaimSet", []) };
+
+            // Setup provider to return different claims based on tenant argument
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.That.IsEqualTo("Tenant1")))
+                .Returns(expectedTenant1Claims);
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.That.IsEqualTo("Tenant2")))
+                .Returns(expectedTenant2Claims);
+
+            // No cache hit for either tenant initially
+            object? cached = null;
+            A.CallTo(() => memoryCache.TryGetValue(A<object>.Ignored, out cached)).Returns(false);
+
+            var claimSetCache = new ClaimSetsCache(memoryCache, TimeSpan.FromMinutes(10));
+            var service = new CachedClaimSetProvider(securityMetadataProvider, claimSetCache);
+
+            // Act
+            var tenant1Claims = await service.GetAllClaimSets("Tenant1");
+            var tenant2Claims = await service.GetAllClaimSets("Tenant2");
+
+            // Assert
+            tenant1Claims.Should().NotBeNull();
+            tenant1Claims.Count.Should().Be(1);
+            tenant1Claims[0].Name.Should().Be("Tenant1ClaimSet");
+
+            tenant2Claims.Should().NotBeNull();
+            tenant2Claims.Count.Should().Be(1);
+            tenant2Claims[0].Name.Should().Be("Tenant2ClaimSet");
+        }
+
+        [Test]
+        public async Task Should_Call_Provider_For_Each_Tenant()
+        {
+            // Arrange
+            var memoryCache = A.Fake<IMemoryCache>();
+            var securityMetadataProvider = A.Fake<IClaimSetProvider>();
+
+            var expectedClaims = new List<ClaimSet> { new("TestClaimSet", []) };
+
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns(expectedClaims);
+
+            object? cached = null;
+            A.CallTo(() => memoryCache.TryGetValue(A<object>.Ignored, out cached)).Returns(false);
+
+            var claimSetCache = new ClaimSetsCache(memoryCache, TimeSpan.FromMinutes(10));
+            var service = new CachedClaimSetProvider(securityMetadataProvider, claimSetCache);
+
+            // Act
+            await service.GetAllClaimSets("Tenant1");
+            await service.GetAllClaimSets("Tenant2");
+
+            // Assert - verify provider was called twice (once per tenant)
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .MustHaveHappened(2, Times.Exactly);
+        }
+
+        [Test]
+        public async Task Should_Cache_With_Tenant_Specific_Keys()
+        {
+            // Arrange
+            var memoryCache = A.Fake<IMemoryCache>();
+            var securityMetadataProvider = A.Fake<IClaimSetProvider>();
+
+            var expectedClaims = new List<ClaimSet> { new("TestClaimSet", []) };
+
+            A.CallTo(() => securityMetadataProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns(expectedClaims);
+
+            object? cached = null;
+            A.CallTo(() => memoryCache.TryGetValue(A<object>.Ignored, out cached)).Returns(false);
+
+            var claimSetCache = new ClaimSetsCache(memoryCache, TimeSpan.FromMinutes(10));
+            var service = new CachedClaimSetProvider(securityMetadataProvider, claimSetCache);
+
+            // Act
+            await service.GetAllClaimSets("Tenant1");
+            await service.GetAllClaimSets("Tenant2");
+
+            // Assert - verify CreateEntry was called twice (once per tenant)
+            A.CallTo(() => memoryCache.CreateEntry(A<object>.Ignored)).MustHaveHappened(2, Times.Exactly);
         }
     }
 }

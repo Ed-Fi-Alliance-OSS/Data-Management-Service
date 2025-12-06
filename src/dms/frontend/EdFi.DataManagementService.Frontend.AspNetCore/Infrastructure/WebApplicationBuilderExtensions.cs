@@ -50,6 +50,9 @@ public static class WebApplicationBuilderExtensions
                 webAppBuilder.Configuration.GetSection("AppSettings")
             )
             .Configure<CoreAppSettings>(webAppBuilder.Configuration.GetSection("AppSettings"))
+            .Configure<ConfigurationServiceSettings>(
+                webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
+            )
             .AddSingleton<
                 IValidateOptions<Frontend.AspNetCore.Configuration.AppSettings>,
                 AppSettingsValidator
@@ -118,11 +121,6 @@ public static class WebApplicationBuilderExtensions
                     client.BaseAddress = new Uri($"{configServiceSettings.BaseUrl.Trim('/')}/");
                     client.DefaultRequestHeaders.Add("Accept", "application/json");
                     client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
-
-                    if (!string.IsNullOrWhiteSpace(configServiceSettings.Tenant))
-                    {
-                        client.DefaultRequestHeaders.Add("Tenant", configServiceSettings.Tenant);
-                    }
                 }
             )
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler())
@@ -132,8 +130,7 @@ public static class WebApplicationBuilderExtensions
             new ConfigurationServiceContext(
                 configServiceSettings.ClientId,
                 configServiceSettings.ClientSecret,
-                configServiceSettings.Scope,
-                configServiceSettings.Tenant
+                configServiceSettings.Scope
             )
         );
         webAppBuilder.Services.AddSingleton(serviceProvider =>

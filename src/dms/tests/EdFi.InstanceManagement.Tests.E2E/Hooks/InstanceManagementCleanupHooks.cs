@@ -55,58 +55,161 @@ public class InstanceManagementCleanupHooks(InstanceManagementContext context)
             return;
         }
 
-        var configClient = new ConfigServiceClient(TestConfiguration.ConfigServiceUrl, context.ConfigToken);
-
         try
         {
-            // Delete application
-            if (context.ApplicationId.HasValue)
+            // Teardown Kafka/Debezium infrastructure for all instances first
+            if (context.InfrastructureManager != null)
             {
-                _logger?.LogInformation("Deleting application {ApplicationId}", context.ApplicationId);
+                _logger?.LogInformation("Tearing down Kafka/Debezium infrastructure");
                 try
                 {
-                    await configClient.DeleteApplicationAsync(context.ApplicationId.Value);
-                    _logger?.LogInformation("Application deleted successfully");
+                    await context.InfrastructureManager.TeardownAllAsync();
+                    _logger?.LogInformation("Infrastructure teardown completed");
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogWarning(
-                        ex,
-                        "Failed to delete application {ApplicationId}",
-                        context.ApplicationId
+                    _logger?.LogWarning(ex, "Failed to teardown infrastructure");
+                }
+            }
+
+            // Clean up per-tenant resources
+            foreach (var tenantName in context.TenantNames)
+            {
+                _logger?.LogInformation("Cleaning up resources for tenant {TenantName}", tenantName);
+
+                if (!context.ConfigClientsByTenant.TryGetValue(tenantName, out var tenantClient))
+                {
+                    tenantClient = new ConfigServiceClient(
+                        TestConfiguration.ConfigServiceUrl,
+                        context.ConfigToken,
+                        tenantName
                     );
                 }
+
+                // Delete applications for this tenant
+                if (context.ApplicationIdsByTenant.TryGetValue(tenantName, out var appId))
+                {
+                    _logger?.LogInformation(
+                        "Deleting application {ApplicationId} for tenant {TenantName}",
+                        appId,
+                        tenantName
+                    );
+                    try
+                    {
+                        await tenantClient.DeleteApplicationAsync(appId);
+                        _logger?.LogInformation("Application deleted successfully");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to delete application {ApplicationId}", appId);
+                    }
+                }
+
+                // Delete instances for this tenant
+                var instancesForTenant = context
+                    .InstanceIdToTenant.Where(kvp => kvp.Value == tenantName)
+                    .Select(kvp => kvp.Key)
+                    .OrderByDescending(id => id)
+                    .ToList();
+
+                foreach (var instanceId in instancesForTenant)
+                {
+                    _logger?.LogInformation(
+                        "Deleting instance {InstanceId} for tenant {TenantName}",
+                        instanceId,
+                        tenantName
+                    );
+                    try
+                    {
+                        await tenantClient.DeleteInstanceAsync(instanceId);
+                        _logger?.LogInformation("Instance {InstanceId} deleted successfully", instanceId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to delete instance {InstanceId}", instanceId);
+                    }
+                }
+
+                // Delete vendor for this tenant
+                if (context.VendorIdsByTenant.TryGetValue(tenantName, out var vendorId))
+                {
+                    _logger?.LogInformation(
+                        "Deleting vendor {VendorId} for tenant {TenantName}",
+                        vendorId,
+                        tenantName
+                    );
+                    try
+                    {
+                        await tenantClient.DeleteVendorAsync(vendorId);
+                        _logger?.LogInformation("Vendor deleted successfully");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to delete vendor {VendorId}", vendorId);
+                    }
+                }
             }
 
-            // Delete instances (this also deletes route contexts)
-            // Skip instances 1, 2, 3 as they are pre-existing instances created by setup script
-            var instancesToDelete = context.InstanceIds.Where(id => id is not (1 or 2 or 3)).ToList();
-            foreach (var instanceId in instancesToDelete)
+            // Legacy cleanup for single-tenant scenarios
+            if (context.TenantNames.Count == 0 && context.CurrentTenant != null)
             {
-                _logger?.LogInformation("Deleting instance {InstanceId}", instanceId);
-                try
-                {
-                    await configClient.DeleteInstanceAsync(instanceId);
-                    _logger?.LogInformation("Instance {InstanceId} deleted successfully", instanceId);
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogWarning(ex, "Failed to delete instance {InstanceId}", instanceId);
-                }
-            }
+                var legacyClient = new ConfigServiceClient(
+                    TestConfiguration.ConfigServiceUrl,
+                    context.ConfigToken,
+                    context.CurrentTenant
+                );
 
-            // Delete vendor
-            if (context.VendorId.HasValue)
-            {
-                _logger?.LogInformation("Deleting vendor {VendorId}", context.VendorId);
-                try
+                // Delete legacy application
+                if (context.ApplicationId.HasValue)
                 {
-                    await configClient.DeleteVendorAsync(context.VendorId.Value);
-                    _logger?.LogInformation("Vendor deleted successfully");
+                    _logger?.LogInformation(
+                        "Deleting legacy application {ApplicationId}",
+                        context.ApplicationId
+                    );
+                    try
+                    {
+                        await legacyClient.DeleteApplicationAsync(context.ApplicationId.Value);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(
+                            ex,
+                            "Failed to delete legacy application {ApplicationId}",
+                            context.ApplicationId
+                        );
+                    }
                 }
-                catch (Exception ex)
+
+                // Delete legacy instances
+                foreach (var instanceId in context.InstanceIds.OrderByDescending(id => id))
                 {
-                    _logger?.LogWarning(ex, "Failed to delete vendor {VendorId}", context.VendorId);
+                    _logger?.LogInformation("Deleting legacy instance {InstanceId}", instanceId);
+                    try
+                    {
+                        await legacyClient.DeleteInstanceAsync(instanceId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to delete legacy instance {InstanceId}", instanceId);
+                    }
+                }
+
+                // Delete legacy vendor
+                if (context.VendorId.HasValue)
+                {
+                    _logger?.LogInformation("Deleting legacy vendor {VendorId}", context.VendorId);
+                    try
+                    {
+                        await legacyClient.DeleteVendorAsync(context.VendorId.Value);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(
+                            ex,
+                            "Failed to delete legacy vendor {VendorId}",
+                            context.VendorId
+                        );
+                    }
                 }
             }
 

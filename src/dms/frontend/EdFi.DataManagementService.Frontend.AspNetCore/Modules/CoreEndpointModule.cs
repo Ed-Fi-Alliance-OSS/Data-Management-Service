@@ -9,12 +9,15 @@ using static EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public class CoreEndpointModule(IOptions<AppSettings> options) : IEndpointModule
+public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        // Build the route pattern based on configured route qualifier segments
-        string routePattern = BuildRoutePattern(options.Value.GetRouteQualifierSegmentsArray());
+        // Build the route pattern based on configured route qualifier segments and multitenancy
+        string routePattern = BuildRoutePattern(
+            appSettings.Value.GetRouteQualifierSegmentsArray(),
+            appSettings.Value.MultiTenancy
+        );
 
         endpoints.MapPost(routePattern, Upsert);
         endpoints.MapGet(routePattern, Get);
@@ -23,19 +26,25 @@ public class CoreEndpointModule(IOptions<AppSettings> options) : IEndpointModule
     }
 
     /// <summary>
-    /// Builds the route pattern based on configured route qualifier segments.
-    /// If no segments are configured, returns "/data/{**dmsPath}".
-    /// Otherwise, returns "/{segment1}/{segment2}/data/{**dmsPath}".
+    /// Builds the route pattern based on configured route qualifier segments and multitenancy setting.
+    /// When multitenancy is enabled, prepends {tenant} as the first route segment.
+    /// Examples:
+    /// - No multitenancy, no qualifiers: "/data/{**dmsPath}"
+    /// - No multitenancy, with qualifiers: "/{districtId}/{schoolYear}/data/{**dmsPath}"
+    /// - Multitenancy, no qualifiers: "/{tenant}/data/{**dmsPath}"
+    /// - Multitenancy, with qualifiers: "/{tenant}/{districtId}/{schoolYear}/data/{**dmsPath}"
     /// </summary>
-    private static string BuildRoutePattern(string[] routeQualifierSegments)
+    internal static string BuildRoutePattern(string[] routeQualifierSegments, bool multiTenancy)
     {
+        var tenantSegment = multiTenancy ? "{tenant}/" : "";
+
         if (routeQualifierSegments.Length == 0)
         {
-            return "/data/{**dmsPath}";
+            return $"/{tenantSegment}data/{{**dmsPath}}";
         }
 
-        // Build pattern like "/{district}/{schoolYear}/data/{**dmsPath}"
+        // Build pattern like "/{tenant}/{district}/{schoolYear}/data/{**dmsPath}"
         var segmentPlaceholders = string.Join("/", routeQualifierSegments.Select(s => $"{{{s}}}"));
-        return $"/{segmentPlaceholders}/data/{{**dmsPath}}";
+        return $"/{tenantSegment}{segmentPlaceholders}/data/{{**dmsPath}}";
     }
 }

@@ -90,7 +90,7 @@ public class InvalidResourceSchemasTests
             services.AddSingleton<IApplicationContextProvider>(fakeApplicationContextProvider);
 
             var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-            A.CallTo(() => fakeDmsInstanceProvider.GetById(A<long>._))
+            A.CallTo(() => fakeDmsInstanceProvider.GetById(A<long>._, A<string?>.Ignored))
                 .Returns(
                     new DmsInstance(
                         Id: 1,

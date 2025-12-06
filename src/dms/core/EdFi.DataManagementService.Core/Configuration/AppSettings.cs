@@ -57,4 +57,10 @@ public class AppSettings
     /// Domains listed here will not appear in the generated OpenAPI specifications.
     /// </summary>
     public string? DomainsExcludedFromOpenApi { get; set; }
+
+    /// <summary>
+    /// If true, enables multi-tenancy support with tenant-scoped data isolation.
+    /// When enabled, tenants are identified via URL path segments.
+    /// </summary>
+    public bool MultiTenancy { get; set; }
 }

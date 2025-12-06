@@ -147,7 +147,7 @@ public class ResolveDmsInstanceMiddlewareTests
                 RouteContext: [] // Empty route context matches empty qualifiers
             );
 
-            A.CallTo(() => dmsInstanceProvider.GetById(1)).Returns(_expectedInstance);
+            A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored)).Returns(_expectedInstance);
 
             await middleware.Execute(
                 _requestInfo,
@@ -219,7 +219,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // First instance doesn't match
-            A.CallTo(() => dmsInstanceProvider.GetById(1))
+            A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
                 .Returns(
                     new DmsInstance(
                         Id: 1,
@@ -235,7 +235,7 @@ public class ResolveDmsInstanceMiddlewareTests
                 );
 
             // Second instance matches
-            A.CallTo(() => dmsInstanceProvider.GetById(2))
+            A.CallTo(() => dmsInstanceProvider.GetById(2, A<string?>.Ignored))
                 .Returns(
                     new DmsInstance(
                         Id: 2,
@@ -306,7 +306,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Both instances match - ambiguous!
-            A.CallTo(() => dmsInstanceProvider.GetById(1))
+            A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
                 .Returns(
                     new DmsInstance(
                         Id: 1,
@@ -320,7 +320,7 @@ public class ResolveDmsInstanceMiddlewareTests
                     )
                 );
 
-            A.CallTo(() => dmsInstanceProvider.GetById(2))
+            A.CallTo(() => dmsInstanceProvider.GetById(2, A<string?>.Ignored))
                 .Returns(
                     new DmsInstance(
                         Id: 2,
@@ -402,7 +402,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance has different route qualifiers
-            A.CallTo(() => dmsInstanceProvider.GetById(1))
+            A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
                 .Returns(
                     new DmsInstance(
                         Id: 1,
@@ -482,7 +482,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance matches but has no connection string
-            A.CallTo(() => dmsInstanceProvider.GetById(1))
+            A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
                 .Returns(
                     new DmsInstance(
                         Id: 1,
@@ -556,7 +556,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance not found in provider
-            A.CallTo(() => dmsInstanceProvider.GetById(999)).Returns(null);
+            A.CallTo(() => dmsInstanceProvider.GetById(999, A<string?>.Ignored)).Returns(null);
 
             await middleware.Execute(
                 _requestInfo,
@@ -620,7 +620,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance has lowercase value
-            A.CallTo(() => dmsInstanceProvider.GetById(1))
+            A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
                 .Returns(
                     new DmsInstance(
                         Id: 1,
@@ -690,7 +690,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
 
             // Instance has more qualifiers than request
-            A.CallTo(() => dmsInstanceProvider.GetById(1))
+            A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
                 .Returns(
                     new DmsInstance(
                         Id: 1,
