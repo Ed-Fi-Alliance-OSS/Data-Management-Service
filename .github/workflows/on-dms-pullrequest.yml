@@ -467,7 +467,7 @@ jobs:
         ports:
           - 80:8080
         options: >-
-          --health-cmd="wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1"
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
           --health-interval=5s
           --health-timeout=10s
           --health-retries=20
@@ -495,7 +495,7 @@ jobs:
         ports:
           - 80:8080
         options: >-
-          --health-cmd="wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1"
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
           --health-interval=5s
           --health-timeout=10s
           --health-retries=20
@@ -523,7 +523,7 @@ jobs:
         ports:
           - 80:8080
         options: >-
-          --health-cmd="wget --no-verbose --tries=1 --spider http://localhost:8080 || exit 1"
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
           --health-interval=5s
           --health-timeout=10s
           --health-retries=20
