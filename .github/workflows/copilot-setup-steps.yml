@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: Copilot Setup Steps
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/copilot-setup-steps.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/copilot-setup-steps.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  copilot-setup-steps:
+    name: Copilot Setup Steps
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install DMS packages
+        run: dotnet restore src/dms/EdFi.DataManagementService.sln
+
+      - name: Install Config Service packages
+        run: dotnet restore src/config/EdFi.DmsConfigurationService.sln
