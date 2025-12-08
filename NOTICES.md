@@ -3,7 +3,7 @@
 This product includes software developed at the [Ed-Fi
 Alliance](https://www.ed-fi.org).
 
-Copyright (c) 2024 Ed-Fi Alliance, LLC and contributors.
+Copyright (c) 2026 Ed-Fi Alliance, LLC and contributors.
 
 This software distribution includes or contains external references to several
 open source packages that are attributed below in this notice. Where required,
