@@ -19,7 +19,7 @@ public partial class ProfileResolutionService
 
     // Media type pattern: application/vnd.ed-fi.{resource}.{profile}.readable+json
     // or: application/vnd.ed-fi.{resource}.{profile}.writable+json
-    [GeneratedRegex(@"^application/vnd\.ed-fi\.(?<resource>[^.]+)\.(?<profile>[^.]+)\.(?<operation>readable|writable)\+json$", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"^application/vnd\.ed-fi\.(?<resource>[^.]+)\.(?<profile>[^.]+)\.(?<operation>readable|writable)\+json$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex ProfileMediaTypeRegex();
 
     public ProfileResolutionService(

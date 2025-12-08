@@ -46,6 +46,13 @@ public class ProfileProvider : IProfileProvider
 
     private void LoadProfiles(string profilesPath, ProfileXmlLoader xmlLoader)
     {
+        // Validate path to prevent directory traversal attacks
+        if (profilesPath.Contains("..", StringComparison.Ordinal))
+        {
+            _logger.LogError("ProfilesPath contains path traversal sequences: {ProfilesPath}", profilesPath);
+            return;
+        }
+
         var profiles = xmlLoader.LoadProfilesFromDirectory(profilesPath);
 
         foreach (var profile in profiles)

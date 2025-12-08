@@ -178,6 +178,18 @@ internal class ApiService : IApiService
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
                 new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+            ]
+        );
+
+        // Add profile resolution and application if enabled
+        if (_appSettings.Value.EnableProfiles)
+        {
+            steps.Add(_serviceProvider.GetRequiredService<ProfileResolutionMiddleware>());
+            steps.Add(_serviceProvider.GetRequiredService<ProfileApplicationMiddleware>());
+        }
+
+        steps.AddRange(
+            [
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new RejectResourceIdentifierMiddleware(_logger),
@@ -236,6 +248,17 @@ internal class ApiService : IApiService
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
                 new ParsePathMiddleware(_logger),
+            ]
+        );
+
+        // Add profile resolution if enabled (for GET requests)
+        if (_appSettings.Value.EnableProfiles)
+        {
+            steps.Add(_serviceProvider.GetRequiredService<ProfileResolutionMiddleware>());
+        }
+
+        steps.AddRange(
+            [
                 new ValidateEndpointMiddleware(_logger),
                 new BuildResourceInfoMiddleware(
                     _logger,
@@ -253,6 +276,12 @@ internal class ApiService : IApiService
             ]
         );
 
+        // Add profile application if enabled (for filtering response)
+        if (_appSettings.Value.EnableProfiles)
+        {
+            steps.Add(_serviceProvider.GetRequiredService<ProfileApplicationMiddleware>());
+        }
+
         return new PipelineProvider(steps);
     }
 
@@ -264,6 +293,17 @@ internal class ApiService : IApiService
                 new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
                 new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
                 new ParsePathMiddleware(_logger),
+            ]
+        );
+
+        // Add profile resolution if enabled (for GET requests)
+        if (_appSettings.Value.EnableProfiles)
+        {
+            steps.Add(_serviceProvider.GetRequiredService<ProfileResolutionMiddleware>());
+        }
+
+        steps.AddRange(
+            [
                 new ValidateEndpointMiddleware(_logger),
                 new ProvideAuthorizationSecurableInfoMiddleware(_logger),
                 new BuildResourceInfoMiddleware(
@@ -276,6 +316,12 @@ internal class ApiService : IApiService
                 new QueryRequestHandler(_serviceProvider, _logger, _resiliencePipeline),
             ]
         );
+
+        // Add profile application if enabled (for filtering response)
+        if (_appSettings.Value.EnableProfiles)
+        {
+            steps.Add(_serviceProvider.GetRequiredService<ProfileApplicationMiddleware>());
+        }
 
         return new PipelineProvider(steps);
     }
@@ -290,6 +336,18 @@ internal class ApiService : IApiService
                 new ParsePathMiddleware(_logger),
                 new ParseBodyMiddleware(_logger),
                 new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
+            ]
+        );
+
+        // Add profile resolution and application if enabled
+        if (_appSettings.Value.EnableProfiles)
+        {
+            steps.Add(_serviceProvider.GetRequiredService<ProfileResolutionMiddleware>());
+            steps.Add(_serviceProvider.GetRequiredService<ProfileApplicationMiddleware>());
+        }
+
+        steps.AddRange(
+            [
                 new DuplicatePropertiesMiddleware(_logger),
                 new ValidateEndpointMiddleware(_logger),
                 new CoerceDateFormatMiddleware(_logger),

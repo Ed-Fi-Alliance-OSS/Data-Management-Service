@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Xml;
 using System.Xml.Linq;
 using EdFi.DataManagementService.Core.Profiles.Model;
 using Microsoft.Extensions.Logging;
@@ -60,7 +61,15 @@ public class ProfileXmlLoader(ILogger<ProfileXmlLoader> _logger)
     /// <returns>Parsed profile or null if invalid</returns>
     public ApiProfile? LoadProfileFromFile(string filePath)
     {
-        var doc = XDocument.Load(filePath, LoadOptions.None);
+        // Use secure XML settings to prevent XXE attacks
+        var settings = new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null
+        };
+
+        using var reader = XmlReader.Create(filePath, settings);
+        var doc = XDocument.Load(reader, LoadOptions.None);
         return ParseProfile(doc);
     }
 
@@ -71,7 +80,16 @@ public class ProfileXmlLoader(ILogger<ProfileXmlLoader> _logger)
     /// <returns>Parsed profile or null if invalid</returns>
     public ApiProfile? ParseProfileFromXml(string xmlContent)
     {
-        var doc = XDocument.Parse(xmlContent, LoadOptions.None);
+        // Use secure XML settings to prevent XXE attacks
+        var settings = new XmlReaderSettings
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null
+        };
+
+        using var stringReader = new StringReader(xmlContent);
+        using var reader = XmlReader.Create(stringReader, settings);
+        var doc = XDocument.Load(reader, LoadOptions.None);
         return ParseProfile(doc);
     }
 
