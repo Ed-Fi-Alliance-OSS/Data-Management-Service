@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Profiles;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
@@ -85,7 +86,13 @@ public static class DmsCoreServiceExtensions
                 sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
                 TimeSpan.FromMinutes(10)
             ))
-            .AddScoped<ResolveDmsInstanceMiddleware>();
+            .AddScoped<ResolveDmsInstanceMiddleware>()
+            .AddSingleton<ProfileXmlLoader>()
+            .AddSingleton<IProfileProvider, ProfileProvider>()
+            .AddTransient<ProfileResolutionService>()
+            .AddTransient<ProfileApplicationService>()
+            .AddTransient<ProfileResolutionMiddleware>()
+            .AddTransient<ProfileApplicationMiddleware>();
 
         return services;
 

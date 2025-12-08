@@ -57,4 +57,15 @@ public class AppSettings
     /// Domains listed here will not appear in the generated OpenAPI specifications.
     /// </summary>
     public string? DomainsExcludedFromOpenApi { get; set; }
+
+    /// <summary>
+    /// If true, enables the API Profiles feature for filtering resource data based on XML profile definitions.
+    /// </summary>
+    public bool EnableProfiles { get; set; }
+
+    /// <summary>
+    /// File system path where XML profile documents are stored.
+    /// Only used when EnableProfiles is true.
+    /// </summary>
+    public string? ProfilesPath { get; set; }
 }

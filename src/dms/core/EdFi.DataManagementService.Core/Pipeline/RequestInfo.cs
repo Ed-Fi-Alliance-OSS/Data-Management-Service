@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Profiles.Model;
 
 namespace EdFi.DataManagementService.Core.Pipeline;
 
@@ -136,4 +137,10 @@ internal class RequestInfo(FrontendRequest _frontendRequest, RequestMethod _meth
     /// Empty if no route qualifiers are configured.
     /// </summary>
     public Dictionary<RouteQualifierName, RouteQualifierValue> RouteQualifiers { get; set; } = [];
+
+    /// <summary>
+    /// The profile content type to apply for filtering request/response data.
+    /// Null if no profile applies to this request.
+    /// </summary>
+    public ContentType? ProfileContentType { get; set; }
 }
