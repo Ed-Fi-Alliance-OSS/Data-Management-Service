@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Profile name="Test-Profile-Resource-ExcludeOnly">
+  <Resource name="School">
+    <ReadContentType memberSelection="ExcludeOnly">
+      <Property name="NameOfInstitution"/>
+      <Property name="OperationalStatusDescriptor"/>
+      <Property name="CharterApprovalSchoolYearTypeReference"/>
+      <Property name="SchoolTypeDescriptor"/>
+      <Property name="AdministrativeFundingControlDescriptor"/>
+      <Collection name="EducationOrganizationAddresses" memberSelection="IncludeAll"/>
+      <Collection name="SchoolCategories" memberSelection="IncludeAll"/>
+    </ReadContentType>
+    <WriteContentType memberSelection="ExcludeOnly">
+      <Property name="ShortNameOfInstitution"/>
+      <Property name="OperationalStatusDescriptor"/>
+      <Property name="WebSite"/>
+      <Property name="CharterStatusDescriptor"/>
+      <Property name="AdministrativeFundingControlDescriptor"/>
+      <Collection name="EducationOrganizationInternationalAddresses" memberSelection="IncludeAll"/>
+      <Collection name="SchoolGradeLevels" memberSelection="IncludeAll"/>
+    </WriteContentType>
+  </Resource>
+</Profile>
