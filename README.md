@@ -41,6 +41,7 @@ See the [docs folder](./docs/) for additional developer-oriented documentation.
 - [Running in Local Context](./docs/RUNNING-LOCALLY.md)
 - [Configuration](./docs/CONFIGURATION.md)
 - [Docker](./docs/DOCKER.md)
+- [API Profiles Guide](./docs/API-PROFILES-GUIDE.md)
 - [Removing reference validation](./docs/REFERENCE-VALIDATION.md)
 - [Setting Up Development Environment](./docs/SETUP-DEV-ENVIRONMENT.md)
 - [School Year Loader](./docs/SCHOOL-YEAR-LOADER.md)
