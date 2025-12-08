@@ -26,6 +26,8 @@ file.
 | IdentityProvider                 | Specifies the authentication provider. Valid values are `keycloak` (to use Keycloak's authentication) and `self-contained` (to use self-contained authentication). When using `self-contained`, you must also provide a value for `IdentitySettings:EncryptionKey`. Default: self-contained |
 | RouteQualifierSegments           | Comma separated list of route qualifier context segments as defined by `dmsInstanceRouteContexts` in Configuration Service. Example: "districtId,schoolYear" |
 | EnableApplicationResetEndpoint   | When `true`, enables the `/v2/applications/{id}/reset-credential` endpoint in the Configuration Service, allowing application credentials to be reset via API. When `false`, the endpoint is not registered and will return a 404 (Not Found) response. <br>**Recommended:** Set to `false` if you need to support multiple API clients per application, as enabling this endpoint may interfere with multi-client scenarios. Default: `false` |
+| EnableProfiles                   | When `true`, enables the API Profiles feature for filtering resource data based on XML profile definitions. When `false`, all profile functionality is disabled. Default: `false` |
+| ProfilesPath                     | Specifies the directory where XML profile documents are stored. Only used when `EnableProfiles` is `true`. Profile XML files in this directory will be loaded at application startup. Example: `/app/profiles` |
 
 ## Configuration Service AppSettings
 
