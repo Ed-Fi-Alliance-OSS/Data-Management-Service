@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: Apache-2.0
+  Licensed to the Ed-Fi Alliance under one or more agreements.
+  The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+  See the LICENSE and NOTICES files in the project root for more information.
+  
+  Sample Profile: Assessment Scores Only
+  
+  This profile provides access to student assessment scores without exposing
+  detailed assessment accommodations, items, or performance level information.
+  
+  Use Case: District-level reporting dashboard, aggregate score analysis
+-->
+<Profile name="Assessment-Scores-Only">
+  <Resource name="StudentAssessment">
+    <ReadContentType memberSelection="IncludeAll">
+      <!-- Exclude detailed assessment information -->
+      <Collection name="accommodations" memberSelection="ExcludeOnly" />
+      <Collection name="items" memberSelection="ExcludeOnly" />
+      <Collection name="performanceLevels" memberSelection="ExcludeOnly" />
+      <Collection name="studentObjectiveAssessments" memberSelection="ExcludeOnly" />
+      
+      <!-- Keep scoreResults collection for aggregate analysis -->
+      <Collection name="scoreResults" memberSelection="IncludeAll" />
+    </ReadContentType>
+    
+    <!-- No write access - read-only profile -->
+    <WriteContentType memberSelection="ExcludeAll" />
+  </Resource>
+</Profile>

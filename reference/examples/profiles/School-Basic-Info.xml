@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: Apache-2.0
+  Licensed to the Ed-Fi Alliance under one or more agreements.
+  The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+  See the LICENSE and NOTICES files in the project root for more information.
+  
+  Sample Profile: School Basic Information
+  
+  This profile provides access to basic school identifying information without
+  contact details such as addresses and phone numbers.
+  
+  Use Case: Public school directory, basic school lookup for enrollment
+-->
+<Profile name="School-Basic-Info">
+  <Resource name="School">
+    <ReadContentType memberSelection="IncludeAll">
+      <!-- Exclude collections with contact information -->
+      <Collection name="addresses" memberSelection="ExcludeOnly" />
+      <Collection name="institutionTelephones" memberSelection="ExcludeOnly" />
+      <Collection name="schoolCategories" memberSelection="ExcludeOnly" />
+    </ReadContentType>
+    
+    <WriteContentType memberSelection="IncludeAll">
+      <!-- Exclude collections from write operations -->
+      <Collection name="addresses" memberSelection="ExcludeOnly" />
+      <Collection name="institutionTelephones" memberSelection="ExcludeOnly" />
+      <Collection name="schoolCategories" memberSelection="ExcludeOnly" />
+      <Collection name="gradeLevels" memberSelection="ExcludeOnly" />
+    </WriteContentType>
+  </Resource>
+</Profile>

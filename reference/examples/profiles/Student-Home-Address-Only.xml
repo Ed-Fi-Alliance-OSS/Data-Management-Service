@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: Apache-2.0
+  Licensed to the Ed-Fi Alliance under one or more agreements.
+  The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+  See the LICENSE and NOTICES files in the project root for more information.
+  
+  Sample Profile: Student with Home Address Only
+  
+  This profile demonstrates collection filtering based on descriptor values.
+  It includes student information with addresses, but filters the addresses
+  collection to only include items where addressTypeDescriptor is "Home".
+  
+  Use Case: Transportation routing, emergency contact information
+-->
+<Profile name="Student-Home-Address-Only">
+  <Resource name="Student">
+    <ReadContentType memberSelection="IncludeAll">
+      <!-- Include addresses collection but filter to Home addresses only -->
+      <Collection name="addresses" memberSelection="IncludeAll">
+        <Filter propertyName="addressTypeDescriptor" value="Home" />
+      </Collection>
+      
+      <!-- Exclude other collections that might contain sensitive data -->
+      <Collection name="electronicMails" memberSelection="ExcludeOnly" />
+      <Collection name="telephones" memberSelection="ExcludeOnly" />
+      <Collection name="studentIdentificationCodes" memberSelection="ExcludeOnly" />
+    </ReadContentType>
+    
+    <WriteContentType memberSelection="IncludeAll">
+      <!-- Allow writing home addresses only -->
+      <Collection name="addresses" memberSelection="IncludeAll">
+        <Filter propertyName="addressTypeDescriptor" value="Home" />
+      </Collection>
+      
+      <!-- Exclude other collections from write operations -->
+      <Collection name="electronicMails" memberSelection="ExcludeOnly" />
+      <Collection name="telephones" memberSelection="ExcludeOnly" />
+      <Collection name="studentIdentificationCodes" memberSelection="ExcludeOnly" />
+    </WriteContentType>
+  </Resource>
+</Profile>

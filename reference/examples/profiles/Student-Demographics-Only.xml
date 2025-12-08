@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: Apache-2.0
+  Licensed to the Ed-Fi Alliance under one or more agreements.
+  The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+  See the LICENSE and NOTICES files in the project root for more information.
+  
+  Sample Profile: Student Demographics Only
+  
+  This profile restricts Student resource access to basic demographic information only.
+  It excludes personally identifiable information such as addresses, phone numbers,
+  and electronic mail addresses.
+  
+  Use Case: Public-facing student directory or limited access reporting
+-->
+<Profile name="Student-Demographics-Only">
+  <Resource name="Student">
+    <ReadContentType memberSelection="IncludeOnly">
+      <!-- Identity -->
+      <Property name="StudentUniqueId" />
+      <Property name="Id" />
+      
+      <!-- Basic Demographics -->
+      <Property name="FirstName" />
+      <Property name="MiddleName" />
+      <Property name="LastSurname" />
+      <Property name="GenerationCodeSuffix" />
+      <Property name="BirthDate" />
+      <Property name="BirthSexDescriptor" />
+      
+      <!-- Optional Demographics -->
+      <Property name="BirthCity" />
+      <Property name="BirthStateAbbreviationDescriptor" />
+      <Property name="BirthCountryDescriptor" />
+      <Property name="CitizenshipStatusDescriptor" />
+      <Property name="DateEnteredUS" />
+    </ReadContentType>
+    
+    <!-- No write access - read-only profile -->
+    <WriteContentType memberSelection="ExcludeAll" />
+  </Resource>
+</Profile>
