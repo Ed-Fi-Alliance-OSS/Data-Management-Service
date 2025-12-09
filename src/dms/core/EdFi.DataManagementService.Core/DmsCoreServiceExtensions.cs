@@ -85,7 +85,8 @@ public static class DmsCoreServiceExtensions
                 sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
                 TimeSpan.FromMinutes(10)
             ))
-            .AddScoped<ResolveDmsInstanceMiddleware>();
+            .AddScoped<ResolveDmsInstanceMiddleware>()
+            .AddSingleton<Profile.IProfileService, Profile.ProfileService>();
 
         return services;
 
