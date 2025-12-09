@@ -45,6 +45,13 @@ See the [docs folder](./docs/) for additional developer-oriented documentation.
 - [Setting Up Development Environment](./docs/SETUP-DEV-ENVIRONMENT.md)
 - [School Year Loader](./docs/SCHOOL-YEAR-LOADER.md)
 
+## API Profiles Documentation
+
+- [API Profiles Design](./docs/API-PROFILES-DESIGN.md) - Comprehensive architecture and design
+- [API Profiles Quick Start](./docs/API-PROFILES-QUICKSTART.md) - Getting started guide
+- [API Profiles Migration](./docs/API-PROFILES-MIGRATION.md) - Migration from AdminAPI-2.x
+- [Example Profiles](./docs/examples/profiles/) - Sample profile XML documents
+
 ## Legal Information
 
 Copyright (c) 2025 Ed-Fi Alliance, LLC and contributors.
