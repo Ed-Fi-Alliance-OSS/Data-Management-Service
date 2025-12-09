@@ -21,7 +21,7 @@ Multi-tenancy in DMS provides two layers of data isolation:
 
 ## Step 1: Configure the Environment File
 
-Navigate to the docker-compose directory and create your environment file (a 
+Navigate to the docker-compose directory and create your environment file (a
 working `.env.multitenancy` is included in the repo):
 
 ```powershell
@@ -55,6 +55,7 @@ ROUTE_QUALIFIER_SEGMENTS=schoolYear
 ```
 
 When route qualifiers are configured:
+
 - URLs follow the pattern: `/{qualifier1}/{qualifier2}/data/ed-fi/{resource}`
 - Example: `GET /2024/data/ed-fi/schools` routes to the 2024 school year database
 
@@ -96,7 +97,7 @@ pwsh ./start-local-dms.ps1 `
     -EnableConfig `
     -EnableSwaggerUI `
     -IdentityProvider self-contained `
-    -AddDmsInstance:$false
+    -AddDmsInstance:$false `
     -r
 ```
 
@@ -110,6 +111,7 @@ docker ps
 ```
 
 You should see containers running for:
+
 - `dms-local-dms-1` (DMS API on port 8080)
 - `dms-config-service` (Configuration Service on port 8081)
 - `dms-postgresql` (PostgreSQL on port 5435)
@@ -210,6 +212,7 @@ docker restart dms-local-dms-1
 ```
 
 Wait 30-60 seconds for DMS to restart. During startup, DMS will:
+
 1. Load all tenants and their instances from the Configuration Service
 2. Deploy the database schema to each instance database (if `DMS_DEPLOY_DATABASE_ON_STARTUP=true`)
 
@@ -224,6 +227,7 @@ docker logs dms-local-dms-1 | Select-String "Deploying database schema"
 ```
 
 You should see:
+
 - `Successfully fetched X DMS instances`
 - `Deploying database schema to DMS instance 'District A - School Year 2024'...`
 - etc.
