@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Profile: Student-ReadOnly
+  Purpose: Provides read-only access to basic student demographics and school associations
+  Use Case: External reporting systems that need basic student information without modification rights
+  Version: 1.0
+  Created: 2025-12-09
+  
+  This profile restricts API consumers to reading only essential student information:
+  - Basic identification (StudentUniqueId, names, birth date)
+  - School enrollment reference
+  - Education organization associations
+  
+  Write operations are not permitted with this profile.
+  Sensitive data like identification codes, contact information, and program associations are excluded.
+-->
+<Profile name="Student-ReadOnly">
+  <Resource name="Student">
+    <ReadContentType memberSelection="IncludeOnly">
+      <!-- Core Identity Fields -->
+      <Property name="StudentUniqueId" />
+      <Property name="FirstName" />
+      <Property name="MiddleName" />
+      <Property name="LastSurname" />
+      <Property name="BirthDate" />
+      <Property name="BirthSex" />
+      
+      <!-- School Reference -->
+      <Reference name="SchoolReference">
+        <Property name="SchoolId" />
+      </Reference>
+      
+      <!-- Education Organization Associations (Limited Fields) -->
+      <Collection name="StudentEducationOrganizationAssociations" memberSelection="IncludeOnly">
+        <Property name="EducationOrganizationId" />
+        <Property name="StudentEducationOrganizationAssociationId" />
+        <Reference name="EducationOrganizationReference">
+          <Property name="EducationOrganizationId" />
+        </Reference>
+        <Collection name="StudentEducationOrganizationAssociationGradeLevels" memberSelection="IncludeOnly">
+          <Property name="GradeLevel" />
+        </Collection>
+      </Collection>
+    </ReadContentType>
+    <!-- No WriteContentType specified = No write access -->
+  </Resource>
+</Profile>
