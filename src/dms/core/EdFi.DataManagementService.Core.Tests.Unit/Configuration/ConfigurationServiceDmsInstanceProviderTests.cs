@@ -839,6 +839,82 @@ public class ConfigurationServiceDmsInstanceProviderTests
         }
     }
 
+    [TestFixture]
+    public class Given_Multiple_Tenants_Loaded
+    {
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
+
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+            );
+
+            // Load instances for multiple tenants
+            await _provider.LoadDmsInstances(); // Default tenant (empty string key)
+            await _provider.LoadDmsInstances("TenantA");
+            await _provider.LoadDmsInstances("TenantB");
+        }
+
+        [Test]
+        public void It_should_return_all_loaded_tenant_keys()
+        {
+            var tenantKeys = _provider!.GetLoadedTenantKeys();
+            tenantKeys.Should().HaveCount(3);
+            tenantKeys.Should().Contain("");
+            tenantKeys.Should().Contain("TenantA");
+            tenantKeys.Should().Contain("TenantB");
+        }
+    }
+
+    [TestFixture]
+    public class Given_No_Tenants_Loaded
+    {
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+
+        [SetUp]
+        public void Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
+
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance
+            );
+        }
+
+        [Test]
+        public void It_should_return_empty_list()
+        {
+            var tenantKeys = _provider!.GetLoadedTenantKeys();
+            tenantKeys.Should().BeEmpty();
+        }
+    }
+
     /// <summary>
     /// Test HTTP message handler that returns predefined responses
     /// </summary>

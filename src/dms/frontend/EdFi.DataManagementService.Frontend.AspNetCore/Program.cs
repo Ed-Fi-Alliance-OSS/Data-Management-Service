@@ -193,42 +193,71 @@ void InitializeDatabase(WebApplication app)
             var connectionStringProvider = app.Services.GetRequiredService<IConnectionStringProvider>();
             var databaseDeploy = app.Services.GetRequiredService<IDatabaseDeploy>();
 
-            var allInstances = dmsInstanceProvider.GetAll();
+            // Get all loaded tenant keys and deploy to instances for each tenant
+            var loadedTenantKeys = dmsInstanceProvider.GetLoadedTenantKeys();
+            int totalInstancesDeployed = 0;
 
-            foreach (var instance in allInstances)
+            foreach (var tenantKey in loadedTenantKeys)
             {
-                app.Logger.LogInformation(
-                    "Deploying database schema to DMS instance '{InstanceName}' (ID: {InstanceId})",
-                    instance.InstanceName,
-                    instance.Id
-                );
+                // Convert empty string back to null for API calls
+                string? tenant = string.IsNullOrEmpty(tenantKey) ? null : tenantKey;
+                var instances = dmsInstanceProvider.GetAll(tenant);
 
-                string connectionString =
-                    connectionStringProvider.GetConnectionString(instance.Id) ?? string.Empty;
-
-                var result = databaseDeploy.DeployDatabase(connectionString);
-
-                if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
+                if (instances.Count == 0)
                 {
-                    app.Logger.LogCritical(
-                        failure.Error,
-                        "Database Deploy Failure for instance '{InstanceName}' (ID: {InstanceId})",
-                        instance.InstanceName,
-                        instance.Id
+                    app.Logger.LogDebug(
+                        "No instances found for tenant '{Tenant}', skipping",
+                        tenant ?? "(default)"
                     );
-                    Environment.Exit(-1);
+                    continue;
                 }
 
                 app.Logger.LogInformation(
-                    "Successfully deployed database schema to DMS instance '{InstanceName}' (ID: {InstanceId})",
-                    instance.InstanceName,
-                    instance.Id
+                    "Deploying database schema to {InstanceCount} instances for tenant '{Tenant}'",
+                    instances.Count,
+                    tenant ?? "(default)"
                 );
+
+                foreach (var instance in instances)
+                {
+                    app.Logger.LogInformation(
+                        "Deploying database schema to DMS instance '{InstanceName}' (ID: {InstanceId}) for tenant '{Tenant}'",
+                        instance.InstanceName,
+                        instance.Id,
+                        tenant ?? "(default)"
+                    );
+
+                    string connectionString =
+                        connectionStringProvider.GetConnectionString(instance.Id, tenant) ?? string.Empty;
+
+                    var result = databaseDeploy.DeployDatabase(connectionString);
+
+                    if (result is DatabaseDeployResult.DatabaseDeployFailure failure)
+                    {
+                        app.Logger.LogCritical(
+                            failure.Error,
+                            "Database Deploy Failure for instance '{InstanceName}' (ID: {InstanceId}) tenant '{Tenant}'",
+                            instance.InstanceName,
+                            instance.Id,
+                            tenant ?? "(default)"
+                        );
+                        Environment.Exit(-1);
+                    }
+
+                    app.Logger.LogInformation(
+                        "Successfully deployed database schema to DMS instance '{InstanceName}' (ID: {InstanceId})",
+                        instance.InstanceName,
+                        instance.Id
+                    );
+
+                    totalInstancesDeployed++;
+                }
             }
 
             app.Logger.LogInformation(
-                "Database deploy completed for all {InstanceCount} DMS instances",
-                allInstances.Count
+                "Database deploy completed for {TotalInstanceCount} DMS instances across {TenantCount} tenants",
+                totalInstancesDeployed,
+                loadedTenantKeys.Count
             );
         }
         catch (Exception ex)

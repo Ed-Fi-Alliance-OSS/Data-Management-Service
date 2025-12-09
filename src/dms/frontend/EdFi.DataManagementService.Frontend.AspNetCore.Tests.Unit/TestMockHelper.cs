@@ -37,6 +37,8 @@ public static class TestMockHelper
             .Returns(mockInstance);
         A.CallTo(() => dmsInstanceProvider.IsLoaded(A<string?>.Ignored)).Returns(true);
         A.CallTo(() => dmsInstanceProvider.TenantExists(A<string>.That.IsNotNull())).Returns(true);
+        A.CallTo(() => dmsInstanceProvider.GetLoadedTenantKeys())
+            .Returns(new List<string> { "" }.AsReadOnly());
         services.AddTransient(x => dmsInstanceProvider);
 
         // Mock ITenantValidator
@@ -46,7 +48,7 @@ public static class TestMockHelper
 
         // Mock IConnectionStringProvider
         var connectionStringProvider = A.Fake<IConnectionStringProvider>();
-        A.CallTo(() => connectionStringProvider.GetConnectionString(A<long>._))
+        A.CallTo(() => connectionStringProvider.GetConnectionString(A<long>._, A<string?>.Ignored))
             .Returns("test-connection-string");
         A.CallTo(() => connectionStringProvider.GetHealthCheckConnectionString())
             .Returns("test-connection-string");

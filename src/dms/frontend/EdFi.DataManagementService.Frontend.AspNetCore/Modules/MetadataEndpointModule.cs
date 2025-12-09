@@ -22,8 +22,13 @@ public partial class MetadataEndpointModule(IOptions<AppSettings> appSettings) :
 {
     private static JsonArray GetServers(HttpContext httpContext, IDmsInstanceProvider dmsInstanceProvider)
     {
-        // Get all school years from DMS instances
-        var instances = dmsInstanceProvider.GetAll();
+        // Get tenant from route values (set by multi-tenant routing)
+        string? tenant = httpContext.Request.RouteValues.TryGetValue("tenant", out var tenantValue)
+            ? tenantValue?.ToString()
+            : null;
+
+        // Get all school years from DMS instances for the current tenant
+        var instances = dmsInstanceProvider.GetAll(tenant);
         var schoolYears = instances
             .SelectMany(instance => instance.RouteContext)
             .Where(kvp => kvp.Key.Value.Equals("schoolYear", StringComparison.OrdinalIgnoreCase))

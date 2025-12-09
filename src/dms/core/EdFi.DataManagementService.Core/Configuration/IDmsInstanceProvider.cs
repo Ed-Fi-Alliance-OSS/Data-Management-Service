@@ -52,4 +52,11 @@ public interface IDmsInstanceProvider
     /// <param name="tenant">The tenant identifier to check</param>
     /// <returns>True if the tenant exists in the cache, otherwise false</returns>
     bool TenantExists(string tenant);
+
+    /// <summary>
+    /// Gets all tenant keys that have been loaded into the cache.
+    /// Used by health checks and startup processes that need to iterate over all loaded tenants.
+    /// </summary>
+    /// <returns>A list of tenant keys (empty string for default/single-tenant mode)</returns>
+    IReadOnlyList<string> GetLoadedTenantKeys();
 }
