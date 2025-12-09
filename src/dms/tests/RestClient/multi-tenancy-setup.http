@@ -1,0 +1,518 @@
+# Multi-Tenancy Setup REST Client
+#
+# This file provides requests for setting up multi-tenant DMS environments.
+# Use this after deploying DMS with multi-tenancy enabled.
+#
+# Prerequisites:
+# 1. Deploy DMS with multi-tenancy enabled (see docs/MULTI-TENANCY-GETTING-STARTED.md)
+# 2. Configuration Service running at localhost:8081
+# 3. DMS running at localhost:8080
+#
+# Workflow:
+# 1. Register system administrator credentials
+# 2. Create tenants
+# 3. Create DMS instances for each tenant (with connection strings to your databases)
+# 4. Configure route contexts (if using explicit routing)
+# 5. Create vendors and applications
+# 6. Restart DMS container to pick up new instances
+# 7. Test the setup
+
+@configPort = 8081
+@dmsPort = 8080
+
+# System administrator credentials - change these for your environment
+# Secret requirements: 8-12 characters, lowercase, uppercase, number, special character
+@sysAdminId = mt-admin
+@sysAdminSecret = MtAdmin1!
+@encodedSysAdminSecret = MtAdmin1%21
+
+# PostgreSQL connection settings - update these to match your environment
+@postgresHost = dms-postgresql
+@postgresPort = 5432
+@postgresUser = postgres
+@postgresPassword = abcdefgh1!
+
+### ============================================================================
+### STEP 1: Register System Administrator
+### ============================================================================
+### Run this once to create admin credentials for managing tenants and instances
+
+# @name registerAdmin
+POST http://localhost:{{configPort}}/connect/register
+Content-Type: application/x-www-form-urlencoded
+
+ClientId={{sysAdminId}}
+&ClientSecret={{encodedSysAdminSecret}}
+&DisplayName=Multi-Tenancy Administrator
+
+### ============================================================================
+### STEP 2: Get Access Token
+### ============================================================================
+
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{encodedSysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken = {{configTokenRequest.response.body.access_token}}
+
+
+### ============================================================================
+### STEP 3: Create Tenants
+### ============================================================================
+### Create tenants to isolate configuration data between organizations
+
+### Create Tenant 1 (Example: "DistrictA")
+# @name createTenant1
+POST http://localhost:{{configPort}}/v2/tenants/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "name": "DistrictA"
+}
+
+###
+@tenant1Name = DistrictA
+
+### Create Tenant 2 (Example: "DistrictB")
+# @name createTenant2
+POST http://localhost:{{configPort}}/v2/tenants/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "name": "DistrictB"
+}
+
+###
+@tenant2Name = DistrictB
+
+### Verify tenants were created
+GET http://localhost:{{configPort}}/v2/tenants/
+Authorization: bearer {{configToken}}
+
+
+### ============================================================================
+### STEP 4: Create DMS Instances for Tenant 1
+### ============================================================================
+### Each instance points to a separate database
+###
+### IMPORTANT: Before creating instances, create the target databases:
+###
+### PostgreSQL example:
+###   docker exec -it dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_dms_districta_2024;"
+###   docker exec -it dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_dms_districta_2025;"
+###
+### Connection string format:
+###   host={host};port={port};username={user};password={password};database={dbname};
+###
+### Note: DMS will deploy the schema automatically on startup if NEED_DATABASE_SETUP=true
+
+### Create Instance for Tenant 1 - School Year 2024
+# @name createInstance1_2024
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+{
+    "instanceType": "SchoolYear",
+    "instanceName": "District A - School Year 2024",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2024;"
+}
+
+###
+@instance1_2024_Id = {{createInstance1_2024.response.body.id}}
+
+### Create Instance for Tenant 1 - School Year 2025
+# @name createInstance1_2025
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+{
+    "instanceType": "SchoolYear",
+    "instanceName": "District A - School Year 2025",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2025;"
+}
+
+###
+@instance1_2025_Id = {{createInstance1_2025.response.body.id}}
+
+
+### ============================================================================
+### STEP 5: Create Route Contexts for Tenant 1 (Explicit Routing)
+### ============================================================================
+### Route contexts enable URL-based routing: /{schoolYear}/data/ed-fi/{resource}
+### Skip this section if using implicit routing (single instance per credential)
+
+### Route Context for Instance 1 - School Year 2024
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+{
+    "instanceId": {{instance1_2024_Id}},
+    "contextKey": "schoolYear",
+    "contextValue": "2024"
+}
+
+### Route Context for Instance 1 - School Year 2025
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+{
+    "instanceId": {{instance1_2025_Id}},
+    "contextKey": "schoolYear",
+    "contextValue": "2025"
+}
+
+
+### ============================================================================
+### STEP 6: Create DMS Instances for Tenant 2
+### ============================================================================
+### Create databases first:
+###   docker exec -it dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_dms_districtb_2024;"
+###   docker exec -it dms-postgresql psql -U postgres -c "CREATE DATABASE edfi_dms_districtb_2025;"
+
+### Create Instance for Tenant 2 - School Year 2024
+# @name createInstance2_2024
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+{
+    "instanceType": "SchoolYear",
+    "instanceName": "District B - School Year 2024",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districtb_2024;"
+}
+
+###
+@instance2_2024_Id = {{createInstance2_2024.response.body.id}}
+
+### Create Instance for Tenant 2 - School Year 2025
+# @name createInstance2_2025
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+{
+    "instanceType": "SchoolYear",
+    "instanceName": "District B - School Year 2025",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districtb_2025;"
+}
+
+###
+@instance2_2025_Id = {{createInstance2_2025.response.body.id}}
+
+
+### ============================================================================
+### STEP 7: Create Route Contexts for Tenant 2
+### ============================================================================
+
+### Route Context for Instance 2 - School Year 2024
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+{
+    "instanceId": {{instance2_2024_Id}},
+    "contextKey": "schoolYear",
+    "contextValue": "2024"
+}
+
+### Route Context for Instance 2 - School Year 2025
+POST http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+{
+    "instanceId": {{instance2_2025_Id}},
+    "contextKey": "schoolYear",
+    "contextValue": "2025"
+}
+
+
+### ============================================================================
+### STEP 8: View Configuration
+### ============================================================================
+
+### List all DMS Instances for Tenant 1
+GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+### List all DMS Instances for Tenant 2
+GET http://localhost:{{configPort}}/v2/dmsInstances?offset=0&limit=25
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+### List all Route Contexts for Tenant 1
+GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts?offset=0&limit=25
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+### List all Route Contexts for Tenant 2
+GET http://localhost:{{configPort}}/v2/dmsInstanceRouteContexts?offset=0&limit=25
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+
+### ============================================================================
+### STEP 9: Create Vendor and Application for Tenant 1
+### ============================================================================
+
+### Create Vendor for Tenant 1
+# @name createVendor1
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+{
+    "company": "District A SIS Vendor",
+    "contactName": "Admin",
+    "contactEmailAddress": "admin@districta.edu",
+    "namespacePrefixes": "uri://ed-fi.org,uri://districta.edu"
+}
+
+###
+@vendor1Location = {{createVendor1.response.headers.location}}
+
+### Get Vendor 1 ID
+# @name getVendor1
+GET {{vendor1Location}}
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+###
+@vendor1Id = {{getVendor1.response.body.id}}
+
+### Create Application for Tenant 1 (with access to both school year instances)
+# @name createApp1
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
+
+{
+    "vendorId": {{vendor1Id}},
+    "applicationName": "District A SIS",
+    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "educationOrganizationIds": [255901],
+    "dmsInstanceIds": [{{instance1_2024_Id}}, {{instance1_2025_Id}}]
+}
+
+###
+@app1Key = {{createApp1.response.body.key}}
+@app1Secret = {{createApp1.response.body.secret}}
+
+
+### ============================================================================
+### STEP 10: Create Vendor and Application for Tenant 2
+### ============================================================================
+
+### Create Vendor for Tenant 2
+# @name createVendor2
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+{
+    "company": "District B SIS Vendor",
+    "contactName": "Admin",
+    "contactEmailAddress": "admin@districtb.edu",
+    "namespacePrefixes": "uri://ed-fi.org,uri://districtb.edu"
+}
+
+###
+@vendor2Location = {{createVendor2.response.headers.location}}
+
+### Get Vendor 2 ID
+# @name getVendor2
+GET {{vendor2Location}}
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+###
+@vendor2Id = {{getVendor2.response.body.id}}
+
+### Create Application for Tenant 2
+# @name createApp2
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
+
+{
+    "vendorId": {{vendor2Id}},
+    "applicationName": "District B SIS",
+    "claimSetName": "E2E-NoFurtherAuthRequiredClaimSet",
+    "educationOrganizationIds": [255902],
+    "dmsInstanceIds": [{{instance2_2024_Id}}, {{instance2_2025_Id}}]
+}
+
+###
+@app2Key = {{createApp2.response.body.key}}
+@app2Secret = {{createApp2.response.body.secret}}
+
+
+### ============================================================================
+### STEP 11: RESTART DMS CONTAINER
+### ============================================================================
+### IMPORTANT: After creating instances, restart the DMS container to:
+### 1. Load all tenants and instances from Configuration Service
+### 2. Deploy database schema to each tenant database (if DMS_DEPLOY_DATABASE_ON_STARTUP=true)
+###
+### PREREQUISITE: Ensure DMS_DEPLOY_DATABASE_ON_STARTUP=true in your .env file
+### This setting is REQUIRED for multi-tenancy - it deploys schema to all instance databases
+###
+### Run this command in your terminal:
+###   docker restart dms-local-dms-1
+###
+### Wait 30-60 seconds for DMS to restart and deploy schemas
+###
+### Verify DMS loaded all instances and deployed schemas:
+###   docker logs dms-local-dms-1 | grep "Successfully fetched"
+###   docker logs dms-local-dms-1 | grep "Deploying database schema"
+###   Should show: "Successfully fetched X DMS instances"
+###   Should show: "Deploying database schema to DMS instance '...'" for each instance
+
+
+### ============================================================================
+### STEP 12: Test DMS API Access
+### ============================================================================
+
+### Get Discovery API
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@tokenUrl = {{discovery.response.body.urls.oauth}}
+
+### Get DMS Token for Tenant 1 Application
+# @name dmsToken1
+POST {{tokenUrl}}
+Authorization: basic {{app1Key}}:{{app1Secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@token1 = {{dmsToken1.response.body.access_token}}
+
+### Get DMS Token for Tenant 2 Application
+# @name dmsToken2
+POST {{tokenUrl}}
+Authorization: basic {{app2Key}}:{{app2Secret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@token2 = {{dmsToken2.response.body.access_token}}
+
+
+### ============================================================================
+### STEP 13: Test Data Isolation
+### ============================================================================
+### With multi-tenancy enabled, the URL pattern is: /{tenant}/{routeQualifier}/data/ed-fi/{resource}
+### Example: /DistrictA/2024/data/ed-fi/contentClassDescriptors
+
+### Create descriptor in Tenant 1, School Year 2024
+POST http://localhost:{{dmsPort}}/{{tenant1Name}}/2024/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{token1}}
+Content-Type: application/json
+
+{
+    "codeValue": "DistrictA-2024-Test",
+    "shortDescription": "Test descriptor for District A, Year 2024",
+    "description": "Test descriptor for District A, Year 2024",
+    "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+### Create descriptor in Tenant 1, School Year 2025
+POST http://localhost:{{dmsPort}}/{{tenant1Name}}/2025/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{token1}}
+Content-Type: application/json
+
+{
+    "codeValue": "DistrictA-2025-Test",
+    "shortDescription": "Test descriptor for District A, Year 2025",
+    "description": "Test descriptor for District A, Year 2025",
+    "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+### Create descriptor in Tenant 2, School Year 2024
+POST http://localhost:{{dmsPort}}/{{tenant2Name}}/2024/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{token2}}
+Content-Type: application/json
+
+{
+    "codeValue": "DistrictB-2024-Test",
+    "shortDescription": "Test descriptor for District B, Year 2024",
+    "description": "Test descriptor for District B, Year 2024",
+    "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+}
+
+
+### ============================================================================
+### STEP 14: Verify Data Isolation
+### ============================================================================
+
+### Get descriptors from Tenant 1, School Year 2024 (should only see DistrictA-2024-Test)
+GET http://localhost:{{dmsPort}}/{{tenant1Name}}/2024/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{token1}}
+
+### Get descriptors from Tenant 1, School Year 2025 (should only see DistrictA-2025-Test)
+GET http://localhost:{{dmsPort}}/{{tenant1Name}}/2025/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{token1}}
+
+### Get descriptors from Tenant 2, School Year 2024 (should only see DistrictB-2024-Test)
+GET http://localhost:{{dmsPort}}/{{tenant2Name}}/2024/data/ed-fi/contentClassDescriptors
+Authorization: bearer {{token2}}
+
+### Verify directly in the databases:
+### docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2024 -c "SELECT CodeValue FROM dms.Descriptor WHERE CodeValue LIKE '%Test';"
+### docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 -c "SELECT CodeValue FROM dms.Descriptor WHERE CodeValue LIKE '%Test';"
+### docker exec dms-postgresql psql -U postgres -d edfi_dms_districtb_2024 -c "SELECT CodeValue FROM dms.Descriptor WHERE CodeValue LIKE '%Test';"
+
+
+### ============================================================================
+### CLEANUP (Optional)
+### ============================================================================
+### Delete in reverse order of creation to respect foreign key constraints
+
+### Delete Tenant 1 Application
+# DELETE http://localhost:{{configPort}}/v2/applications/{{createApp1.response.body.id}}
+# Authorization: bearer {{configToken}}
+# Tenant: {{tenant1Name}}
+
+### Delete Tenant 1 Vendor
+# DELETE {{vendor1Location}}
+# Authorization: bearer {{configToken}}
+# Tenant: {{tenant1Name}}
+
+### Delete Tenant 1 Instances (route contexts deleted automatically)
+# DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance1_2024_Id}}
+# Authorization: bearer {{configToken}}
+# Tenant: {{tenant1Name}}
+
+# DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance1_2025_Id}}
+# Authorization: bearer {{configToken}}
+# Tenant: {{tenant1Name}}
