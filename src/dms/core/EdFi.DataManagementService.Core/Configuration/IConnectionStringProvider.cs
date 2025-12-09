@@ -14,13 +14,15 @@ public interface IConnectionStringProvider
     /// Gets the database connection string for the specified DMS instance ID
     /// </summary>
     /// <param name="dmsInstanceId">The DMS instance ID</param>
+    /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
     /// <returns>The connection string for the instance, or null if not found</returns>
-    string? GetConnectionString(long dmsInstanceId);
+    string? GetConnectionString(long dmsInstanceId, string? tenant = null);
 
     /// <summary>
     /// Gets a database connection string for health check purposes.
     /// This is a compromise - we just use the first available instance since health checks
     /// need some connection string to test database connectivity.
+    /// In multi-tenant mode, this searches across all loaded tenant caches.
     /// </summary>
     /// <returns>The connection string for health check, or null if no instances available</returns>
     string? GetHealthCheckConnectionString();

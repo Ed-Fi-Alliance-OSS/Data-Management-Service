@@ -20,12 +20,14 @@ public class ConfigurationServiceClaimSetProvider(
 ) : IClaimSetProvider
 {
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private const string TenantHeaderName = "Tenant";
 
     /// <summary>
     /// Retrieves claim set metadata from the Configuration Service API, transforming
     /// into the internal ClaimSet model used by the DMS authorization pipeline.
     /// </summary>
-    public async Task<IList<ClaimSet>> GetAllClaimSets()
+    /// <param name="tenant">Optional tenant identifier for multi-tenant scenarios.</param>
+    public async Task<IList<ClaimSet>> GetAllClaimSets(string? tenant = null)
     {
         /// Get token for the Configuration Service API
         string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
@@ -36,7 +38,25 @@ public class ConfigurationServiceClaimSetProvider(
         configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
             new AuthenticationHeaderValue("Bearer", configurationServiceToken);
 
+        // Set Tenant header for multi-tenant scenarios
+        SetTenantHeader(tenant);
+
         return (await FetchAuthorizationMetadata()).Select(CreateClaimSet).ToList();
+    }
+
+    /// <summary>
+    /// Sets or removes the Tenant header based on the tenant value.
+    /// </summary>
+    private void SetTenantHeader(string? tenant)
+    {
+        // Remove existing Tenant header if present
+        configurationServiceApiClient.Client.DefaultRequestHeaders.Remove(TenantHeaderName);
+
+        // Add Tenant header if tenant is specified
+        if (!string.IsNullOrEmpty(tenant))
+        {
+            configurationServiceApiClient.Client.DefaultRequestHeaders.Add(TenantHeaderName, tenant);
+        }
     }
 
     /// <summary>

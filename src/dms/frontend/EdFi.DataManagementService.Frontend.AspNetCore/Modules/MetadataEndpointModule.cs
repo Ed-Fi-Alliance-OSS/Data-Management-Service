@@ -14,15 +14,21 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
-public partial class MetadataEndpointModule : IEndpointModule
+public partial class MetadataEndpointModule(IOptions<AppSettings> appSettings) : IEndpointModule
 {
     private static JsonArray GetServers(HttpContext httpContext, IDmsInstanceProvider dmsInstanceProvider)
     {
-        // Get all school years from DMS instances
-        var instances = dmsInstanceProvider.GetAll();
+        // Get tenant from route values (set by multi-tenant routing)
+        string? tenant = httpContext.Request.RouteValues.TryGetValue("tenant", out var tenantValue)
+            ? tenantValue?.ToString()
+            : null;
+
+        // Get all school years from DMS instances for the current tenant
+        var instances = dmsInstanceProvider.GetAll(tenant);
         var schoolYears = instances
             .SelectMany(instance => instance.RouteContext)
             .Where(kvp => kvp.Key.Value.Equals("schoolYear", StringComparison.OrdinalIgnoreCase))
@@ -92,10 +98,12 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/metadata", GetMetadata);
+        var tenantPrefix = appSettings.Value.MultiTenancy ? "/{tenant}" : "";
+
+        endpoints.MapGet($"{tenantPrefix}/metadata", GetMetadata);
         // Combine the conflicting routes into a single MapGet
         endpoints.MapGet(
-            "/metadata/dependencies",
+            $"{tenantPrefix}/metadata/dependencies",
             async (HttpContext httpContext, IApiService apiService) =>
             {
                 var acceptHeader = httpContext.Request.Headers["Accept"].ToString();
@@ -112,10 +120,16 @@ public partial class MetadataEndpointModule : IEndpointModule
                 }
             }
         );
-        endpoints.MapGet("/metadata/specifications", GetSections);
-        endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
-        endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
-        endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
+        endpoints.MapGet($"{tenantPrefix}/metadata/specifications", GetSections);
+        endpoints.MapGet(
+            $"{tenantPrefix}/metadata/specifications/resources-spec.json",
+            GetResourceOpenApiSpec
+        );
+        endpoints.MapGet(
+            $"{tenantPrefix}/metadata/specifications/descriptors-spec.json",
+            GetDescriptorOpenApiSpec
+        );
+        endpoints.MapGet($"{tenantPrefix}/metadata/specifications/{{section}}-spec.json", GetSectionMetadata);
     }
 
     internal async Task GetMetadata(HttpContext httpContext)

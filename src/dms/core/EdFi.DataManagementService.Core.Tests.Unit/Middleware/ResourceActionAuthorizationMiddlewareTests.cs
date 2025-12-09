@@ -33,7 +33,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     {
         var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets())
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
             .Returns(
                 [
                     new ClaimSet(
@@ -66,7 +66,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     internal static IPipelineStep NoAuthStrategyMiddleware()
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
-        A.CallTo(() => claimSetProvider.GetAllClaimSets())
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
             .Returns(
                 [
                     new ClaimSet(
@@ -331,7 +331,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         public async Task Setup()
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
-            A.CallTo(() => claimSetProvider.GetAllClaimSets())
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
                 .Returns(
                     [new ClaimSet(Name: "SIS-Vendor", ResourceClaims: [new ResourceClaim("schools", "", [])])]
                 );

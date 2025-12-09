@@ -463,9 +463,14 @@ jobs:
     needs: build-and-start-dms
     services:
       swagger-editor:
-        image: swaggerapi/swagger-editor
+        image: swaggerapi/swagger-editor:v4.14.8
         ports:
           - 80:8080
+        options: >-
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=10s
+          --health-retries=20
     steps:
       - name: Download Resources Spec
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
@@ -486,9 +491,14 @@ jobs:
     needs: build-and-start-dms
     services:
       swagger-editor:
-        image: swaggerapi/swagger-editor
+        image: swaggerapi/swagger-editor:v4.14.8
         ports:
           - 80:8080
+        options: >-
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=10s
+          --health-retries=20
     steps:
       - name: Download Descriptors Spec
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8
@@ -509,9 +519,14 @@ jobs:
     needs: build-and-start-dms
     services:
       swagger-editor:
-        image: swaggerapi/swagger-editor
+        image: swaggerapi/swagger-editor:v4.14.8
         ports:
           - 80:8080
+        options: >-
+          --health-cmd="curl -f http://localhost:8080 || exit 1"
+          --health-interval=5s
+          --health-timeout=10s
+          --health-retries=20
     steps:
       - name: Download Discovery Spec
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 #v4.1.8

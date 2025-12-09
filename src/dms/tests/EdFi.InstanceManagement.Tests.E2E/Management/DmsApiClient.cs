@@ -21,12 +21,14 @@ public class DmsApiClient : IDisposable
     private readonly HttpClient _httpClient;
     private readonly string _baseUrl;
     private readonly string _accessToken;
+    private readonly string? _tenant;
     private bool _disposed;
 
-    public DmsApiClient(string baseUrl, string accessToken)
+    public DmsApiClient(string baseUrl, string accessToken, string? tenant = null)
     {
         _baseUrl = baseUrl;
         _accessToken = accessToken;
+        _tenant = tenant;
 
         // Create and configure HttpClient with base URL and authorization header
         _httpClient = new HttpClient { BaseAddress = new Uri(baseUrl) };
@@ -43,6 +45,18 @@ public class DmsApiClient : IDisposable
     }
 
     /// <summary>
+    /// Builds a URL path with optional tenant prefix
+    /// </summary>
+    private string BuildPath(string path)
+    {
+        if (string.IsNullOrEmpty(_tenant))
+        {
+            return path;
+        }
+        return $"/{_tenant}{path}";
+    }
+
+    /// <summary>
     /// POST a resource to DMS with route qualifiers
     /// </summary>
     public async Task<HttpResponseMessage> PostResourceAsync(
@@ -52,7 +66,7 @@ public class DmsApiClient : IDisposable
         object body
     )
     {
-        var url = $"/{districtId}/{schoolYear}/data/ed-fi/{resource}";
+        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}");
         var response = await _httpClient.PostAsJsonAsync(url, body);
 
         return response;
@@ -67,7 +81,7 @@ public class DmsApiClient : IDisposable
         string resource
     )
     {
-        var url = $"/{districtId}/{schoolYear}/data/ed-fi/{resource}";
+        var url = BuildPath($"/{districtId}/{schoolYear}/data/ed-fi/{resource}");
         var response = await _httpClient.GetAsync(url);
 
         return response;
@@ -88,7 +102,7 @@ public class DmsApiClient : IDisposable
     /// </summary>
     public async Task<HttpResponseMessage> GetResourceWithoutQualifiersAsync(string resource)
     {
-        var url = $"/data/ed-fi/{resource}";
+        var url = BuildPath($"/data/ed-fi/{resource}");
         var response = await _httpClient.GetAsync(url);
 
         return response;
@@ -134,6 +148,49 @@ public class DmsApiClient : IDisposable
 
         var authenticatedResponse = await _httpClient.GetAsync(url);
         return authenticatedResponse;
+    }
+
+    /// <summary>
+    /// Get XSD metadata with tenant prefix
+    /// </summary>
+    public async Task<HttpResponseMessage> GetXsdMetadataWithTenantAsync(string tenant)
+    {
+        var url = $"/{tenant}/metadata/xsd";
+
+        // Use shared HttpClient for unauthenticated requests
+        if (string.IsNullOrEmpty(_accessToken))
+        {
+            var fullUrl = $"{_baseUrl}{url}";
+            var response = await _sharedHttpClient.GetAsync(fullUrl);
+            return response;
+        }
+
+        var authenticatedResponse = await _httpClient.GetAsync(url);
+        return authenticatedResponse;
+    }
+
+    /// <summary>
+    /// GET view-claimsets management endpoint (tenant-aware)
+    /// </summary>
+    public async Task<HttpResponseMessage> GetViewClaimsetsAsync(string? tenant = null)
+    {
+        var url = tenant != null ? $"/management/{tenant}/view-claimsets" : "/management/view-claimsets";
+
+        var fullUrl = $"{_baseUrl}{url}";
+        var response = await _sharedHttpClient.GetAsync(fullUrl);
+        return response;
+    }
+
+    /// <summary>
+    /// POST reload-claimsets management endpoint (tenant-aware)
+    /// </summary>
+    public async Task<HttpResponseMessage> PostReloadClaimsetsAsync(string? tenant = null)
+    {
+        var url = tenant != null ? $"/management/{tenant}/reload-claimsets" : "/management/reload-claimsets";
+
+        var fullUrl = $"{_baseUrl}{url}";
+        var response = await _sharedHttpClient.PostAsync(fullUrl, null);
+        return response;
     }
 
     protected virtual void Dispose(bool disposing)
