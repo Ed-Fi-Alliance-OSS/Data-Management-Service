@@ -21,7 +21,8 @@ Multi-tenancy in DMS provides two layers of data isolation:
 
 ## Step 1: Configure the Environment File
 
-Navigate to the docker-compose directory and create your environment file:
+Navigate to the docker-compose directory and create your environment file (a 
+working `.env.multitenancy` is included in the repo):
 
 ```powershell
 cd eng/docker-compose
@@ -73,55 +74,15 @@ POSTGRES_DB_NAME=edfi_datamanagementservice
 NEED_DATABASE_SETUP=true
 
 # IMPORTANT: Enable schema deployment to ALL tenant instance databases on startup
-# This is required for multi-tenancy - DMS will deploy schema to each instance
-# loaded from the Configuration Service
+# With this setting DMS will deploy schema to each instance
+# loaded from the Configuration Service. Otherwise you must do it yourself.
 DMS_DEPLOY_DATABASE_ON_STARTUP=true
-```
-
-### Identity Provider Settings
-
-```bash
-# Use self-contained identity provider (recommended for local development)
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-
-# Allow registration of new admin clients
-DMS_CONFIG_IDENTITY_ALLOW_REGISTRATION=true
-
-# Encryption key for connection strings (must be 32 characters)
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=secret!_32_chars_xxxxxxxxxxxxxx
 ```
 
 ### Complete Example Environment File
 
-Here's a minimal `.env.multitenancy` configuration:
-
-```bash
-# Multi-Tenancy
-DMS_MULTI_TENANCY=true
-DMS_CONFIG_MULTI_TENANCY=true
-ROUTE_QUALIFIER_SEGMENTS=schoolYear
-
-# PostgreSQL
-POSTGRES_PASSWORD=abcdefgh1!
-POSTGRES_DB_NAME=edfi_datamanagementservice
-POSTGRES_PORT=5435
-
-# DMS Settings
-DMS_HTTP_PORTS=8080
-NEED_DATABASE_SETUP=true
-DMS_DEPLOY_DATABASE_ON_STARTUP=true
-LOG_LEVEL=DEBUG
-
-# Configuration Service
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=8081
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_IDENTITY_ALLOW_REGISTRATION=true
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=secret!_32_chars_xxxxxxxxxxxxxx
-DMS_CONFIG_DEPLOY_DATABASE=true
-
-# Swagger UI
-DMS_SWAGGER_UI_PORT=8082
-```
+A working [`.env.multitenancy`](../eng/docker-compose/.env.multitenancy) configuration
+is included in the repository.
 
 ## Step 2: Deploy DMS
 
@@ -136,6 +97,7 @@ pwsh ./start-local-dms.ps1 `
     -EnableSwaggerUI `
     -IdentityProvider self-contained `
     -AddDmsInstance:$false
+    -r
 ```
 
 The `-AddDmsInstance:$false` flag prevents automatic instance creation since
@@ -347,6 +309,44 @@ Tenant: {tenant-name}
 
 Tenant names must be alphanumeric with hyphens or underscores only (max 256
 characters).
+
+## Step 7: Access Swagger UI with Multi-Tenancy
+
+With multi-tenancy enabled, Swagger UI provides dropdown selectors for both
+tenant and school year selection.
+
+### Navigate to Swagger UI
+
+Open your browser to [http://localhost:8082](http://localhost:8082).
+
+### Using the Tenant and School Year Selectors
+
+When multi-tenancy is configured with multiple tenants and school years, you'll
+see two dropdown selectors at the top of the Swagger UI page:
+
+1. **Tenant** (green background) - Select the tenant organization you want to
+   interact with
+2. **School Year** (gray background) - Select the school year database instance
+
+All API requests made through Swagger UI will automatically include the selected
+tenant and school year in the URL path. For example, selecting "DistrictA" and
+"2024" will route requests to:
+
+```
+http://localhost:8080/DistrictA/2024/data/ed-fi/{resource}
+```
+
+### Authentication in Swagger UI
+
+When using Swagger UI with multi-tenancy:
+
+1. Click the **Authorize** button
+2. Enter the `client_id` and `client_secret` for an application that belongs to
+   the selected tenant
+3. The token request will be routed based on your credential's tenant association
+
+Note: API credentials are tenant-specific. A credential created for "DistrictA"
+will only work when the DistrictA tenant is selected.
 
 ## Troubleshooting
 

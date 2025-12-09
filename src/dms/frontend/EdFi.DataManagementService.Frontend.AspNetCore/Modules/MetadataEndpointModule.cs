@@ -82,6 +82,79 @@ public partial class MetadataEndpointModule(IOptions<AppSettings> appSettings) :
         return new JsonArray { serverObject };
     }
 
+    /// <summary>
+    /// Builds servers array for tenant-agnostic OpenAPI spec with both tenant and school year variables.
+    /// Used by Swagger UI to allow selection of tenant and school year from dropdowns.
+    /// </summary>
+    private static JsonArray GetServersAllTenants(
+        HttpContext httpContext,
+        IDmsInstanceProvider dmsInstanceProvider
+    )
+    {
+        string scheme = httpContext.Request.Scheme;
+        string host = httpContext.Request.Host.ToString();
+        string baseUrl = $"{scheme}://{host}";
+
+        // Get all loaded tenant keys (excludes empty string for single-tenant mode)
+        var tenants = dmsInstanceProvider
+            .GetLoadedTenantKeys()
+            .Where(t => !string.IsNullOrEmpty(t))
+            .OrderBy(t => t)
+            .ToList();
+
+        // Aggregate school years from ALL tenants
+        var allSchoolYears = tenants
+            .SelectMany(tenant => dmsInstanceProvider.GetAll(tenant))
+            .SelectMany(instance => instance.RouteContext)
+            .Where(kvp => kvp.Key.Value.Equals("schoolYear", StringComparison.OrdinalIgnoreCase))
+            .Select(kvp => kvp.Value.Value)
+            .Distinct()
+            .OrderByDescending(year => year)
+            .ToList();
+
+        var variables = new JsonObject();
+        var urlSegments = new List<string> { baseUrl };
+
+        // Add Tenant Selection variable if tenants exist
+        if (tenants.Count > 0)
+        {
+            variables["Tenant Selection"] = new JsonObject
+            {
+                ["default"] = tenants[0],
+                ["description"] = "Tenant Selection",
+                ["enum"] = new JsonArray(tenants.Select(t => JsonValue.Create(t)).ToArray()),
+            };
+            urlSegments.Add("{Tenant Selection}");
+        }
+
+        // Add School Year Selection variable if school years exist
+        if (allSchoolYears.Count > 0)
+        {
+            variables["School Year Selection"] = new JsonObject
+            {
+                ["default"] = allSchoolYears[0],
+                ["description"] = "School Year Selection",
+                ["enum"] = new JsonArray(allSchoolYears.Select(y => JsonValue.Create(y)).ToArray()),
+            };
+            urlSegments.Add("{School Year Selection}");
+        }
+
+        urlSegments.Add("data");
+
+        // Build URL template (e.g., "http://localhost:8080/{Tenant Selection}/{School Year Selection}/data")
+        string urlTemplate = string.Join("/", urlSegments);
+
+        var serverObject = new JsonObject { ["url"] = urlTemplate };
+
+        // Only add variables if we have any
+        if (variables.Count > 0)
+        {
+            serverObject["variables"] = variables;
+        }
+
+        return [serverObject];
+    }
+
     private sealed record SpecificationSection(string name, string prefix);
 
     [GeneratedRegex(@"specifications\/(?<section>[^-]+)-spec.json?")]
@@ -130,6 +203,20 @@ public partial class MetadataEndpointModule(IOptions<AppSettings> appSettings) :
             GetDescriptorOpenApiSpec
         );
         endpoints.MapGet($"{tenantPrefix}/metadata/specifications/{{section}}-spec.json", GetSectionMetadata);
+
+        // Tenant-agnostic spec endpoints for Swagger UI when multi-tenancy is enabled.
+        // These return specs with both Tenant and School Year selection variables.
+        if (appSettings.Value.MultiTenancy)
+        {
+            endpoints.MapGet(
+                "/metadata/specifications/resources-spec.json",
+                GetResourceOpenApiSpecAllTenants
+            );
+            endpoints.MapGet(
+                "/metadata/specifications/descriptors-spec.json",
+                GetDescriptorOpenApiSpecAllTenants
+            );
+        }
     }
 
     internal async Task GetMetadata(HttpContext httpContext)
@@ -208,6 +295,36 @@ public partial class MetadataEndpointModule(IOptions<AppSettings> appSettings) :
     )
     {
         JsonArray servers = GetServers(httpContext, dmsInstanceProvider);
+        JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+
+    /// <summary>
+    /// Returns OpenAPI spec with tenant and school year selection variables for all tenants.
+    /// Used by Swagger UI when multi-tenancy is enabled.
+    /// </summary>
+    internal static async Task GetResourceOpenApiSpecAllTenants(
+        HttpContext httpContext,
+        IApiService apiService,
+        IDmsInstanceProvider dmsInstanceProvider
+    )
+    {
+        JsonArray servers = GetServersAllTenants(httpContext, dmsInstanceProvider);
+        JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+
+    /// <summary>
+    /// Returns OpenAPI spec with tenant and school year selection variables for all tenants.
+    /// Used by Swagger UI when multi-tenancy is enabled.
+    /// </summary>
+    internal static async Task GetDescriptorOpenApiSpecAllTenants(
+        HttpContext httpContext,
+        IApiService apiService,
+        IDmsInstanceProvider dmsInstanceProvider
+    )
+    {
+        JsonArray servers = GetServersAllTenants(httpContext, dmsInstanceProvider);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
