@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
 
 namespace EdFi.DmsConfigurationService.Backend.Repositories;
@@ -16,6 +17,7 @@ public interface IDmsInstanceRepository
     Task<DmsInstanceUpdateResult> UpdateDmsInstance(DmsInstanceUpdateCommand command);
     Task<DmsInstanceDeleteResult> DeleteDmsInstance(long id);
     Task<DmsInstanceIdsExistResult> GetExistingDmsInstanceIds(long[] ids);
+    Task<ApplicationByDmsInstanceQueryResult> QueryApplicationByDmsInstance(long dmsInstanceId, PagingQuery query);
 }
 
 public record DmsInstanceInsertResult
@@ -68,4 +70,13 @@ public record DmsInstanceIdsExistResult
     public record Success(HashSet<long> ExistingIds) : DmsInstanceIdsExistResult();
 
     public record FailureUnknown(string FailureMessage) : DmsInstanceIdsExistResult();
+}
+
+public record ApplicationByDmsInstanceQueryResult
+{
+    public record Success(IEnumerable<ApplicationResponse> ApplicationResponse) : ApplicationByDmsInstanceQueryResult();
+
+    public record FailureNotExists() : ApplicationByDmsInstanceQueryResult();
+
+    public record FailureUnknown(string FailureMessage) : ApplicationByDmsInstanceQueryResult();
 }

@@ -7,7 +7,9 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
+using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -459,6 +461,173 @@ public class DmsInstanceTests : DatabaseTest
             result.Should().BeOfType<DmsInstanceIdsExistResult.Success>();
             var existingIds = ((DmsInstanceIdsExistResult.Success)result).ExistingIds;
             existingIds.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    public class Given_dms_instance_is_assigned_to_applications : DmsInstanceTests
+    {
+        private long _dmsInstanceId1;
+        private long _dmsInstanceId2;
+        private long _unassignedInstanceId;
+        private long _vendorId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            DmsInstanceInsertCommand instance1 = new()
+            {
+                InstanceType = "Production",
+                InstanceName = "Test Instance",
+                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
+            };
+
+            var instance1Result = await _repository.InsertDmsInstance(instance1);
+            instance1Result.Should().BeOfType<DmsInstanceInsertResult.Success>();
+            _dmsInstanceId1 = (instance1Result as DmsInstanceInsertResult.Success)!.Id;
+            _dmsInstanceId1.Should().BeGreaterThan(0);
+
+            DmsInstanceInsertCommand instance2 = new()
+            {
+                InstanceType = "Staging",
+                InstanceName = "Test Instance",
+                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
+            };
+
+            var instance2Result = await _repository.InsertDmsInstance(instance2);
+            instance2Result.Should().BeOfType<DmsInstanceInsertResult.Success>();
+            _dmsInstanceId2 = (instance2Result as DmsInstanceInsertResult.Success)!.Id;
+            _dmsInstanceId2.Should().BeGreaterThan(0);
+
+            DmsInstanceInsertCommand unassignedInstance = new()
+            {
+                InstanceType = "Unassigned",
+                InstanceName = "Test Instance",
+                ConnectionString = "Server=localhost;Database=TestDb;User Id=user;Password=pass;",
+            };
+
+            var unassignedInstanceResult = await _repository.InsertDmsInstance(unassignedInstance);
+            unassignedInstanceResult.Should().BeOfType<DmsInstanceInsertResult.Success>();
+            _unassignedInstanceId = (unassignedInstanceResult as DmsInstanceInsertResult.Success)!.Id;
+            _unassignedInstanceId.Should().BeGreaterThan(0);
+
+            var vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+
+            VendorInsertCommand vendor = new()
+            {
+                Company = "Fake Company",
+                ContactEmailAddress = "test@test.com",
+                ContactName = "Fake Name",
+                NamespacePrefixes = "FakePrefix1,FakePrefix2",
+            };
+
+            var vendorResult = await vendorRepository.InsertVendor(vendor);
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+            _vendorId = (vendorResult as VendorInsertResult.Success)!.Id;
+            _vendorId.Should().BeGreaterThan(0);
+
+            var applicationRepository = new ApplicationRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ApplicationRepository>.Instance,
+                new TestAuditContext()
+            );
+
+            ApplicationInsertCommand application = new()
+            {
+                ApplicationName = "Test Application",
+                VendorId = _vendorId,
+                ClaimSetName = "Test Claim set",
+                EducationOrganizationIds = [1, 255911001, 255911002],
+                DmsInstanceIds = [_dmsInstanceId1, _dmsInstanceId2]
+            };
+
+            var applicationResult = await applicationRepository.InsertApplication(
+                application,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            applicationResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            var applicationId = (applicationResult as ApplicationInsertResult.Success)!.Id;
+            applicationId.Should().BeGreaterThan(0);
+
+            ApplicationInsertCommand application2 = new()
+            {
+                ApplicationName = "Test Application 2",
+                VendorId = _vendorId,
+                ClaimSetName = "Test Claim set 2",
+                EducationOrganizationIds = [2, 255911002, 255911003],
+                DmsInstanceIds = [_dmsInstanceId1]
+            };
+
+            var application2Result = await applicationRepository.InsertApplication(
+                application2,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            application2Result.Should().BeOfType<ApplicationInsertResult.Success>();
+            var application2Id = (application2Result as ApplicationInsertResult.Success)!.Id;
+            application2Id.Should().BeGreaterThan(0);
+        }
+
+        [Test]
+        public async Task It_should_retrieve_applications_by_dms_instance()
+        {
+            var queryResult = await _repository.QueryApplicationByDmsInstance(_dmsInstanceId1, new PagingQuery() { Limit = 25, Offset = 0 });
+            queryResult.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
+            ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.Count().Should().Be(2);
+
+            var application1 = ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.ToList()[0];
+            application1.ApplicationName.Should().Be("Test Application");
+            application1.VendorId.Should().Be(_vendorId);
+            application1.ClaimSetName.Should().Be("Test Claim set");
+            application1.EducationOrganizationIds.Should().BeEquivalentTo([1, 255911001, 255911002]);
+            application1.DmsInstanceIds.Should().BeEquivalentTo([_dmsInstanceId1, _dmsInstanceId2]);
+            application1.CreatedAt.Should().BeAfter(new DateTime());
+            application1.CreatedBy.Should().NotBeEmpty();
+
+            var application2 = ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.ToList()[1];
+            application2.ApplicationName.Should().Be("Test Application 2");
+            application2.VendorId.Should().Be(_vendorId);
+            application2.ClaimSetName.Should().Be("Test Claim set 2");
+            application2.EducationOrganizationIds.Should().BeEquivalentTo([2, 255911002, 255911003]);
+            application2.DmsInstanceIds.Should().BeEquivalentTo([_dmsInstanceId1]);
+            application2.CreatedAt.Should().BeAfter(new DateTime());
+            application2.CreatedBy.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public async Task It_should_retrieve_paged_applications_by_dms_instance()
+        {
+            var queryResult = await _repository.QueryApplicationByDmsInstance(_dmsInstanceId1, new PagingQuery() { Limit = 25, Offset = 1 });
+            queryResult.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
+            ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.Count().Should().Be(1);
+
+            var application = ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.ToList()[0];
+            application.ApplicationName.Should().Be("Test Application 2");
+            application.VendorId.Should().Be(_vendorId);
+            application.ClaimSetName.Should().Be("Test Claim set 2");
+            application.EducationOrganizationIds.Should().BeEquivalentTo([2, 255911002, 255911003]);
+            application.DmsInstanceIds.Should().BeEquivalentTo([_dmsInstanceId1]);
+            application.CreatedAt.Should().BeAfter(new DateTime());
+            application.CreatedBy.Should().NotBeEmpty();
+        }
+
+        [Test]
+        public async Task It_should_return_not_exists_failure()
+        {
+            var queryResult = await _repository.QueryApplicationByDmsInstance(0, new PagingQuery() { Limit = 25, Offset = 1 });
+            queryResult.Should().BeOfType<ApplicationByDmsInstanceQueryResult.FailureNotExists>();
+        }
+
+        [Test]
+        public async Task It_should_return_empty_array()
+        {
+            var queryResult = await _repository.QueryApplicationByDmsInstance(_unassignedInstanceId, new PagingQuery() { Limit = 25, Offset = 1 });
+            queryResult.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
+            ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.Count().Should().Be(0);
         }
     }
 }

@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
@@ -137,6 +138,23 @@ public class DmsInstanceModuleTests
 
             A.CallTo(() => _dmsInstanceRepository.DeleteDmsInstance(A<long>._))
                 .Returns(new DmsInstanceDeleteResult.Success());
+
+            A.CallTo(() => _dmsInstanceRepository.QueryApplicationByDmsInstance(A<long>._, A<PagingQuery>._))
+                .Returns(
+                    new ApplicationByDmsInstanceQueryResult.Success(
+                        [
+                            new ApplicationResponse
+                            {
+                                Id = 1,
+                                ApplicationName = "Test Application 1",
+                                VendorId = 1,
+                                ClaimSetName = "TestClaimSet1",
+                                EducationOrganizationIds = [1, 2, 3],
+                                DmsInstanceIds = [1],
+                            }
+                        ]
+                    )
+                );
         }
 
         [Test]
@@ -179,12 +197,14 @@ public class DmsInstanceModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/dmsInstances/1");
+            var queryApplicationsByDmsInstanceResponse = await client.GetAsync("/v2/dmsInstances/1/applications/?offset=0&limit=25");
 
             insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
             queryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            queryApplicationsByDmsInstanceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         }
 
         [Test]
@@ -327,6 +347,9 @@ public class DmsInstanceModuleTests
 
             A.CallTo(() => _dmsInstanceRepository.DeleteDmsInstance(A<long>._))
                 .Returns(new DmsInstanceDeleteResult.FailureNotExists());
+
+            A.CallTo(() => _dmsInstanceRepository.QueryApplicationByDmsInstance(A<long>._, A<PagingQuery>._))
+                .Returns(new ApplicationByDmsInstanceQueryResult.FailureNotExists());
         }
 
         [Test]
@@ -352,10 +375,12 @@ public class DmsInstanceModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/dmsInstances/999");
+            var queryApplicationsByDmsInstanceResponse = await client.GetAsync("/v2/dmsInstances/0/applications/?offset=0&limit=25");
 
             getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            queryApplicationsByDmsInstanceResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
     }
 }

@@ -24,6 +24,7 @@ public class DmsInstanceModule : IEndpointModule
         endpoints.MapLimitedAccess($"/v2/dmsInstances/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v2/dmsInstances/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v2/dmsInstances/{{id}}", Delete);
+        endpoints.MapSecuredGet($"/v2/dmsInstances/{{id}}/applications/", GetApplicationsByDmsInstance);
     }
 
     private static async Task<IResult> InsertDmsInstance(
@@ -131,6 +132,28 @@ public class DmsInstanceModule : IEndpointModule
         {
             DmsInstanceDeleteResult.Success => Results.NoContent(),
             DmsInstanceDeleteResult.FailureNotExists => Results.Json(
+                FailureResponse.ForNotFound(
+                    $"DmsInstance {id} not found. It may have been recently deleted.",
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
+    }
+
+    private static async Task<IResult> GetApplicationsByDmsInstance(
+        long id,
+        IDmsInstanceRepository repository,
+        [AsParameters] PagingQuery query,
+        HttpContext httpContext
+    )
+    {
+        ApplicationByDmsInstanceQueryResult getResult = await repository.QueryApplicationByDmsInstance(id, query);
+        return getResult switch
+        {
+            ApplicationByDmsInstanceQueryResult.Success success => Results.Ok(success.ApplicationResponse),
+            ApplicationByDmsInstanceQueryResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound(
                     $"DmsInstance {id} not found. It may have been recently deleted.",
                     httpContext.TraceIdentifier
