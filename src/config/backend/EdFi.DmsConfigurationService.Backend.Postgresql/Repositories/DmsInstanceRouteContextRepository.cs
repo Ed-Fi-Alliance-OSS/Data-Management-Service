@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
@@ -17,9 +18,14 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 public class DmsInstanceRouteContextRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<DmsInstanceRouteContextRepository> logger,
-    IAuditContext auditContext
+    IAuditContext auditContext,
+    ITenantContextProvider tenantContextProvider
 ) : IDmsInstanceRouteContextRepository
 {
+    private TenantContext TenantContext => tenantContextProvider.Context;
+
+    private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
+
     public async Task<DmsInstanceRouteContextInsertResult> InsertDmsInstanceRouteContext(
         DmsInstanceRouteContextInsertCommand command
     )
@@ -29,8 +35,8 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             string sql = """
-                INSERT INTO dmscs.DmsInstanceRouteContext (InstanceId, ContextKey, ContextValue, CreatedBy)
-                VALUES (@InstanceId, @ContextKey, @ContextValue, @CreatedBy)
+                INSERT INTO dmscs.DmsInstanceRouteContext (InstanceId, ContextKey, ContextValue, CreatedBy, TenantId)
+                VALUES (@InstanceId, @ContextKey, @ContextValue, @CreatedBy, @TenantId)
                 RETURNING Id;
                 """;
 
@@ -42,6 +48,7 @@ public class DmsInstanceRouteContextRepository(
                     command.ContextKey,
                     command.ContextValue,
                     CreatedBy = auditContext.GetCurrentUser(),
+                    TenantId,
                 }
             );
 
@@ -80,16 +87,22 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = """
+            var sql = $"""
                 SELECT Id, InstanceId, ContextKey, ContextValue,
                        CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceRouteContext
+                WHERE {TenantContext.TenantWhereClause()}
                 ORDER BY Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
             var instanceRouteContexts = await connection.QueryAsync<DmsInstanceRouteContextResponse>(
                 sql,
-                query
+                new
+                {
+                    query.Limit,
+                    query.Offset,
+                    TenantId,
+                }
             );
 
             return new DmsInstanceRouteContextQueryResult.Success(instanceRouteContexts);
@@ -107,17 +120,17 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = """
+            var sql = $"""
                 SELECT Id, InstanceId, ContextKey, ContextValue,
                        CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.DmsInstanceRouteContext
-                WHERE Id = @Id;
+                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
 
             var instanceRouteContext =
                 await connection.QuerySingleOrDefaultAsync<DmsInstanceRouteContextResponse>(
                     sql,
-                    new { Id = id }
+                    new { Id = id, TenantId }
                 );
 
             return instanceRouteContext != null
@@ -139,11 +152,11 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = """
+            var sql = $"""
                 UPDATE dmscs.DmsInstanceRouteContext
                 SET InstanceId = @InstanceId, ContextKey = @ContextKey, ContextValue = @ContextValue,
                     LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
-                WHERE Id = @Id;
+                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
 
             int affectedRows = await connection.ExecuteAsync(
@@ -156,6 +169,7 @@ public class DmsInstanceRouteContextRepository(
                     command.ContextValue,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
+                    TenantId,
                 }
             );
 
@@ -199,11 +213,10 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = """
-                DELETE FROM dmscs.DmsInstanceRouteContext WHERE Id = @Id;
-                """;
+            var sql =
+                $"DELETE FROM dmscs.DmsInstanceRouteContext WHERE Id = @Id AND {TenantContext.TenantWhereClause()};";
 
-            int affectedRows = await connection.ExecuteAsync(sql, new { Id = id });
+            int affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
             return affectedRows > 0
                 ? new InstanceRouteContextDeleteResult.Success()
                 : new InstanceRouteContextDeleteResult.FailureNotExists();

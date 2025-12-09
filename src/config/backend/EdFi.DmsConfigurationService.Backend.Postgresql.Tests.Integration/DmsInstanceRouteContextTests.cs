@@ -19,7 +19,8 @@ public class DmsInstanceRouteContextTests : DatabaseTest
     private readonly DmsInstanceRouteContextRepository _repository = new DmsInstanceRouteContextRepository(
         Configuration.DatabaseOptions,
         NullLogger<DmsInstanceRouteContextRepository>.Instance,
-        new TestAuditContext()
+        new TestAuditContext(),
+        new TenantContextProvider()
     );
 
     [TestFixture]
