@@ -41,6 +41,7 @@ public abstract class DatabaseTestBase
                     new("dms", "document"),
                     new("dms", "alias"),
                     new("dms", "reference"),
+                    new("dms", "profile"),
                     new("dms", "educationorganizationhierarchy"),
                     new("dms", "educationorganizationhierarchytermslookup"),
                     new("dms", "studentschoolassociationauthorization"),
