@@ -34,13 +34,18 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = """
-                INSERT INTO dmscs.DmsInstanceRouteContext (InstanceId, ContextKey, ContextValue, CreatedBy, TenantId)
-                VALUES (@InstanceId, @ContextKey, @ContextValue, @CreatedBy, @TenantId)
+            // Insert only if the instance belongs to the current tenant
+            var sql = $"""
+                INSERT INTO dmscs.DmsInstanceRouteContext (InstanceId, ContextKey, ContextValue, CreatedBy)
+                SELECT @InstanceId, @ContextKey, @ContextValue, @CreatedBy
+                WHERE EXISTS (
+                    SELECT 1 FROM dmscs.DmsInstance
+                    WHERE Id = @InstanceId AND {TenantContext.TenantWhereClause()}
+                )
                 RETURNING Id;
                 """;
 
-            long id = await connection.ExecuteScalarAsync<long>(
+            var id = await connection.ExecuteScalarAsync<long?>(
                 sql,
                 new
                 {
@@ -52,13 +57,12 @@ public class DmsInstanceRouteContextRepository(
                 }
             );
 
-            return new DmsInstanceRouteContextInsertResult.Success(id);
-        }
-        catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("fk_dmsinstanceroutecontext_instance"))
-        {
-            logger.LogWarning(ex, "Instance not found");
-            return new DmsInstanceRouteContextInsertResult.FailureInstanceNotFound();
+            if (id == null)
+            {
+                return new DmsInstanceRouteContextInsertResult.FailureInstanceNotFound();
+            }
+
+            return new DmsInstanceRouteContextInsertResult.Success(id.Value);
         }
         catch (PostgresException ex)
             when (ex.SqlState == "23505" && ex.Message.Contains("idx_dms_instance_routecontext_unique"))
@@ -88,11 +92,12 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             var sql = $"""
-                SELECT Id, InstanceId, ContextKey, ContextValue,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
-                FROM dmscs.DmsInstanceRouteContext
-                WHERE {TenantContext.TenantWhereClause()}
-                ORDER BY Id
+                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue,
+                       rc.CreatedAt, rc.CreatedBy, rc.LastModifiedAt, rc.ModifiedBy
+                FROM dmscs.DmsInstanceRouteContext rc
+                JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
+                WHERE {TenantContext.TenantWhereClause("i")}
+                ORDER BY rc.Id
                 LIMIT @Limit OFFSET @Offset;
                 """;
             var instanceRouteContexts = await connection.QueryAsync<DmsInstanceRouteContextResponse>(
@@ -121,10 +126,11 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             var sql = $"""
-                SELECT Id, InstanceId, ContextKey, ContextValue,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
-                FROM dmscs.DmsInstanceRouteContext
-                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue,
+                       rc.CreatedAt, rc.CreatedBy, rc.LastModifiedAt, rc.ModifiedBy
+                FROM dmscs.DmsInstanceRouteContext rc
+                JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
+                WHERE rc.Id = @Id AND {TenantContext.TenantWhereClause("i")};
                 """;
 
             var instanceRouteContext =
@@ -152,11 +158,19 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
+            // Update only if both the route context and target instance belong to the current tenant
             var sql = $"""
-                UPDATE dmscs.DmsInstanceRouteContext
+                UPDATE dmscs.DmsInstanceRouteContext rc
                 SET InstanceId = @InstanceId, ContextKey = @ContextKey, ContextValue = @ContextValue,
                     LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
-                WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
+                FROM dmscs.DmsInstance i
+                WHERE rc.Id = @Id
+                  AND rc.InstanceId = i.Id
+                  AND {TenantContext.TenantWhereClause("i")}
+                  AND EXISTS (
+                      SELECT 1 FROM dmscs.DmsInstance
+                      WHERE Id = @InstanceId AND {TenantContext.TenantWhereClause()}
+                  );
                 """;
 
             int affectedRows = await connection.ExecuteAsync(
@@ -175,16 +189,17 @@ public class DmsInstanceRouteContextRepository(
 
             if (affectedRows == 0)
             {
-                return new DmsInstanceRouteContextUpdateResult.FailureNotExists();
+                // Determine why: route context doesn't exist/not owned, or target instance not owned
+                var routeContextExists = await RouteContextExistsForTenant(connection, command.Id);
+                if (!routeContextExists)
+                {
+                    return new DmsInstanceRouteContextUpdateResult.FailureNotExists();
+                }
+
+                return new DmsInstanceRouteContextUpdateResult.FailureInstanceNotFound();
             }
 
             return new DmsInstanceRouteContextUpdateResult.Success();
-        }
-        catch (PostgresException ex)
-            when (ex.SqlState == "23503" && ex.Message.Contains("fk_dmsinstanceroutecontext_instance"))
-        {
-            logger.LogWarning(ex, "Update instance route context failure: Instance not found");
-            return new DmsInstanceRouteContextUpdateResult.FailureInstanceNotFound();
         }
         catch (PostgresException ex)
             when (ex.SqlState == "23505" && ex.Message.Contains("idx_dms_instance_routecontext_unique"))
@@ -213,8 +228,13 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
-            var sql =
-                $"DELETE FROM dmscs.DmsInstanceRouteContext WHERE Id = @Id AND {TenantContext.TenantWhereClause()};";
+            var sql = $"""
+                DELETE FROM dmscs.DmsInstanceRouteContext
+                WHERE Id = @Id
+                  AND InstanceId IN (
+                      SELECT Id FROM dmscs.DmsInstance WHERE {TenantContext.TenantWhereClause()}
+                  );
+                """;
 
             int affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
             return affectedRows > 0
@@ -236,16 +256,17 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = """
-                SELECT Id, InstanceId, ContextKey, ContextValue,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
-                FROM dmscs.DmsInstanceRouteContext
-                WHERE InstanceId = @InstanceId
-                ORDER BY ContextKey;
+            var sql = $"""
+                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue,
+                       rc.CreatedAt, rc.CreatedBy, rc.LastModifiedAt, rc.ModifiedBy
+                FROM dmscs.DmsInstanceRouteContext rc
+                JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
+                WHERE rc.InstanceId = @InstanceId AND {TenantContext.TenantWhereClause("i")}
+                ORDER BY rc.ContextKey;
                 """;
             var instanceRouteContexts = await connection.QueryAsync<DmsInstanceRouteContextResponse>(
                 sql,
-                new { InstanceId = instanceId }
+                new { InstanceId = instanceId, TenantId }
             );
 
             return new InstanceRouteContextQueryByInstanceResult.Success(instanceRouteContexts);
@@ -265,21 +286,22 @@ public class DmsInstanceRouteContextRepository(
         await connection.OpenAsync();
         try
         {
-            if (instanceIds == null || !instanceIds.Any())
+            if (instanceIds == null || instanceIds.Count == 0)
             {
                 return new InstanceRouteContextQueryByInstanceIdsResult.Success([]);
             }
 
-            string sql = """
-                SELECT Id, InstanceId, ContextKey, ContextValue,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
-                FROM dmscs.DmsInstanceRouteContext
-                WHERE InstanceId = ANY(@InstanceIds)
-                ORDER BY InstanceId, ContextKey;
+            var sql = $"""
+                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue,
+                       rc.CreatedAt, rc.CreatedBy, rc.LastModifiedAt, rc.ModifiedBy
+                FROM dmscs.DmsInstanceRouteContext rc
+                JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
+                WHERE rc.InstanceId = ANY(@InstanceIds) AND {TenantContext.TenantWhereClause("i")}
+                ORDER BY rc.InstanceId, rc.ContextKey;
                 """;
             var instanceRouteContexts = await connection.QueryAsync<DmsInstanceRouteContextResponse>(
                 sql,
-                new { InstanceIds = instanceIds }
+                new { InstanceIds = instanceIds, TenantId }
             );
 
             return new InstanceRouteContextQueryByInstanceIdsResult.Success(instanceRouteContexts);
@@ -289,5 +311,16 @@ public class DmsInstanceRouteContextRepository(
             logger.LogError(ex, "Get instance route contexts by instance IDs failure");
             return new InstanceRouteContextQueryByInstanceIdsResult.FailureUnknown(ex.Message);
         }
+    }
+
+    private async Task<bool> RouteContextExistsForTenant(NpgsqlConnection connection, long id)
+    {
+        var sql = $"""
+            SELECT COUNT(1) FROM dmscs.DmsInstanceRouteContext rc
+            JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
+            WHERE rc.Id = @Id AND {TenantContext.TenantWhereClause("i")};
+            """;
+
+        return await connection.ExecuteScalarAsync<int>(sql, new { Id = id, TenantId }) > 0;
     }
 }

@@ -16,7 +16,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
 public class DmsInstanceRouteContextTests : DatabaseTest
 {
-    private readonly DmsInstanceRouteContextRepository _repository = new DmsInstanceRouteContextRepository(
+    private readonly DmsInstanceRouteContextRepository _repository = new(
         Configuration.DatabaseOptions,
         NullLogger<DmsInstanceRouteContextRepository>.Instance,
         new TestAuditContext(),
@@ -33,7 +33,6 @@ public class DmsInstanceRouteContextTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            // Insert a DmsInstance and use its ID
             var derivativeRepository = new DmsInstanceDerivativeRepository(
                 Configuration.DatabaseOptions,
                 NullLogger<DmsInstanceDerivativeRepository>.Instance,
