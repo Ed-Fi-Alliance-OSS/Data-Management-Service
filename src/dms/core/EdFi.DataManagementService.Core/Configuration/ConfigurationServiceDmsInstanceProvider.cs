@@ -129,6 +129,9 @@ public class ConfigurationServiceDmsInstanceProvider(
     private static string GetTenantKey(string? tenant) => tenant ?? string.Empty;
 
     /// <inheritdoc />
+    public bool TenantExists(string tenant) => _instancesByTenant.ContainsKey(tenant);
+
+    /// <inheritdoc />
     public async Task<IList<string>> LoadTenants()
     {
         logger.LogInformation(

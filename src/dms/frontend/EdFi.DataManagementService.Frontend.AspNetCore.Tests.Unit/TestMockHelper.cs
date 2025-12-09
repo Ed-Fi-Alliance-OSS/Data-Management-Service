@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using FakeItEasy;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -35,7 +36,13 @@ public static class TestMockHelper
         A.CallTo(() => dmsInstanceProvider.GetById(A<long>.Ignored, A<string?>.Ignored))
             .Returns(mockInstance);
         A.CallTo(() => dmsInstanceProvider.IsLoaded(A<string?>.Ignored)).Returns(true);
+        A.CallTo(() => dmsInstanceProvider.TenantExists(A<string>.That.IsNotNull())).Returns(true);
         services.AddTransient(x => dmsInstanceProvider);
+
+        // Mock ITenantValidator
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync(A<string>.That.IsNotNull())).Returns(true);
+        services.AddTransient(x => tenantValidator);
 
         // Mock IConnectionStringProvider
         var connectionStringProvider = A.Fake<IConnectionStringProvider>();

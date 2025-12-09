@@ -45,4 +45,11 @@ public interface IDmsInstanceProvider
     /// </summary>
     /// <returns>A list of tenant names</returns>
     Task<IList<string>> LoadTenants();
+
+    /// <summary>
+    /// Checks if a tenant has been loaded into the cache.
+    /// </summary>
+    /// <param name="tenant">The tenant identifier to check</param>
+    /// <returns>True if the tenant exists in the cache, otherwise false</returns>
+    bool TenantExists(string tenant);
 }

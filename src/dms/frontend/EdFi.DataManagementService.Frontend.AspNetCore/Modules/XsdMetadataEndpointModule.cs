@@ -36,8 +36,19 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
         );
     }
 
-    internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
+    internal static async Task GetSections(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> options,
+        ITenantValidator tenantValidator
+    )
     {
+        // Validate tenant if multi-tenancy is enabled
+        if (!await ValidateTenantAsync(httpContext, options, tenantValidator))
+        {
+            return;
+        }
+
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<XsdMetaDataSectionInfo> sections = [];
 
@@ -60,9 +71,17 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
     internal async Task GetXsdMetadataFiles(
         HttpContext httpContext,
         IContentProvider contentProvider,
-        IApiService apiService
+        IApiService apiService,
+        IOptions<AppSettings> options,
+        ITenantValidator tenantValidator
     )
     {
+        // Validate tenant if multi-tenancy is enabled
+        if (!await ValidateTenantAsync(httpContext, options, tenantValidator))
+        {
+            return;
+        }
+
         var request = httpContext.Request;
         Match match = PathExpressionRegex().Match(request.Path);
         if (!match.Success)
@@ -102,8 +121,19 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
         }
     }
 
-    internal IResult GetXsdMetadataFileContent(HttpContext httpContext, IContentProvider contentProvider)
+    internal async Task<IResult> GetXsdMetadataFileContent(
+        HttpContext httpContext,
+        IContentProvider contentProvider,
+        IOptions<AppSettings> options,
+        ITenantValidator tenantValidator
+    )
     {
+        // Validate tenant if multi-tenancy is enabled
+        if (!await ValidateTenantAsync(httpContext, options, tenantValidator))
+        {
+            return Results.Empty;
+        }
+
         var request = httpContext.Request;
         Match match = FilePathExpressionRegex().Match(request.Path);
         if (!match.Success)
@@ -123,6 +153,66 @@ public partial class XsdMetadataEndpointModule(IOptions<AppSettings> appSettings
         {
             return Results.NotFound(ErrorResourcePath);
         }
+    }
+
+    /// <summary>
+    /// Validates the tenant if multi-tenancy is enabled.
+    /// Returns true if validation passes or multi-tenancy is disabled.
+    /// Returns false and writes 404 response if tenant is invalid.
+    /// </summary>
+    private static async Task<bool> ValidateTenantAsync(
+        HttpContext httpContext,
+        IOptions<AppSettings> options,
+        ITenantValidator tenantValidator
+    )
+    {
+        if (!options.Value.MultiTenancy)
+        {
+            return true;
+        }
+
+        string? tenant = ExtractTenantFromRoute(httpContext);
+        if (tenant == null)
+        {
+            // No tenant in route - this shouldn't happen with multi-tenancy enabled
+            // but we'll let it pass since the route wouldn't match without tenant
+            return true;
+        }
+
+        bool isValid = await tenantValidator.ValidateTenantAsync(tenant);
+        if (!isValid)
+        {
+            httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            await httpContext.Response.WriteAsSerializedJsonAsync(
+                new
+                {
+                    detail = "The specified resource could not be found.",
+                    type = "urn:ed-fi:api:not-found",
+                    title = "Not Found",
+                    status = 404,
+                }
+            );
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Extracts the tenant identifier from the route values.
+    /// Returns null if tenant is not present in the route.
+    /// </summary>
+    private static string? ExtractTenantFromRoute(HttpContext httpContext)
+    {
+        if (
+            httpContext.Request.RouteValues.TryGetValue("tenant", out object? value)
+            && value is string tenant
+            && !string.IsNullOrWhiteSpace(tenant)
+        )
+        {
+            return tenant;
+        }
+        return null;
     }
 }
 

@@ -133,4 +133,174 @@ public class DiscoveryModuleTests
         apiDetails?["dataModels"]?.AsArray().Count.Should().Be(1);
         apiDetails?["dataModels"]?[0]?["name"]?.GetValue<string>().Should().Be("Ed-Fi");
     }
+
+    [Test]
+    public async Task When_MultiTenancy_Enabled_And_Valid_Tenant_Provided_Returns_Ok_Response()
+    {
+        // Arrange
+        var versionProvider = A.Fake<IVersionProvider>();
+        A.CallTo(() => versionProvider.Version).Returns("1.0");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+
+        IDataModelInfo expectedDataModelInfo = (
+            new
+            {
+                ProjectName = "Ed-Fi",
+                ProjectVersion = "5.0.0",
+                Description = "Ed-Fi data standard 5.0.0",
+            }
+        ).ActLike<IDataModelInfo>();
+        var dataModelInfoProvider = A.Fake<IDataModelInfoProvider>();
+        A.CallTo(() => dataModelInfoProvider.GetDataModelInfo()).Returns([expectedDataModelInfo]);
+
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync("valid-tenant")).Returns(true);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient((x) => versionProvider);
+                    collection.AddTransient((x) => dataModelInfoProvider);
+                    collection.AddTransient((x) => tenantValidator);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/valid-tenant");
+        var content = await response.Content.ReadAsStringAsync();
+        var apiDetails = JsonNode.Parse(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        apiDetails.Should().NotBeNull();
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(5);
+        // Verify URLs include tenant
+        apiDetails?["urls"]?["dataManagementApi"]?.GetValue<string>().Should().Contain("valid-tenant");
+    }
+
+    [Test]
+    public async Task When_MultiTenancy_Enabled_And_Invalid_Tenant_Provided_Returns_NotFound()
+    {
+        // Arrange
+        var versionProvider = A.Fake<IVersionProvider>();
+        A.CallTo(() => versionProvider.Version).Returns("1.0");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+
+        IDataModelInfo expectedDataModelInfo = (
+            new
+            {
+                ProjectName = "Ed-Fi",
+                ProjectVersion = "5.0.0",
+                Description = "Ed-Fi data standard 5.0.0",
+            }
+        ).ActLike<IDataModelInfo>();
+        var dataModelInfoProvider = A.Fake<IDataModelInfoProvider>();
+        A.CallTo(() => dataModelInfoProvider.GetDataModelInfo()).Returns([expectedDataModelInfo]);
+
+        var tenantValidator = A.Fake<ITenantValidator>();
+        A.CallTo(() => tenantValidator.ValidateTenantAsync("invalid-tenant")).Returns(false);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient((x) => versionProvider);
+                    collection.AddTransient((x) => dataModelInfoProvider);
+                    collection.AddTransient((x) => tenantValidator);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/invalid-tenant");
+        var content = await response.Content.ReadAsStringAsync();
+        var errorDetails = JsonNode.Parse(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        errorDetails?["title"]?.GetValue<string>().Should().Be("Not Found");
+        errorDetails?["status"]?.GetValue<int>().Should().Be(404);
+    }
+
+    [Test]
+    public async Task When_MultiTenancy_Enabled_And_Root_Url_Returns_Placeholders()
+    {
+        // Arrange
+        var versionProvider = A.Fake<IVersionProvider>();
+        A.CallTo(() => versionProvider.Version).Returns("1.0");
+        A.CallTo(() => versionProvider.ApplicationName).Returns("DMS");
+        A.CallTo(() => versionProvider.InformationalVersion).Returns("Release Candidate 1");
+
+        IDataModelInfo expectedDataModelInfo = (
+            new
+            {
+                ProjectName = "Ed-Fi",
+                ProjectVersion = "5.0.0",
+                Description = "Ed-Fi data standard 5.0.0",
+            }
+        ).ActLike<IDataModelInfo>();
+        var dataModelInfoProvider = A.Fake<IDataModelInfoProvider>();
+        A.CallTo(() => dataModelInfoProvider.GetDataModelInfo()).Returns([expectedDataModelInfo]);
+
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (context, configuration) =>
+                {
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?> { ["AppSettings:MultiTenancy"] = "true" }
+                    );
+                }
+            );
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient((x) => versionProvider);
+                    collection.AddTransient((x) => dataModelInfoProvider);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync("/");
+        var content = await response.Content.ReadAsStringAsync();
+        var apiDetails = JsonNode.Parse(content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        apiDetails.Should().NotBeNull();
+        // Verify URLs include tenant placeholder
+        apiDetails?["urls"]?["dataManagementApi"]?.GetValue<string>().Should().Contain("{tenant}");
+    }
 }

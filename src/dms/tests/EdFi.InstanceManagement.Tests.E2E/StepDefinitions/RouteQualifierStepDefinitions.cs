@@ -334,4 +334,24 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
             .Should()
             .Be(expectedPropertyCount, "Response should not contain extra URL properties");
     }
+
+    [When("a GET request is made to XSD metadata endpoint with tenant {string}")]
+    public async Task WhenAGetRequestIsMadeToXsdMetadataEndpointWithTenant(string tenantName)
+    {
+        // XSD metadata endpoints are public and don't require authentication
+        using var xsdClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+
+        Console.WriteLine($"GET XSD metadata endpoint with tenant: '{tenantName}'");
+
+        context.LastResponse = await xsdClient.GetXsdMetadataWithTenantAsync(tenantName);
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
+    }
 }

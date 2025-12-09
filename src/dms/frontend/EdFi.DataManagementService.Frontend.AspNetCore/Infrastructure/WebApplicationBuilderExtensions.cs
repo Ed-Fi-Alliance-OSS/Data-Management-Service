@@ -43,6 +43,7 @@ public static class WebApplicationBuilderExtensions
             .AddTransient<IAssemblyLoader, ApiSchemaAssemblyLoader>()
             .AddTransient<IContentProvider, ContentProvider>()
             .AddTransient<IVersionProvider, VersionProvider>()
+            .AddTransient<ITenantValidator, TenantValidator>()
             .AddTransient<IAssemblyProvider, AssemblyProvider>()
             .AddTransient<IOAuthManager, OAuthManager>()
             .Configure<DatabaseOptions>(webAppBuilder.Configuration.GetSection("DatabaseOptions"))

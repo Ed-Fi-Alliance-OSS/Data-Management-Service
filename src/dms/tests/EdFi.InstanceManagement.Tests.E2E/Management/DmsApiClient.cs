@@ -150,6 +150,25 @@ public class DmsApiClient : IDisposable
         return authenticatedResponse;
     }
 
+    /// <summary>
+    /// Get XSD metadata with tenant prefix
+    /// </summary>
+    public async Task<HttpResponseMessage> GetXsdMetadataWithTenantAsync(string tenant)
+    {
+        var url = $"/{tenant}/metadata/xsd";
+
+        // Use shared HttpClient for unauthenticated requests
+        if (string.IsNullOrEmpty(_accessToken))
+        {
+            var fullUrl = $"{_baseUrl}{url}";
+            var response = await _sharedHttpClient.GetAsync(fullUrl);
+            return response;
+        }
+
+        var authenticatedResponse = await _httpClient.GetAsync(url);
+        return authenticatedResponse;
+    }
+
     protected virtual void Dispose(bool disposing)
     {
         if (_disposed)
