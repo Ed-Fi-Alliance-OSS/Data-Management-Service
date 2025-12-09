@@ -104,15 +104,46 @@ public class TenantInsertCommandTests
     }
 
     [Test]
-    public void Validate_WithValidSpecialCharacters_ShouldPassValidation()
+    public void Validate_WithValidUrlSafeCharacters_ShouldPassValidation()
     {
-        // Arrange
-        var command = new TenantInsertCommand { Name = "tenant-name_with.special:chars" };
+        // Arrange - only alphanumeric, hyphens, and underscores are allowed
+        var command = new TenantInsertCommand { Name = "tenant-name_with_valid123" };
 
         // Act
         var result = _validator.Validate(command);
 
         // Assert
         result.IsValid.Should().BeTrue();
+    }
+
+    [Test]
+    public void Validate_WithInvalidSpecialCharacters_ShouldFailValidation()
+    {
+        // Arrange - periods, colons, and other special characters are not allowed
+        var command = new TenantInsertCommand { Name = "tenant.name:invalid" };
+
+        // Act
+        var result = _validator.Validate(command);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "Name");
+        result
+            .Errors.Should()
+            .Contain(e => e.ErrorMessage.Contains("alphanumeric characters, hyphens, and underscores"));
+    }
+
+    [Test]
+    public void Validate_WithSpaces_ShouldFailValidation()
+    {
+        // Arrange - spaces are not allowed in tenant names
+        var command = new TenantInsertCommand { Name = "tenant name" };
+
+        // Act
+        var result = _validator.Validate(command);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == "Name");
     }
 }

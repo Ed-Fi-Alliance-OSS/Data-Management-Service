@@ -3,10 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Configuration;
@@ -21,18 +23,21 @@ public class ConfigurationServiceDmsInstanceProvider(
     ILogger<ConfigurationServiceDmsInstanceProvider> logger
 ) : IDmsInstanceProvider
 {
+    private const string TenantHeaderName = "Tenant";
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    private IList<DmsInstance> _instances = new List<DmsInstance>();
-    private volatile bool _isLoaded;
+    private readonly ConcurrentDictionary<string, IList<DmsInstance>> _instancesByTenant = new(
+        StringComparer.OrdinalIgnoreCase
+    );
 
     /// <inheritdoc />
-    public bool IsLoaded => _isLoaded;
+    public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));
 
     /// <summary>
     /// Loads DMS instances from the Configuration Service API and stores them in memory
     /// </summary>
-    public async Task<IList<DmsInstance>> LoadDmsInstances()
+    /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
+    public async Task<IList<DmsInstance>> LoadDmsInstances(string? tenant = null)
     {
         logger.LogInformation(
             "Requesting authentication token from Configuration Service at {BaseUrl}",
@@ -51,14 +56,17 @@ public class ConfigurationServiceDmsInstanceProvider(
             configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", configurationServiceToken);
 
+            // Set tenant header for multi-tenant environments
+            SetTenantHeader(tenant);
+
             logger.LogInformation("Fetching DMS instances from Configuration Service");
 
             IList<DmsInstance> instances = await FetchDmsInstances();
 
             logger.LogInformation("Successfully fetched {InstanceCount} DMS instances", instances.Count);
 
-            // Store instances
-            _instances = instances;
+            // Store instances by tenant
+            _instancesByTenant[GetTenantKey(tenant)] = instances;
 
             foreach (DmsInstance instance in instances)
             {
@@ -70,9 +78,10 @@ public class ConfigurationServiceDmsInstanceProvider(
                 );
             }
 
-            _isLoaded = true;
-
-            logger.LogInformation("DMS instance cache updated successfully");
+            logger.LogInformation(
+                "DMS instance cache updated successfully for tenant {Tenant}",
+                tenant ?? "(default)"
+            );
 
             return instances;
         }
@@ -105,15 +114,132 @@ public class ConfigurationServiceDmsInstanceProvider(
     }
 
     /// <inheritdoc />
-    public IReadOnlyList<DmsInstance> GetAll()
-    {
-        return _instances.ToList().AsReadOnly();
-    }
+    public IReadOnlyList<DmsInstance> GetAll(string? tenant = null) =>
+        _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var instances)
+            ? instances.ToList().AsReadOnly()
+            : new List<DmsInstance>().AsReadOnly();
 
     /// <inheritdoc />
-    public DmsInstance? GetById(long id)
+    public DmsInstance? GetById(long id, string? tenant = null) =>
+        _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var instances)
+            ? instances.FirstOrDefault(instance => instance.Id == id)
+            : null;
+
+    /// <summary>
+    /// Gets the cache key for a tenant, using empty string for null/empty tenant
+    /// </summary>
+    private static string GetTenantKey(string? tenant) => tenant ?? string.Empty;
+
+    /// <inheritdoc />
+    public bool TenantExists(string tenant) => _instancesByTenant.ContainsKey(tenant);
+
+    /// <inheritdoc />
+    public IReadOnlyList<string> GetLoadedTenantKeys() => _instancesByTenant.Keys.ToList().AsReadOnly();
+
+    /// <inheritdoc />
+    public async Task<IList<string>> LoadTenants()
     {
-        return _instances.FirstOrDefault(instance => instance.Id == id);
+        logger.LogInformation(
+            "Requesting authentication token from Configuration Service at {BaseUrl}",
+            configurationServiceApiClient.Client.BaseAddress
+        );
+
+        try
+        {
+            // Get token for the Configuration Service API
+            string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
+                configurationServiceContext.clientId,
+                configurationServiceContext.clientSecret,
+                configurationServiceContext.scope
+            );
+
+            configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", configurationServiceToken);
+
+            // Note: /v2/tenants endpoint does not require Tenant header
+            SetTenantHeader(null);
+
+            logger.LogInformation("Fetching tenants from Configuration Service");
+
+            IList<string> tenants = await FetchTenants();
+
+            logger.LogInformation("Successfully fetched {TenantCount} tenants", tenants.Count);
+
+            foreach (string tenant in tenants)
+            {
+                logger.LogDebug("Found tenant: {TenantName}", LoggingSanitizer.SanitizeForLogging(tenant));
+            }
+
+            return tenants;
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to load tenants from Configuration Service. Ensure the Configuration Service is running and accessible at {BaseUrl}",
+                configurationServiceApiClient.Client.BaseAddress
+            );
+            throw new InvalidOperationException(
+                $"Unable to connect to Configuration Service at {configurationServiceApiClient.Client.BaseAddress}. "
+                    + "Verify that the service is running and the ConfigurationServiceSettings are configured correctly. "
+                    + $"Error: {ex.Message}",
+                ex
+            );
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to deserialize tenants response from Configuration Service. The API response format may have changed."
+            );
+            throw new InvalidOperationException(
+                "Configuration Service returned an invalid response format for tenants. "
+                    + "This may indicate an API version mismatch or corrupted data.",
+                ex
+            );
+        }
+    }
+
+    /// <summary>
+    /// Fetches tenant names from the Configuration Service API
+    /// </summary>
+    private async Task<IList<string>> FetchTenants()
+    {
+        const string TenantsEndpoint = "v2/tenants/";
+
+        logger.LogDebug("Sending GET request to {Endpoint}", TenantsEndpoint);
+
+        HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(TenantsEndpoint);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            logger.LogWarning(
+                "Configuration Service returned status code {StatusCode} for tenants endpoint",
+                response.StatusCode
+            );
+        }
+
+        response.EnsureSuccessStatusCode();
+
+        string tenantsJson = await response.Content.ReadAsStringAsync();
+
+        logger.LogDebug(
+            "Received response from Configuration Service, deserializing {ByteCount} bytes",
+            tenantsJson.Length
+        );
+
+        List<TenantResponse>? tenantResponses = JsonSerializer.Deserialize<List<TenantResponse>>(
+            tenantsJson,
+            _jsonOptions
+        );
+
+        if (tenantResponses == null)
+        {
+            logger.LogWarning("Deserialization returned null - treating as empty tenant list");
+            return [];
+        }
+
+        return tenantResponses.Select(t => t.Name).ToList();
     }
 
     /// <summary>
@@ -171,6 +297,19 @@ public class ConfigurationServiceDmsInstanceProvider(
     }
 
     /// <summary>
+    /// Sets the Tenant header for multi-tenant API calls
+    /// </summary>
+    /// <param name="tenant">The tenant identifier, or null to remove the header</param>
+    private void SetTenantHeader(string? tenant)
+    {
+        configurationServiceApiClient.Client.DefaultRequestHeaders.Remove(TenantHeaderName);
+        if (!string.IsNullOrEmpty(tenant))
+        {
+            configurationServiceApiClient.Client.DefaultRequestHeaders.Add(TenantHeaderName, tenant);
+        }
+    }
+
+    /// <summary>
     /// Response model matching the Configuration Service API structure
     /// </summary>
     private sealed class DmsInstanceResponse
@@ -191,5 +330,14 @@ public class ConfigurationServiceDmsInstanceProvider(
         public long InstanceId { get; init; } = 0;
         public string ContextKey { get; init; } = string.Empty;
         public string ContextValue { get; init; } = string.Empty;
+    }
+
+    /// <summary>
+    /// Response model for tenant data from the Configuration Service API
+    /// </summary>
+    private sealed class TenantResponse
+    {
+        public long Id { get; init; } = 0;
+        public string Name { get; init; } = string.Empty;
     }
 }

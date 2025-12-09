@@ -138,7 +138,9 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
         _logger.LogInformation("Claim set name from token scope - {ClaimSetName}", claimSetName);
 
         _logger.LogInformation("Retrieving claim set list");
-        IList<ClaimSet> claimsList = await _claimSetProvider.GetAllClaimSets();
+        IList<ClaimSet> claimsList = await _claimSetProvider.GetAllClaimSets(
+            requestInfo.FrontendRequest.Tenant
+        );
 
         ClaimSet? claimSet = claimsList.SingleOrDefault(c =>
             string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase)

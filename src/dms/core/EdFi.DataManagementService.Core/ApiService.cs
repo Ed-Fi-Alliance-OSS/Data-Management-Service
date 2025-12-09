@@ -163,6 +163,7 @@ internal class ApiService : IApiService
         [
             new RequestResponseLoggingMiddleware(_logger),
             new CoreExceptionLoggingMiddleware(_logger),
+            new TenantValidationMiddleware(_appSettings.Value.MultiTenancy, _logger),
             _serviceProvider.GetRequiredService<JwtAuthenticationMiddleware>(),
             _serviceProvider.GetRequiredService<ResolveDmsInstanceMiddleware>(),
         ];
@@ -698,7 +699,8 @@ internal class ApiService : IApiService
     /// <summary>
     /// Reloads the claimsets cache by clearing it and forcing an immediate reload from CMS
     /// </summary>
-    public async Task<IFrontendResponse> ReloadClaimsetsAsync()
+    /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
+    public async Task<IFrontendResponse> ReloadClaimsetsAsync(string? tenant = null)
     {
         // Check if claimset reload endpoints are enabled
         if (!_appSettings.Value.EnableClaimsetReload)
@@ -716,7 +718,7 @@ internal class ApiService : IApiService
             _logger.LogInformation("Claimsets cache cleared successfully");
 
             // Force immediate reload by calling GetAllClaimSets(), which will fetch from CMS and populate the cache
-            var claimSets = await _claimSetProvider.GetAllClaimSets();
+            var claimSets = await _claimSetProvider.GetAllClaimSets(tenant);
             _logger.LogInformation(
                 "Claimsets reloaded successfully. Retrieved {ClaimSetCount} claimsets from CMS",
                 claimSets.Count
@@ -731,18 +733,16 @@ internal class ApiService : IApiService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exception occurred during claimsets reload");
-            return new FrontendResponse(
-                StatusCode: 500,
-                Body: JsonNode.Parse($"{{ \"error\": \"Error during claimsets reload: {ex.Message}\" }}"),
-                Headers: []
-            );
+            var errorResponse = new JsonObject { ["error"] = $"Error during claimsets reload: {ex.Message}" };
+            return new FrontendResponse(StatusCode: 500, Body: errorResponse, Headers: []);
         }
     }
 
     /// <summary>
     /// Views current claimsets from the provider
     /// </summary>
-    public async Task<IFrontendResponse> ViewClaimsetsAsync()
+    /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
+    public async Task<IFrontendResponse> ViewClaimsetsAsync(string? tenant = null)
     {
         // Check if claimset reload endpoints are enabled
         if (!_appSettings.Value.EnableClaimsetReload)
@@ -755,7 +755,7 @@ internal class ApiService : IApiService
 
         try
         {
-            var claimSets = await _claimSetProvider.GetAllClaimSets();
+            var claimSets = await _claimSetProvider.GetAllClaimSets(tenant);
 
             _logger.LogInformation("Retrieved {ClaimSetCount} claimsets", claimSets.Count);
 
@@ -773,11 +773,8 @@ internal class ApiService : IApiService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Exception occurred during claimsets view");
-            return new FrontendResponse(
-                StatusCode: 500,
-                Body: JsonNode.Parse($"{{ \"error\": \"Error retrieving claimsets: {ex.Message}\" }}"),
-                Headers: []
-            );
+            var errorResponse = new JsonObject { ["error"] = $"Error retrieving claimsets: {ex.Message}" };
+            return new FrontendResponse(StatusCode: 500, Body: errorResponse, Headers: []);
         }
     }
 }

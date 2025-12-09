@@ -17,14 +17,22 @@ public class ErrorHandlingStepDefinitions(InstanceManagementContext context)
     {
         if (context.DmsToken != null && context.DmsClient == null)
         {
-            context.DmsClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken);
+            context.DmsClient = new DmsApiClient(
+                TestConfiguration.DmsApiUrl,
+                context.DmsToken,
+                context.CurrentTenant
+            );
         }
     }
 
     [When("a GET request is made without route qualifiers to resource {string}")]
     public async Task WhenAGetRequestIsMadeWithoutRouteQualifiersToResource(string resource)
     {
-        context.DmsClient ??= new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken ?? "");
+        context.DmsClient ??= new DmsApiClient(
+            TestConfiguration.DmsApiUrl,
+            context.DmsToken ?? "",
+            context.CurrentTenant
+        );
 
         context.LastResponse = await context.DmsClient.GetResourceWithoutQualifiersAsync(resource);
     }

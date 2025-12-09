@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Confluent.Kafka;
+using EdFi.InstanceManagement.Tests.E2E.Infrastructure;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.InstanceManagement.Tests.E2E.Management;
@@ -74,15 +75,15 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
 
         _logger.LogInformation(
             "InstanceKafkaMessageCollector: Connecting to {BootstrapServers}",
-            SanitizeForLog(config.BootstrapServers)
+            LogSanitizer.Sanitize(config.BootstrapServers)
         );
         _logger.LogInformation(
             "InstanceKafkaMessageCollector: Consumer group: {ConsumerGroup}",
-            SanitizeForLog(config.GroupId)
+            LogSanitizer.Sanitize(config.GroupId)
         );
         _logger.LogInformation(
             "InstanceKafkaMessageCollector: Topics: {Topics}",
-            SanitizeForLog(string.Join(", ", _topics))
+            LogSanitizer.Sanitize(string.Join(", ", _topics))
         );
         _logger.LogInformation(
             "InstanceKafkaMessageCollector: Collection started at: {StartTime} UTC",
@@ -198,7 +199,7 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
                         Offset position = _consumer.Position(partition);
                         _logger.LogDebug(
                             "Partition {Topic}[{Partition}] ready at position {Position}",
-                            SanitizeForLog(partition.Topic),
+                            LogSanitizer.Sanitize(partition.Topic),
                             partition.Partition.Value,
                             position.Value
                         );
@@ -207,9 +208,9 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
                     {
                         _logger.LogDebug(
                             "Partition {Topic}[{Partition}] not ready: {ErrorMessage}",
-                            SanitizeForLog(partition.Topic),
+                            LogSanitizer.Sanitize(partition.Topic),
                             partition.Partition.Value,
-                            SanitizeForLog(ex.Message)
+                            LogSanitizer.Sanitize(ex.Message)
                         );
                         allPartitionsReady = false;
                         break;
@@ -267,7 +268,7 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
                     Offset position = _consumer.Position(partition);
                     _logger.LogInformation(
                         "    {Topic}[{Partition}]: position={Position}",
-                        SanitizeForLog(partition.Topic),
+                        LogSanitizer.Sanitize(partition.Topic),
                         partition.Partition.Value,
                         position.Value
                     );
@@ -276,9 +277,9 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
                 {
                     _logger.LogWarning(
                         "    {Topic}[{Partition}]: failed to get position - {ErrorMessage}",
-                        SanitizeForLog(partition.Topic),
+                        LogSanitizer.Sanitize(partition.Topic),
                         partition.Partition.Value,
-                        SanitizeForLog(ex.Message)
+                        LogSanitizer.Sanitize(ex.Message)
                     );
                 }
             }
@@ -287,7 +288,7 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
         {
             _logger.LogWarning(
                 "Failed to get consumer diagnostics: {ErrorMessage}",
-                SanitizeForLog(ex.Message)
+                LogSanitizer.Sanitize(ex.Message)
             );
         }
     }
@@ -346,7 +347,7 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
 
                             _logger.LogDebug(
                                 "Collected Kafka message from topic {Topic}, partition {Partition}, offset {Offset}, instance {InstanceId}",
-                                SanitizeForLog(message.Topic),
+                                LogSanitizer.Sanitize(message.Topic),
                                 message.Partition,
                                 message.Offset,
                                 message.InstanceId ?? -1
@@ -363,7 +364,10 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
                 }
                 catch (ConsumeException ex)
                 {
-                    _logger.LogError("Kafka consume error: {ErrorReason}", SanitizeForLog(ex.Error.Reason));
+                    _logger.LogError(
+                        "Kafka consume error: {ErrorReason}",
+                        LogSanitizer.Sanitize(ex.Error.Reason)
+                    );
                 }
                 catch (OperationCanceledException)
                 {
@@ -373,37 +377,11 @@ public sealed class InstanceKafkaMessageCollector : IDisposable
                 {
                     _logger.LogError(
                         "Unexpected error in Kafka message consumption: {Exception}",
-                        SanitizeForLog(ex.ToString())
+                        LogSanitizer.Sanitize(ex.ToString())
                     );
                 }
             },
             _cancellationTokenSource.Token
-        );
-    }
-
-    /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
-    /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/)
-    /// </summary>
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
         );
     }
 

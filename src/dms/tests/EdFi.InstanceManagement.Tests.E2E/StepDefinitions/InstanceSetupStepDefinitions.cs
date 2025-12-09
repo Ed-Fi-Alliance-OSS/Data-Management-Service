@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.InstanceManagement.Tests.E2E.Configuration;
+using EdFi.InstanceManagement.Tests.E2E.Infrastructure;
 using EdFi.InstanceManagement.Tests.E2E.Management;
 using EdFi.InstanceManagement.Tests.E2E.Models;
 using FluentAssertions;
@@ -11,7 +13,10 @@ using Reqnroll;
 namespace EdFi.InstanceManagement.Tests.E2E.StepDefinitions;
 
 [Binding]
-public class InstanceSetupStepDefinitions(InstanceManagementContext context)
+public class InstanceSetupStepDefinitions(
+    InstanceManagementContext context,
+    InstanceInfrastructureManager infrastructureManager
+)
 {
     public ConfigServiceClient? _configClient;
     private InstanceResponse? _lastCreatedInstance;
@@ -26,20 +31,59 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
             "s3creT@09"
         );
 
-        _configClient = new ConfigServiceClient(TestConfiguration.ConfigServiceUrl, context.ConfigToken);
+        // Create a client for the current tenant (if one is set)
+        _configClient = new ConfigServiceClient(
+            TestConfiguration.ConfigServiceUrl,
+            context.ConfigToken,
+            context.CurrentTenant
+        );
+
+        // Ensure the tenant exists before any other operations
+        if (!string.IsNullOrEmpty(context.CurrentTenant))
+        {
+            await _configClient.EnsureTenantExistsAsync(context.CurrentTenant);
+        }
+    }
+
+    [Given("I am working with tenant {string}")]
+    public async Task GivenIAmWorkingWithTenant(string tenantName)
+    {
+        context.CurrentTenant = tenantName;
+
+        // Ensure we have a config token
+        if (context.ConfigToken == null)
+        {
+            var tokenUrl = $"{TestConfiguration.ConfigServiceUrl}/connect/token";
+            context.ConfigToken = await TokenHelper.GetConfigServiceTokenAsync(
+                tokenUrl,
+                "DmsConfigurationService",
+                "s3creT@09"
+            );
+        }
+
+        // Ensure the tenant exists
+        var systemClient = new ConfigServiceClient(TestConfiguration.ConfigServiceUrl, context.ConfigToken);
+        await systemClient.EnsureTenantExistsAsync(tenantName);
+
+        if (!context.TenantNames.Contains(tenantName))
+        {
+            context.TenantNames.Add(tenantName);
+        }
+
+        // Create/update the config client for this tenant
+        _configClient = new ConfigServiceClient(
+            TestConfiguration.ConfigServiceUrl,
+            context.ConfigToken,
+            tenantName
+        );
+
+        context.ConfigClientsByTenant[tenantName] = _configClient;
     }
 
     [When("I create a vendor with the following details:")]
     public async Task WhenICreateAVendorWithTheFollowingDetails(Table table)
     {
-        // Convert vertical table (key-value pairs) to dictionary
-        // Reqnroll treats first row as header for tables without explicit headers
-        var headers = table.Header.ToList();
-        var data = new Dictionary<string, string> { { headers[0], headers[1] } };
-        foreach (var row in table.Rows)
-        {
-            data[row[0]] = row[1];
-        }
+        var data = ParseKeyValueTable(table);
 
         var request = new VendorRequest(
             Company: data["Company"],
@@ -50,6 +94,12 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
 
         var (vendor, _) = await _configClient!.CreateVendorAsync(request);
         context.VendorId = vendor.Id;
+
+        // Track vendor by tenant if working with explicit tenant
+        if (!string.IsNullOrEmpty(context.CurrentTenant))
+        {
+            context.VendorIdsByTenant[context.CurrentTenant] = vendor.Id;
+        }
     }
 
     [Then("the vendor should be created successfully")]
@@ -67,31 +117,40 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
     [Given("a vendor exists")]
     public async Task GivenAVendorExists()
     {
-        if (context.VendorId == null)
+        // Check if vendor exists for current tenant
+        if (!string.IsNullOrEmpty(context.CurrentTenant))
         {
-            var request = new VendorRequest(
-                Company: "Multi-District Test Vendor",
-                ContactName: "Test Admin",
-                ContactEmailAddress: "admin@testdistrict.edu",
-                NamespacePrefixes: "uri://ed-fi.org,uri://testdistrict.edu"
-            );
+            if (context.VendorIdsByTenant.TryGetValue(context.CurrentTenant, out var vendorId))
+            {
+                context.VendorId = vendorId;
+                return;
+            }
+        }
+        else if (context.VendorId != null)
+        {
+            return;
+        }
 
-            var (vendor, _) = await _configClient!.CreateVendorAsync(request);
-            context.VendorId = vendor.Id;
+        var request = new VendorRequest(
+            Company: $"Test Vendor for {context.CurrentTenant ?? "default"}",
+            ContactName: "Test Admin",
+            ContactEmailAddress: "admin@testdistrict.edu",
+            NamespacePrefixes: "uri://ed-fi.org,uri://testdistrict.edu"
+        );
+
+        var (vendor, _) = await _configClient!.CreateVendorAsync(request);
+        context.VendorId = vendor.Id;
+
+        if (!string.IsNullOrEmpty(context.CurrentTenant))
+        {
+            context.VendorIdsByTenant[context.CurrentTenant] = vendor.Id;
         }
     }
 
     [When("I create an instance with the following details:")]
     public async Task WhenICreateAnInstanceWithTheFollowingDetails(Table table)
     {
-        // Convert vertical table (key-value pairs) to dictionary
-        // Reqnroll treats first row as header for tables without explicit headers
-        var headers = table.Header.ToList();
-        var data = new Dictionary<string, string> { { headers[0], headers[1] } };
-        foreach (var row in table.Rows)
-        {
-            data[row[0]] = row[1];
-        }
+        var data = ParseKeyValueTable(table);
 
         var request = new InstanceRequest(
             InstanceType: data["InstanceType"],
@@ -101,6 +160,12 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
 
         _lastCreatedInstance = await _configClient!.CreateInstanceAsync(request);
         context.InstanceIds.Add(_lastCreatedInstance.Id);
+
+        // Track instance by tenant if working with explicit tenant
+        if (!string.IsNullOrEmpty(context.CurrentTenant))
+        {
+            context.InstanceIdToTenant[_lastCreatedInstance.Id] = context.CurrentTenant;
+        }
     }
 
     [When("I add route context {string} with value {string} to the instance")]
@@ -127,83 +192,104 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
     [Then("{int} instances should be created")]
     public void ThenInstancesShouldBeCreated(int expectedCount)
     {
-        context.InstanceIds.Should().HaveCount(expectedCount);
+        // Count only instances for current tenant if one is set
+        if (!string.IsNullOrEmpty(context.CurrentTenant))
+        {
+            var tenantInstanceCount = context.InstanceIdToTenant.Count(kvp =>
+                kvp.Value == context.CurrentTenant
+            );
+            tenantInstanceCount.Should().Be(expectedCount);
+        }
+        else
+        {
+            context.InstanceIds.Should().HaveCount(expectedCount);
+        }
     }
 
-    [Given("{int} instances exist with route contexts")]
-    public async Task GivenInstancesExistWithRouteContexts(int count)
+    /// <summary>
+    /// Get or create a ConfigServiceClient for the specified tenant
+    /// </summary>
+    private async Task<ConfigServiceClient> GetOrCreateTenantClientAsync(string tenantName)
     {
-        if (context.InstanceIds.Count >= count)
+        if (context.ConfigClientsByTenant.TryGetValue(tenantName, out var existingClient))
         {
-            return;
+            return existingClient;
         }
 
-        // Use pre-existing instances created by setup script (IDs 1, 2, 3)
-        // These instances were created by start-local-dms.ps1 with -AddDmsInstance flag
-        await GivenAVendorExists();
+        // Ensure we have a config token
+        if (context.ConfigToken == null)
+        {
+            var tokenUrl = $"{TestConfiguration.ConfigServiceUrl}/connect/token";
+            context.ConfigToken = await TokenHelper.GetConfigServiceTokenAsync(
+                tokenUrl,
+                "DmsConfigurationService",
+                "s3creT@09"
+            );
+        }
 
-        // Instance 1: District 255901, Year 2024 (ID = 1)
-        context.InstanceIds.Add(1);
-        context.RouteQualifierToInstanceId["255901/2024"] = 1;
+        // Create the tenant
+        var systemClient = new ConfigServiceClient(TestConfiguration.ConfigServiceUrl, context.ConfigToken);
+        await systemClient.EnsureTenantExistsAsync(tenantName);
 
-        // Instance 2: District 255901, Year 2025 (ID = 2)
-        context.InstanceIds.Add(2);
-        context.RouteQualifierToInstanceId["255901/2025"] = 2;
+        if (!context.TenantNames.Contains(tenantName))
+        {
+            context.TenantNames.Add(tenantName);
+        }
 
-        // Instance 3: District 255902, Year 2024 (ID = 3)
-        context.InstanceIds.Add(3);
-        context.RouteQualifierToInstanceId["255902/2024"] = 3;
+        // Create client for this tenant
+        var tenantClient = new ConfigServiceClient(
+            TestConfiguration.ConfigServiceUrl,
+            context.ConfigToken,
+            tenantName
+        );
+
+        context.ConfigClientsByTenant[tenantName] = tenantClient;
+        return tenantClient;
     }
 
     [When("I create an application with the following details:")]
     public async Task WhenICreateAnApplicationWithTheFollowingDetails(Table table)
     {
         context.VendorId.Should().NotBeNull("Vendor must exist before creating application");
-        context.InstanceIds.Should().NotBeEmpty("Instances must exist before creating application");
 
-        // Feature file tables without explicit headers are parsed as vertical key-value pairs
-        // where the first row becomes the header in Reqnroll
-        // Convert to dictionary: treat header as keys, first data row as values
-        var headers = table.Header.ToList();
-        Dictionary<string, string> data;
+        var data = ParseKeyValueTable(table);
 
-        if (table.Rows.Count == 0)
+        var edOrgIds = data["EducationOrganizationIds"].Split(',').Select(int.Parse).ToArray();
+
+        // Get instances for current tenant if one is set, otherwise use all instances
+        List<int> instanceIds;
+        if (!string.IsNullOrEmpty(context.CurrentTenant))
         {
-            // No data rows, the header row contains key-value pairs
-            // This shouldn't happen in our case, but handle it
-            data = new Dictionary<string, string>();
-        }
-        else if (headers.Contains("ApplicationName") && table.Rows.Count == 1)
-        {
-            // Horizontal table with actual headers
-            var row = table.Rows[0];
-            data = headers.ToDictionary(header => header, header => row[header]);
+            instanceIds = context
+                .InstanceIdToTenant.Where(kvp => kvp.Value == context.CurrentTenant)
+                .Select(kvp => kvp.Key)
+                .ToList();
         }
         else
         {
-            // Vertical key-value table where Reqnroll treats first row as header
-            // and subsequent rows as data
-            data = new Dictionary<string, string> { { headers[0], headers[1] } };
-            foreach (var row in table.Rows)
-            {
-                data[row[0]] = row[1];
-            }
+            instanceIds = context.InstanceIds;
         }
 
-        var edOrgIds = data["EducationOrganizationIds"].Split(',').Select(int.Parse).ToArray();
+        instanceIds.Should().NotBeEmpty("Instances must exist before creating application");
 
         var request = new ApplicationRequest(
             VendorId: context.VendorId!.Value,
             ApplicationName: data["ApplicationName"],
             ClaimSetName: data["ClaimSetName"],
             EducationOrganizationIds: edOrgIds,
-            DmsInstanceIds: [.. context.InstanceIds]
+            DmsInstanceIds: [.. instanceIds]
         );
 
         var application = await _configClient!.CreateApplicationAsync(request);
         context.ApplicationId = application.Id;
         context.ClientKey = application.Key;
         context.ClientSecret = application.Secret;
+
+        // Track application by tenant if working with explicit tenant
+        if (!string.IsNullOrEmpty(context.CurrentTenant))
+        {
+            context.ApplicationIdsByTenant[context.CurrentTenant] = application.Id;
+        }
     }
 
     [Then("the application should be created successfully")]
@@ -217,5 +303,144 @@ public class InstanceSetupStepDefinitions(InstanceManagementContext context)
     {
         context.ClientKey.Should().NotBeNullOrEmpty();
         context.ClientSecret.Should().NotBeNullOrEmpty();
+    }
+
+    [Given("tenant {string} is set up with a vendor and instances:")]
+    public async Task GivenTenantIsSetUpWithVendorAndInstances(string tenantName, Table table)
+    {
+        // Store the infrastructure manager in context for cleanup
+        context.InfrastructureManager = infrastructureManager;
+
+        // Get or create the tenant client
+        var tenantClient = await GetOrCreateTenantClientAsync(tenantName);
+
+        // Set the current tenant and update _configClient for subsequent steps
+        context.CurrentTenant = tenantName;
+        _configClient = tenantClient;
+
+        // Create vendor for this tenant if not exists
+        if (!context.VendorIdsByTenant.ContainsKey(tenantName))
+        {
+            var districtId = tenantName.Replace("Tenant_", "");
+            var vendorRequest = new VendorRequest(
+                Company: $"District {districtId} Vendor",
+                ContactName: "Test Admin",
+                ContactEmailAddress: $"admin@district{districtId}.edu",
+                NamespacePrefixes: $"uri://ed-fi.org,uri://district{districtId}.edu"
+            );
+
+            var (vendor, _) = await tenantClient.CreateVendorAsync(vendorRequest);
+            context.VendorIdsByTenant[tenantName] = vendor.Id;
+            context.VendorId = vendor.Id;
+        }
+
+        // Create instances from the table
+        foreach (var row in table.Rows)
+        {
+            var route = row["Route"];
+            var parts = route.Split('/');
+            var districtId = parts[0];
+            var schoolYear = parts[1];
+
+            var dbIndex = GetDatabaseIndexForRoute(districtId, schoolYear);
+            var connectionString = TestConstants.GetConnectionString(dbIndex);
+            var databaseName = TestConstants.GetDatabaseName(dbIndex);
+
+            var instance = await tenantClient.CreateInstanceAsync(
+                new InstanceRequest(
+                    InstanceType: "District",
+                    InstanceName: $"District {districtId} - School Year {schoolYear}",
+                    ConnectionString: connectionString
+                )
+            );
+
+            context.InstanceIds.Add(instance.Id);
+            context.InstanceIdToDatabaseName[instance.Id] = databaseName;
+            context.InstanceIdToTenant[instance.Id] = tenantName;
+            context.RouteQualifierToInstanceId[route] = instance.Id;
+
+            // Add route contexts
+            await tenantClient.CreateRouteContextAsync(
+                new RouteContextRequest(
+                    InstanceId: instance.Id,
+                    ContextKey: "districtId",
+                    ContextValue: districtId
+                )
+            );
+            await tenantClient.CreateRouteContextAsync(
+                new RouteContextRequest(
+                    InstanceId: instance.Id,
+                    ContextKey: "schoolYear",
+                    ContextValue: schoolYear
+                )
+            );
+
+            // Setup Kafka topic and Debezium connector
+            await infrastructureManager.SetupInstanceInfrastructureAsync(instance.Id, databaseName);
+        }
+    }
+
+    [Given("tenant {string} has an application for district {string}")]
+    public async Task GivenTenantHasApplicationForDistrict(string tenantName, string districtId)
+    {
+        var tenantClient = context.ConfigClientsByTenant[tenantName];
+        var vendorId = context.VendorIdsByTenant[tenantName];
+
+        // Get instance IDs for this tenant
+        var tenantInstanceIds = context
+            .InstanceIdToTenant.Where(kvp => kvp.Value == tenantName)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        var edOrgIds = new[] { int.Parse(districtId) };
+
+        var application = await tenantClient.CreateApplicationAsync(
+            new ApplicationRequest(
+                vendorId,
+                $"District {districtId} Test App",
+                "E2E-NoFurtherAuthRequiredClaimSet",
+                edOrgIds,
+                [.. tenantInstanceIds]
+            )
+        );
+
+        context.ApplicationIdsByTenant[tenantName] = application.Id;
+        context.CredentialsByTenant[tenantName] = (application.Key, application.Secret);
+
+        // Store first application's credentials for DMS authentication (legacy support)
+        if (context.ClientKey == null)
+        {
+            context.ApplicationId = application.Id;
+            context.ClientKey = application.Key;
+            context.ClientSecret = application.Secret;
+        }
+    }
+
+    /// <summary>
+    /// Maps route qualifiers to database index based on known test data configuration.
+    /// </summary>
+    private static int GetDatabaseIndexForRoute(string districtId, string schoolYear) =>
+        (districtId, schoolYear) switch
+        {
+            ("255901", "2024") => 1,
+            ("255901", "2025") => 2,
+            ("255902", "2024") => 3,
+            _ => throw new ArgumentException($"Unknown route: {districtId}/{schoolYear}"),
+        };
+
+    /// <summary>
+    /// Parse a Reqnroll table as key-value pairs.
+    /// In Reqnroll, a 2-column table without explicit headers treats the first row as header.
+    /// This method extracts all rows (including header) as key-value pairs.
+    /// </summary>
+    private static Dictionary<string, string> ParseKeyValueTable(Table table)
+    {
+        var headers = table.Header.ToList();
+        var data = new Dictionary<string, string> { { headers[0], headers[1] } };
+        foreach (var row in table.Rows)
+        {
+            data[row[0]] = row[1];
+        }
+        return data;
     }
 }

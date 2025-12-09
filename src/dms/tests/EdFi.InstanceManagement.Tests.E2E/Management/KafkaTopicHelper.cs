@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.InstanceManagement.Tests.E2E.Infrastructure;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.InstanceManagement.Tests.E2E.Management;
@@ -46,13 +47,13 @@ public static class KafkaTopicHelper
         {
             logger.LogWarning(
                 "Topic isolation violation detected for instance {InstanceId}",
-                SanitizeForLog(targetInstanceId.ToString())
+                LogSanitizer.Sanitize(targetInstanceId.ToString())
             );
             foreach (var leaked in leakedMessages)
             {
                 logger.LogWarning(
                     "  Message found on topic {Topic} (instance {FoundInstanceId}) that appears to contain data for instance {ExpectedInstanceId}",
-                    SanitizeForLog(leaked.Topic),
+                    LogSanitizer.Sanitize(leaked.Topic),
                     leaked.InstanceId,
                     targetInstanceId
                 );
@@ -132,32 +133,6 @@ public static class KafkaTopicHelper
         // This avoids false positives from timestamp fields that might contain
         // the current year (e.g., "2025-11-21" in Kafka message metadata)
         return messageContent.Contains(marker, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
-    /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/)
-    /// </summary>
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
-        );
     }
 }
 

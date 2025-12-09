@@ -5,7 +5,6 @@
 
 using System.Text.Json;
 using EdFi.InstanceManagement.Tests.E2E.Management;
-using EdFi.InstanceManagement.Tests.E2E.Models;
 using FluentAssertions;
 using Reqnroll;
 
@@ -27,36 +26,6 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         Console.WriteLine($"DMS API URL: {TestConfiguration.DmsApiUrl}");
     }
 
-    [Given("I have completed instance setup with {int} instances")]
-    public async Task GivenIHaveCompletedInstanceSetupWithInstances(int count)
-    {
-        var setupSteps = new InstanceSetupStepDefinitions(context);
-
-        // Authenticate to Config Service
-        await setupSteps.GivenIAmAuthenticatedToTheConfigurationServiceAsSystemAdmin();
-
-        // Create vendor
-        await setupSteps.GivenAVendorExists();
-
-        // Create instances with route contexts
-        await setupSteps.GivenInstancesExistWithRouteContexts(count);
-
-        // Create application
-        var edOrgIds = new[] { 255901, 255902 };
-        var application = await setupSteps._configClient!.CreateApplicationAsync(
-            new ApplicationRequest(
-                context.VendorId!.Value,
-                "Multi-District Test App",
-                "E2E-NoFurtherAuthRequiredClaimSet",
-                edOrgIds,
-                [.. context.InstanceIds]
-            )
-        );
-        context.ApplicationId = application.Id;
-        context.ClientKey = application.Key;
-        context.ClientSecret = application.Secret;
-    }
-
     [Given("I am authenticated to DMS with application credentials")]
     public async Task GivenIAmAuthenticatedToDmsWithApplicationCredentials()
     {
@@ -75,7 +44,32 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
             context.ClientSecret!
         );
 
-        context.DmsClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken);
+        context.DmsClient = new DmsApiClient(
+            TestConfiguration.DmsApiUrl,
+            context.DmsToken,
+            context.CurrentTenant
+        );
+    }
+
+    [Given("I am authenticated to DMS with credentials for tenant {string}")]
+    public async Task GivenIAmAuthenticatedToDmsWithCredentialsForTenant(string tenantName)
+    {
+        context
+            .CredentialsByTenant.Should()
+            .ContainKey(tenantName, $"Credentials for tenant {tenantName} must exist");
+
+        var (key, secret) = context.CredentialsByTenant[tenantName];
+
+        var tokenUrl = "http://localhost:8081/connect/token/";
+
+        context.DmsToken = await TokenHelper.GetDmsTokenAsync(tokenUrl, key, secret);
+
+        // Set current tenant for the DMS client
+        context.CurrentTenant = tenantName;
+        context.DmsClient?.Dispose();
+        context.DmsClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken, tenantName);
+
+        Console.WriteLine($"Authenticated to DMS with credentials for tenant: {tenantName}");
     }
 
     [When("a POST request is made to instance {string} and resource {string} with body:")]
@@ -180,6 +174,73 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         }
     }
 
+    [When("a POST request is made to tenant {string} instance {string} resource {string} with body:")]
+    public async Task WhenAPostRequestIsMadeToTenantInstanceResourceWithBody(
+        string tenantName,
+        string instanceRoute,
+        string resource,
+        string jsonBody
+    )
+    {
+        context.DmsToken.Should().NotBeNullOrEmpty("Must be authenticated to DMS first");
+
+        var parts = instanceRoute.Split('/');
+        parts.Should().HaveCount(2, "Instance route must be in format districtId/schoolYear");
+
+        var districtId = parts[0];
+        var schoolYear = parts[1];
+
+        Console.WriteLine($"POST to tenant: {tenantName}, instance: {instanceRoute}, resource: {resource}");
+        Console.WriteLine($"Request body: {jsonBody}");
+
+        // Create a client specifically for this tenant URL
+        using var tenantClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken!, tenantName);
+
+        var body = JsonSerializer.Deserialize<JsonElement>(jsonBody);
+        context.LastResponse = await tenantClient.PostResourceAsync(districtId, schoolYear, resource, body);
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
+    }
+
+    [When("a GET request is made to tenant {string} instance {string} resource {string}")]
+    public async Task WhenAGetRequestIsMadeToTenantInstanceResource(
+        string tenantName,
+        string instanceRoute,
+        string resource
+    )
+    {
+        context.DmsToken.Should().NotBeNullOrEmpty("Must be authenticated to DMS first");
+
+        var parts = instanceRoute.Split('/');
+        parts.Should().HaveCount(2, "Instance route must be in format districtId/schoolYear");
+
+        var districtId = parts[0];
+        var schoolYear = parts[1];
+
+        Console.WriteLine($"GET from tenant: {tenantName}, instance: {instanceRoute}, resource: {resource}");
+
+        // Create a client specifically for this tenant URL
+        using var tenantClient = new DmsApiClient(TestConfiguration.DmsApiUrl, context.DmsToken!, tenantName);
+
+        context.LastResponse = await tenantClient.GetResourceAsync(districtId, schoolYear, resource);
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
+    }
+
     [Then("the response should contain {string}")]
     public async Task ThenTheResponseShouldContain(string expectedContent)
     {
@@ -272,5 +333,25 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         actualPropertyCount
             .Should()
             .Be(expectedPropertyCount, "Response should not contain extra URL properties");
+    }
+
+    [When("a GET request is made to XSD metadata endpoint with tenant {string}")]
+    public async Task WhenAGetRequestIsMadeToXsdMetadataEndpointWithTenant(string tenantName)
+    {
+        // XSD metadata endpoints are public and don't require authentication
+        using var xsdClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+
+        Console.WriteLine($"GET XSD metadata endpoint with tenant: '{tenantName}'");
+
+        context.LastResponse = await xsdClient.GetXsdMetadataWithTenantAsync(tenantName);
+
+        Console.WriteLine(
+            $"Response: {(int)context.LastResponse.StatusCode} ({context.LastResponse.StatusCode})"
+        );
+        if (!context.LastResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await context.LastResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"Response body: {responseBody}");
+        }
     }
 }

@@ -32,7 +32,7 @@ public class DmsConnectionStringProviderTests
                 []
             );
 
-            A.CallTo(() => _dmsInstanceProvider.GetById(1)).Returns(instance);
+            A.CallTo(() => _dmsInstanceProvider.GetById(1, A<string?>.Ignored)).Returns(instance);
 
             _connectionStringProvider = new DmsConnectionStringProvider(
                 _dmsInstanceProvider,
@@ -59,8 +59,8 @@ public class DmsConnectionStringProviderTests
         public void Setup()
         {
             _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-            A.CallTo(() => _dmsInstanceProvider.GetById(999)).Returns(null);
-            A.CallTo(() => _dmsInstanceProvider.GetAll()).Returns(new List<DmsInstance>());
+            A.CallTo(() => _dmsInstanceProvider.GetById(999, A<string?>.Ignored)).Returns(null);
+            A.CallTo(() => _dmsInstanceProvider.GetAll(A<string?>.Ignored)).Returns(new List<DmsInstance>());
 
             _connectionStringProvider = new DmsConnectionStringProvider(
                 _dmsInstanceProvider,
@@ -89,7 +89,7 @@ public class DmsConnectionStringProviderTests
             _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var instance = new DmsInstance(1, "Production", "Main Instance", null, []);
 
-            A.CallTo(() => _dmsInstanceProvider.GetById(1)).Returns(instance);
+            A.CallTo(() => _dmsInstanceProvider.GetById(1, A<string?>.Ignored)).Returns(instance);
 
             _connectionStringProvider = new DmsConnectionStringProvider(
                 _dmsInstanceProvider,
@@ -118,7 +118,7 @@ public class DmsConnectionStringProviderTests
             _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var instance = new DmsInstance(1, "Production", "Main Instance", "   ", []);
 
-            A.CallTo(() => _dmsInstanceProvider.GetById(1)).Returns(instance);
+            A.CallTo(() => _dmsInstanceProvider.GetById(1, A<string?>.Ignored)).Returns(instance);
 
             _connectionStringProvider = new DmsConnectionStringProvider(
                 _dmsInstanceProvider,
@@ -154,7 +154,9 @@ public class DmsConnectionStringProviderTests
                 new(2, "Development", "Second Instance", "host=second;database=db2;", []),
             };
 
-            A.CallTo(() => _dmsInstanceProvider.GetAll()).Returns(instances);
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys())
+                .Returns(new List<string> { "" }.AsReadOnly());
+            A.CallTo(() => _dmsInstanceProvider.GetAll(A<string?>.Ignored)).Returns(instances);
 
             _connectionStringProvider = new DmsConnectionStringProvider(
                 _dmsInstanceProvider,
@@ -188,7 +190,9 @@ public class DmsConnectionStringProviderTests
                 new(5, "Production", "Only Instance", "host=only;database=dbonly;", []),
             };
 
-            A.CallTo(() => _dmsInstanceProvider.GetAll()).Returns(instances);
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys())
+                .Returns(new List<string> { "" }.AsReadOnly());
+            A.CallTo(() => _dmsInstanceProvider.GetAll(A<string?>.Ignored)).Returns(instances);
 
             _connectionStringProvider = new DmsConnectionStringProvider(
                 _dmsInstanceProvider,
@@ -215,7 +219,9 @@ public class DmsConnectionStringProviderTests
         public void Setup()
         {
             _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
-            A.CallTo(() => _dmsInstanceProvider.GetAll()).Returns(new List<DmsInstance>());
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys())
+                .Returns(new List<string> { "" }.AsReadOnly());
+            A.CallTo(() => _dmsInstanceProvider.GetAll(A<string?>.Ignored)).Returns(new List<DmsInstance>());
 
             _connectionStringProvider = new DmsConnectionStringProvider(
                 _dmsInstanceProvider,
@@ -245,7 +251,37 @@ public class DmsConnectionStringProviderTests
 
             var instances = new List<DmsInstance> { new(1, "Production", "Invalid Instance", null, []) };
 
-            A.CallTo(() => _dmsInstanceProvider.GetAll()).Returns(instances);
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys())
+                .Returns(new List<string> { "" }.AsReadOnly());
+            A.CallTo(() => _dmsInstanceProvider.GetAll(A<string?>.Ignored)).Returns(instances);
+
+            _connectionStringProvider = new DmsConnectionStringProvider(
+                _dmsInstanceProvider,
+                NullLogger<DmsConnectionStringProvider>.Instance
+            );
+        }
+
+        [Test]
+        public void It_should_return_null()
+        {
+            var result = _connectionStringProvider!.GetHealthCheckConnectionString();
+
+            result.Should().BeNull();
+        }
+    }
+
+    [TestFixture]
+    public class Given_No_Loaded_Tenants
+    {
+        private IDmsInstanceProvider? _dmsInstanceProvider;
+        private DmsConnectionStringProvider? _connectionStringProvider;
+
+        [SetUp]
+        public void Setup()
+        {
+            _dmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
+            A.CallTo(() => _dmsInstanceProvider.GetLoadedTenantKeys())
+                .Returns(new List<string>().AsReadOnly());
 
             _connectionStringProvider = new DmsConnectionStringProvider(
                 _dmsInstanceProvider,
