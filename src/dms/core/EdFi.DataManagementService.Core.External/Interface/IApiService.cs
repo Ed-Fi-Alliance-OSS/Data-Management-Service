@@ -81,10 +81,12 @@ public interface IApiService
     /// <summary>
     /// DMS entry point to reload the claimsets cache
     /// </summary>
-    public Task<IFrontendResponse> ReloadClaimsetsAsync();
+    /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
+    public Task<IFrontendResponse> ReloadClaimsetsAsync(string? tenant = null);
 
     /// <summary>
     /// DMS entry point to view current claimsets from the provider
     /// </summary>
-    public Task<IFrontendResponse> ViewClaimsetsAsync();
+    /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
+    public Task<IFrontendResponse> ViewClaimsetsAsync(string? tenant = null);
 }

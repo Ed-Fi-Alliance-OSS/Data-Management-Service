@@ -169,6 +169,30 @@ public class DmsApiClient : IDisposable
         return authenticatedResponse;
     }
 
+    /// <summary>
+    /// GET view-claimsets management endpoint (tenant-aware)
+    /// </summary>
+    public async Task<HttpResponseMessage> GetViewClaimsetsAsync(string? tenant = null)
+    {
+        var url = tenant != null ? $"/management/{tenant}/view-claimsets" : "/management/view-claimsets";
+
+        var fullUrl = $"{_baseUrl}{url}";
+        var response = await _sharedHttpClient.GetAsync(fullUrl);
+        return response;
+    }
+
+    /// <summary>
+    /// POST reload-claimsets management endpoint (tenant-aware)
+    /// </summary>
+    public async Task<HttpResponseMessage> PostReloadClaimsetsAsync(string? tenant = null)
+    {
+        var url = tenant != null ? $"/management/{tenant}/reload-claimsets" : "/management/reload-claimsets";
+
+        var fullUrl = $"{_baseUrl}{url}";
+        var response = await _sharedHttpClient.PostAsync(fullUrl, null);
+        return response;
+    }
+
     protected virtual void Dispose(bool disposing)
     {
         if (_disposed)

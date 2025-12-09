@@ -108,10 +108,11 @@ public class TenantRepository(
 
         try
         {
+            // Case-insensitive tenant lookup to support any casing in requests
             var sql = """
                 SELECT Id, Name, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
                 FROM dmscs.Tenant
-                WHERE Name = @Name;
+                WHERE LOWER(Name) = LOWER(@Name);
                 """;
 
             var tenant = await connection.QuerySingleOrDefaultAsync<TenantResponse>(sql, new { Name = name });

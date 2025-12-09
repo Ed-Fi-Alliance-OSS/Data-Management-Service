@@ -26,7 +26,9 @@ public class ConfigurationServiceDmsInstanceProvider(
     private const string TenantHeaderName = "Tenant";
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    private readonly ConcurrentDictionary<string, IList<DmsInstance>> _instancesByTenant = new();
+    private readonly ConcurrentDictionary<string, IList<DmsInstance>> _instancesByTenant = new(
+        StringComparer.OrdinalIgnoreCase
+    );
 
     /// <inheritdoc />
     public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));
