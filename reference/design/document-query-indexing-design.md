@@ -1,7 +1,7 @@
 ## Purpose
 - OFFSET/LIMIT pagination on `dms.Document` was forced to merge-scan all 16 partitions, so each high-offset request re-read hundreds of thousands of rows and spent ~450 ms.
 - A narrow helper table lets the database satisfy ORDER BY/OFFSET against a cache-friendly structure and only fetch the requested JSONB rows.
-- Augmentation: push QueryField-based filtering onto the helper table via a compact JSONB projection and per-resource partitioning, so GIN scans stay small while removing the need for a wide GIN on `Document.EdfiDoc`.
+- Push QueryField-based filtering onto the helper table via a compact JSONB projection and per-resource partitioning, so GIN scans stay small while removing the need for a wide GIN on `Document.EdfiDoc`.
 
 ## DDL (augmented)
 ```sql
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS dms.DocumentIndex (
     DocumentPartitionKey smallint NOT NULL,
     DocumentId bigint NOT NULL,
     ResourceName varchar(256) NOT NULL,
-    CreateDat timestamp without time zone NOT NULL,
+    CreatedAt timestamp without time zone NOT NULL,
     QueryFields JSONB NOT NULL, -- compact projection of QueryField values
     PRIMARY KEY (DocumentPartitionKey, DocumentId, ResourceName)
 ) PARTITION BY HASH (ResourceName);
@@ -39,7 +39,7 @@ DECLARE i int;
 BEGIN
   FOR i IN 0..31 LOOP
     EXECUTE format(
-      'CREATE INDEX IF NOT EXISTS DocumentIndex_ResourceName_CreateDat_idx_p%s ON dms.DocumentIndex_p%s (ResourceName, CreateDat, DocumentPartitionKey, DocumentId);',
+      'CREATE INDEX IF NOT EXISTS DocumentIndex_ResourceName_CreatedAt_idx_p%s ON dms.DocumentIndex_p%s (ResourceName, CreatedAt, DocumentPartitionKey, DocumentId);',
       i, i
     );
   END LOOP;
@@ -60,7 +60,7 @@ END$$;
 -- Inserts into both tables
 CREATE OR REPLACE PROCEDURE dms.InsertNewDocument(
     p_DocumentPartitionKey smallint,
-    p_documentuuid uuid,
+    p_DocumentUuid uuid,
     p_ResourceName varchar,
     p_ResourceVersion varchar,
     p_IsDescriptor boolean,
@@ -86,7 +86,7 @@ BEGIN
         IsDescriptor,
         ProjectName,
         EdfiDoc,
-        CreateDat,
+        CreatedAt,
         LastModifiedAt,
         LastModifiedTraceId
     )
@@ -108,7 +108,7 @@ BEGIN
         DocumentPartitionKey,
         DocumentId,
         ResourceName,
-        CreateDat,
+        CreatedAt,
         QueryFields
     )
     VALUES (
@@ -124,12 +124,12 @@ $$;
 
 An example backfill from existing Document table data
 ```sql
-INSERT INTO dms.DocumentIndex (DocumentPartitionKey, DocumentId, ResourceName, CreateDat, QueryFields)
+INSERT INTO dms.DocumentIndex (DocumentPartitionKey, DocumentId, ResourceName, CreatedAt, QueryFields)
 SELECT DocumentPartitionKey,
        id,
        ResourceName,
-       CreateDat,
-       /* projector(QueryFields, EdfiDoc) -> JSONB */ projected_QueryFields
+       CreatedAt,
+       /* Something like projector(QueryFields, EdfiDoc) -> JSONB, maybe in C# though */ projected_QueryFields
 FROM dms.document;
 
 ANALYZE dms.DocumentIndex;
@@ -174,11 +174,11 @@ If `studentUniqueId` appeared in multiple nested spots, the value would become `
 This uses a CTE to only touch the relevant rows on Document when getting the EdfiDoc.
 ```sql
 WITH page AS (
-    SELECT DocumentPartitionKey, DocumentId, CreateDat
+    SELECT DocumentPartitionKey, DocumentId, CreatedAt
     FROM dms.DocumentIndex
     WHERE ResourceName = $1
       AND QueryFields @> $2::JSONB -- e.g., {"studentUniqueId":"004585","entryDate":"2024-08-15"}
-    ORDER BY CreateDat
+    ORDER BY CreatedAt
     OFFSET $3 ROWS
     FETCH FIRST $4 ROWS ONLY
 )
@@ -187,7 +187,7 @@ FROM page p
 JOIN dms.document d
   ON d.DocumentPartitionKey = p.DocumentPartitionKey
  AND d.id = p.DocumentId
-ORDER BY p.CreateDat;
+ORDER BY p.CreatedAt;
 ```
 - Planner prunes to the hash partition for `$1` and uses `QueryFields` GIN to filter before the OFFSET/LIMIT walk of the ordering index.
 - `totalCount` (if requested) runs the same WHERE against `DocumentIndex`.
@@ -199,7 +199,7 @@ ORDER BY p.CreateDat;
   - For backfill, reuse the same projector to avoid drift.
 - Query execution:
   - Adjust `SqlAction` query builders to target `DocumentIndex.QueryFields` instead of `Document.EdfiDoc` for filter predicates, building the `@>` filter JSON from `QueryElements` by `QueryFieldName` (document paths are no longer needed in SQL).
-  - Keep pagination on `DocumentIndex.CreateDat` and join to `Document` only for the selected page IDs.
+  - Keep pagination on `DocumentIndex.CreatedAt` and join to `Document` only for the selected page IDs.
   - Apply `totalCount` on `DocumentIndex` with identical WHERE.
 - Canonical typing:
   - Reuse the existing `ValidateQueryMiddleware` canonicalization to build the filter JSON, ensuring it matches the stored projection (boolean lowercased, date/time formats, numbers as JSON numbers, UTC date-times).
@@ -208,12 +208,11 @@ ORDER BY p.CreateDat;
 ## End-to-end example
 1) Client calls `GET /.../studentSchoolAssociations?studentUniqueId=004585&entryDate=2024-08-15&offset=0&limit=100`.
 2) Core validation canonicalizes the values and builds `QueryElements` for `studentUniqueId` and `entryDate`.
-3) Backend builds filter JSON `{"studentUniqueId":"004585","entryDate":"2024-08-15"}` and queries `DocumentIndex` with `@>` plus `ResourceName = 'studentSchoolAssociations'`, paginating on `CreateDat`.
+3) Backend builds filter JSON `{"studentUniqueId":"004585","entryDate":"2024-08-15"}` and queries `DocumentIndex` with `@>` plus `ResourceName = 'studentSchoolAssociations'`, paginating on `CreatedAt`.
 4) The pruned partition uses the `QueryFields` GIN, returns ordered IDs, then joins to `Document` for the 100 rows to return.
 
 ## Next Steps
-1. Implement the projector (shared by writes and backfill) and plumb `p_QueryFields` through Core DAL to `InsertNewDocument` (and update/replace logic).
-2. Add the hash-partitioned `DocumentIndex` table, per-partition indexes, and GIN on `QueryFields`, then run backfill with the projector.
+1. Implement the projector (shared by writes and backfill) and plumb `p_QueryFields` through Core to `InsertNewDocument` (and update/replace logic).
+2. Add the hash-partitioned `DocumentIndex` table, per-partition indexes, and GIN on `QueryFields`, then run backfill.
 3. Update query code to filter on `DocumentIndex.QueryFields` and to compute `totalCount` from `DocumentIndex`.
-4. After validation in non-prod, drop or disable the wide GIN on `Document.EdfiDoc` if still desired for footprint reduction.
-5. On updates and backfill, always recompute `QueryFields` from the stored document (do not rely on partial deltas) so the index stays consistent with the canonical projection.
+4. After validation, drop the wide GIN on `Document.EdfiDoc`.
