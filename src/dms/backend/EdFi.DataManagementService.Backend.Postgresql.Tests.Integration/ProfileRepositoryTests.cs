@@ -11,7 +11,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 [TestFixture]
-public class ProfileRepositoryTests : DatabaseTestBase
+public class ProfileRepositoryTests : DatabaseTest
 {
     private const string TestProfileXml = @"<?xml version=""1.0"" encoding=""utf-8""?>
 <Profile name=""Test_Profile"">
@@ -28,9 +28,8 @@ public class ProfileRepositoryTests : DatabaseTestBase
     [SetUp]
     public void Setup()
     {
-        var dataSourceProvider = new NpgsqlDataSourceProvider(DataSource!);
         _repository = new PostgresqlProfileRepository(
-            dataSourceProvider,
+            CreateDataSourceProvider(),
             NullLogger<PostgresqlProfileRepository>.Instance
         );
     }
