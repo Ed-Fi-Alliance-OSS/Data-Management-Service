@@ -294,7 +294,7 @@ internal class ResolveDmsInstanceMiddleware(
 
         return new FrontendResponse(
             StatusCode: statusCode,
-            Body: JsonSerializer.Serialize(problemDetails),
+            Body: JsonSerializer.SerializeToNode(problemDetails),
             Headers: [],
             LocationHeaderPath: null,
             ContentType: "application/problem+json"
