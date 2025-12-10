@@ -36,10 +36,9 @@ The API Profiles feature is split across two services:
 8. [API Specifications](#api-specifications)
 9. [Example Profiles](#example-profiles)
 10. [Security Considerations](#security-considerations)
-11. [Performance Considerations](#performance-considerations)
-12. [Testing Strategy](#testing-strategy)
-13. [Appendix A: Implementation Tickets](#appendix-a-implementation-tickets)
-14. [Appendix B: XML Schema Definition](#appendix-b-xml-schema-definition)
+11. [Testing Strategy](#testing-strategy)
+12. [Appendix A: Implementation Tickets](#appendix-a-implementation-tickets)
+13. [Appendix B: XML Schema Definition](#appendix-b-xml-schema-definition)
 
 ## Problem Definition
 
@@ -1145,41 +1144,6 @@ Authorization: Bearer {token}
 - XML schema validation prevents malformed profiles
 - Rule conflict detection before activation
 - Profile testing framework for pre-production validation
-
-## Performance Considerations
-
-### Expected Impact
-
-- **Profile Resolution**: <3ms overhead per request (cached)
-- **Profile Loading**: <5ms from database (single JSONB query)
-- **JSON Parsing**: 2-5ms for typical profile (System.Text.Json)
-- **Write Validation**: 5-15ms depending on document size
-- **Read Filtering**: 10-20ms depending on document complexity
-- **Cache Hit Rate**: Target >95% for production workloads
-
-### Optimization Strategies
-
-1. **Single-Query Loading**: JSONB eliminates joins for profile retrieval
-2. **Aggressive Caching**: Cache parsed profile objects (not JSON strings)
-3. **Fast JSON Parsing**: System.Text.Json with source generators
-4. **Compilation**: Compile filter expressions for reuse
-5. **Lazy Loading**: Parse profile sections only when accessed
-6. **Parallel Processing**: Filter collections in parallel
-
-### Storage Efficiency
-
-- **JSONB Compression**: PostgreSQL compresses JSONB automatically
-- **Typical Profile Size**: 5-50KB in JSONB (vs 10-100KB XML)
-- **Cache Memory**: ~50KB per cached profile object
-- **Database Size**: Minimal overhead (single column per profile)
-
-### Monitoring
-
-- Track profile cache hit/miss rates
-- Measure enforcement overhead per profile
-- Monitor JSONB query performance
-- Alert on slow profile operations (>100ms)
-- Dashboard for profile usage statistics
 
 ## Testing Strategy
 
