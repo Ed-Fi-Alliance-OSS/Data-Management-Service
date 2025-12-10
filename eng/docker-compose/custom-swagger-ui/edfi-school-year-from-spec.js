@@ -122,11 +122,13 @@ window.EdFiSchoolYear = function () {
             // Create the selector UI
             createSchoolYearSelector();
 
-            // Wait for server selector to be available
-            await waitForServerSelector();
+            // Show the selector container
+            const container = document.querySelector('.school-year-selector');
+            if (container) {
+                container.style.display = 'flex';
+            }
 
-            // Populate server selector
-            populateServerSelector();
+            console.log('School year selector initialized with years:', schoolYears);
         } catch (error) {
             console.error('Error initializing school year plugin:', error);
         }
@@ -143,21 +145,6 @@ window.EdFiSchoolYear = function () {
                 }
             };
             checkSwaggerUI();
-        });
-    };
-
-    // Wait for server selector to be available in DOM
-    const waitForServerSelector = () => {
-        return new Promise((resolve) => {
-            const checkSelector = () => {
-                const serverSelector = document.querySelector('.servers select');
-                if (serverSelector) {
-                    resolve();
-                } else {
-                    setTimeout(checkSelector, 100);
-                }
-            };
-            checkSelector();
         });
     };
 
@@ -209,8 +196,8 @@ window.EdFiSchoolYear = function () {
 
         select.addEventListener('change', (e) => {
             selectedYear = e.target.value;
-            updateServerSelector();
             updateComputedUrl();
+            console.log('School year changed to:', selectedYear);
         });
 
         // Add computed URL display
@@ -255,80 +242,6 @@ window.EdFiSchoolYear = function () {
             if (wrapper) {
                 wrapper.insertBefore(container, wrapper.firstChild);
             }
-        }
-    };
-
-    // Populate the server selector with year-based URLs
-    const populateServerSelector = () => {
-        const serverSelector = document.querySelector('.servers select');
-        if (!serverSelector) {
-            console.warn('Server selector not found');
-            return;
-        }
-
-        // Get the base URL template from the spec
-        const spec = window.ui.spec().toJS();
-        let urlTemplate = `http://localhost:${dmsPort}/{schoolYear}/data`;
-        let schoolYearVarName = 'schoolYear';
-
-        // Extract URL template and variable name from spec
-        if (spec && spec.servers && spec.servers.length > 0) {
-            const server = spec.servers[0];
-            if (server.url) {
-                urlTemplate = server.url;
-                // Find the school year variable name in the URL
-                const varMatch = urlTemplate.match(/\{([^}]*school[^}]*year[^}]*)\}/i);
-                if (varMatch && varMatch[1]) {
-                    schoolYearVarName = varMatch[1];
-                }
-            }
-        }
-
-        // Clear existing options
-        serverSelector.innerHTML = '';
-
-        // Add options for each school year
-        schoolYears.forEach(year => {
-            const option = document.createElement('option');
-            // Replace the variable placeholder with the actual year
-            const yearUrl = urlTemplate.replace(`{${schoolYearVarName}}`, year);
-            option.value = yearUrl;
-            option.textContent = `${urlTemplate} (${year})`;
-            if (year === selectedYear) {
-                option.selected = true;
-            }
-            serverSelector.appendChild(option);
-        });
-
-    };
-
-    // Update server selector when year changes
-    const updateServerSelector = () => {
-        const serverSelector = document.querySelector('.servers select');
-        if (serverSelector) {
-            // Get the URL template from spec
-            const spec = window.ui.spec().toJS();
-            let urlTemplate = `http://localhost:${dmsPort}/{schoolYear}/data`;
-            let schoolYearVarName = 'schoolYear';
-
-            if (spec && spec.servers && spec.servers.length > 0) {
-                const server = spec.servers[0];
-                if (server.url) {
-                    urlTemplate = server.url;
-                    const varMatch = urlTemplate.match(/\{([^}]*school[^}]*year[^}]*)\}/i);
-                    if (varMatch && varMatch[1]) {
-                        schoolYearVarName = varMatch[1];
-                    }
-                }
-            }
-
-            // Replace the variable with the selected year
-            const newUrl = urlTemplate.replace(`{${schoolYearVarName}}`, selectedYear);
-            serverSelector.value = newUrl;
-
-            // Trigger change event to update Swagger UI
-            const event = new Event('change', { bubbles: true });
-            serverSelector.dispatchEvent(event);
         }
     };
 

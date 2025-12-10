@@ -100,9 +100,6 @@ window.EdFiTenant = function () {
             // Create the selector UI
             createTenantSelector();
 
-            // Wait for server selector to be available
-            await waitForServerSelector();
-
             // Show the selector container
             const container = document.querySelector('.tenant-selector');
             if (container) {
@@ -126,21 +123,6 @@ window.EdFiTenant = function () {
                 }
             };
             checkSwaggerUI();
-        });
-    };
-
-    // Wait for server selector to be available in DOM
-    const waitForServerSelector = () => {
-        return new Promise((resolve) => {
-            const checkSelector = () => {
-                const serverSelector = document.querySelector('.servers select');
-                if (serverSelector) {
-                    resolve();
-                } else {
-                    setTimeout(checkSelector, 100);
-                }
-            };
-            checkSelector();
         });
     };
 
