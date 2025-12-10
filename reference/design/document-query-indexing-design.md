@@ -5,15 +5,16 @@
 
 ## DDL (augmented)
 ```sql
--- Hash-partitioned by ResourceName so each query touches exactly one partition.
+-- Hash-partitioned by (ProjectName, ResourceName) so each query touches exactly one partition.
 CREATE TABLE IF NOT EXISTS dms.DocumentIndex (
     DocumentPartitionKey smallint NOT NULL,
     DocumentId bigint NOT NULL,
+    ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
     CreatedAt timestamp without time zone NOT NULL,
     QueryFields JSONB NOT NULL, -- compact projection of QueryField values
-    PRIMARY KEY (DocumentPartitionKey, DocumentId, ResourceName)
-) PARTITION BY HASH (ResourceName);
+    PRIMARY KEY (DocumentPartitionKey, DocumentId, ProjectName, ResourceName)
+) PARTITION BY HASH (ProjectName, ResourceName);
 
 ALTER TABLE dms.DocumentIndex
     ADD CONSTRAINT DocumentIndex_document_fk
@@ -39,7 +40,7 @@ DECLARE i int;
 BEGIN
   FOR i IN 0..31 LOOP
     EXECUTE format(
-      'CREATE INDEX IF NOT EXISTS DocumentIndex_ResourceName_CreatedAt_idx_p%s ON dms.DocumentIndex_p%s (ResourceName, CreatedAt, DocumentPartitionKey, DocumentId);',
+      'CREATE INDEX IF NOT EXISTS DocumentIndex_ResourceName_CreatedAt_idx_p%s ON dms.DocumentIndex_p%s (ProjectName, ResourceName, CreatedAt, DocumentPartitionKey, DocumentId);',
       i, i
     );
   END LOOP;
@@ -107,6 +108,7 @@ BEGIN
     INSERT INTO dms.DocumentIndex (
         DocumentPartitionKey,
         DocumentId,
+        ProjectName,
         ResourceName,
         CreatedAt,
         QueryFields
@@ -114,6 +116,7 @@ BEGIN
     VALUES (
         p_DocumentPartitionKey,
         v_document_id,
+        p_ProjectName,
         p_ResourceName,
         v_created_at,
         p_QueryFields
@@ -124,9 +127,10 @@ $$;
 
 An example backfill from existing Document table data
 ```sql
-INSERT INTO dms.DocumentIndex (DocumentPartitionKey, DocumentId, ResourceName, CreatedAt, QueryFields)
+INSERT INTO dms.DocumentIndex (DocumentPartitionKey, DocumentId, ProjectName, ResourceName, CreatedAt, QueryFields)
 SELECT DocumentPartitionKey,
        id,
+       ProjectName,
        ResourceName,
        CreatedAt,
        /* Something like projector(QueryFields, EdfiDoc) -> JSONB, maybe in C# though */ projected_QueryFields
@@ -176,11 +180,12 @@ This uses a CTE to only touch the relevant rows on Document when getting the Edf
 WITH page AS (
     SELECT DocumentPartitionKey, DocumentId, CreatedAt
     FROM dms.DocumentIndex
-    WHERE ResourceName = $1
-      AND QueryFields @> $2::JSONB -- e.g., {"studentUniqueId":"004585","entryDate":"2024-08-15"}
+    WHERE ProjectName = $1
+      AND ResourceName = $2
+      AND QueryFields @> $3::JSONB -- e.g., {"studentUniqueId":"004585","entryDate":"2024-08-15"}
     ORDER BY CreatedAt
-    OFFSET $3 ROWS
-    FETCH FIRST $4 ROWS ONLY
+    OFFSET $4 ROWS
+    FETCH FIRST $5 ROWS ONLY
 )
 SELECT d.EdfiDoc
 FROM page p
@@ -189,7 +194,7 @@ JOIN dms.document d
  AND d.id = p.DocumentId
 ORDER BY p.CreatedAt;
 ```
-- Planner prunes to the hash partition for `$1` and uses `QueryFields` GIN to filter before the OFFSET/LIMIT walk of the ordering index.
+- Planner prunes to the hash partition for the `(ProjectName, ResourceName)` pair and uses `QueryFields` GIN to filter before the OFFSET/LIMIT walk of the ordering index.
 - `totalCount` (if requested) runs the same WHERE against `DocumentIndex`.
 
 ## C# changes to support the design
@@ -208,7 +213,7 @@ ORDER BY p.CreatedAt;
 ## End-to-end example
 1) Client calls `GET /.../studentSchoolAssociations?studentUniqueId=004585&entryDate=2024-08-15&offset=0&limit=100`.
 2) Core validation canonicalizes the values and builds `QueryElements` for `studentUniqueId` and `entryDate`.
-3) Backend builds filter JSON `{"studentUniqueId":"004585","entryDate":"2024-08-15"}` and queries `DocumentIndex` with `@>` plus `ResourceName = 'studentSchoolAssociations'`, paginating on `CreatedAt`.
+3) Backend builds filter JSON `{"studentUniqueId":"004585","entryDate":"2024-08-15"}` and queries `DocumentIndex` with `@>` plus `ProjectName`/`ResourceName`, paginating on `CreatedAt`.
 4) The pruned partition uses the `QueryFields` GIN, returns ordered IDs, then joins to `Document` for the 100 rows to return.
 
 ## Next Steps
