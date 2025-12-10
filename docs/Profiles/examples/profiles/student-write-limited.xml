@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Profile: Student-Write-Limited
+  Purpose: Allows limited write access to student demographic and contact information
+  Use Case: Student information system integration for basic data synchronization
+  Version: 1.0
+  Created: 2025-12-09
+  
+  This profile enables API consumers to create and update:
+  - Core demographic information
+  - Address information
+  - Electronic mail addresses
+  - Telephone numbers
+  
+  Excluded from write access:
+  - Assessment data
+  - Program associations
+  - Student identification codes (SSN, state IDs)
+  - Academic records
+  - Discipline records
+-->
+<Profile name="Student-Write-Limited">
+  <Resource name="Student">
+    <ReadContentType memberSelection="IncludeOnly">
+      <!-- Core Identity Fields -->
+      <Property name="StudentUniqueId" />
+      <Property name="FirstName" />
+      <Property name="MiddleName" />
+      <Property name="LastSurname" />
+      <Property name="BirthDate" />
+      <Property name="BirthSex" />
+      <Property name="BirthCity" />
+      <Property name="BirthStateAbbreviation" />
+      <Property name="BirthCountryDescriptor" />
+      
+      <!-- School Reference -->
+      <Reference name="SchoolReference">
+        <Property name="SchoolId" />
+      </Reference>
+      
+      <!-- Address Information -->
+      <Collection name="Addresses" memberSelection="IncludeOnly">
+        <Property name="AddressTypeDescriptor" />
+        <Property name="StreetNumberName" />
+        <Property name="ApartmentRoomSuiteNumber" />
+        <Property name="City" />
+        <Property name="StateAbbreviationDescriptor" />
+        <Property name="PostalCode" />
+        <Property name="CountryDescriptor" />
+      </Collection>
+      
+      <!-- Contact Information -->
+      <Collection name="ElectronicMails" memberSelection="IncludeAll" />
+      <Collection name="Telephones" memberSelection="IncludeAll" />
+    </ReadContentType>
+    
+    <WriteContentType memberSelection="IncludeOnly">
+      <!-- Core Identity Fields (Required for Updates) -->
+      <Property name="StudentUniqueId" />
+      <Property name="FirstName" />
+      <Property name="MiddleName" />
+      <Property name="LastSurname" />
+      <Property name="BirthDate" />
+      <Property name="BirthSex" />
+      <Property name="BirthCity" />
+      <Property name="BirthStateAbbreviation" />
+      <Property name="BirthCountryDescriptor" />
+      
+      <!-- School Reference (Required) -->
+      <Reference name="SchoolReference">
+        <Property name="SchoolId" />
+      </Reference>
+      
+      <!-- Updatable Address Information -->
+      <Collection name="Addresses" memberSelection="IncludeOnly">
+        <Property name="AddressTypeDescriptor" />
+        <Property name="StreetNumberName" />
+        <Property name="ApartmentRoomSuiteNumber" />
+        <Property name="City" />
+        <Property name="StateAbbreviationDescriptor" />
+        <Property name="PostalCode" />
+        <Property name="CountryDescriptor" />
+      </Collection>
+      
+      <!-- Updatable Contact Information -->
+      <Collection name="ElectronicMails" memberSelection="IncludeAll" />
+      <Collection name="Telephones" memberSelection="IncludeAll" />
+    </WriteContentType>
+  </Resource>
+</Profile>
