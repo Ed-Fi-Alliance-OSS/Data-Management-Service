@@ -570,14 +570,31 @@ public class DmsInstanceTests : DatabaseTest
             application2Result.Should().BeOfType<ApplicationInsertResult.Success>();
             var application2Id = (application2Result as ApplicationInsertResult.Success)!.Id;
             application2Id.Should().BeGreaterThan(0);
+
+            ApplicationInsertCommand applicationWithoutEdOrgs = new()
+            {
+                ApplicationName = "Application without EdOrgs",
+                VendorId = _vendorId,
+                ClaimSetName = "Test Claim set 3",
+                EducationOrganizationIds = [],
+                DmsInstanceIds = [_dmsInstanceId1]
+            };
+
+            var applicationWithoutEdOrgsResult = await applicationRepository.InsertApplication(
+                applicationWithoutEdOrgs,
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            applicationWithoutEdOrgsResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            var applicationWithoutEdOrgsId = (applicationWithoutEdOrgsResult as ApplicationInsertResult.Success)!.Id;
+            applicationWithoutEdOrgsId.Should().BeGreaterThan(0);
         }
 
         [Test]
         public async Task It_should_retrieve_applications_by_dms_instance()
         {
-            var queryResult = await _repository.QueryApplicationByDmsInstance(_dmsInstanceId1, new PagingQuery() { Limit = 25, Offset = 0 });
+            var queryResult = await _repository.QueryApplicationByDmsInstance(_dmsInstanceId1, new PagingQuery());
             queryResult.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
-            ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.Count().Should().Be(2);
+            ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.Count().Should().Be(3);
 
             var application1 = ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.ToList()[0];
             application1.ApplicationName.Should().Be("Test Application");
@@ -596,12 +613,21 @@ public class DmsInstanceTests : DatabaseTest
             application2.DmsInstanceIds.Should().BeEquivalentTo([_dmsInstanceId1]);
             application2.CreatedAt.Should().BeAfter(new DateTime());
             application2.CreatedBy.Should().NotBeEmpty();
+
+            var applicationWithoutEdOrgs = ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.ToList()[2];
+            applicationWithoutEdOrgs.ApplicationName.Should().Be("Application without EdOrgs");
+            applicationWithoutEdOrgs.VendorId.Should().Be(_vendorId);
+            applicationWithoutEdOrgs.ClaimSetName.Should().Be("Test Claim set 3");
+            applicationWithoutEdOrgs.EducationOrganizationIds.Should().BeEmpty();
+            applicationWithoutEdOrgs.DmsInstanceIds.Should().BeEquivalentTo([_dmsInstanceId1]);
+            applicationWithoutEdOrgs.CreatedAt.Should().BeAfter(new DateTime());
+            applicationWithoutEdOrgs.CreatedBy.Should().NotBeEmpty();
         }
 
         [Test]
         public async Task It_should_retrieve_paged_applications_by_dms_instance()
         {
-            var queryResult = await _repository.QueryApplicationByDmsInstance(_dmsInstanceId1, new PagingQuery() { Limit = 25, Offset = 1 });
+            var queryResult = await _repository.QueryApplicationByDmsInstance(_dmsInstanceId1, new PagingQuery() { Limit = 1, Offset = 1 });
             queryResult.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
             ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.Count().Should().Be(1);
 
@@ -627,7 +653,7 @@ public class DmsInstanceTests : DatabaseTest
         {
             var queryResult = await _repository.QueryApplicationByDmsInstance(_unassignedInstanceId, new PagingQuery() { Limit = 25, Offset = 1 });
             queryResult.Should().BeOfType<ApplicationByDmsInstanceQueryResult.Success>();
-            ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.Count().Should().Be(0);
+            ((ApplicationByDmsInstanceQueryResult.Success)queryResult).ApplicationResponse.Should().BeEmpty();
         }
     }
 }

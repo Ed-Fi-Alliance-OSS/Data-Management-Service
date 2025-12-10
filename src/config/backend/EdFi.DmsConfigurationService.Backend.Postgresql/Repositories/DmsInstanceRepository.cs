@@ -344,13 +344,13 @@ public class DmsInstanceRepository(
             var sql = $"""
                 SELECT application.*, aeo.EducationOrganizationId, acdi.DmsInstanceId
                 FROM (
-                	SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId, a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy
-                	FROM dmscs.ApiClientDmsInstance acdi
-                	JOIN dmscs.ApiClient ac ON ac.Id = acdi.ApiClientId
-                	JOIN dmscs.Application a ON a.Id = ac.ApplicationId
+                    SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId, a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy
+                    FROM dmscs.ApiClientDmsInstance acdi
+                    JOIN dmscs.ApiClient ac ON ac.Id = acdi.ApiClientId
+                    JOIN dmscs.Application a ON a.Id = ac.ApplicationId
                     JOIN dmscs.DmsInstance di ON di.Id = acdi.DmsInstanceId
-                	WHERE acdi.DmsInstanceId = @DmsInstanceId AND {TenantContext.TenantWhereClause(tableAlias: "di")}
-                	ORDER BY a.Id LIMIT @Limit OFFSET @Offset
+                    WHERE acdi.DmsInstanceId = @DmsInstanceId AND {TenantContext.TenantWhereClause(tableAlias: "di")}
+                    ORDER BY a.Id LIMIT @Limit OFFSET @Offset
                 ) application
                 LEFT JOIN dmscs.ApplicationEducationOrganization aeo ON aeo.ApplicationId = application.Id
                 JOIN dmscs.ApiClient ac ON ac.ApplicationId = application.Id
@@ -377,7 +377,7 @@ public class DmsInstanceRepository(
                 string? CreatedBy,
                 DateTime? LastModifiedAt,
                 string? ModifiedBy,
-                long EducationOrganizationId,
+                long? EducationOrganizationId,
                 long DmsInstanceId
             )>(sql, parameters);
 
@@ -397,8 +397,15 @@ public class DmsInstanceRepository(
                         LastModifiedAt = application.LastModifiedAt,
                         ModifiedBy = application.ModifiedBy,
 
-                        EducationOrganizationIds = group.Select(row => row.EducationOrganizationId).Distinct().ToList(),
-                        DmsInstanceIds = group.Select(row => row.DmsInstanceId).Distinct().ToList(),
+                        EducationOrganizationIds = group
+                            .Where(row => row.EducationOrganizationId != null)
+                            .Select(row => row.EducationOrganizationId!.Value)
+                            .Distinct()
+                            .ToList(),
+                        DmsInstanceIds = group
+                            .Select(row => row.DmsInstanceId)
+                            .Distinct()
+                            .ToList(),
                     };
                 })
                 .ToList();
