@@ -8,8 +8,8 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
-using EdFi.DmsConfigurationService.DataModel.Model.DmsInstanceRouteContext;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -333,6 +333,101 @@ public class DmsInstanceRepository(
         {
             logger.LogError(ex, "Get existing DmsInstance IDs failure");
             return new DmsInstanceIdsExistResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ApplicationByDmsInstanceQueryResult> QueryApplicationByDmsInstance(long dmsInstanceId, PagingQuery query)
+    {
+        await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+        try
+        {
+            var sql = $"""
+                SELECT application.*, aeo.EducationOrganizationId, acdi.DmsInstanceId
+                FROM (
+                    SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId, a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy
+                    FROM dmscs.ApiClientDmsInstance acdi
+                    JOIN dmscs.ApiClient ac ON ac.Id = acdi.ApiClientId
+                    JOIN dmscs.Application a ON a.Id = ac.ApplicationId
+                    JOIN dmscs.DmsInstance di ON di.Id = acdi.DmsInstanceId
+                    WHERE acdi.DmsInstanceId = @DmsInstanceId AND {TenantContext.TenantWhereClause(tableAlias: "di")}
+                    ORDER BY a.Id LIMIT @Limit OFFSET @Offset
+                ) application
+                LEFT JOIN dmscs.ApplicationEducationOrganization aeo ON aeo.ApplicationId = application.Id
+                JOIN dmscs.ApiClient ac ON ac.ApplicationId = application.Id
+                JOIN dmscs.ApiClientDmsInstance acdi ON acdi.ApiClientId = ac.Id
+                JOIN dmscs.DmsInstance di ON di.Id = acdi.DmsInstanceId
+                WHERE {TenantContext.TenantWhereClause(tableAlias: "di")}
+                """;
+
+            var parameters = new
+            {
+                dmsInstanceId,
+                query.Limit,
+                query.Offset,
+                TenantId,
+            };
+
+            var rows = await connection.QueryAsync<
+            (
+                long Id,
+                string ApplicationName,
+                string ClaimSetName,
+                long VendorId,
+                DateTime CreatedAt,
+                string? CreatedBy,
+                DateTime? LastModifiedAt,
+                string? ModifiedBy,
+                long? EducationOrganizationId,
+                long DmsInstanceId
+            )>(sql, parameters);
+
+            var applications = rows
+                .GroupBy(row => row.Id)
+                .Select(group =>
+                {
+                    var application = group.First();
+                    return new ApplicationResponse()
+                    {
+                        Id = application.Id,
+                        ApplicationName = application.ApplicationName,
+                        ClaimSetName = application.ClaimSetName,
+                        VendorId = application.VendorId,
+                        CreatedAt = application.CreatedAt,
+                        CreatedBy = application.CreatedBy,
+                        LastModifiedAt = application.LastModifiedAt,
+                        ModifiedBy = application.ModifiedBy,
+
+                        EducationOrganizationIds = group
+                            .Where(row => row.EducationOrganizationId != null)
+                            .Select(row => row.EducationOrganizationId!.Value)
+                            .Distinct()
+                            .ToList(),
+                        DmsInstanceIds = group
+                            .Select(row => row.DmsInstanceId)
+                            .Distinct()
+                            .ToList(),
+                    };
+                })
+                .ToList();
+
+            if (applications.Count == 0)
+            {
+                var dmsInstanceExists = await connection.ExecuteScalarAsync<bool>(
+                    $"SELECT EXISTS(SELECT 1 FROM dmscs.DmsInstance WHERE Id = @dmsInstanceId AND {TenantContext.TenantWhereClause()})",
+                    new { dmsInstanceId });
+
+                if (!dmsInstanceExists)
+                {
+                    return new ApplicationByDmsInstanceQueryResult.FailureNotExists();
+                }
+            }
+
+            return new ApplicationByDmsInstanceQueryResult.Success(applications);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Query ApplicationByDmsInstance failure");
+            return new ApplicationByDmsInstanceQueryResult.FailureUnknown(ex.Message);
         }
     }
 }

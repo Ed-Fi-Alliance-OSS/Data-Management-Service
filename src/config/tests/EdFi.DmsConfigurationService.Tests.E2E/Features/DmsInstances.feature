@@ -394,3 +394,105 @@ Feature: DmsInstances endpoints
                         "modifiedBy": null
                     }
                   """
+
+        Scenario: 17 Ensure clients can GET applications by dmsInstance
+            Given a POST request is made to "/v2/vendors" with
+                  """
+                    {
+                        "company": "Test Vendor 17",
+                        "contactName": "Test Contact",
+                        "contactEmailAddress": "test17@test.com",
+                        "namespacePrefixes": "uri://test17.org"
+                    }
+                  """
+              And a POST request is made to "/v2/dmsInstances" with
+                  """
+                    {
+                        "instanceType": "Production",
+                        "instanceName": "Test Instance 17",
+                        "connectionString": "Server=test17;Database=TestDb17;"
+                    }
+                  """
+              And a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application 17-1",
+                   "claimSetName": "ClaimSet17-1",
+                   "educationOrganizationIds": [1, 2],
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application 17-2",
+                   "claimSetName": "ClaimSet17-2",
+                   "educationOrganizationIds": [3, 4],
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+              And a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application 17-3",
+                   "claimSetName": "ClaimSet17-3",
+                   "educationOrganizationIds": [],
+                   "dmsInstanceIds": [{dmsInstanceId}]
+                  }
+                  """
+             When a GET request is made to "/v2/dmsInstances/{dmsInstanceId}/applications/?offset=1&limit=1"
+             Then it should respond with 200
+              And the response body is
+                  """
+                      [{
+                          "id": {id},
+                          "applicationName": "Application 17-2",
+                          "claimSetName": "ClaimSet17-2",
+                          "vendorId": {vendorId},
+                          "educationOrganizationIds": [3, 4],
+                          "dmsInstanceIds": [{dmsInstanceId}],
+                          "createdAt": "{*}",
+                          "createdBy": "{*}",
+                          "lastModifiedAt": null,
+                          "modifiedBy": null
+                      }]
+                  """
+
+        Scenario: 18 Verify error handling when getting applications for non-existent dmsInstance
+             When a GET request is made to "/v2/dmsInstances/99999/applications/?offset=0&limit=25"
+             Then it should respond with 404
+              And the response body is
+                  """
+                    {
+                        "detail": "DmsInstance 99999 not found. It may have been recently deleted.",
+                        "type": "urn:ed-fi:api:not-found",
+                        "title": "Not Found",
+                        "status": 404,
+                        "correlationId": "{*}",
+                        "validationErrors": {},
+                        "errors": []
+                    }
+                  """
+
+        Scenario: 19 Verify getting applications for dmsInstance with no applications
+            Given a POST request is made to "/v2/dmsInstances" with
+                  """
+                    {
+                        "instanceType": "Production",
+                        "instanceName": "Instance No Apps",
+                        "connectionString": "Server=test19;Database=TestDb19;"
+                    }
+                  """
+             When a GET request is made to "/v2/dmsInstances/{dmsInstanceId}/applications/?offset=0&limit=25"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    []
+                  """
+
+        Scenario: 20 Verify error handling when getting applications using invalid dmsInstance id
+             When a GET request is made to "/v2/dmsInstances/invalid/applications/?offset=0&limit=25"
+             Then it should respond with 400
