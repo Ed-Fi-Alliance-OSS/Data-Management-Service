@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Profile: Descriptor-Full-Access
+  Purpose: Complete access to descriptor resources for system administration
+  Use Case: System administrators managing Ed-Fi descriptors and enumerations
+  Version: 1.0
+  Created: 2025-12-09
+  
+  This profile grants unrestricted read and write access to all descriptor types.
+  Descriptors are reference data (enumerations) used throughout the Ed-Fi data model.
+  
+  Use this profile for:
+  - System administrators
+  - Descriptor management tools
+  - Data setup and configuration
+  
+  Security Note: Limit assignment of this profile to trusted, authenticated administrators only.
+-->
+<Profile name="Descriptor-Full-Access">
+  <!-- 
+    Note: This profile applies to all descriptor types:
+    - AcademicSubjectDescriptor
+    - GradeLevelDescriptor
+    - StateAbbreviationDescriptor
+    - etc. (100+ descriptor types in Ed-Fi)
+  -->
+  <Resource name="Descriptor">
+    <ReadContentType memberSelection="IncludeAll">
+      <!-- Include all fields for reading descriptors -->
+    </ReadContentType>
+    
+    <WriteContentType memberSelection="IncludeAll">
+      <!-- Include all fields for creating/updating descriptors -->
+    </WriteContentType>
+  </Resource>
+  
+  <!-- Example: Specific descriptor type (optional, more granular) -->
+  <Resource name="GradeLevelDescriptor">
+    <ReadContentType memberSelection="IncludeAll" />
+    <WriteContentType memberSelection="IncludeAll" />
+  </Resource>
+  
+  <Resource name="AcademicSubjectDescriptor">
+    <ReadContentType memberSelection="IncludeAll" />
+    <WriteContentType memberSelection="IncludeAll" />
+  </Resource>
+</Profile>
