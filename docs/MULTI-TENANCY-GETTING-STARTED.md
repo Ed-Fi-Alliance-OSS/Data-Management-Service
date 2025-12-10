@@ -22,7 +22,7 @@ Multi-tenancy in DMS provides two layers of data isolation:
 ## Step 1: Configure the Environment File
 
 Navigate to the docker-compose directory and create your environment file (a
-working `.env.multitenancy` is included in the repo):
+working `.env.multitenancy` is included in the repo with the settings specified here):
 
 ```powershell
 cd eng/docker-compose
@@ -97,11 +97,11 @@ pwsh ./start-local-dms.ps1 `
     -EnableConfig `
     -EnableSwaggerUI `
     -IdentityProvider self-contained `
-    -AddDmsInstance:$false `
+    -NoDmsInstance `
     -r
 ```
 
-The `-AddDmsInstance:$false` flag prevents automatic instance creation since
+The `-NoDmsInstance` flag prevents automatic instance creation since
 you'll create tenant-specific instances manually.
 
 Wait for all services to start (approximately 2-3 minutes):
@@ -167,6 +167,11 @@ Execute the requests in order:
    the `Tenant` header)
 5. **Create Route Contexts** - Associates route qualifier values with instances
 6. **Create Vendors/Applications** - Creates API credentials for each tenant
+
+> **Important**: When creating applications, save the `key` and `secret` from the
+> response immediately. These credentials cannot be retrieved later and are needed
+> to authenticate in Swagger UI (Step 7). If you lose them, use the
+> `reset-credential` request in the HTTP file to generate new ones.
 
 ### Key Concepts
 
@@ -288,10 +293,8 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 | `DMS_MULTI_TENANCY` | Enable multi-tenancy in DMS | `false` |
 | `DMS_CONFIG_MULTI_TENANCY` | Enable multi-tenancy in Configuration Service | `false` |
 | `ROUTE_QUALIFIER_SEGMENTS` | Comma-separated route qualifiers (e.g., `schoolYear` or `districtId,schoolYear`) | (empty) |
-| `DMS_CONFIG_DATABASE_ENCRYPTION_KEY` | 32-character encryption key for connection strings | (required) |
-| `NEED_DATABASE_SETUP` | Deploy schema to the main database on startup | `true` |
+| `NEED_DATABASE_SETUP` | Deploy schema to the configuration service database on startup | `true` |
 | `DMS_DEPLOY_DATABASE_ON_STARTUP` | Deploy schema to ALL tenant instance databases on startup (required for multi-tenancy) | `false` |
-| `CACHE_EXPIRATION_MINUTES` | Instance configuration cache duration | `10` |
 
 ### API Endpoints
 

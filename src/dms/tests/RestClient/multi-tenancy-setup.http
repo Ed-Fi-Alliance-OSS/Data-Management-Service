@@ -291,16 +291,7 @@ Tenant: {{tenant1Name}}
 }
 
 ###
-@vendor1Location = {{createVendor1.response.headers.location}}
-
-### Get Vendor 1 ID
-# @name getVendor1
-GET {{vendor1Location}}
-Authorization: bearer {{configToken}}
-Tenant: {{tenant1Name}}
-
-###
-@vendor1Id = {{getVendor1.response.body.id}}
+@vendor1Id = {{createVendor1.response.body.id}}
 
 ### Create Application for Tenant 1 (with access to both school year instances)
 # @name createApp1
@@ -341,16 +332,7 @@ Tenant: {{tenant2Name}}
 }
 
 ###
-@vendor2Location = {{createVendor2.response.headers.location}}
-
-### Get Vendor 2 ID
-# @name getVendor2
-GET {{vendor2Location}}
-Authorization: bearer {{configToken}}
-Tenant: {{tenant2Name}}
-
-###
-@vendor2Id = {{getVendor2.response.body.id}}
+@vendor2Id = {{createVendor2.response.body.id}}
 
 ### Create Application for Tenant 2
 # @name createApp2
@@ -370,36 +352,6 @@ Tenant: {{tenant2Name}}
 ###
 @app2Key = {{createApp2.response.body.key}}
 @app2Secret = {{createApp2.response.body.secret}}
-
-
-### ============================================================================
-### OPTIONAL: Reset Application Credentials
-### ============================================================================
-### Use these requests to regenerate key/secret for existing applications.
-###
-### IMPORTANT: This endpoint requires the feature flag to be enabled:
-###   DMS_CONFIG_ENABLE_APPLICATION_RESET_ENDPOINT=true
-### Add this to your .env file and restart the config service.
-
-### Reset credentials for Tenant 1 Application
-# @name resetApp1Credentials
-PUT http://localhost:{{configPort}}/v2/applications/{{createApp1.response.body.id}}/reset-credential
-Authorization: bearer {{configToken}}
-Tenant: {{tenant1Name}}
-
-###
-@app1Key = {{resetApp1Credentials.response.body.key}}
-@app1Secret = {{resetApp1Credentials.response.body.secret}}
-
-### Reset credentials for Tenant 2 Application
-# @name resetApp2Credentials
-PUT http://localhost:{{configPort}}/v2/applications/{{createApp2.response.body.id}}/reset-credential
-Authorization: bearer {{configToken}}
-Tenant: {{tenant2Name}}
-
-###
-@app2Key = {{resetApp2Credentials.response.body.key}}
-@app2Secret = {{resetApp2Credentials.response.body.secret}}
 
 
 ### ============================================================================
@@ -462,10 +414,10 @@ grant_type=client_credentials
 ### STEP 13: Test Data Isolation
 ### ============================================================================
 ### With multi-tenancy enabled, the URL pattern is: /{tenant}/{routeQualifier}/data/ed-fi/{resource}
-### Example: /DistrictA/2024/data/ed-fi/contentClassDescriptors
+### Example: /DistrictA/2024/data/ed-fi/absenceEventCategoryDescriptors
 
 ### Create descriptor in Tenant 1, School Year 2024
-POST http://localhost:{{dmsPort}}/{{tenant1Name}}/2024/data/ed-fi/contentClassDescriptors
+POST http://localhost:{{dmsPort}}/{{tenant1Name}}/2024/data/ed-fi/absenceEventCategoryDescriptors
 Authorization: bearer {{token1}}
 Content-Type: application/json
 
@@ -473,11 +425,11 @@ Content-Type: application/json
     "codeValue": "DistrictA-2024-Test",
     "shortDescription": "Test descriptor for District A, Year 2024",
     "description": "Test descriptor for District A, Year 2024",
-    "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor"
 }
 
 ### Create descriptor in Tenant 1, School Year 2025
-POST http://localhost:{{dmsPort}}/{{tenant1Name}}/2025/data/ed-fi/contentClassDescriptors
+POST http://localhost:{{dmsPort}}/{{tenant1Name}}/2025/data/ed-fi/absenceEventCategoryDescriptors
 Authorization: bearer {{token1}}
 Content-Type: application/json
 
@@ -485,11 +437,11 @@ Content-Type: application/json
     "codeValue": "DistrictA-2025-Test",
     "shortDescription": "Test descriptor for District A, Year 2025",
     "description": "Test descriptor for District A, Year 2025",
-    "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor"
 }
 
 ### Create descriptor in Tenant 2, School Year 2024
-POST http://localhost:{{dmsPort}}/{{tenant2Name}}/2024/data/ed-fi/contentClassDescriptors
+POST http://localhost:{{dmsPort}}/{{tenant2Name}}/2024/data/ed-fi/absenceEventCategoryDescriptors
 Authorization: bearer {{token2}}
 Content-Type: application/json
 
@@ -497,7 +449,7 @@ Content-Type: application/json
     "codeValue": "DistrictB-2024-Test",
     "shortDescription": "Test descriptor for District B, Year 2024",
     "description": "Test descriptor for District B, Year 2024",
-    "namespace": "uri://ed-fi.org/ContentClassDescriptor"
+    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor"
 }
 
 
@@ -506,43 +458,37 @@ Content-Type: application/json
 ### ============================================================================
 
 ### Get descriptors from Tenant 1, School Year 2024 (should only see DistrictA-2024-Test)
-GET http://localhost:{{dmsPort}}/{{tenant1Name}}/2024/data/ed-fi/contentClassDescriptors
+GET http://localhost:{{dmsPort}}/{{tenant1Name}}/2024/data/ed-fi/absenceEventCategoryDescriptors
 Authorization: bearer {{token1}}
 
 ### Get descriptors from Tenant 1, School Year 2025 (should only see DistrictA-2025-Test)
-GET http://localhost:{{dmsPort}}/{{tenant1Name}}/2025/data/ed-fi/contentClassDescriptors
+GET http://localhost:{{dmsPort}}/{{tenant1Name}}/2025/data/ed-fi/absenceEventCategoryDescriptors
 Authorization: bearer {{token1}}
 
 ### Get descriptors from Tenant 2, School Year 2024 (should only see DistrictB-2024-Test)
-GET http://localhost:{{dmsPort}}/{{tenant2Name}}/2024/data/ed-fi/contentClassDescriptors
+GET http://localhost:{{dmsPort}}/{{tenant2Name}}/2024/data/ed-fi/absenceEventCategoryDescriptors
 Authorization: bearer {{token2}}
 
-### Verify directly in the databases:
-### docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2024 -c "SELECT CodeValue FROM dms.Descriptor WHERE CodeValue LIKE '%Test';"
-### docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 -c "SELECT CodeValue FROM dms.Descriptor WHERE CodeValue LIKE '%Test';"
-### docker exec dms-postgresql psql -U postgres -d edfi_dms_districtb_2024 -c "SELECT CodeValue FROM dms.Descriptor WHERE CodeValue LIKE '%Test';"
-
 
 ### ============================================================================
-### CLEANUP (Optional)
+### OPTIONAL: Reset Application Credentials
 ### ============================================================================
-### Delete in reverse order of creation to respect foreign key constraints
+### Use these requests to regenerate key/secret for existing applications.
+### After resetting, you will need to re-run the token requests above with the new credentials.
+###
+### IMPORTANT: This endpoint requires the feature flag to be enabled:
+###   DMS_CONFIG_ENABLE_APPLICATION_RESET_ENDPOINT=true
+### Add this to your .env file and restart the config service.
 
-### Delete Tenant 1 Application
-# DELETE http://localhost:{{configPort}}/v2/applications/{{createApp1.response.body.id}}
-# Authorization: bearer {{configToken}}
-# Tenant: {{tenant1Name}}
+### Reset credentials for Tenant 1 Application
+# @name resetApp1Credentials
+PUT http://localhost:{{configPort}}/v2/applications/{{createApp1.response.body.id}}/reset-credential
+Authorization: bearer {{configToken}}
+Tenant: {{tenant1Name}}
 
-### Delete Tenant 1 Vendor
-# DELETE {{vendor1Location}}
-# Authorization: bearer {{configToken}}
-# Tenant: {{tenant1Name}}
+### Reset credentials for Tenant 2 Application
+# @name resetApp2Credentials
+PUT http://localhost:{{configPort}}/v2/applications/{{createApp2.response.body.id}}/reset-credential
+Authorization: bearer {{configToken}}
+Tenant: {{tenant2Name}}
 
-### Delete Tenant 1 Instances (route contexts deleted automatically)
-# DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance1_2024_Id}}
-# Authorization: bearer {{configToken}}
-# Tenant: {{tenant1Name}}
-
-# DELETE http://localhost:{{configPort}}/v2/dmsInstances/{{instance1_2025_Id}}
-# Authorization: bearer {{configToken}}
-# Tenant: {{tenant1Name}}

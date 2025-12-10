@@ -49,9 +49,9 @@ param (
     [ValidateSet("keycloak", "self-contained")]
     $IdentityProvider="self-contained",
 
-    # Add initial DMS Instance to Configuration Service
+    # Skip creating initial DMS Instance in Configuration Service
     [Switch]
-    $AddDmsInstance = $true,
+    $NoDmsInstance,
 
     # School year range for multi-instance setup (format: StartYear-EndYear, e.g., "2022-2026")
     [string]
@@ -209,7 +209,7 @@ else {
         Write-Output "These credentials can be used for smoke testing the DMS API."
     }
 
-    if($AddDmsInstance -or $SchoolYearRange)
+    if(-not $NoDmsInstance -or $SchoolYearRange)
     {
         Import-Module ../Dms-Management.psm1 -Force
 
@@ -261,7 +261,7 @@ else {
                 }
             }
             # Handle single default instance
-            elseif($AddDmsInstance) {
+            elseif(-not $NoDmsInstance) {
                 Write-Output "Creating initial DMS Instance..."
 
                 # Create DMS Instance using environment variables

@@ -11,7 +11,7 @@
     Tenant, instance, and Kafka infrastructure creation is handled by the tests themselves.
 
     The script runs:
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained -NoDmsInstance
 #>
 
 [CmdletBinding()]
@@ -67,7 +67,7 @@ try {
     Write-Host ""
 
     # Run the start script - NO instance creation
-    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained -AddDmsInstance:$false
+    ./start-local-dms.ps1 -EnableKafkaUI -EnableConfig -EnvironmentFile ./.env.routeContext.e2e -r -AddExtensionSecurityMetadata -IdentityProvider self-contained -NoDmsInstance
 
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Failed to start DMS environment. Exit code: $LASTEXITCODE"
