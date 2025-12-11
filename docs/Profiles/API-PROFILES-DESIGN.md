@@ -81,8 +81,6 @@ Moving this capability into DMS will provide:
 
 2. **Database-Backed Storage**
    - Profiles are imported from XML and stored in database tables
-   - Rules are normalized and indexed for efficient runtime evaluation
-   - Profile metadata (name, description, version) is maintained separately from rules
 
 3. **Runtime Enforcement**
    - Profile resolution happens early in the request pipeline
@@ -1441,8 +1439,7 @@ Ticket 11 (Migration Guide)
 - [ ] Reference rule evaluation implemented
 - [ ] Nested property filtering supported
 - [ ] Performance optimizations applied (compiled expressions)
-- [ ] Unit tests for all rule scenarios (95%+ coverage)
-- [ ] Performance benchmarks demonstrate <5ms evaluation time
+- [ ] Update tests
 
 **Technical Implementation Details**:
 
@@ -1536,7 +1533,6 @@ Ticket 11 (Migration Guide)
 - [ ] Reference filtering applied correctly
 - [ ] Data structure integrity maintained after filtering
 - [ ] All resource types supported (resources, descriptors)
-- [ ] Pipeline performance impact <5ms per request
 - [ ] Unit tests for filtering logic
 - [ ] Integration tests for read operations with profiles
 
@@ -1650,7 +1646,7 @@ Ticket 11 (Migration Guide)
 - [ ] Selection logic handles edge cases (OPTIONS, HEAD)
 - [ ] Documentation includes header format examples
 - [ ] Client libraries updated with profile support
-- [ ] Unit tests for header parsing (95%+ coverage)
+- [ ] Unit tests for header parsing
 - [ ] Integration tests for all selection scenarios
 - [ ] Performance tests validate selection overhead
 
@@ -1767,7 +1763,7 @@ Ticket 11 (Migration Guide)
 
 **Acceptance Criteria**:
 
-- [ ] 5+ example profiles created and tested
+- [ ] Example profiles created and tested
 - [ ] Each example includes description and use case
 - [ ] Tutorial: Creating your first profile
 - [ ] Tutorial: Testing profile rules
@@ -1874,8 +1870,7 @@ Ticket 11 (Migration Guide)
 - [ ] Configuration options for cache behavior
 - [ ] Cache warming for frequently-used profiles (optional)
 - [ ] Metrics exposed for monitoring cache effectiveness
-- [ ] Unit tests for cache operations (>90% coverage)
-- [ ] Performance tests show reduced Config API calls (>95% hit rate)
+- [ ] Unit tests for cache operations
 - [ ] Documentation updated with caching behavior
 
 **Technical Implementation Details**:
@@ -1921,13 +1916,6 @@ Ticket 11 (Migration Guide)
    - Preload frequently-used profiles on startup
    - Background refresh before expiration
    - Configurable preload list
-
-**Benefits**:
-
-- **Reduced Latency**: Profile resolution <1ms (vs 10-50ms for HTTP call)
-- **Lower Load**: 95%+ reduction in Config API calls
-- **Better Scalability**: Handle more requests per DMS instance
-- **Improved Resilience**: Continue operation during Config API outages (using cached data)
 
 **Considerations**:
 
