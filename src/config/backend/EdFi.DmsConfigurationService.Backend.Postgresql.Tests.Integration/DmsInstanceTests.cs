@@ -21,7 +21,8 @@ public class DmsInstanceTests : DatabaseTest
         new DmsInstanceRouteContextRepository(
             Configuration.DatabaseOptions,
             NullLogger<DmsInstanceRouteContextRepository>.Instance,
-            new TestAuditContext()
+            new TestAuditContext(),
+            new TenantContextProvider()
         );
 
     private readonly IDmsInstanceDerivativeRepository _derivativeRepository =
