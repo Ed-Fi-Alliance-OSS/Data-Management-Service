@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Security.Claims;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
@@ -185,6 +186,13 @@ public class JwtAuthenticationMiddlewareTests
         public void It_includes_error_detail_in_response_body()
         {
             _requestInfo.FrontendResponse.Body?.ToString().Should().Contain("Invalid token");
+        }
+
+        [Test]
+        public void It_returns_body_as_JsonObject_not_string()
+        {
+            // Ensures the response body is a proper JsonNode object, not a serialized string.
+            _requestInfo.FrontendResponse.Body.Should().BeOfType<JsonObject>();
         }
     }
 

@@ -96,7 +96,7 @@ internal class JwtAuthenticationMiddleware(
 
         return new FrontendResponse(
             StatusCode: 401,
-            Body: JsonSerializer.Serialize(problemDetails),
+            Body: JsonSerializer.SerializeToNode(problemDetails),
             Headers: new Dictionary<string, string>
             {
                 ["WWW-Authenticate"] = $"Bearer error=\"invalid_token\"",
