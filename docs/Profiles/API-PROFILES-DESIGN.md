@@ -1976,43 +1976,9 @@ Ticket 11 (Migration Guide)
 </xs:schema>
 ```
 
-## Appendix B: Configuration Reference
-
-```json
-{
-  "Profiles": {
-    "Enabled": true,
-    "DefaultProfile": null,
-    "RequireProfileForWrites": false,
-    "StorageFormat": "jsonb",
-    "CacheSettings": {
-      "Enabled": true,
-      "ExpirationMinutes": 15,
-      "MaxCacheSize": 1000,
-      "PreloadProfiles": [],
-      "CacheParsedObjects": true
-    },
-    "ValidationSettings": {
-      "StrictMode": true,
-      "AllowEmptyProfiles": false,
-      "ValidateOnImport": true,
-      "ValidateXmlBeforeConversion": true,
-      "ValidateJsonAfterConversion": true
-    },
-    "PerformanceSettings": {
-      "MaxDocumentSizeKB": 1024,
-      "MaxNestedDepth": 10,
-      "ParallelFilteringEnabled": true,
-      "UseJsonSourceGenerators": true
-    }
-  }
-}
-```
-
 **Configuration Notes:**
 
 - **StorageFormat**: Always "jsonb" (PostgreSQL) or "json" (SQL Server)
 - **CacheParsedObjects**: Cache deserialized objects for faster access
 - **ValidateXmlBeforeConversion**: Ensure XML is valid before converting to JSON
 - **ValidateJsonAfterConversion**: Ensure conversion produced valid JSON
-- **UseJsonSourceGenerators**: Enable compile-time JSON serialization (faster)
