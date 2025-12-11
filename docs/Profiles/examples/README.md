@@ -115,8 +115,8 @@ Before importing to production:
 
 For complete documentation on API Profiles, see:
 
-- [API Profiles Design](../../API-PROFILES-DESIGN.md) - Comprehensive architecture and design
-- [API Profiles Quick Start](../../API-PROFILES-QUICKSTART.md) - Getting started guide
+- [API Profiles Design](../API-PROFILES-DESIGN.md) - Comprehensive architecture and design
+- [API Profiles Quick Start](../API-PROFILES-QUICKSTART.md) - Getting started guide
 - [Ed-Fi API Profiles Specification](https://edfi.atlassian.net/wiki/spaces/EDFICERT/pages/20874540/Profiles) - Official specification
 
 ## Contributing

@@ -569,20 +569,6 @@ Track which profiles are used most frequently:
 
 ## Next Steps
 
-### Learn More
-
-- [Full Design Documentation](./API-PROFILES-DESIGN.md)
-- [Migration Guide](./API-PROFILES-MIGRATION.md)
-- [API Reference](./API-PROFILES-REFERENCE.md)
-
-### Advanced Topics
-
-- Profile inheritance and hierarchies
-- Conditional rules based on data values
-- Multi-profile support (applying multiple profiles)
-- Dynamic profile updates without restart
-- Profile testing frameworks
-
 ### Get Help
 
 - Review example profiles in `docs/profiles/examples/`
