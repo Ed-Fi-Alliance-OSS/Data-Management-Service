@@ -908,6 +908,15 @@ Authorization: Bearer {token}
 
 **Request Body** (XML format - AdminAPI-2.x compatible):
 
+```
+{
+  "name": "Student-Read-Only",
+  "definition": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Profile name=\"Student-Read-Only\"><Resource name=\"Student\"><ReadContentType memberSelection=\"IncludeOnly\"><Property name=\"StudentUniqueId\" /><Property name=\"FirstName\" /><Property name=\"LastSurname\" /><Property name=\"BirthDate\" /><Reference name=\"SchoolReference\"><Property name=\"SchoolId\" /></Reference><Collection name=\"StudentEducationOrganizationAssociations\" memberSelection=\"IncludeOnly\"><Property name=\"EducationOrganizationId\" /><Property name=\"GradeLevel\" /></Collection></ReadContentType></Resource></Profile>"
+}
+```
+
+For XML:
+
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <Profile name="Student-Read-Only">
