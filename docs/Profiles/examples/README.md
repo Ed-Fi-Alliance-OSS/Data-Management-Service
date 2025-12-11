@@ -5,30 +5,35 @@ This directory contains example API Profile XML documents that demonstrate commo
 ## Available Profiles
 
 ### 1. student-read-only.xml
+
 **Purpose**: Provides read-only access to basic student demographics  
 **Use Case**: External reporting systems that need basic student information  
 **Includes**: StudentUniqueId, names, birth date, school reference  
 **Excludes**: All collections, write access  
 
 ### 2. student-write-limited.xml
+
 **Purpose**: Allows limited write access for demographic updates  
 **Use Case**: Student information system integration for basic data updates  
 **Includes**: Demographics, addresses, electronic mails  
 **Excludes**: Assessment data, program associations, identification codes  
 
 ### 3. assessment-limited.xml
+
 **Purpose**: Restricts assessment data access to core fields only  
 **Use Case**: Assessment vendor with need-to-know access  
 **Includes**: Basic assessment results, student reference  
 **Excludes**: Accommodations, detailed objectives, performance levels  
 
 ### 4. school-minimal.xml
+
 **Purpose**: Public-facing school directory information  
 **Use Case**: School finder applications, public directories  
 **Includes**: School ID, name, type, operational status, LEA reference  
 **Excludes**: Internal administrative data, staff assignments  
 
 ### 5. descriptor-full-access.xml
+
 **Purpose**: Full access to descriptor resources  
 **Use Case**: Administrative users managing system descriptors  
 **Includes**: All descriptor fields (read and write)  
@@ -41,13 +46,13 @@ Each profile can be tested using the provided test scripts and data:
 ```bash
 # Import a profile
 curl -X POST \
-  https://dms-api/management/v1/profiles/import \
+  https://dms-api/v2/profiles/import \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -F "file=@student-read-only.xml"
 
 # Test the profile
 curl -X GET \
-  https://dms-api/data/v5/ed-fi/students/{id} \
+  https://dms-api/data/v3/ed-fi/students/{id} \
   -H "Accept: application/json;profile=student-read-only" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
@@ -72,6 +77,7 @@ To create your own profile:
 - Use kebab-case or PascalCase consistently
 
 Examples:
+
 - ✅ `Student-ReadOnly-Demographics`
 - ✅ `Assessment-Vendor-Limited-v2`
 - ✅ `School-Public-Directory`
@@ -83,11 +89,13 @@ Examples:
 Before importing to production:
 
 1. **XML Validation**: Ensure XML is well-formed
+
    ```bash
    xmllint --noout student-read-only.xml
    ```
 
 2. **Schema Validation**: Verify against profile schema
+
    ```bash
    xmllint --schema profile-schema.xsd student-read-only.xml
    ```
@@ -124,6 +132,7 @@ To contribute new example profiles:
 ## Support
 
 For questions or issues with these profiles:
+
 - Review the Quick Start guide
 - Check the troubleshooting section in the main documentation
 - Post in Ed-Fi community forums

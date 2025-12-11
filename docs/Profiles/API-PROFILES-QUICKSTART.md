@@ -42,6 +42,22 @@ Profiles are managed across two services:
   - Endpoints: `/data/v3/ed-fi/*`
   - Used for: Reading/writing data with profile filtering applied
 
+### Config Service Endpoints
+
+**Main Endpoints (JSON format)**:
+
+- `POST /v2/profiles` - Create profile with JSON
+- `GET /v2/profiles` - List all profiles
+- `GET /v2/profiles/{id}` - Get profile details as JSON
+- `PUT /v2/profiles/{id}` - Update profile with JSON
+- `DELETE /v2/profiles/{id}` - Delete profile
+
+**Compatibility Endpoints (XML format)**:
+
+- `POST /v2/profiles/import` - Import XML file (AdminAPI-2.x compatible)
+- `POST /v2/profiles/xml` - Create profile with XML body
+- `GET /v2/profiles/{id}/export` - Export profile as XML file
+
 In this guide:
 
 - Profile management operations use the **Config Service** API
@@ -54,7 +70,7 @@ In this guide:
 Download one of the example profiles from the repository:
 
 ```bash
-curl -O https://raw.githubusercontent.com/Ed-Fi-Alliance-OSS/Data-Management-Service/main/docs/examples/profiles/student-read-only.xml
+curl -O https://raw.githubusercontent.com/Ed-Fi-Alliance-OSS/Data-Management-Service/main/docs/profiles/examples/student-read-only.xml
 ```
 
 Or create your own `student-read-only.xml`:
@@ -75,7 +91,9 @@ Or create your own `student-read-only.xml`:
 
 ### Step 2: Import Profile
 
-Import the profile using the Config Service API:
+**Option A: Import XML Profile (Compatibility Endpoint)**
+
+Import the profile using the XML compatibility endpoint:
 
 ```bash
 curl -X POST \
@@ -84,7 +102,36 @@ curl -X POST \
   -F "file=@student-read-only.xml"
 ```
 
-Response:
+**Option B: Create Profile with JSON (Main Endpoint)**
+
+Create a profile directly with JSON:
+
+```bash
+curl -X POST \
+  https://your-config-service/v2/profiles \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Student-Read-Only",
+    "definition": {
+      "profileName": "Student-Read-Only",
+      "resources": [{
+        "resourceName": "Student",
+        "readContentType": {
+          "memberSelection": "IncludeOnly",
+          "properties": [
+            {"name": "studentUniqueId"},
+            {"name": "firstName"},
+            {"name": "lastSurname"},
+            {"name": "birthDate"}
+          ]
+        }
+      }]
+    }
+  }'
+```
+
+Response (both options):
 
 ```http
 201 Created
@@ -92,6 +139,8 @@ Location: /v2/profiles/12345
 ```
 
 The profile has been created successfully. The Location header contains the URL to access the profile.
+
+> **Note**: Use `/v2/profiles/import` for XML files (backward compatibility with AdminAPI-2.x), or use `/v2/profiles` for JSON-based profile creation (recommended for new integrations).
 
 ### Step 3: Use Profile in API Request
 
@@ -149,6 +198,82 @@ curl -X GET \
 - **ExcludeOnly**: All elements except listed are accessible (blacklist)
 - **IncludeAll**: All elements are accessible (default, no filtering)
 - **ExcludeAll**: No elements are accessible (use with caution)
+
+### JSON Structure (Internal Format)
+
+When profiles are stored in the Config Service or retrieved via the API, they use a JSON format. Here's the equivalent JSON structure:
+
+```json
+{
+  "profileName": "ProfileName",
+  "resources": [
+    {
+      "resourceName": "ResourceName",
+      "readContentType": {
+        "memberSelection": "IncludeOnly",
+        "properties": [
+          {"name": "propertyName"}
+        ],
+        "collections": [
+          {
+            "name": "collectionName",
+            "memberSelection": "IncludeOnly",
+            "properties": [
+              {"name": "childPropertyName"}
+            ]
+          }
+        ],
+        "references": [
+          {
+            "name": "referenceName",
+            "properties": [
+              {"name": "referencePropertyName"}
+            ]
+          }
+        ]
+      },
+      "writeContentType": {
+        "memberSelection": "IncludeOnly",
+        "properties": [
+          {"name": "propertyName"}
+        ]
+      }
+    }
+  ]
+}
+```
+
+**Example: Student-Read-Only Profile in JSON**
+
+```json
+{
+  "profileName": "Student-Read-Only",
+  "resources": [
+    {
+      "resourceName": "Student",
+      "readContentType": {
+        "memberSelection": "IncludeOnly",
+        "properties": [
+          {"name": "studentUniqueId"},
+          {"name": "firstName"},
+          {"name": "lastSurname"},
+          {"name": "birthDate"}
+        ],
+        "references": [
+          {
+            "name": "schoolReference",
+            "properties": [
+              {"name": "schoolId"}
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+> **Note**: The main API endpoints (`POST /v2/profiles`, `GET /v2/profiles/{id}`, `PUT /v2/profiles/{id}`) use **JSON format** for creating, retrieving, and updating profiles. XML format is supported through compatibility endpoints (`POST /v2/profiles/import`, `POST /v2/profiles/xml`, `GET /v2/profiles/{id}/export`) for backward compatibility with AdminAPI-2.x.
 
 ### Element Types
 
@@ -460,7 +585,7 @@ Track which profiles are used most frequently:
 
 ### Get Help
 
-- Review example profiles in `docs/examples/profiles/`
+- Review example profiles in `docs/profiles/examples/`
 - Check troubleshooting section above
 - Consult Ed-Fi community forums
 - Contact Ed-Fi support team
@@ -470,7 +595,7 @@ Track which profiles are used most frequently:
 Find complete, tested example profiles at:
 
 ```
-docs/examples/profiles/
+docs/profiles/examples/
 ├── student-read-only.xml
 ├── student-write-limited.xml
 ├── assessment-limited.xml
