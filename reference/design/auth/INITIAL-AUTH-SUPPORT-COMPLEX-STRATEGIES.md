@@ -62,7 +62,7 @@
   - ODS intent: authorize based on a student’s EdOrg relationships (primarily StudentSchoolAssociation; sometimes you may want it to also cover responsibility).
   - Current DMS write‑side:
       - We already maintain SubjectEdOrg for students via the StudentSchool pathway:
-          - (SubjectType=Student, SubjectKey=StudentUniqueId, Pathway=StudentSchool, EducationOrganizationId=...).
+          - (SubjectType=Student, SubjectIdentifier=StudentUniqueId, Pathway=StudentSchool, EducationOrganizationId=...).
       - RelationshipsWithStudentsOnlyValidator calls GetEducationOrganizationsForStudent(studentUniqueId).
   - DMS mapping:
       - Implement GetEducationOrganizationsForStudent in PostgresqlAuthorizationRepository as:
@@ -70,7 +70,7 @@
         SELECT DISTINCT EducationOrganizationId
         FROM dms.SubjectEdOrg
         WHERE SubjectType = Student
-          AND SubjectKey = $1
+          AND SubjectIdentifier = $1
           AND Pathway = Pathway_StudentSchool;
       - For reads, query auth uses Student subjects + StudentSchool pathway:
           - In the EXISTS auth clause over DocumentSubject + SubjectEdOrg, filter:
@@ -95,7 +95,7 @@
         SELECT DISTINCT EducationOrganizationId
         FROM dms.SubjectEdOrg
         WHERE SubjectType = Student
-          AND SubjectKey = $1
+          AND SubjectIdentifier = $1
           AND Pathway = Pathway_StudentResponsibility;
       - Read‑side auth: same EXISTS join, but:
 
@@ -115,7 +115,7 @@
       - Contact/Parent identifiers (depending on model).
   - Current DMS write‑side:
       - We can already model all of these:
-          - EdOrg-secured resources: DocumentSubject row (SubjectType=EdOrg, SubjectKey=EdOrgId).
+          - EdOrg-secured resources: DocumentSubject row (SubjectType=EdOrg, SubjectIdentifier=EdOrgId).
           - Student-secured: (Student, StudentUniqueId); SubjectEdOrg for StudentSchool/Responsibility.
           - Staff-secured: (Staff, StaffUniqueId); SubjectEdOrg for StaffEdOrg.
           - Contact-secured: (Contact, ContactUniqueId); SubjectEdOrg for ContactStudentSchool.
@@ -137,8 +137,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -209,7 +209,7 @@
 
   Structurally, no:
 
-  - DocumentSubject(SubjectType, SubjectKey, ...) + SubjectEdOrg(SubjectType, SubjectKey, Pathway, EducationOrganizationId) can express:
+  - DocumentSubject(SubjectType, SubjectIdentifier, ...) + SubjectEdOrg(SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId) can express:
       - Multiple pathways per subject (StudentSchool vs Responsibility vs ContactStudent vs StaffEdOrg vs EdOrgDirect).
       - Multiple subject types per document (EdOrg + Student + Staff + Contact).
       - AND/OR compositions over those subjects and pathways in the SQL EXISTS clause.
@@ -261,12 +261,12 @@
   This plugs directly into INITIAL-AUTH-SYNCHRONIZATION-DESIGN.md:
 
   - Student membership
-      - SubjectEdOrg(SubjectType=Student, SubjectKey=StudentUniqueId, Pathway=StudentSchool) and Pathway=StudentResponsibility are maintained exactly as described under:
+      - SubjectEdOrg(SubjectType=Student, SubjectIdentifier=StudentUniqueId, Pathway=StudentSchool) and Pathway=StudentResponsibility are maintained exactly as described under:
           - “Authorization Algorithm for Student-securable document”
           - “RecomputeStudentSchoolMembership”
           - “RecomputeStudentResponsibilityMembership”
   - Contact membership (via students)
-      - SubjectEdOrg(SubjectType=Contact, SubjectKey=ContactUniqueId, Pathway=ContactStudentSchool) is maintained via:
+      - SubjectEdOrg(SubjectType=Contact, SubjectIdentifier=ContactUniqueId, Pathway=ContactStudentSchool) is maintained via:
           - RecomputeContactStudentSchoolMembership(contactUniqueId) (StudentContactAssociation section).
   - Staff membership
       - We add a parallel Staff section in the sync design:
@@ -276,10 +276,10 @@
               - Rewrite SubjectEdOrg(Staff, staffUniqueId, Pathway_StaffEdOrg, EdOrgId) with the union of ancestors.
   - EdOrg membership for EdOrg subjects
       - For EdOrg-centric resources (like EdOrg documents themselves or EdOrg-securable docs), we treat the EdOrg as a subject:
-          - DocumentSubject: (SubjectType=EdOrg, SubjectKey=EducationOrganizationId::text).
+          - DocumentSubject: (SubjectType=EdOrg, SubjectIdentifier=EducationOrganizationId::text).
       - For SubjectEdOrg we define:
           - Pathway_EdOrgDirect:
-              - SubjectKey = EdOrgId.
+              - SubjectIdentifier = EdOrgId.
               - EdOrgIds = self + ancestors (so an SEA subject is related to its LEAs and schools, depending on how you want to interpret).
           - Maintained when:
               - EdOrg documents are created or updated (using the redesigned EdOrg hierarchy).
@@ -309,28 +309,28 @@
         SELECT DISTINCT EducationOrganizationId
         FROM dms.SubjectEdOrg
         WHERE SubjectType = Student
-          AND SubjectKey = @studentUniqueId
+          AND SubjectIdentifier = @studentUniqueId
           AND Pathway IN (Pathway_StudentSchool, Pathway_StudentResponsibility);
 
         -- Staff
         SELECT DISTINCT EducationOrganizationId
         FROM dms.SubjectEdOrg
         WHERE SubjectType = Staff
-          AND SubjectKey = @staffUniqueId
+          AND SubjectIdentifier = @staffUniqueId
           AND Pathway = Pathway_StaffEdOrg;
 
         -- Contact
         SELECT DISTINCT EducationOrganizationId
         FROM dms.SubjectEdOrg
         WHERE SubjectType = Contact
-          AND SubjectKey = @contactUniqueId
+          AND SubjectIdentifier = @contactUniqueId
           AND Pathway = Pathway_ContactStudentSchool;
 
         -- EdOrg subject (if we expose "resource EdOrg" as a subject)
         SELECT DISTINCT EducationOrganizationId
         FROM dms.SubjectEdOrg
         WHERE SubjectType = EdOrg
-          AND SubjectKey = @educationOrganizationId::text
+          AND SubjectIdentifier = @educationOrganizationId::text
           AND Pathway = Pathway_EdOrgDirect;
   - RelationshipsBasedAuthorizationHelper then compares these EdOrg sets with the caller’s EdOrg filters (from AuthorizationFilter.EducationOrganization).
 
@@ -361,8 +361,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -405,13 +405,13 @@
           1. Insert/update the core document.
           2. Extract the EdOrg security elements (e.g., educationOrganizationId, schoolId, localEducationAgencyId) from DocumentSecurityElements.
           3. Maintain DocumentSubject:
-              - Delete any existing (SubjectType=EdOrg, SubjectKey=*) rows for this doc.
+              - Delete any existing (SubjectType=EdOrg, SubjectIdentifier=*) rows for this doc.
               - Insert (EdOrg, EdOrgId) for each EdOrg security element we care about.
   - For EdOrg membership in SubjectEdOrg:
       - When EdOrg hierarchy changes (or when an EdOrg document is upserted):
           - For a node E:
               - Compute its ancestor set via EducationOrganizationRelationship.
-              - Rewrite SubjectEdOrg(SubjectType=EdOrg, SubjectKey=E.Id::text, Pathway=EdOrgDirect, EducationOrganizationId=ancestors).
+              - Rewrite SubjectEdOrg(SubjectType=EdOrg, SubjectIdentifier=E.Id::text, Pathway=EdOrgDirect, EducationOrganizationId=ancestors).
 
   This is fully consistent with the “synchronization via recompute” pattern used for Student and Contact in the sync design.
 
@@ -446,8 +446,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -541,8 +541,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey

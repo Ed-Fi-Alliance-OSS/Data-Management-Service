@@ -131,7 +131,7 @@ For a relationship resource like `StudentSchoolAssociation`, `StudentContactAsso
    - Extracts all base EdOrgIds from those docs.
    - Uses the EdOrg hierarchy to compute all ancestor EdOrgIds.
    - Rewrites that subject’s `SubjectEdOrg` rows for the pathway:
-     - Deletes existing rows for `(SubjectType, SubjectKey, Pathway)`.
+    - Deletes existing rows for `(SubjectType, SubjectIdentifier, Pathway)`.
      - Inserts new rows for each EdOrgId in the union.
 
 This “recompute on change” strategy keeps the logic simple and ensures `SubjectEdOrg` always reflects the current state of relationships.
@@ -163,4 +163,3 @@ Because all of this work is done inside a single transaction per request, any re
 
 - **Extensibility**  
   - New subject types or pathways (e.g., additional relationship patterns) can be added by extending the `SubjectType`/`Pathway` enums and the write-side maintenance logic, without redesigning the core model.
-

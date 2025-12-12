@@ -137,7 +137,7 @@ CREATE TABLE dms.DocumentSubject (
     DocumentId           bigint       NOT NULL,
 
     SubjectType          smallint     NOT NULL, -- e.g. 1 = Student, 2 = Contact, 3 = Staff, 4 = EdOrg, ...
-    SubjectKey           text         NOT NULL, -- StudentUniqueId, ContactUniqueId, StaffUniqueId, EdOrgId::text, etc.
+    SubjectIdentifier    text         NOT NULL, -- StudentUniqueId, ContactUniqueId, StaffUniqueId, EdOrgId::text, etc.
 
     PRIMARY KEY (
         ProjectName,
@@ -145,18 +145,18 @@ CREATE TABLE dms.DocumentSubject (
         DocumentPartitionKey,
         DocumentId,
         SubjectType,
-        SubjectKey
+        SubjectIdentifier
     )
 );
 
 CREATE INDEX IX_DocumentSubject_Subject
-    ON dms.DocumentSubject (SubjectType, SubjectKey);
+    ON dms.DocumentSubject (SubjectType, SubjectIdentifier);
 ```
 
 Notes:
 
 - `SubjectType` is an enum encoded as `smallint` (see §4).
-- `SubjectKey` is the canonical identifier for the subject in that type:
+- `SubjectIdentifier` is the canonical identifier for the subject in that type:
   - Student → `StudentUniqueId`.
   - Contact → `ContactUniqueId`.
   - Staff → `StaffUniqueId`.
@@ -175,21 +175,21 @@ Conceptual schema:
 ```sql
 CREATE TABLE dms.SubjectEdOrg (
     SubjectType           smallint NOT NULL, -- Student, Contact, Staff, EdOrg, etc.
-    SubjectKey            text     NOT NULL, -- unique identifier per subject type
+    SubjectIdentifier     text     NOT NULL, -- unique identifier per subject type
     EducationOrganizationId bigint NOT NULL,
 
     Pathway               smallint NOT NULL, -- StudentSchool, StudentResponsibility, ContactStudentSchool, StaffEdOrg, etc.
 
     PRIMARY KEY (
         SubjectType,
-        SubjectKey,
+        SubjectIdentifier,
         Pathway,
         EducationOrganizationId
     )
 );
 
 CREATE INDEX IX_SubjectEdOrg_Subject
-    ON dms.SubjectEdOrg (SubjectType, SubjectKey, Pathway);
+    ON dms.SubjectEdOrg (SubjectType, SubjectIdentifier, Pathway);
 
 CREATE INDEX IX_SubjectEdOrg_EdOrg
     ON dms.SubjectEdOrg (EducationOrganizationId);
@@ -206,7 +206,7 @@ Notes:
   - StaffEdOrg for staff employment/assignment.
   - Future pathways (e.g., ProgramParticipation) can be added by introducing new
     enum values.
-- The combination `(SubjectType, SubjectKey, Pathway)` can always be recomputed
+- The combination `(SubjectType, SubjectIdentifier, Pathway)` can always be recomputed
   from the corresponding relationship documents; we exploit this in the
   synchronization design (§6).
 
@@ -298,14 +298,14 @@ At a high level:
 
 - **Securable resources** (documents authorized by subject identity):
   - Student‑securable → `DocumentSubject` rows with `(SubjectType = Student,
-    SubjectKey = StudentUniqueId)`.
-  - Contact‑securable → `(SubjectType = Contact, SubjectKey = ContactUniqueId)`.
-  - Staff‑securable → `(SubjectType = Staff, SubjectKey = StaffUniqueId)`.
-  - EdOrg‑securable → `(SubjectType = EdOrg, SubjectKey = EdOrgId::text)`.
+    SubjectIdentifier = StudentUniqueId)`.
+  - Contact‑securable → `(SubjectType = Contact, SubjectIdentifier = ContactUniqueId)`.
+  - Staff‑securable → `(SubjectType = Staff, SubjectIdentifier = StaffUniqueId)`.
+  - EdOrg‑securable → `(SubjectType = EdOrg, SubjectIdentifier = EdOrgId::text)`.
 
 - **Relationship resources** (documents that define subject→EdOrg memberships):
   - `StudentSchoolAssociation` → `SubjectEdOrg` rows:
-    `(SubjectType = Student, SubjectKey = StudentUniqueId, Pathway = StudentSchool, EducationOrganizationId = ancestorEdOrg)`.
+    `(SubjectType = Student, SubjectIdentifier = StudentUniqueId, Pathway = StudentSchool, EducationOrganizationId = ancestorEdOrg)`.
   - `StudentEducationOrganizationResponsibilityAssociation` → pathway
     `StudentResponsibility`.
   - `StudentContactAssociation` plus student school memberships → pathway
@@ -466,10 +466,10 @@ arrays and `dms.Document`. It is reworked to target `DocumentIndex` plus
    ```sql
    AND EXISTS (
        SELECT 1
-       FROM dms.DocumentSubject s
-       JOIN dms.SubjectEdOrg se
-         ON se.SubjectType = s.SubjectType
-        AND se.SubjectKey  = s.SubjectKey
+      FROM dms.DocumentSubject s
+      JOIN dms.SubjectEdOrg se
+        ON se.SubjectType       = s.SubjectType
+       AND se.SubjectIdentifier = s.SubjectIdentifier
        WHERE s.ProjectName          = di.ProjectName
          AND s.ResourceName         = di.ResourceName
          AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -512,7 +512,7 @@ effects.
   Each helper:
   - Reads the relevant relationship documents for the subject.
   - Computes ancestor EdOrgIds via the hierarchy.
-  - Rebuilds the `SubjectEdOrg` rows for `(SubjectType, SubjectKey, Pathway)`.
+  - Rebuilds the `SubjectEdOrg` rows for `(SubjectType, SubjectIdentifier, Pathway)`.
 
 - **No authorization triggers**  
   All recomputation happens in C# within the service layer using normal SQL,
@@ -534,7 +534,7 @@ Pathway: `StudentSchool`.
      `GetEducationOrganizationAncestors`.
    - Union all ancestor EdOrgIds across schools.
    - Delete existing `SubjectEdOrg` rows for:
-     `(SubjectType = Student, SubjectKey = studentUniqueId, Pathway = StudentSchool)`.
+     `(SubjectType = Student, SubjectIdentifier = studentUniqueId, Pathway = StudentSchool)`.
    - Insert one `SubjectEdOrg` row per ancestor EdOrgId.
 
 **Update**
@@ -567,7 +567,7 @@ Pathway: `StudentResponsibility`.
    - For each distinct `educationOrganizationId`, compute ancestor EdOrgIds.
    - Union all ancestors.
    - Delete existing `SubjectEdOrg` rows for:
-     `(SubjectType = Student, SubjectKey = studentUniqueId, Pathway = StudentResponsibility)`.
+     `(SubjectType = Student, SubjectIdentifier = studentUniqueId, Pathway = StudentResponsibility)`.
    - Insert one `SubjectEdOrg` row per ancestor EdOrgId.
 
 **Update**
@@ -601,7 +601,7 @@ they have a `StudentUniqueId` securable key).
 
    ```text
    (ProjectName, ResourceName, DocumentPartitionKey, DocumentId,
-    SubjectType = Student, SubjectKey = studentUniqueId)
+    SubjectType = Student, SubjectIdentifier = studentUniqueId)
    ```
 
 4. No `SubjectEdOrg` changes are needed; memberships are defined solely by
@@ -644,7 +644,7 @@ On `StudentSchoolAssociation` create/update/delete:
      `SubjectEdOrg` where `(SubjectType = Student, Pathway = StudentSchool)`.
    - Union all EdOrgIds across referenced students.
    - Rebuild `SubjectEdOrg` rows for:
-     `(SubjectType = Contact, SubjectKey = contactUniqueId, Pathway = ContactStudentSchool)`.
+     `(SubjectType = Contact, SubjectIdentifier = contactUniqueId, Pathway = ContactStudentSchool)`.
 
 **StudentContactAssociation**
 
@@ -683,7 +683,7 @@ If identity is immutable, no recomputation is needed on update.
 
    ```text
    (ProjectName, ResourceName, DocumentPartitionKey, DocumentId,
-    SubjectType = Contact, SubjectKey = contactUniqueId)
+    SubjectType = Contact, SubjectIdentifier = contactUniqueId)
    ```
 
 **Update**
@@ -711,10 +711,10 @@ Staff memberships (pathway `StaffEdOrg`) are maintained analogously:
   - Extracts associated EdOrgIds.
   - Expands ancestors.
   - Rebuilds `SubjectEdOrg` rows for:
-    `(SubjectType = Staff, SubjectKey = staffUniqueId, Pathway = StaffEdOrg)`.
+    `(SubjectType = Staff, SubjectIdentifier = staffUniqueId, Pathway = StaffEdOrg)`.
 
 Staff‑securable documents insert `DocumentSubject` rows with
-`(SubjectType = Staff, SubjectKey = staffUniqueId)` in the same pattern as
+`(SubjectType = Staff, SubjectIdentifier = staffUniqueId)` in the same pattern as
 student/contact‑securable documents.
 
 ### 6.8 EdOrg Hierarchy Changes
@@ -765,8 +765,8 @@ WITH page AS (
           SELECT 1
           FROM dms.DocumentSubject s
           JOIN dms.SubjectEdOrg se
-            ON se.SubjectType = s.SubjectType
-           AND se.SubjectKey  = s.SubjectKey
+            ON se.SubjectType       = s.SubjectType
+           AND se.SubjectIdentifier = s.SubjectIdentifier
           WHERE s.ProjectName          = di.ProjectName
             AND s.ResourceName         = di.ResourceName
             AND s.DocumentPartitionKey = di.DocumentPartitionKey

@@ -48,7 +48,7 @@ CREATE TABLE dms.DocumentSubject (
     DocumentId           bigint       NOT NULL,
 
     SubjectType          smallint     NOT NULL, -- e.g. 1 = Student, 2 = Contact, 3 = Staff, 4 = EdOrg, ...
-    SubjectKey           text         NOT NULL, -- StudentUniqueId, ContactUniqueId, StaffUniqueId, or EdOrgId::text, etc.
+    SubjectIdentifier    text         NOT NULL, -- StudentUniqueId, ContactUniqueId, StaffUniqueId, or EdOrgId::text, etc.
 
     PRIMARY KEY (
         ProjectName,
@@ -56,7 +56,7 @@ CREATE TABLE dms.DocumentSubject (
         DocumentPartitionKey,
         DocumentId,
         SubjectType,
-        SubjectKey
+        SubjectIdentifier
     )
 );
 ```
@@ -68,17 +68,17 @@ CREATE TABLE dms.DocumentSubject (
 
   ```sql
   CREATE INDEX IX_DocumentSubject_Subject
-      ON dms.DocumentSubject (SubjectType, SubjectKey);
+      ON dms.DocumentSubject (SubjectType, SubjectIdentifier);
   ```
 
 **Population**
 
 - C# upsert/update pipeline is responsible for maintaining `DocumentSubject`:
   - Use `DocumentSecurityElements` and resource metadata to determine if a resource is:
-    - Student-securable → `(SubjectType = Student, SubjectKey = StudentUniqueId)`.
-    - Contact-securable → `(SubjectType = Contact, SubjectKey = ContactUniqueId)`.
-    - Staff-securable → `(SubjectType = Staff, SubjectKey = StaffUniqueId)`.
-    - EdOrg-securable → `(SubjectType = EdOrg, SubjectKey = EducationOrganizationId::text)`.
+    - Student-securable → `(SubjectType = Student, SubjectIdentifier = StudentUniqueId)`.
+    - Contact-securable → `(SubjectType = Contact, SubjectIdentifier = ContactUniqueId)`.
+    - Staff-securable → `(SubjectType = Staff, SubjectIdentifier = StaffUniqueId)`.
+    - EdOrg-securable → `(SubjectType = EdOrg, SubjectIdentifier = EducationOrganizationId::text)`.
     - Additional subject types can be added as needed.
   - For a given document:
     - On insert: insert one or more `DocumentSubject` rows.
@@ -96,12 +96,12 @@ Represents the education organization memberships for a subject. This is the gen
 ```sql
 CREATE TABLE dms.SubjectEdOrg (
     SubjectType          smallint NOT NULL, -- Student, Contact, Staff, EdOrg, etc.
-    SubjectKey           text     NOT NULL, -- unique identifier per subject-type
+    SubjectIdentifier    text     NOT NULL, -- unique identifier per subject-type
     EducationOrganizationId bigint NOT NULL,
 
     Pathway              smallint NOT NULL, -- optional: e.g. 1 = StudentSchool, 2 = StudentResponsibility, 3 = ContactStudentSchool, 4 = StaffEdOrg, ...
 
-    PRIMARY KEY (SubjectType, SubjectKey, Pathway, EducationOrganizationId)
+    PRIMARY KEY (SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId)
 );
 ```
 
@@ -112,20 +112,20 @@ The primary key provides an index suitable for:
 - Looking up all EdOrgs for a subject:
 
   ```sql
-  WHERE SubjectType = $1 AND SubjectKey = $2
+  WHERE SubjectType = $1 AND SubjectIdentifier = $2
   ```
 
 - Evaluating auth for a set of EdOrgIds:
 
   ```sql
-  WHERE SubjectType = $1 AND SubjectKey = $2 AND EducationOrganizationId = ANY ($edorg_ids)
+  WHERE SubjectType = $1 AND SubjectIdentifier = $2 AND EducationOrganizationId = ANY ($edorg_ids)
   ```
 
 If needed, we can add a simple supporting index:
 
 ```sql
 CREATE INDEX IX_SubjectEdOrg_Subject
-    ON dms.SubjectEdOrg (SubjectType, SubjectKey);
+    ON dms.SubjectEdOrg (SubjectType, SubjectIdentifier);
 ```
 
 **Population**
@@ -135,12 +135,12 @@ Population is driven by upserts/deletes of *relationship* resources and the EdOr
 - For `StudentSchoolAssociation`:
   - Extract `StudentUniqueId` and `schoolId`.
   - Use `EducationOrganizationHierarchy` (and `GetEducationOrganizationAncestors`) to compute all ancestor EdOrgIds.
-  - For `(SubjectType = Student, SubjectKey = StudentUniqueId, Pathway = StudentSchool)`:
+  - For `(SubjectType = Student, SubjectIdentifier = StudentUniqueId, Pathway = StudentSchool)`:
     - Delete existing rows in `SubjectEdOrg` for that subject/pathway.
     - Insert one row per ancestor EdOrgId.
 
 - For `StudentEducationOrganizationResponsibilityAssociation`, `StudentContactAssociation`, and Staff EdOrg associations:
-  - Similar pattern: compute `(SubjectType, SubjectKey, Pathway)` and their ancestor-expanded EdOrgIds, rewrite the subject’s rows for that pathway.
+  - Similar pattern: compute `(SubjectType, SubjectIdentifier, Pathway)` and their ancestor-expanded EdOrgIds, rewrite the subject’s rows for that pathway.
 
 - For EdOrg hierarchy changes:
   - Either:
@@ -178,8 +178,8 @@ WITH page AS (
           SELECT 1
           FROM dms.DocumentSubject s
           JOIN dms.SubjectEdOrg se
-            ON se.SubjectType = s.SubjectType
-           AND se.SubjectKey  = s.SubjectKey
+            ON se.SubjectType       = s.SubjectType
+           AND se.SubjectIdentifier = s.SubjectIdentifier
           WHERE s.ProjectName          = di.ProjectName
             AND s.ResourceName         = di.ResourceName
             AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -215,7 +215,7 @@ Namespace-based authorization and other non-relationship strategies can remain e
 
 Other strategies (e.g., ownership tokens) can either:
 
-- Be represented as additional `SubjectType`/`SubjectKey` values in `DocumentSubject` and `SubjectEdOrg`, or
+- Be represented as additional `SubjectType`/`SubjectIdentifier` values in `DocumentSubject` and `SubjectEdOrg`, or
 - Be expressed as additional fields in `QueryFields` plus appropriate application-level predicates.
 
 ---
@@ -232,7 +232,7 @@ For a securable document (e.g., student-, contact-, staff-, or EdOrg-securable):
 2. Determine which subject(s) apply based on resource configuration.
 3. Maintain `dms.DocumentSubject`:
    - On insert:
-     - Insert one or more rows per subject: `(ProjectName, ResourceName, DocumentPartitionKey, DocumentId, SubjectType, SubjectKey)`.
+     - Insert one or more rows per subject: `(ProjectName, ResourceName, DocumentPartitionKey, DocumentId, SubjectType, SubjectIdentifier)`.
    - On update:
      - Delete existing `DocumentSubject` rows for that document key.
      - Insert updated rows based on the new security elements.
@@ -248,8 +248,8 @@ For relationship resources that define memberships (e.g., `StudentSchoolAssociat
 1. Extract the subject keys (`StudentUniqueId`, `ContactUniqueId`, `StaffUniqueId`, etc.) and the EdOrg identifiers from `EdfiDoc`.
 2. Use `EducationOrganizationHierarchy` (and `GetEducationOrganizationAncestors`) to expand to all ancestor EdOrgIds.
 3. Rewrite the subject’s rows in `dms.SubjectEdOrg` for the relevant pathway:
-   - Delete existing `(SubjectType, SubjectKey, Pathway, *)` rows.
-   - Insert new rows `(SubjectType, SubjectKey, Pathway, EducationOrganizationId)` for all ancestor EdOrgIds.
+   - Delete existing `(SubjectType, SubjectIdentifier, Pathway, *)` rows.
+   - Insert new rows `(SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId)` for all ancestor EdOrgIds.
 
 For EdOrg hierarchy changes, the pipeline must ensure `SubjectEdOrg` remains consistent (either via targeted recomputation or a periodic reconciliation job).
 
@@ -296,4 +296,3 @@ This initial design intentionally keeps the model simple and generic. Open quest
 - Additional indexing based on observed query patterns and data volumes.
 
 This document should be treated as the baseline for implementation and performance spikes, not the final word on the authorization schema.
-

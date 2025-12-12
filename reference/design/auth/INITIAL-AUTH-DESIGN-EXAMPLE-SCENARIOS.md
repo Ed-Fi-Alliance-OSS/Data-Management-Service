@@ -6,8 +6,8 @@
 
   I’ll assume:
 
-  - DocumentSubject(ProjectName, ResourceName, DocumentPartitionKey, DocumentId, SubjectType, SubjectKey) with PK on all those columns.
-  - SubjectEdOrg(SubjectType, SubjectKey, Pathway, EducationOrganizationId) with PK (SubjectType, SubjectKey, Pathway, EducationOrganizationId).
+  - DocumentSubject(ProjectName, ResourceName, DocumentPartitionKey, DocumentId, SubjectType, SubjectIdentifier) with PK on all those columns.
+  - SubjectEdOrg(SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId) with PK (SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId).
   - DocumentIndex as in your indexing design (GIN on QueryFields, B-tree on (ProjectName, ResourceName, CreatedAt, DocumentPartitionKey, DocumentId)).
   - authorized_edorg_ids is a bigint[] computed once in app code.
 
@@ -36,8 +36,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -61,10 +61,10 @@
   - DocumentSubject:
       - PK already starts with (ProjectName, ResourceName, DocumentPartitionKey, DocumentId), which matches the join predicates; good for point lookup.
   - SubjectEdOrg:
-      - PK (SubjectType, SubjectKey, Pathway, EducationOrganizationId) is fine:
-          - Filter on SubjectType, SubjectKey, Pathway, and EducationOrganizationId = ANY(...).
+      - PK (SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId) is fine:
+          - Filter on SubjectType, SubjectIdentifier, Pathway, and EducationOrganizationId = ANY(...).
       - If we see many different Pathway values, we might add:
-          - IX_SubjectEdOrg_SubjectPathway(SubjectType, SubjectKey, Pathway, EducationOrganizationId) – but that’s essentially the PK already.
+          - IX_SubjectEdOrg_SubjectPathway(SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId) – but that’s essentially the PK already.
 
   No extra indexes needed beyond PKs for this union case.
 
@@ -96,8 +96,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -154,8 +154,8 @@
                 SELECT 1
                 FROM dms.DocumentSubject s
                 JOIN dms.SubjectEdOrg se
-                  ON se.SubjectType = s.SubjectType
-                 AND se.SubjectKey  = s.SubjectKey
+                  ON se.SubjectType       = s.SubjectType
+                 AND se.SubjectIdentifier = s.SubjectIdentifier
                 WHERE s.ProjectName          = di.ProjectName
                   AND s.ResourceName         = di.ResourceName
                   AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -170,8 +170,8 @@
                 SELECT 1
                 FROM dms.DocumentSubject s
                 JOIN dms.SubjectEdOrg se
-                  ON se.SubjectType = s.SubjectType
-                 AND se.SubjectKey  = s.SubjectKey
+                  ON se.SubjectType       = s.SubjectType
+                 AND se.SubjectIdentifier = s.SubjectIdentifier
                 WHERE s.ProjectName          = di.ProjectName
                   AND s.ResourceName         = di.ResourceName
                   AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -196,7 +196,7 @@
   - Each EXISTS uses the same join pattern and PKs as before.
   - The planner may evaluate either side of the OR depending on row estimates; in practice, both are cheap per-row because:
       - DocumentSubject lookup is by full doc key (prefix of PK).
-      - Then SubjectEdOrg is by (SubjectType, SubjectKey, Pathway, EducationOrganizationId) (the PK).
+      - Then SubjectEdOrg is by (SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId) (the PK).
   - If we see that one side of the OR dominates (e.g., most docs are Student-only), we can:
       - Optionally refactor in app code: only add the Staff EXISTS when the resource is actually Staff-securable.
       - Or rely on the planner; this is roughly analogous to ODS having multiple strategies with OR semantics.
@@ -229,8 +229,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -244,8 +244,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -282,13 +282,13 @@
 
   DMS modeling
 
-  We can treat the document itself as a subject with SubjectType = EdOrg, SubjectKey = EducationOrganizationId::text:
+  We can treat the document itself as a subject with SubjectType = EdOrg, SubjectIdentifier = EducationOrganizationId::text:
 
   - DocumentSubject row for:
-      - (SubjectType = EdOrg, SubjectKey = <doc’s EdOrgId>).
+     - (SubjectType = EdOrg, SubjectIdentifier = <doc’s EdOrgId>).
   - SubjectEdOrg membership for that “subject” can be either:
       - A single row per ancestor EdOrgId (including self), or
-      - We can treat SubjectKey as an EdOrg and bypass SubjectEdOrg and just join to EducationOrganizationHierarchyTermsLookup (if we keep it).
+     - We can treat SubjectIdentifier as an EdOrg and bypass SubjectEdOrg and just join to EducationOrganizationHierarchyTermsLookup (if we keep it).
 
   Simplest DMS SQL (using SubjectEdOrg)
 
@@ -302,8 +302,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -337,7 +337,7 @@
   - Always:
       - Start from DocumentIndex row.
       - Lookup DocumentSubject by full doc key (prefix of its PK).
-      - For each subject row, lookup SubjectEdOrg by (SubjectType, SubjectKey, Pathway, EducationOrganizationId) (its PK).
+      - For each subject row, lookup SubjectEdOrg by (SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId) (its PK).
   - Combined strategies are just combinations of these patterns using EXISTS with AND / OR.
 
   Potential tweaks to keep in mind:
@@ -381,13 +381,13 @@
       - EducationOrganizationHierarchy says 255901 (School) rolls up to 2559 (LEA).
   - SubjectEdOrg rows (computed when StudentSchoolAssociation was upserted):
 
-    (SubjectType=Student, SubjectKey='S-1234', Pathway=StudentSchool, EducationOrganizationId=255901)
-    (SubjectType=Student, SubjectKey='S-1234', Pathway=StudentSchool, EducationOrganizationId=2559)
+    (SubjectType=Student, SubjectIdentifier='S-1234', Pathway=StudentSchool, EducationOrganizationId=255901)
+    (SubjectType=Student, SubjectIdentifier='S-1234', Pathway=StudentSchool, EducationOrganizationId=2559)
   - DocumentSubject row for this StudentAssessment (computed when the doc was upserted):
 
     (ProjectName='Ed-Fi', ResourceName='StudentAssessment',
      DocumentPartitionKey=3, DocumentId=100,
-     SubjectType=Student, SubjectKey='S-1234')
+     SubjectType=Student, SubjectIdentifier='S-1234')
   - DocumentIndex row (simplified):
 
     {
@@ -425,8 +425,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -454,7 +454,7 @@
   - DocumentSubject:
       - PK starting with (ProjectName, ResourceName, DocumentPartitionKey, DocumentId) → point lookup per candidate doc.
   - SubjectEdOrg:
-      - PK (SubjectType, SubjectKey, Pathway, EducationOrganizationId) → point/IN lookup for (Student, 'S-1234', StudentSchool, any authorized_edorg_ids).
+      - PK (SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId) → point/IN lookup for (Student, 'S-1234', StudentSchool, any authorized_edorg_ids).
 
   This is the simplest, realistic case where StudentSchool is the only pathway. If you agree with this as a baseline, next step would be to extend the same doc with a Staff relationship (e.g., teacher who proctored the assessment) and show the AND/OR compositions on
   this same resource.
@@ -501,11 +501,11 @@
 
   (ProjectName='Ed-Fi', ResourceName='StudentAssessment',
    DocumentPartitionKey=3, DocumentId=100,
-   SubjectType=Student, SubjectKey='S-1234')
+   SubjectType=Student, SubjectIdentifier='S-1234')
 
   (ProjectName='Ed-Fi', ResourceName='StudentAssessment',
    DocumentPartitionKey=3, DocumentId=100,
-   SubjectType=Staff,   SubjectKey='T-7890')
+   SubjectType=Staff,   SubjectIdentifier='T-7890')
 
   DocumentIndex row (QueryFields unchanged except maybe we add staff if needed for query):
 
@@ -540,8 +540,8 @@
                 SELECT 1
                 FROM dms.DocumentSubject s
                 JOIN dms.SubjectEdOrg se
-                  ON se.SubjectType = s.SubjectType
-                 AND se.SubjectKey  = s.SubjectKey
+                  ON se.SubjectType       = s.SubjectType
+                 AND se.SubjectIdentifier = s.SubjectIdentifier
                 WHERE s.ProjectName          = di.ProjectName
                   AND s.ResourceName         = di.ResourceName
                   AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -556,8 +556,8 @@
                 SELECT 1
                 FROM dms.DocumentSubject s
                 JOIN dms.SubjectEdOrg se
-                  ON se.SubjectType = s.SubjectType
-                 AND se.SubjectKey  = s.SubjectKey
+                  ON se.SubjectType       = s.SubjectType
+                 AND se.SubjectIdentifier = s.SubjectIdentifier
                 WHERE s.ProjectName          = di.ProjectName
                   AND s.ResourceName         = di.ResourceName
                   AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -594,7 +594,7 @@
   - DocumentSubject:
       - Lookup by (ProjectName, ResourceName, DocumentPartitionKey, DocumentId, SubjectType) using PK; very selective.
   - SubjectEdOrg:
-      - Lookup by (SubjectType, SubjectKey, Pathway, EducationOrganizationId) using PK; also selective.
+      - Lookup by (SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId) using PK; also selective.
 
   No additional indexes required; we just use the same pattern twice with OR.
 
@@ -615,8 +615,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -630,8 +630,8 @@
             SELECT 1
             FROM dms.DocumentSubject s
             JOIN dms.SubjectEdOrg se
-              ON se.SubjectType = s.SubjectType
-             AND se.SubjectKey  = s.SubjectKey
+              ON se.SubjectType       = s.SubjectType
+             AND se.SubjectIdentifier = s.SubjectIdentifier
             WHERE s.ProjectName          = di.ProjectName
               AND s.ResourceName         = di.ResourceName
               AND s.DocumentPartitionKey = di.DocumentPartitionKey

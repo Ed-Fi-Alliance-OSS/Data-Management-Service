@@ -45,7 +45,7 @@ below for how relational tables are maintained.
    - `RelationshipsBasedAuthorizationHelper.ValidateStudentAuthorization` calls
      `IAuthorizationRepository.GetEducationOrganizationsForStudent(studentUniqueId)`.
    - In the new design, this method reads from `SubjectEdOrg`:
-     - `SELECT DISTINCT EducationOrganizationId FROM dms.SubjectEdOrg WHERE SubjectType = Student AND SubjectKey = @studentUniqueId AND Pathway IN (StudentSchool, StudentResponsibility);`
+    - `SELECT DISTINCT EducationOrganizationId FROM dms.SubjectEdOrg WHERE SubjectType = Student AND SubjectIdentifier = @studentUniqueId AND Pathway IN (StudentSchool, StudentResponsibility);`
 5. **Core compares subject EdOrgIds with caller’s EdOrg filters**  
    - The helper intersects the EdOrgIds from `SubjectEdOrg` with the
      `AuthorizationFilter.EducationOrganization` values.
@@ -103,7 +103,7 @@ All actions occur inside the same transaction as the document change.
       `EducationOrganization`/`EducationOrganizationRelationship` tables.
    3. Union all ancestor EdOrgIds.
    4. Delete existing `SubjectEdOrg` rows for
-      `(SubjectType = Student, SubjectKey = studentUniqueId, Pathway = StudentSchool)`.
+      `(SubjectType = Student, SubjectIdentifier = studentUniqueId, Pathway = StudentSchool)`.
    5. Insert one `SubjectEdOrg` row per ancestor EdOrgId for this student/pathway.
 
 *Update (including cascade)*
@@ -140,7 +140,7 @@ All actions occur inside the same transaction as the document change.
       the hierarchy tables.
    3. Union all ancestor EdOrgIds.
    4. Delete existing `SubjectEdOrg` rows for
-      `(SubjectType = Student, SubjectKey = studentUniqueId, Pathway = StudentResponsibility)`.
+      `(SubjectType = Student, SubjectIdentifier = studentUniqueId, Pathway = StudentResponsibility)`.
    5. Insert one `SubjectEdOrg` row per ancestor EdOrgId for this student/pathway.
 
 *Update (including cascade)*
@@ -172,7 +172,7 @@ with a `StudentUniqueId` securable key).
 1. Insert the Student-securable document into `dms.Document`.
 2. Extract `StudentUniqueId` from `DocumentSecurityElements`.
 3. Insert a `DocumentSubject` row:
-   - `(ProjectName, ResourceName, DocumentPartitionKey, DocumentId, SubjectType = Student, SubjectKey = studentUniqueId)`.
+   - `(ProjectName, ResourceName, DocumentPartitionKey, DocumentId, SubjectType = Student, SubjectIdentifier = studentUniqueId)`.
 4. (No EdOrg arrays are stored on `dms.Document`; EdOrg membership remains in `SubjectEdOrg`.)
 
 *Update (including cascade)*
@@ -229,11 +229,11 @@ ContactStudentSchool pathway).
      `IAuthorizationRepository.GetEducationOrganizationsForContact(contactUniqueId)`.
    - In the new design this reads from `SubjectEdOrg`:
 
-     ```sql
-     SELECT DISTINCT EducationOrganizationId
-     FROM dms.SubjectEdOrg
-     WHERE SubjectType = Contact
-       AND SubjectKey = @contactUniqueId
+    ```sql
+    SELECT DISTINCT EducationOrganizationId
+    FROM dms.SubjectEdOrg
+    WHERE SubjectType = Contact
+       AND SubjectIdentifier = @contactUniqueId
        AND Pathway     = ContactStudentSchool;
      ```
 
@@ -311,12 +311,12 @@ school memberships.
       SELECT EducationOrganizationId
       FROM dms.SubjectEdOrg
       WHERE SubjectType = Student
-        AND SubjectKey  = @studentUniqueId
+        AND SubjectIdentifier  = @studentUniqueId
         AND Pathway     = StudentSchool;
       ```
 
    3. Union all EdOrgIds across all students associated with this contact.
-   4. Delete `SubjectEdOrg` rows for `(SubjectType = Contact, SubjectKey = contactUniqueId, Pathway = ContactStudentSchool)`.
+   4. Delete `SubjectEdOrg` rows for `(SubjectType = Contact, SubjectIdentifier = contactUniqueId, Pathway = ContactStudentSchool)`.
    5. Insert new `SubjectEdOrg` rows for each EdOrgId in the union.
 
 *Update*
@@ -344,7 +344,7 @@ These are resources authorized using contact-based strategies (e.g., secured by
 1. Insert the Contact-securable document into `dms.Document`.
 2. Extract `ContactUniqueId` from `DocumentSecurityElements`.
 3. Insert `DocumentSubject` row:
-   - `(ProjectName, ResourceName, DocumentPartitionKey, DocumentId, SubjectType = Contact, SubjectKey = contactUniqueId)`.
+   - `(ProjectName, ResourceName, DocumentPartitionKey, DocumentId, SubjectType = Contact, SubjectIdentifier = contactUniqueId)`.
 
 *Update (including cascade)*
 
@@ -376,4 +376,3 @@ These are resources authorized using contact-based strategies (e.g., secured by
 - EdOrg hierarchy changes can either:
   - Trigger recomputation for affected subjects, or
   - Be handled by a scheduled reconciliation process, depending on operational needs.
-

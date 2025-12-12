@@ -39,8 +39,8 @@
               SELECT 1
               FROM dms.DocumentSubject s
               JOIN dms.SubjectEdOrg se
-                ON se.SubjectType = s.SubjectType
-               AND se.SubjectKey  = s.SubjectKey
+                ON se.SubjectType       = s.SubjectType
+               AND se.SubjectIdentifier = s.SubjectIdentifier
               WHERE s.ProjectName          = di.ProjectName
                 AND s.ResourceName         = di.ResourceName
                 AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -118,7 +118,7 @@
     SELECT EducationOrganizationId
     FROM dms.SubjectEdOrg
     WHERE SubjectType = @Student
-      AND SubjectKey = @studentUniqueId
+      AND SubjectIdentifier = @studentUniqueId
       AND Pathway IN (StudentSchool, StudentResponsibility);
 ```
 

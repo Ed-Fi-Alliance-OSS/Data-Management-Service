@@ -34,7 +34,7 @@
   3. Add a single EXISTS predicate to the WHERE clause that:
       - Starts from DocumentIndex row (alias di).
       - Joins to dms.DocumentSubject by doc key.
-      - Joins to dms.SubjectEdOrg by (SubjectType, SubjectKey).
+      - Joins to dms.SubjectEdOrg by (SubjectType, SubjectIdentifier).
       - Requires SubjectEdOrg.EducationOrganizationId to be in the caller’s EdOrg set.
       - Optionally restricts SubjectType and Pathway based on securables/strategies.
   4. Keep namespace filtering in the QueryFields @> ... JSON (or as a separate predicate), not in this EXISTS.
@@ -46,8 +46,8 @@
       SELECT 1
       FROM dms.DocumentSubject s
       JOIN dms.SubjectEdOrg se
-        ON se.SubjectType = s.SubjectType
-       AND se.SubjectKey  = s.SubjectKey
+        ON se.SubjectType       = s.SubjectType
+       AND se.SubjectIdentifier = s.SubjectIdentifier
       WHERE s.ProjectName          = di.ProjectName
         AND s.ResourceName         = di.ResourceName
         AND s.DocumentPartitionKey = di.DocumentPartitionKey
@@ -273,8 +273,8 @@
               SELECT 1
               FROM dms.DocumentSubject s
               JOIN dms.SubjectEdOrg se
-                ON se.SubjectType = s.SubjectType
-               AND se.SubjectKey  = s.SubjectKey
+                ON se.SubjectType       = s.SubjectType
+               AND se.SubjectIdentifier = s.SubjectIdentifier
               WHERE s.ProjectName          = di.ProjectName
                 AND s.ResourceName         = di.ResourceName
                 AND s.DocumentPartitionKey = di.DocumentPartitionKey

@@ -141,7 +141,7 @@
           - Or insert one DocumentSubject row per element (better for multi-student resources).
   3. Insert new mappings:
 
-     For each (subjectType, subjectKey):
+     For each (subjectType, subjectIdentifier):
 
 ```sql
      INSERT INTO dms.DocumentSubject (
@@ -150,9 +150,9 @@
          DocumentPartitionKey,
          DocumentId,
          SubjectType,
-         SubjectKey
+         SubjectIdentifier
      )
-     VALUES (@ProjectName, @ResourceName, @DocumentPartitionKey, @DocumentId, @SubjectType, @SubjectKey);
+     VALUES (@ProjectName, @ResourceName, @DocumentPartitionKey, @DocumentId, @SubjectType, @SubjectIdentifier);
 ```
      Use a batch insert via ISqlAction for efficiency.
 
@@ -172,10 +172,10 @@
 
   For each pathway in resourceAuthorizationPathways:
 
-  1. Extract the subject key and the base EdOrgId(s).
+  1. Extract the subject identifier and the base EdOrgId(s).
   2. Compute the full set of EdOrg ancestors via GetEducationOrganizationAncestors.
   3. Rewrite that subject’s memberships for that pathway in SubjectEdOrg:
-      - DELETE existing rows for (SubjectType, SubjectKey, Pathway).
+      - DELETE existing rows for (SubjectType, SubjectIdentifier, Pathway).
       - INSERT one row per ancestor EducationOrganizationId.
 
   This is the simplest, safe approach: we treat the current resource instance as authoritative for that subject/pathway; if you need to consider multiple relationship rows per subject/pathway, you can extend this to aggregate across all relationship documents (see
@@ -222,12 +222,12 @@
   - Delete and insert:
 
 ```C#
-  await DeleteSubjectEdOrgAsync(
-      SubjectType.Student,
-      studentUniqueId,
-      Pathway.StudentSchool,
-      connection,
-      transaction);
+      await DeleteSubjectEdOrgAsync(
+          SubjectType.Student,
+          studentUniqueId,
+          Pathway.StudentSchool,
+          connection,
+          transaction);
 
   foreach (var edOrgId in edOrgIds)
   {
@@ -258,7 +258,7 @@
         SELECT DISTINCT EducationOrganizationId
         FROM dms.SubjectEdOrg
         WHERE SubjectType = @Student
-          AND SubjectKey = @studentUniqueId
+          AND SubjectIdentifier = @studentUniqueId
           AND Pathway = @StudentSchool;
 
   The initial design assumes “rewrite per subject+pathway” (simpler schema), but the second option is a straightforward refinement if you want to avoid recomputation across docs.
@@ -284,10 +284,10 @@
           - Use AuthorizationPathway to get subject key & base EdOrgId.
           - Query remaining relationship docs for that subject/pathway.
           - Compute new membership set.
-          - Rewrite SubjectEdOrg for (SubjectType, SubjectKey, Pathway).
+          - Rewrite SubjectEdOrg for (SubjectType, SubjectIdentifier, Pathway).
   - If you include relationship doc id in SubjectEdOrg:
       - On delete:
-          - Just delete rows for this specific doc’s (SubjectType, SubjectKey, Pathway, RelationshipDocId, RelationshipDocPartitionKey).
+          - Just delete rows for this specific doc’s (SubjectType, SubjectIdentifier, Pathway, RelationshipDocId, RelationshipDocPartitionKey).
           - No need to recompute.
 
   Implementation shape matches the upsert path; it just picks the correct delete pattern.
@@ -452,7 +452,7 @@
           - Or insert one DocumentSubject row per element (better for multi-student resources).
   3. Insert new mappings:
 
-     For each (subjectType, subjectKey):
+     For each (subjectType, subjectIdentifier):
 ```sql
      INSERT INTO dms.DocumentSubject (
          ProjectName,
@@ -460,9 +460,9 @@
          DocumentPartitionKey,
          DocumentId,
          SubjectType,
-         SubjectKey
+         SubjectIdentifier
      )
-     VALUES (@ProjectName, @ResourceName, @DocumentPartitionKey, @DocumentId, @SubjectType, @SubjectKey);
+     VALUES (@ProjectName, @ResourceName, @DocumentPartitionKey, @DocumentId, @SubjectType, @SubjectIdentifier);
 
      Use a batch insert via ISqlAction for efficiency.
 ```
@@ -482,10 +482,10 @@
 
   For each pathway in resourceAuthorizationPathways:
 
-  1. Extract the subject key and the base EdOrgId(s).
+  1. Extract the subject identifier and the base EdOrgId(s).
   2. Compute the full set of EdOrg ancestors via GetEducationOrganizationAncestors.
   3. Rewrite that subject’s memberships for that pathway in SubjectEdOrg:
-      - DELETE existing rows for (SubjectType, SubjectKey, Pathway).
+      - DELETE existing rows for (SubjectType, SubjectIdentifier, Pathway).
       - INSERT one row per ancestor EducationOrganizationId.
 
   This is the simplest, safe approach: we treat the current resource instance as authoritative for that subject/pathway; if you need to consider multiple relationship rows per subject/pathway, you can extend this to aggregate across all relationship documents (see
@@ -568,7 +568,7 @@
         SELECT DISTINCT EducationOrganizationId
         FROM dms.SubjectEdOrg
         WHERE SubjectType = @Student
-          AND SubjectKey = @studentUniqueId
+          AND SubjectIdentifier = @studentUniqueId
           AND Pathway = @StudentSchool;
 
   The initial design assumes “rewrite per subject+pathway” (simpler schema), but the second option is a straightforward refinement if you want to avoid recomputation across docs.
@@ -591,13 +591,13 @@
 
   - If you recompute from all relationship docs:
       - On delete:
-          - Use AuthorizationPathway to get subject key & base EdOrgId.
+          - Use AuthorizationPathway to get subject identifier & base EdOrgId.
           - Query remaining relationship docs for that subject/pathway.
           - Compute new membership set.
-          - Rewrite SubjectEdOrg for (SubjectType, SubjectKey, Pathway).
+          - Rewrite SubjectEdOrg for (SubjectType, SubjectIdentifier, Pathway).
   - If you include relationship doc id in SubjectEdOrg:
       - On delete:
-          - Just delete rows for this specific doc’s (SubjectType, SubjectKey, Pathway, RelationshipDocId, RelationshipDocPartitionKey).
+          - Just delete rows for this specific doc’s (SubjectType, SubjectIdentifier, Pathway, RelationshipDocId, RelationshipDocPartitionKey).
           - No need to recompute.
 
   Implementation shape matches the upsert path; it just picks the correct delete pattern.

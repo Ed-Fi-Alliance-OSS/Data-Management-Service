@@ -41,7 +41,7 @@
       - GetEducationOrganizationsForStaff(string staffUniqueId)
   - New implementations (examples):
       - GetEducationOrganizationsForStudent:
-          - SELECT DISTINCT EducationOrganizationId FROM dms.SubjectEdOrg WHERE SubjectType = Student AND SubjectKey = $1 AND Pathway IN (StudentSchool, StudentResponsibility);
+          - SELECT DISTINCT EducationOrganizationId FROM dms.SubjectEdOrg WHERE SubjectType = Student AND SubjectIdentifier = $1 AND Pathway IN (StudentSchool, StudentResponsibility);
       - GetEducationOrganizationsForStudentResponsibility:
           - Same but Pathway = StudentResponsibility.
       - GetEducationOrganizationsForContact:
@@ -86,7 +86,7 @@
           4. Maintain document→subject mapping:
               - Call SubjectMembershipWriter.MaintainDocumentSubjects(...):
                   - Inspect ResourceInfo.AuthorizationSecurableInfo + DocumentSecurityElements:
-                      - If Student-securable: insert (SubjectType=Student, SubjectKey=StudentUniqueId).
+                      - If Student-securable: insert (SubjectType=Student, SubjectIdentifier=StudentUniqueId).
                       - If Staff-securable: (Staff, StaffUniqueId).
                       - If Contact-securable: (Contact, ContactUniqueId).
                       - If EdOrg-securable: (EdOrg, EducationOrganizationId).
@@ -95,7 +95,7 @@
               - Use updateRequest.ResourceAuthorizationPathways (built by ProvideAuthorizationPathwayMiddleware) to know we’re handling:
                   - StudentSchoolAssociation, StudentEducationOrganizationResponsibilityAssociation, StudentContactAssociation, StaffEducationOrganizationAssociation, etc.
               - For each pathway:
-                  - Read the subject key(s) and base EdOrgId from AuthorizationPathway records.
+                  - Read the subject identifier(s) and base EdOrgId from AuthorizationPathway records.
                   - Use GetEducationOrganizationAncestors to expand the EdOrgId.
                   - Rewrite the subject’s rows in SubjectEdOrg for the given Pathway.
           6. Drop calls to DocumentAuthorizationHelper.InsertSecurableDocument / UpdateSecurableDocument.
@@ -162,8 +162,8 @@
               SELECT 1
               FROM dms.DocumentSubject s
               JOIN dms.SubjectEdOrg se
-                ON se.SubjectType = s.SubjectType
-               AND se.SubjectKey  = s.SubjectKey
+                ON se.SubjectType       = s.SubjectType
+               AND se.SubjectIdentifier = s.SubjectIdentifier
               WHERE s.ProjectName          = di.ProjectName
                 AND s.ResourceName         = di.ResourceName
                 AND s.DocumentPartitionKey = di.DocumentPartitionKey

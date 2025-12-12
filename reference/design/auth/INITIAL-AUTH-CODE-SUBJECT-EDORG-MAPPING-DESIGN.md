@@ -9,7 +9,7 @@
 
   I’ll assume the generic tables we discussed:
 
-  - SubjectEdOrg(SubjectType, SubjectKey, Pathway, EducationOrganizationId, PK=all)
+  - SubjectEdOrg(SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId, PK=all)
   - EducationOrganization + EducationOrganizationRelationship
   - Document and (eventually) DocumentIndex
 
@@ -78,7 +78,7 @@
 
   ### 3.1 StudentSchool (StudentSchoolAssociation → Student/StudentSchool pathway)
 
-  Subject: Student (SubjectType = Student, SubjectKey = studentUniqueId)
+  Subject: Student (SubjectType = Student, SubjectIdentifier = studentUniqueId)
   Pathway: Pathway_StudentSchool
   Base EdOrg field: schoolId on StudentSchoolAssociation
 
@@ -117,10 +117,10 @@
 ```sql
      DELETE FROM dms.SubjectEdOrg
      WHERE SubjectType = @Student
-       AND SubjectKey = @studentUniqueId
+       AND SubjectIdentifier = @studentUniqueId
        AND Pathway = @StudentSchool;
 
-     INSERT INTO dms.SubjectEdOrg (SubjectType, SubjectKey, Pathway, EducationOrganizationId)
+     INSERT INTO dms.SubjectEdOrg (SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId)
      VALUES (@Student, @studentUniqueId, @StudentSchool, @eachEdOrgId);
 ```
   ### 3.2 StudentResponsibility (StudentEdOrgResponsibilityAssociation)
@@ -139,7 +139,7 @@
 
   ### 3.3 StaffEdOrg (StaffEmployment/Assignment)
 
-  Subject: Staff (SubjectType = Staff, SubjectKey = staffUniqueId)
+  Subject: Staff (SubjectType = Staff, SubjectIdentifier = staffUniqueId)
   Pathway: Pathway_StaffEdOrg
   Base EdOrg field: educationOrganizationId on StaffEducationOrganization...Association.
 
@@ -153,7 +153,7 @@
 
   This one is slightly different because contact→EdOrg membership is derived via students.
 
-  Subject: Contact (SubjectType = Contact, SubjectKey = contactUniqueId)
+  Subject: Contact (SubjectType = Contact, SubjectIdentifier = contactUniqueId)
   Pathway: Pathway_ContactStudentSchool
 
   RecomputeContactStudentSchoolMembership(contactUniqueId)
@@ -177,7 +177,7 @@
         SELECT EducationOrganizationId
         FROM dms.SubjectEdOrg
         WHERE SubjectType = @Student
-          AND SubjectKey = @studentUniqueId
+          AND SubjectIdentifier = @studentUniqueId
           AND Pathway = @StudentSchool;
 ```
       - Union all EdOrgIds across all students into one set for this contact.
@@ -185,10 +185,10 @@
 ```sql
      DELETE FROM dms.SubjectEdOrg
      WHERE SubjectType = @Contact
-       AND SubjectKey = @contactUniqueId
+       AND SubjectIdentifier = @contactUniqueId
        AND Pathway = @ContactStudentSchool;
 
-     INSERT INTO dms.SubjectEdOrg (SubjectType, SubjectKey, Pathway, EducationOrganizationId)
+     INSERT INTO dms.SubjectEdOrg (SubjectType, SubjectIdentifier, Pathway, EducationOrganizationId)
      VALUES (@Contact, @contactUniqueId, @ContactStudentSchool, @eachEdOrgId);
 ```
   This relies on StudentSchool memberships being up-to-date (so for StudentContactAssociation we want StudentSchool recomputation to happen first when both change).
