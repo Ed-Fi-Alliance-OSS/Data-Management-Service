@@ -28,6 +28,8 @@ public static class DocumentAuthorizationHelper
         ISqlAction sqlAction
     )
     {
+        return (null, null, null, null);
+
         // Extract security elements and authorization info based on request type
         var (securityElements, authInfo) = request switch
         {
