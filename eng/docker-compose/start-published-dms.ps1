@@ -128,8 +128,6 @@ else {
             throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
         }
 
-        #Write-Output "Waiting for Keycloak to initialize..."
-
         Write-Output "Running setup-keycloak.ps1 scripts..."
 
         # Create client with default edfi_admin_api/full_access scope
