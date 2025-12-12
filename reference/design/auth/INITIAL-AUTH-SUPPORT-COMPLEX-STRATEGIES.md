@@ -234,4 +234,349 @@
 
   Once those are in place, the current DMS design is flexible enough to express all the complex ODS relationship strategies, including “through responsibility” and mixed EdOrg+people strategies, without further structural DB changes.
 
- 
+ # Detailed examples
+
+ • We can support those strategies without changing the core schema; we just need to be explicit about:
+
+  - Which SubjectTypes + Pathways each strategy uses.
+  - How SubjectEdOrg is populated (sync design).
+  - How the query-time EXISTS clause is shaped (example-scenarios design).
+
+  Below are three concrete strategies with end‑to‑end examples.
+
+  ———
+
+  ## 1) RelationshipsWithEdOrgsAndPeople
+
+  ODS intent
+
+  - Authorize when the resource is related to the caller’s EdOrgs by any of:
+      - EdOrg directly on the resource.
+      - A Student on the resource.
+      - A Staff on the resource.
+      - A Contact/Parent on the resource.
+
+  ### 1.1 Write path & synchronization
+
+  This plugs directly into INITIAL-AUTH-SYNCHRONIZATION-DESIGN.md:
+
+  - Student membership
+      - SubjectEdOrg(SubjectType=Student, SubjectKey=StudentUniqueId, Pathway=StudentSchool) and Pathway=StudentResponsibility are maintained exactly as described under:
+          - “Authorization Algorithm for Student-securable document”
+          - “RecomputeStudentSchoolMembership”
+          - “RecomputeStudentResponsibilityMembership”
+  - Contact membership (via students)
+      - SubjectEdOrg(SubjectType=Contact, SubjectKey=ContactUniqueId, Pathway=ContactStudentSchool) is maintained via:
+          - RecomputeContactStudentSchoolMembership(contactUniqueId) (StudentContactAssociation section).
+  - Staff membership
+      - We add a parallel Staff section in the sync design:
+          - On create/update/delete of StaffEducationOrganization*Association:
+              - Extract staffUniqueId and educationOrganizationId.
+              - Expand ancestors via GetEducationOrganizationAncestors.
+              - Rewrite SubjectEdOrg(Staff, staffUniqueId, Pathway_StaffEdOrg, EdOrgId) with the union of ancestors.
+  - EdOrg membership for EdOrg subjects
+      - For EdOrg-centric resources (like EdOrg documents themselves or EdOrg-securable docs), we treat the EdOrg as a subject:
+          - DocumentSubject: (SubjectType=EdOrg, SubjectKey=EducationOrganizationId::text).
+      - For SubjectEdOrg we define:
+          - Pathway_EdOrgDirect:
+              - SubjectKey = EdOrgId.
+              - EdOrgIds = self + ancestors (so an SEA subject is related to its LEAs and schools, depending on how you want to interpret).
+          - Maintained when:
+              - EdOrg documents are created or updated (using the redesigned EdOrg hierarchy).
+
+  So by the time authorization runs, for a given document we can have DocumentSubject rows pointing to:
+
+  - (EdOrg, EdOrgId)
+  - (Student, StudentUniqueId)
+  - (Staff, StaffUniqueId)
+  - (Contact, ContactUniqueId)
+
+  …and SubjectEdOrg rows describing each subject’s ancestor-expanded EdOrgs.
+
+  ### 1.2 Write-time authorization (Create/Update/Delete)
+
+  INITIAL-AUTH-SYNCHRONIZATION-DESIGN.md already describes the write-side pattern:
+
+  - RelationshipsWithEdOrgsAndPeopleValidator:
+      - Calls:
+          - ValidateEdOrgAuthorization → uses GetAncestorEducationOrganizationIds (EdOrg-only path).
+          - ValidateStudentAuthorization → uses GetEducationOrganizationsForStudent (StudentSchool/Responsibility).
+          - ValidateStaffAuthorization → uses GetEducationOrganizationsForStaff.
+          - ValidateContactAuthorization → uses GetEducationOrganizationsForContact.
+      - All of those repository methods are now implemented against SubjectEdOrg, not JSONB:
+
+        -- Student
+        SELECT DISTINCT EducationOrganizationId
+        FROM dms.SubjectEdOrg
+        WHERE SubjectType = Student
+          AND SubjectKey = @studentUniqueId
+          AND Pathway IN (Pathway_StudentSchool, Pathway_StudentResponsibility);
+
+        -- Staff
+        SELECT DISTINCT EducationOrganizationId
+        FROM dms.SubjectEdOrg
+        WHERE SubjectType = Staff
+          AND SubjectKey = @staffUniqueId
+          AND Pathway = Pathway_StaffEdOrg;
+
+        -- Contact
+        SELECT DISTINCT EducationOrganizationId
+        FROM dms.SubjectEdOrg
+        WHERE SubjectType = Contact
+          AND SubjectKey = @contactUniqueId
+          AND Pathway = Pathway_ContactStudentSchool;
+
+        -- EdOrg subject (if we expose "resource EdOrg" as a subject)
+        SELECT DISTINCT EducationOrganizationId
+        FROM dms.SubjectEdOrg
+        WHERE SubjectType = EdOrg
+          AND SubjectKey = @educationOrganizationId::text
+          AND Pathway = Pathway_EdOrgDirect;
+  - RelationshipsBasedAuthorizationHelper then compares these EdOrg sets with the caller’s EdOrg filters (from AuthorizationFilter.EducationOrganization).
+
+  So for a write, RelationshipsWithEdOrgsAndPeople is already supported by the synchronization design: we just point the repo at SubjectEdOrg.
+
+  ### 1.3 Read path (GET by query)
+
+  In INITIAL-AUTH-DESIGN-EXAMPLE-SCENARIOS.md we already sketched a Student+Staff OR example. For RelationshipsWithEdOrgsAndPeople, we generalize that to include EdOrg + Contact in the same pattern.
+
+  Let’s say we have:
+
+  - authorized_edorg_ids derived from the client’s token claims.
+  - A resource StudentAssessment that might have:
+      - studentUniqueId
+      - staffUniqueId
+      - reportedSchoolId (EdOrg)
+      - contactUniqueId (if applicable)
+
+  The query follows the same shape as in the example doc, but with four branches:
+
+  WITH page AS (
+      SELECT di.DocumentPartitionKey, di.DocumentId, di.ProjectName, di.ResourceName, di.CreatedAt
+      FROM dms.DocumentIndex di
+      WHERE di.ProjectName = $1
+        AND di.ResourceName = $2
+        AND di.QueryFields @> $3::jsonb              -- query filters + namespace, etc.
+        AND EXISTS (
+            SELECT 1
+            FROM dms.DocumentSubject s
+            JOIN dms.SubjectEdOrg se
+              ON se.SubjectType = s.SubjectType
+             AND se.SubjectKey  = s.SubjectKey
+            WHERE s.ProjectName          = di.ProjectName
+              AND s.ResourceName         = di.ResourceName
+              AND s.DocumentPartitionKey = di.DocumentPartitionKey
+              AND s.DocumentId           = di.DocumentId
+              AND (
+                   (s.SubjectType = @EdOrg   AND se.Pathway = @Pathway_EdOrgDirect)
+                OR (s.SubjectType = @Student AND se.Pathway IN (@Pathway_StudentSchool, @Pathway_StudentResponsibility))
+                OR (s.SubjectType = @Staff   AND se.Pathway = @Pathway_StaffEdOrg)
+                OR (s.SubjectType = @Contact AND se.Pathway = @Pathway_ContactStudentSchool)
+              )
+              AND se.EducationOrganizationId = ANY($4::bigint[])   -- authorized_edorg_ids
+        )
+      ORDER BY di.CreatedAt
+      OFFSET $5 LIMIT $6
+  )
+  SELECT d.EdfiDoc
+  FROM page p
+  JOIN dms.Document d
+    ON d.DocumentPartitionKey = p.DocumentPartitionKey
+   AND d.Id                   = p.DocumentId
+  ORDER BY p.CreatedAt;
+
+  This is exactly the composition pattern in INITIAL-AUTH-DESIGN-EXAMPLE-SCENARIOS.md, extended with EdOrg and Contact branches.
+
+  ———
+
+  ## 2) RelationshipsWithEdOrgsOnly
+
+  ODS intent
+
+  - Only EdOrg IDs on the resource matter; person identifiers are ignored.
+  - A document is authorized if its EdOrg-valued security elements are related to the caller’s EdOrgs.
+
+  ### 2.1 Write path & synchronization
+
+  We add an explicit EdOrg subject flow to INITIAL-AUTH-SYNCHRONIZATION-DESIGN.md:
+
+  - For EdOrg-securable documents (i.e., resources with an EdOrg security element and a RelationshipsWithEdOrgsOnly strategy):
+      - On create/update:
+          1. Insert/update the core document.
+          2. Extract the EdOrg security elements (e.g., educationOrganizationId, schoolId, localEducationAgencyId) from DocumentSecurityElements.
+          3. Maintain DocumentSubject:
+              - Delete any existing (SubjectType=EdOrg, SubjectKey=*) rows for this doc.
+              - Insert (EdOrg, EdOrgId) for each EdOrg security element we care about.
+  - For EdOrg membership in SubjectEdOrg:
+      - When EdOrg hierarchy changes (or when an EdOrg document is upserted):
+          - For a node E:
+              - Compute its ancestor set via EducationOrganizationRelationship.
+              - Rewrite SubjectEdOrg(SubjectType=EdOrg, SubjectKey=E.Id::text, Pathway=EdOrgDirect, EducationOrganizationId=ancestors).
+
+  This is fully consistent with the “synchronization via recompute” pattern used for Student and Contact in the sync design.
+
+  ### 2.2 Write-time authorization
+
+  - RelationshipsWithEdOrgsOnlyValidator uses ValidateEdOrgAuthorization:
+      - That helper:
+          - Reads EdOrg security elements from DocumentSecurityElements (e.g., schoolId, educationOrganizationId).
+          - Uses GetAncestorEducationOrganizationIds and the caller’s EdOrg filters.
+      - With the new model, GetAncestorEducationOrganizationIds reads the hierarchy tables; we don’t need SubjectEdOrg for this validator.
+
+  So no additional changes: we’re just using the existing validators with the new hierarchy design.
+
+  ### 2.3 Read path (GET by query)
+
+  For read queries, we can either:
+
+  - Use GetAncestorEducationOrganizationIds per request and filter via QueryFields, or
+  - Use DocumentSubject + SubjectEdOrg for EdOrg subjects, symmetric with the relationships strategies.
+
+  The second approach is more in line with the example-scenarios design.
+
+  Example SQL for RelationshipsWithEdOrgsOnly
+
+  WITH page AS (
+      SELECT di.DocumentPartitionKey, di.DocumentId, di.ProjectName, di.ResourceName, di.CreatedAt
+      FROM dms.DocumentIndex di
+      WHERE di.ProjectName = $1
+        AND di.ResourceName = $2
+        AND di.QueryFields @> $3::jsonb
+        AND EXISTS (
+            SELECT 1
+            FROM dms.DocumentSubject s
+            JOIN dms.SubjectEdOrg se
+              ON se.SubjectType = s.SubjectType
+             AND se.SubjectKey  = s.SubjectKey
+            WHERE s.ProjectName          = di.ProjectName
+              AND s.ResourceName         = di.ResourceName
+              AND s.DocumentPartitionKey = di.DocumentPartitionKey
+              AND s.DocumentId           = di.DocumentId
+              AND s.SubjectType          = @EdOrg
+              AND se.Pathway             = @Pathway_EdOrgDirect
+              AND se.EducationOrganizationId = ANY ($4::bigint[])
+        )
+      ORDER BY di.CreatedAt
+      OFFSET $5 LIMIT $6
+  )
+  SELECT d.EdfiDoc
+  FROM page p
+  JOIN dms.Document d
+    ON d.DocumentPartitionKey = p.DocumentPartitionKey
+   AND d.Id                   = p.DocumentId
+  ORDER BY p.CreatedAt;
+
+  This fits exactly the pattern in INITIAL-AUTH-DESIGN-EXAMPLE-SCENARIOS.md (one EXISTS with a single subject type and pathway).
+
+  ———
+
+  ## 3) Inverted example (e.g., RelationshipsWithEdOrgsAndPeopleInverted)
+
+  ODS intent
+
+  - Similar to RelationshipsWithEdOrgsAndPeople, but for non-person EdOrg endpoints, the relationship direction is “inverted”:
+      - Person identifiers use normal relationships.
+      - EdOrg identifiers use an inverted path (e.g., matching children rather than parents, or vice versa).
+
+  In ODS, this is encoded via an AuthorizationPathModifier “Inverted” and separate auth.*Inverted views.
+
+  ### 3.1 How we represent inversion in DMS
+
+  We treat inversion as a different Pathway when we populate SubjectEdOrg:
+
+  - For EdOrg subjects we define:
+
+    Pathway_EdOrgDirectAncestors    // normal direction: subject EdOrg has ancestors in SubjectEdOrg
+    Pathway_EdOrgDirectDescendants  // inverted direction: subject EdOrg has descendants in SubjectEdOrg
+  - Synchronization extension (in addition to the EdOrg section above):
+      - To maintain Pathway_EdOrgDirectAncestors:
+          - For each EdOrg E, compute its ancestors and store them as SubjectEdOrg(EdOrg, E, Pathway_EdOrgDirectAncestors, ancestorId).
+      - To maintain Pathway_EdOrgDirectDescendants (inverted):
+          - For each EdOrg E, compute its descendants using the same EducationOrganizationRelationship table, but traversing down instead of up:
+
+            WITH RECURSIVE descendants AS (
+                SELECT EducationOrganizationId, ParentEducationOrganizationId
+                FROM dms.EducationOrganizationRelationship
+                WHERE ParentEducationOrganizationId = @E
+
+                UNION ALL
+
+                SELECT child.EducationOrganizationId, child.ParentEducationOrganizationId
+                FROM dms.EducationOrganizationRelationship child
+                JOIN descendants d
+                  ON child.ParentEducationOrganizationId = d.EducationOrganizationId
+            )
+            SELECT DISTINCT EducationOrganizationId FROM descendants;
+          - Store those in SubjectEdOrg(EdOrg, E, Pathway_EdOrgDirectDescendants, descendantId).
+
+  This is consistent with INITIAL-AUTH-SYNCHRONIZATION-DESIGN.md: we recompute memberships over the full set of relationships, just in a different direction.
+
+  ### 3.2 Write-time authorization
+
+  - The DMS RelationshipsWithEdOrgsAndPeopleInvertedValidator (if we add one) can:
+      - For person subjects: behave as RelationshipsWithEdOrgsAndPeople (Student/Staff/Contact use normal pathways).
+      - For EdOrg subjects: use Pathway_EdOrgDirectDescendants instead of ancestors.
+          - If we need that on write, we can:
+              - Either call IAuthorizationRepository.GetAncestorEducationOrganizationIds against the inverted direction (a new method or flag).
+              - Or rely on the SubjectEdOrg EdOrg pathways described above.
+
+  This only affects how we query SubjectEdOrg for EdOrg subjects, not the table structure.
+
+  ### 3.3 Read path (GET by query)
+
+  In query SQL, inversion just changes which pathways we allow for EdOrg subjects.
+
+  Example: “inverted” version of RelationshipsWithEdOrgsAndPeople where:
+
+  - Students/Staff/Contacts use normal pathways (StudentSchool, StudentResponsibility, StaffEdOrg, ContactStudentSchool).
+  - EdOrg subjects use Pathway_EdOrgDirectDescendants.
+
+  WITH page AS (
+      SELECT di.DocumentPartitionKey, di.DocumentId, di.ProjectName, di.ResourceName, di.CreatedAt
+      FROM dms.DocumentIndex di
+      WHERE di.ProjectName = $1
+        AND di.ResourceName = $2
+        AND di.QueryFields @> $3::jsonb
+        AND EXISTS (
+            SELECT 1
+            FROM dms.DocumentSubject s
+            JOIN dms.SubjectEdOrg se
+              ON se.SubjectType = s.SubjectType
+             AND se.SubjectKey  = s.SubjectKey
+            WHERE s.ProjectName          = di.ProjectName
+              AND s.ResourceName         = di.ResourceName
+              AND s.DocumentPartitionKey = di.DocumentPartitionKey
+              AND s.DocumentId           = di.DocumentId
+              AND (
+                   (s.SubjectType = @EdOrg   AND se.Pathway = @Pathway_EdOrgDirectDescendants)
+                OR (s.SubjectType = @Student AND se.Pathway IN (@Pathway_StudentSchool, @Pathway_StudentResponsibility))
+                OR (s.SubjectType = @Staff   AND se.Pathway = @Pathway_StaffEdOrg)
+                OR (s.SubjectType = @Contact AND se.Pathway = @Pathway_ContactStudentSchool)
+              )
+              AND se.EducationOrganizationId = ANY ($4::bigint[])
+        )
+      ORDER BY di.CreatedAt
+      OFFSET $5 LIMIT $6
+  )
+  SELECT d.EdfiDoc
+  FROM page p
+  JOIN dms.Document d
+    ON d.DocumentPartitionKey = p.DocumentPartitionKey
+   AND d.Id                   = p.DocumentId
+  ORDER BY p.CreatedAt;
+
+  This fits directly into the pattern already shown in INITIAL-AUTH-DESIGN-EXAMPLE-SCENARIOS.md:
+
+  - One EXISTS over DocumentIndex → DocumentSubject → SubjectEdOrg.
+  - Composition of subject types and pathways using OR.
+  - Same indexes on DocumentSubject and SubjectEdOrg.
+
+  ———
+
+  Bottom line
+
+  - RelationshipsWithEdOrgsAndPeople: supported by combining Student/Staff/Contact and EdOrg branches in the EXISTS clause, backed by the Student/Contact/Staff synchronization rules already in INITIAL-AUTH-SYNCHRONIZATION-DESIGN.md.
+  - RelationshipsWithEdOrgsOnly: a specialization that uses only EdOrg subjects and the EdOrg pathways in SubjectEdOrg.
+  - Inverted strategies: require no structural changes; we add inverted pathways for EdOrg subjects and use them in both membership recomputation and the EXISTS clause.
+
+  All of these fit cleanly within the DocumentSubject + SubjectEdOrg + DocumentIndex design already captured in INITIAL-AUTH-SYNCHRONIZATION-DESIGN.md and INITIAL-AUTH-DESIGN-EXAMPLE-SCENARIOS.md.
