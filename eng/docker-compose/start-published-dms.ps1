@@ -43,7 +43,15 @@ param (
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
-    $IdentityProvider="self-contained"
+    $IdentityProvider="self-contained",
+
+    # Skip creating initial DMS Instance in Configuration Service
+    [Switch]
+    $NoDmsInstance,
+
+    # School year range for multi-instance setup (format: StartYear-EndYear, e.g., "2022-2026")
+    [string]
+    $SchoolYearRange = ""
 )
 
 
@@ -51,11 +59,30 @@ param (
 if($AddExtensionSecurityMetadata)
 {
     # Set environment variables for hybrid claimset loading
+    $env:DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING = "true"
     $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
     $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
     Write-Output "Configured environment variables for file-based extension claimset loading"
 }
 
+    # Identity provider configuration
+    Import-Module ./env-utility.psm1 -Force
+    $envValues = ReadValuesFromEnvFile $EnvironmentFile
+    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
+    Write-Output "Identity Provider $IdentityProvider"
+    if($IdentityProvider -eq "keycloak")
+    {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
+    }
+    elseif ($IdentityProvider -eq "self-contained") {
+        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
+        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
+        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
+    }
 $files = @(
     "-f",
     "postgresql.yml",
@@ -101,11 +128,11 @@ else {
             throw "Failed to start Keycloak. Exit code $LASTEXITCODE"
         }
 
-        Write-Output "Waiting for Keycloak to initialize..."
-        Start-Sleep 20
+        #Write-Output "Waiting for Keycloak to initialize..."
+        #Start-Sleep 20
 
         Write-Output "Running setup-keycloak.ps1 scripts..."
-        Start-Sleep 5
+        #Start-Sleep 5
         # Create client with default edfi_admin_api/full_access scope
         ./setup-keycloak.ps1
 
@@ -116,24 +143,6 @@ else {
         ./setup-keycloak.ps1 -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
     }
 
-    Import-Module ./env-utility.psm1
-    $envValues = ReadValuesFromEnvFile $EnvironmentFile
-    # Identity provider configuration
-    Write-Output "Identity Provider $IdentityProvider"
-    $env:DMS_CONFIG_IDENTITY_PROVIDER=$IdentityProvider
-    if($IdentityProvider -eq "keycloak")
-    {
-        $env:OAUTH_TOKEN_ENDPOINT = $envValues.KEYCLOAK_OAUTH_TOKEN_ENDPOINT
-        $env:DMS_JWT_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
-        $env:DMS_JWT_METADATA_ADDRESS = $envValues.KEYCLOAK_DMS_JWT_METADATA_ADDRESS
-        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.KEYCLOAK_DMS_JWT_AUTHORITY
-    }
-    elseif ($IdentityProvider -eq "self-contained") {
-        $env:OAUTH_TOKEN_ENDPOINT = $envValues.SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT
-        $env:DMS_JWT_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
-        $env:DMS_JWT_METADATA_ADDRESS = $envValues.SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS
-        $env:DMS_CONFIG_IDENTITY_AUTHORITY = $envValues.SELF_CONTAINED_DMS_JWT_AUTHORITY
-    }
 
     Write-Output "Starting published DMS"
     $env:NEED_DATABASE_SETUP = if ($LoadSeedData) { "false" } else { $env:NEED_DATABASE_SETUP }
@@ -192,5 +201,72 @@ else {
         Write-Output "Secret: $($credentials.Secret)"
         Write-Output "These credentials can be used for smoke testing the DMS API."
     }
+
+    if(-not $NoDmsInstance -or $SchoolYearRange)
+    {
+        Import-Module ../Dms-Management.psm1 -Force
+
+        try {
+            # Create system administrator credentials
+            Add-CmsClient -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!" -DisplayName "DMS Instance Setup Administrator"
+
+            # Get configuration service token
+            $configToken = Get-CmsToken -CmsUrl "http://localhost:8081" -ClientId "dms-instance-admin" -ClientSecret "DmsSetup1!"
+
+            # Create tenant if multi-tenancy is enabled
+            if ($envValues.DMS_CONFIG_MULTI_TENANCY -eq "true" -and $envValues.CONFIG_SERVICE_TENANT) {
+                Write-Output "Multi-tenancy is enabled. Creating tenant: $($envValues.CONFIG_SERVICE_TENANT)"
+                try {
+                    $tenantId = Add-Tenant -CmsUrl "http://localhost:8081" -AccessToken $configToken -TenantName $envValues.CONFIG_SERVICE_TENANT
+                    Write-Output "Tenant created successfully with ID: $tenantId"
+                }
+                catch {
+                    Write-Warning "Failed to create tenant (may already exist): $($_.Exception.Message)"
+                }
+            }
+
+            # Get tenant from environment (for multi-tenant support)
+            $tenant = $envValues.CONFIG_SERVICE_TENANT
+
+            # Handle school year range instances
+            if ($SchoolYearRange) {
+                Write-Output "Creating DMS Instances for school year range: $SchoolYearRange"
+
+                # Parse the range (format: StartYear-EndYear, e.g., "2022-2026")
+                if ($SchoolYearRange -match '^(\d{4})-(\d{4})$') {
+                    $startYear = [int]$matches[1]
+                    $endYear = [int]$matches[2]
+
+                    # Create instances for each year in the range
+                    $instances = Add-DmsSchoolYearInstances `
+                        -CmsUrl "http://localhost:8081" `
+                        -AccessToken $configToken `
+                        -StartYear $startYear `
+                        -EndYear $endYear `
+                        -PostgresPassword $envValues.POSTGRES_PASSWORD `
+                        -PostgresDbName $envValues.POSTGRES_DB_NAME `
+                        -Tenant $tenant
+
+                    Write-Output "Created $($instances.Count) school year instances successfully"
+                }
+                else {
+                    Write-Warning "Invalid SchoolYearRange format. Expected format: StartYear-EndYear (e.g., 2022-2026)"
+                }
+            }
+            # Handle single default instance
+            elseif(-not $NoDmsInstance) {
+                Write-Output "Creating initial DMS Instance..."
+
+                # Create DMS Instance using environment variables
+                $instanceId = Add-DmsInstance -CmsUrl "http://localhost:8081" -AccessToken $configToken -PostgresPassword $envValues.POSTGRES_PASSWORD -PostgresDbName $envValues.POSTGRES_DB_NAME -InstanceName "Local Development Instance" -InstanceType "Development" -Tenant $tenant
+
+                Write-Output "DMS Instance created successfully with ID: $instanceId"
+            }
+        }
+        catch {
+            Write-Warning "Failed to create DMS Instance(s): $($_.Exception.Message)  Did you add the Tenant header?"
+        }
+    }
+
     Start-Sleep 20
 }

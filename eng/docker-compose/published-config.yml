@@ -25,6 +25,8 @@ services:
       AppSettings__DeployDatabaseOnStartup: ${DMS_CONFIG_DEPLOY_DATABASE:-true}
       AppSettings__TokenRequestTimeoutSeconds: ${DMS_CONFIG_TOKEN_TIMEOUT_SECONDS:-30}
       AppSettings__IdentityProvider: ${DMS_CONFIG_IDENTITY_PROVIDER:-keycloak}
+      AppSettings__MultiTenancy: ${DMS_CONFIG_MULTI_TENANCY:-false}
+      AppSettings__EnableApplicationResetEndpoint: ${DMS_CONFIG_ENABLE_APPLICATION_RESET_ENDPOINT:-false}
       # Segment of the url to use as base for all request. The default path base is deliberately blank on the following line
       AppSettings__PathBase: ${DMS_CONFIG_PATH_BASE:-}
       AppSettings__UseReverseProxyHeaders: ${DMS_CONFIG_USE_REVERSE_PROXY_HEADERS:-false}
@@ -32,6 +34,7 @@ services:
       ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading: ${DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING:-false}
       ClaimsOptions__ClaimsDirectory: ${DMS_CONFIG_CLAIMS_DIRECTORY:-}
       IdentitySettings__EncryptionKey: ${DMS_CONFIG_IDENTITY_ENCRYPTION_KEY:-}
+      IdentitySettings__HashingIterations: ${DMS_CONFIG_IDENTITY_HASHING_ITERATIONS:-210000}
       Cors__SwaggerUIOrigin: ${DMS_SWAGGER_UI_URL:-http://localhost:8082}
     ports:
       - '127.0.0.1:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}:${DMS_CONFIG_ASPNETCORE_HTTP_PORTS:-8081}'
