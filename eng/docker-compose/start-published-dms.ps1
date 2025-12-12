@@ -129,10 +129,9 @@ else {
         }
 
         #Write-Output "Waiting for Keycloak to initialize..."
-        #Start-Sleep 20
 
         Write-Output "Running setup-keycloak.ps1 scripts..."
-        #Start-Sleep 5
+
         # Create client with default edfi_admin_api/full_access scope
         ./setup-keycloak.ps1
 
