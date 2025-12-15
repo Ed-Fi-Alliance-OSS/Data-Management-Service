@@ -254,6 +254,54 @@ COMMENT ON COLUMN dmscs.Profile.LastModifiedAt IS 'Timestamp when the record was
 COMMENT ON COLUMN dmscs.Profile.ModifiedBy IS 'User or client ID who last modified the record';
 ```
 
+### Application-Profile Assignment Table
+
+**Purpose**: Links API clients/applications to profiles, enabling automatic profile assignment without explicit header specification.
+
+**Location**: Config Service database (`dmscs` schema)
+
+```sql
+CREATE TABLE IF NOT EXISTS dmscs.ApplicationProfile (
+    ApplicationId BIGINT NOT NULL,
+    ProfileId BIGINT NOT NULL,
+    CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
+    CreatedBy VARCHAR(255),
+    LastModifiedAt TIMESTAMP,
+    ModifiedBy VARCHAR(255),
+    
+    -- Composite primary key ensures unique application-profile relationships
+    PRIMARY KEY (ApplicationId, ProfileId),
+    
+    -- Foreign key to Profile table
+    CONSTRAINT fk_applicationprofile_profile 
+        FOREIGN KEY (ProfileId) 
+        REFERENCES dmscs.Profile(ProfileId) 
+        ON DELETE CASCADE
+    
+    -- Foreign key to Application/Client table (assumes existence in auth system)
+    -- Note: ApplicationId references the client/application in the auth/admin system
+    -- CONSTRAINT fk_applicationprofile_application 
+    --     FOREIGN KEY (ApplicationId) 
+    --     REFERENCES auth.Application(ApplicationId) 
+    --     ON DELETE CASCADE
+);
+
+-- Index for profile lookups (reverse lookup: find apps using a profile)
+-- Note: ApplicationId is already indexed as part of the primary key
+CREATE INDEX IF NOT EXISTS idx_applicationprofile_profileid 
+    ON dmscs.ApplicationProfile (ProfileId);
+
+COMMENT ON TABLE dmscs.ApplicationProfile IS 'Junction table linking applications to profiles for automatic profile assignment';
+COMMENT ON COLUMN dmscs.ApplicationProfile.ApplicationId IS 'Reference to the API client/application in the auth system';
+COMMENT ON COLUMN dmscs.ApplicationProfile.ProfileId IS 'Reference to the profile being assigned';
+COMMENT ON COLUMN dmscs.ApplicationProfile.CreatedAt IS 'Timestamp when the assignment was created (UTC)';
+COMMENT ON COLUMN dmscs.ApplicationProfile.CreatedBy IS 'User or client ID who created the assignment';
+COMMENT ON COLUMN dmscs.ApplicationProfile.LastModifiedAt IS 'Timestamp when the assignment was last modified (UTC)';
+COMMENT ON COLUMN dmscs.ApplicationProfile.ModifiedBy IS 'User or client ID who last modified the assignment';
+```
+
+**Note**: The `ApplicationId` should reference the client/application table in your authentication/authorization system (e.g., OAuth clients, API keys table). The exact foreign key constraint depends on your auth implementation. The composite primary key `(ApplicationId, ProfileId)` ensures each application-profile relationship is unique and eliminates the need for a surrogate key.
+
 ### JSONB Structure
 
 Profile rules are stored in JSONB format, converted from the canonical XML format:
@@ -289,6 +337,46 @@ Profile rules are stored in JSONB format, converted from the canonical XML forma
         ]
       },
       "writeContentType": null
+    }
+  ]
+}
+```
+
+**Example with Collection Filters:**
+
+```json
+{
+  "profileName": "School-Filtered-Addresses",
+  "resources": [
+    {
+      "resourceName": "School",
+      "readContentType": {
+        "memberSelection": "IncludeOnly",
+        "properties": [
+          {"name": "schoolId"},
+          {"name": "nameOfInstitution"}
+        ],
+        "collections": [
+          {
+            "name": "educationOrganizationAddresses",
+            "memberSelection": "IncludeOnly",
+            "properties": [
+              {"name": "addressTypeDescriptor"},
+              {"name": "streetNumberName"},
+              {"name": "city"},
+              {"name": "stateAbbreviationDescriptor"},
+              {"name": "postalCode"}
+            ],
+            "filters": [
+              {
+                "propertyName": "addressTypeDescriptor",
+                "filterMode": "IncludeOnly",
+                "values": ["Physical", "Mailing"]
+              }
+            ]
+          }
+        ]
+      }
     }
   ]
 }
@@ -354,7 +442,16 @@ CREATE UNIQUE INDEX idx_profile_name
 flowchart TD
     Start([Incoming Request]) --> CheckHeader{Profile Header<br/>Present?}
     CheckHeader -->|Yes| ExtractName[Extract Profile Name]
-    CheckHeader -->|No| UseDefault{Default Profile<br/>Configured?}
+    CheckHeader -->|No| CheckAssignment{Application Has<br/>Assigned Profiles?}
+    
+    CheckAssignment -->|Yes| LoadAssigned[Load Assigned Profiles<br/>from ApplicationProfile]
+    CheckAssignment -->|No| UseDefault{Default Profile<br/>Configured?}
+    
+    LoadAssigned --> SingleProfile{Single Profile<br/>Assigned?}
+    SingleProfile -->|Yes| ExtractName
+    SingleProfile -->|Multiple| RequireHeader[Require Explicit Header]
+    
+    RequireHeader --> Error400[400 Multiple Profiles,<br/>Header Required]
     
     ExtractName --> CallConfigAPI[HTTP GET to Config API<br/>/v2/profiles?name=...]
     UseDefault -->|Yes| ExtractName
@@ -371,10 +468,12 @@ flowchart TD
     AttachToPipeline --> Continue
     Continue --> End([Pipeline Processing])
     
+    Error400 --> End
     Error404 --> End
     
     style CallConfigAPI fill:#bbdefb
     style BuildContext fill:#fff9c4
+    style LoadAssigned fill:#c8e6c9
 ```
 
 **Phase 2 (Future with Cache):**
@@ -417,19 +516,38 @@ flowchart TD
 
 ### DMS Profile Resolution Strategy
 
+**Profile Selection Priority** (evaluated in order):
+
+1. **Explicit Header** - Profile specified in HTTP header (Accept/Content-Type)
+2. **Application Assignment** - Profile(s) assigned to the authenticated client/application
+3. **Default Profile** - System-wide default profile from configuration
+4. **No Profile** - Request proceeds without profile enforcement
+
+**Application-Based Profile Assignment:**
+
+When no explicit profile header is provided, DMS:
+
+1. Identifies the authenticated application/client from the auth token
+2. Queries assigned profiles from `ApplicationProfile` table via Config API
+3. If single profile assigned: automatically applies that profile
+4. If multiple profiles assigned: returns 400 error requiring explicit header
+5. If no profiles assigned: falls back to default profile or no profile
+
+This matches Ed-Fi ODS API behavior where profiles can be pre-assigned to API consumers.
+
 **Current Approach (Phase 1):**
 
 - DMS fetches profiles from Config API on every request
-- Profile name extracted from HTTP headers
-- Direct HTTP call to Config API: `GET /v2/profiles?name={profileName}`
+- Profile name extracted from HTTP headers OR application assignments
+- Direct HTTP call to Config API: `GET /v2/profiles?name={profileName}` or `GET /v2/applications/{id}` (with profile data)
 - Config API returns profile JSON from `dmscs.Profile` table
 - DMS parses and applies rules immediately
 
 **Future Enhancement (Phase 2 - Recommended):**
 
 - Add local caching in DMS to reduce Config API calls
-- **Cache Key**: `profile:{profileName}`
-- **Cache Value**: Complete parsed profile object
+- **Cache Key**: `profile:{profileName}` or `app:{applicationId}:profiles`
+- **Cache Value**: Complete parsed profile object(s)
 - **Cache Duration**: Configurable (default: 5-15 minutes)
 - **Invalidation**: Time-based expiration (eventual consistency acceptable)
 - **Benefits**: Reduce latency, decrease load on Config API, improve throughput
@@ -463,17 +581,22 @@ graph LR
 
 ### Write Operation Enforcement
 
-For POST/PUT/PATCH operations:
+For POST/PUT operations:
 
 1. **Profile Resolution**: Extract profile from `Content-Type` header
-2. **Rule Evaluation**: Load property/collection/reference rules
+2. **Rule Evaluation**: Load property/collection/reference/filter rules
 3. **Input Validation**:
    - Check for excluded properties in request body
    - Validate included properties are not missing (if required)
    - Verify collection items conform to profile rules
+   - Apply collection item filters (validate descriptor/type values)
    - Ensure references are allowed
 4. **Rejection**: Return 400 Bad Request if validation fails
 5. **Processing**: Continue to backend if validation passes
+
+**Collection Filter Validation Example:**
+
+If a profile specifies a filter on `AddressTypeDescriptor` with `filterMode="IncludeOnly"` and values `["Physical", "Mailing"]`, then a POST request containing an address with `AddressTypeDescriptor="Temporary"` will be rejected with a 400 Bad Request error.
 
 ### Read Operation Enforcement
 
@@ -485,9 +608,14 @@ For GET operations:
 4. **Response Filtering**:
    - Remove excluded properties from response
    - Filter collections based on collection rules
+   - Apply collection item filters (remove items not matching filter criteria)
    - Apply reference filtering
    - Maintain data structure integrity
 5. **Serialization**: Return filtered response
+
+**Collection Filter Processing Example:**
+
+If a profile specifies a filter on `AddressTypeDescriptor` with `filterMode="IncludeOnly"` and values `["Physical", "Mailing"]`, then a GET response will only include addresses where `AddressTypeDescriptor` is either "Physical" or "Mailing". All other address items are removed from the response.
 
 ### Error Handling
 
@@ -555,6 +683,62 @@ JSONB Storage → JSON Loader → XML Converter → XML Validator → XML File
 }
 ```
 
+**XML Input with Filters:**
+
+```xml
+<Profile name="School-Filtered">
+  <Resource name="School">
+    <ReadContentType memberSelection="IncludeOnly">
+      <Property name="schoolId" />
+      <Collection name="educationOrganizationAddresses" memberSelection="IncludeOnly">
+        <Property name="streetNumberName" />
+        <Property name="city" />
+        <Filter propertyName="AddressTypeDescriptor" filterMode="IncludeOnly">
+          <Value>Physical</Value>
+          <Value>Mailing</Value>
+        </Filter>
+      </Collection>
+    </ReadContentType>
+  </Resource>
+</Profile>
+```
+
+**JSONB Storage with Filters:**
+
+```json
+{
+  "profileName": "School-Filtered",
+  "resources": [
+    {
+      "resourceName": "School",
+      "readContentType": {
+        "memberSelection": "IncludeOnly",
+        "properties": [
+          { "name": "schoolId" }
+        ],
+        "collections": [
+          {
+            "name": "educationOrganizationAddresses",
+            "memberSelection": "IncludeOnly",
+            "properties": [
+              { "name": "streetNumberName" },
+              { "name": "city" }
+            ],
+            "filters": [
+              {
+                "propertyName": "addressTypeDescriptor",
+                "filterMode": "IncludeOnly",
+                "values": ["Physical", "Mailing"]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
 ### Conversion Rules
 
 1. **Element to Object**: XML elements become JSON objects
@@ -562,6 +746,7 @@ JSONB Storage → JSON Loader → XML Converter → XML Validator → XML File
 3. **Repeated Elements to Arrays**: Multiple same-named elements become arrays
 4. **Case Normalization**: XML PascalCase → JSON camelCase (internally)
 5. **Null Handling**: Empty XML elements → null in JSON (or omitted)
+6. **Filter Elements**: `<Filter>` elements with `<Value>` children convert to filter objects with values arrays
 
 ### Validation Strategy
 
@@ -997,6 +1182,137 @@ Content-Disposition: attachment; filename="Student-Read-Only.xml"
 - `401 Unauthorized` - Missing or invalid authorization token
 - `500 Internal Server Error` - XML generation failed
 
+### Application Profile Assignment (Config Service)
+
+Profile assignment to applications is managed through the existing **Applications API** with an enhanced request body that includes profile assignments.
+
+#### Create/Update Application with Profile Assignment
+
+```http
+POST /v2/applications
+Content-Type: application/json
+Authorization: Bearer {token}
+```
+
+**Request Body** (Enhanced with Profile Assignment):
+
+```json
+{
+  "applicationName": "Student Information System",
+  "claimSetName": "SIS Vendor",
+  "educationOrganizationIds": [255901],
+  "vendorId": 1,
+  "profileIds": [67890, 67891]
+}
+```
+
+**Description**: Creates or updates an application/client. The `profileIds` array assigns profiles to the application. When this application makes API requests without explicit profile headers, the assigned profiles will be considered for automatic application. The endpoint manages the `ApplicationProfile` table entries automatically.
+
+- If `profileIds` is empty or omitted: No profiles assigned (removes all existing assignments on update)
+- If `profileIds` has one profile: That profile is automatically applied to requests
+- If `profileIds` has multiple profiles: API client must specify which one to use via HTTP headers
+
+**Response**:
+
+```http
+201 Created
+Location: /v2/applications/12345
+```
+
+```json
+{
+  "id": 12345,
+  "applicationName": "Student Information System",
+  "claimSetName": "SIS Vendor",
+  "profileIds": [67890, 67891]
+}
+```
+
+**Error Responses**:
+
+- `400 Bad Request` - Invalid request body or profile IDs don't exist
+- `401 Unauthorized` - Missing or invalid authorization token
+- `404 Not Found` - Vendor or ClaimSet does not exist
+- `409 Conflict` - Application name already exists
+
+**Implementation Notes**:
+
+- On create/update, the endpoint automatically manages `ApplicationProfile` table entries
+- Previous profile assignments are replaced with the new `profileIds` array
+- Profile ID validation ensures all referenced profiles exist
+- Transaction ensures atomic updates (application + profile assignments)
+
+#### Get Application with Assigned Profiles
+
+```http
+GET /v2/applications/{id}
+Authorization: Bearer {token}
+```
+
+**Description**: Retrieves application details including assigned profiles.
+
+**Response**:
+
+```http
+200 OK
+Content-Type: application/json
+```
+
+```json
+{
+  "id": 12345,
+  "applicationName": "Student Information System",
+  "claimSetName": "SIS Vendor",
+  "educationOrganizationIds": [255901],
+  "vendorId": 1,
+  "profileIds": [67890, 67891],
+  "profiles": [
+    {
+      "profileId": 67890,
+      "profileName": "Student-Read-Only"
+    },
+    {
+      "profileId": 67891,
+      "profileName": "Assessment-Limited"
+    }
+  ]
+}
+```
+
+**Note**: The `profiles` array includes profile names for convenience. This is the endpoint DMS calls during profile resolution to get the application's assigned profiles.
+
+#### List Applications with Profile Filter
+
+```http
+GET /v2/applications?profileId={id}
+Authorization: Bearer {token}
+```
+
+**Query Parameters**:
+
+- `profileId` (optional): Filter applications that have this profile assigned
+- Standard pagination parameters (offset, limit, orderBy, direction)
+
+**Description**: Retrieves all applications, optionally filtered by assigned profile. Useful for determining which applications use a specific profile.
+
+**Response**:
+
+```http
+200 OK
+Content-Type: application/json
+```
+
+```json
+[
+  {
+    "id": 12345,
+    "applicationName": "Student Information System",
+    "claimSetName": "SIS Vendor",
+    "profileIds": [67890, 67891]
+  }
+]
+```
+
 ### Data API with Profiles
 
 #### Read with Profile
@@ -1126,6 +1442,55 @@ Authorization: Bearer {token}
 
 **Use Case**: Administrator with full access to manage descriptors.
 
+### Example 6: School with Filtered Addresses
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<Profile name="School-Filtered-Addresses">
+  <Resource name="School">
+    <ReadContentType memberSelection="IncludeOnly">
+      <Property name="SchoolId" />
+      <Property name="NameOfInstitution" />
+      <Property name="OperationalStatusDescriptor" />
+      <Property name="SchoolTypeDescriptor" />
+      
+      <Reference name="LocalEducationAgencyReference">
+        <Property name="LocalEducationAgencyId" />
+      </Reference>
+      
+      <!-- Only show Physical and Mailing addresses -->
+      <Collection name="EducationOrganizationAddresses" memberSelection="IncludeOnly">
+        <Property name="AddressTypeDescriptor" />
+        <Property name="StreetNumberName" />
+        <Property name="City" />
+        <Property name="StateAbbreviationDescriptor" />
+        <Property name="PostalCode" />
+        
+        <!-- Filter: Only include Physical and Mailing addresses -->
+        <Filter propertyName="AddressTypeDescriptor" filterMode="IncludeOnly">
+          <Value>Physical</Value>
+          <Value>Mailing</Value>
+        </Filter>
+      </Collection>
+      
+      <!-- Exclude emergency contact numbers -->
+      <Collection name="EducationOrganizationInstitutionTelephones" memberSelection="IncludeOnly">
+        <Property name="TelephoneNumber" />
+        <Property name="TelephoneNumberTypeDescriptor" />
+        
+        <!-- Filter: Exclude emergency numbers -->
+        <Filter propertyName="TelephoneNumberTypeDescriptor" filterMode="ExcludeOnly">
+          <Value>Emergency 1</Value>
+          <Value>Emergency 2</Value>
+        </Filter>
+      </Collection>
+    </ReadContentType>
+  </Resource>
+</Profile>
+```
+
+**Use Case**: Public-facing school directory that only shows physical and mailing addresses, and excludes emergency contact numbers. Demonstrates collection item filtering using Filter elements with both IncludeOnly and ExcludeOnly filter modes.
+
 ## Security Considerations
 
 ### Authentication and Authorization
@@ -1198,7 +1563,9 @@ Authorization: Bearer {token}
 - **Property**: Simple scalar field on a resource
 - **Collection**: Array of child objects on a resource
 - **Reference**: Link to another resource
+- **Filter**: Rule to include/exclude collection items based on Type or Descriptor values
 - **Member Selection**: Strategy for including/excluding elements (IncludeOnly, ExcludeOnly, IncludeAll, ExcludeAll)
+- **Filter Mode**: Strategy for filtering collection items (IncludeOnly, ExcludeOnly)
 
 ## Appendix A: Implementation Tickets
 
@@ -1268,35 +1635,42 @@ Ticket 11 (Migration Guide)
 
 **Acceptance Criteria**:
 
-- [ ] Single-table database schema created in `dmscs` schema (Profile table with JSONB column)
+- [ ] Profile table schema created in `dmscs` schema (Profile table with JSONB column)
+- [ ] ApplicationProfile table schema created in `dmscs` schema (links applications to profiles)
 - [ ] Database migration script supports PostgreSQL and SQL Server
 - [ ] Repository layer implemented with CRUD operations in Config Service
 - [ ] JSONB serialization/deserialization working correctly
 - [ ] Profile models defined (ProfileEntity, ProfileDto)
+- [ ] ApplicationProfile models defined (ApplicationProfileEntity)
 - [ ] Transaction support for atomic operations
 - [ ] Database indexes created for performance
+- [ ] Foreign key constraints properly configured
 - [ ] Unit tests for repository layer
 - [ ] Integration tests for database operations
 
 **Technical Implementation Details**:
 
-1. **Database Migration Script** (Config Service - Create_Profile_Table.sql):
-   - Create single Profile table with JSONB column in `dmscs` schema
-   - Add indexes for ProfileName and IsActive
+1. **Database Migration Script** (Config Service - Create_Profile_Tables.sql):
+   - Create Profile table with JSONB column in `dmscs` schema
+   - Create ApplicationProfile table for application-to-profile assignments
+   - Composite primary key on (ApplicationId, ProfileId) for ApplicationProfile
+   - Add indexes for ProfileName and ProfileId (reverse lookup)
    - Support both PostgreSQL (JSONB) and MSSQL (NVARCHAR(MAX) with JSON validation)
-   - Constraints for data integrity
+   - Constraints for data integrity and foreign keys
+   - Audit columns (CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy) on both tables
 
 2. **Profile Models** (Config Service - ProfileEntity.cs, ProfileDto.cs):
    - ProfileEntity: Database entity with JSONB definition
    - ProfileDto: API data transfer object
+   - ApplicationProfileEntity: Links ApplicationId to ProfileId
    - Mapping between entity and DTO
 
-3. **Repository Layer** (Config Service - IProfileRepository.cs, ProfileRepository.cs):
-   - CRUD operations: Create, Read, Update, Delete
+3. **Repository Layer** (Config Service - IProfileRepository.cs, ProfileRepository.cs, IApplicationProfileRepository.cs):
+   - Profile CRUD operations: Create, Read, Update, Delete
+   - ApplicationProfile operations: Create, Delete, GetByApplicationId, GetByProfileId
    - GetByName, GetById, GetAll with pagination
-   - Single-row queries (no joins needed)
+   - Transaction support for atomic updates (especially when managing profile assignments)
    - JSONB serialization/deserialization
-   - Transaction support
 
 **Dependencies**:
 
@@ -1377,32 +1751,41 @@ Ticket 11 (Migration Guide)
 
 **Epic**: Profile Enforcement
 
-**User Story**: As the DMS system, I can resolve profiles from HTTP headers by fetching them from Config API, so that profile enforcement can be performed.
+**User Story**: As the DMS system, I can resolve profiles from HTTP headers or application assignments by fetching them from Config API, so that profile enforcement can be performed.
 
 **Acceptance Criteria**:
 
 - [ ] Profile resolver middleware implemented and integrated in DMS
-- [ ] Profile resolution from HTTP headers (Accept/Content-Type)
+- [ ] Profile resolution from HTTP headers (Accept/Content-Type) - highest priority
+- [ ] Profile resolution from application assignment (via GET /v2/applications/{id}) - secondary priority
 - [ ] HTTP client to fetch profiles from Config API (`GET /v2/profiles?name={name}`)
-- [ ] Support for default profile assignment
+- [ ] HTTP client to fetch application profiles from Config API (`GET /v2/applications/{id}`)
+- [ ] Extract application ID from authentication context (JWT claims)
+- [ ] Support for default profile assignment (lowest priority)
+- [ ] Implement profile resolution priority: header → application → default → none
 - [ ] Error responses for profile not found (404 from Config API)
 - [ ] Profile context attached to HttpContext
 - [ ] Retry logic for Config API calls (with circuit breaker)
-- [ ] Unit tests for resolution logic
-- [ ] Integration tests for header parsing and Config API integration
+- [ ] Unit tests for resolution logic (all priority levels)
+- [ ] Integration tests for header parsing, application resolution, and Config API integration
 - [ ] Performance tests validate acceptable latency
 
 **Technical Implementation Details**:
 
 1. **Profile Resolution Middleware** (DMS - ProfileResolutionMiddleware.cs):
-   - Extract profile name from Accept/Content-Type headers
-   - Call Config API to fetch profile
+   - Extract profile name from Accept/Content-Type headers (priority 1)
+   - If no header, extract application ID from auth context
+   - If application ID present, call GET /v2/applications/{id} to get assigned profiles
+   - If application has profiles, use first assigned profile (priority 2)
+   - If no header and no application profiles, use default profile (priority 3)
+   - Call Config API to fetch profile by name
    - Attach profile context to HttpContext
    - Handle missing/invalid profiles
    - Error handling with appropriate HTTP status codes
 
 2. **Config API Client** (DMS - IConfigApiClient.cs, ConfigApiClient.cs):
    - HTTP client to fetch profiles: `GET /v2/profiles?name={profileName}`
+   - HTTP client to fetch applications: `GET /v2/applications/{id}` (returns profiles array)
    - Resilience patterns (retry, circuit breaker, timeout)
    - Deserialization of profile JSON
    - Error handling for API failures
@@ -1412,6 +1795,12 @@ Ticket 11 (Migration Guide)
    - Efficient rule lookup structures (dictionaries/sets)
    - Immutable design for thread safety
    - Parsed from Config API JSON response
+   - Include profile source metadata (header/application/default)
+
+4. **Application Context Extraction**:
+   - Extract application ID from JWT claims (e.g., "application_id" claim)
+   - Cache application-to-profile mapping to reduce Config API calls
+   - Handle missing application ID gracefully (proceed to default profile)
 
 **Pipeline Integration**:
 
@@ -1419,11 +1808,25 @@ Ticket 11 (Migration Guide)
 [Auth] -> [ProfileResolution] -> [ParsePath] -> [BuildResourceInfo] -> [ParseBody] -> ...
 ```
 
+**Profile Resolution Algorithm**:
+
+```
+1. Check Accept/Content-Type header for profile parameter
+   - If found: resolve by name and use
+2. If no header, extract application ID from JWT claims
+   - If found: call GET /v2/applications/{id}
+   - If application has profiles: use first profile
+3. If no header and no application profiles, use default profile (if configured)
+4. If no profile resolved, proceed without profile (no filtering)
+```
+
 **Dependencies**:
 
 - Config API profile endpoints (Ticket 2)
+- Config API applications endpoint (Ticket 7a)
 - Request pipeline infrastructure
 - HTTP client factory (Polly for resilience)
+- Authentication middleware (for application ID extraction)
 
 **Component**: DMS
 
@@ -1445,22 +1848,24 @@ Ticket 11 (Migration Guide)
 - [ ] Recursive property path matching works correctly
 - [ ] Include/exclude logic correctly applied
 - [ ] Collection rule evaluation implemented
+- [ ] Collection item filter evaluation implemented (Filter elements)
 - [ ] Reference rule evaluation implemented
 - [ ] Nested property filtering supported
 - [ ] Performance optimizations applied (compiled expressions)
-- [ ] Update tests
+- [ ] Unit tests for all rule types including filters
 
 **Technical Implementation Details**:
 
 1. **Rule Evaluation Engine** (ProfileRuleEvaluator.cs):
    - Recursive property path matching
    - Include/exclude logic resolution (IncludeOnly, ExcludeOnly, IncludeAll, ExcludeAll)
-   - Collection item filtering
+   - Collection item filtering (evaluate Filter elements with propertyName and values)
    - Reference filtering
    - Performance optimizations (compiled expressions, cached lookups)
 
-2. **Rule Models** (ProfileRule.cs, PropertyRule.cs, CollectionRule.cs, ReferenceRule.cs):
+2. **Rule Models** (ProfileRule.cs, PropertyRule.cs, CollectionRule.cs, ReferenceRule.cs, FilterRule.cs):
    - Strongly-typed rule representations
+   - FilterRule: propertyName, filterMode (IncludeOnly/ExcludeOnly), values array
    - Rule validation logic
    - Rule comparison and matching
 
@@ -1490,6 +1895,7 @@ Ticket 11 (Migration Guide)
 - [ ] Request validation enforces profile rules
 - [ ] Excluded properties are rejected
 - [ ] Collection items validated against rules
+- [ ] Collection item filters validated (reject items not matching filter criteria)
 - [ ] Reference compliance verified
 - [ ] Clear error messages for violations (HTTP 400)
 - [ ] All resource types supported (resources, descriptors)
@@ -1539,10 +1945,11 @@ Ticket 11 (Migration Guide)
 - [ ] Response filtering enforces profile rules
 - [ ] Excluded properties removed from response
 - [ ] Collection filtering preserves data integrity
+- [ ] Collection item filters applied (remove items not matching filter criteria)
 - [ ] Reference filtering applied correctly
 - [ ] Data structure integrity maintained after filtering
 - [ ] All resource types supported (resources, descriptors)
-- [ ] Unit tests for filtering logic
+- [ ] Unit tests for filtering logic including filter elements
 - [ ] Integration tests for read operations with profiles
 
 **Technical Implementation Details**:
@@ -1558,7 +1965,8 @@ Ticket 11 (Migration Guide)
 2. **JSON Filter** (JsonProfileFilter.cs):
    - In-place JSON modification
    - Efficient property removal
-   - Array filtering
+   - Array filtering (remove items not matching Filter criteria)
+   - Collection item filter evaluation (check descriptor/type values)
    - Nested object traversal
 
 **Pipeline Integration**:
@@ -1636,27 +2044,110 @@ Ticket 11 (Migration Guide)
 
 ---
 
-### Ticket 8: API Profile Selection Mechanism
+### Ticket 7a: Application Profile Assignment (Config Service)
+
+**Epic**: Profile Management Infrastructure
+
+**User Story**: As an administrator, I can assign profiles to applications through the Applications API, so that profiles are automatically applied when those applications make requests without explicit profile headers.
+
+**Acceptance Criteria**:
+
+- [ ] Applications API enhanced to accept `profileIds` array in request body
+- [ ] POST /v2/applications creates/updates application with profile assignments
+- [ ] ApplicationProfile table automatically managed (insert/delete entries)
+- [ ] Transaction ensures atomic updates (application + profile assignments)
+- [ ] Profile ID validation ensures referenced profiles exist
+- [ ] GET /v2/applications/{id} returns assigned profiles (IDs and names)
+- [ ] GET /v2/applications supports `profileId` query parameter for filtering
+- [ ] Previous profile assignments replaced when updating profileIds array
+- [ ] Empty/omitted profileIds removes all assignments
+- [ ] Error handling for invalid profile IDs
+- [ ] Unit tests for profile assignment logic
+- [ ] Integration tests for application-profile management
+
+**Technical Implementation Details**:
+
+1. **Application DTO Enhancement** (Config Service - ApplicationDto.cs):
+   - Add `profileIds` array property (long[])
+   - Add `profiles` array property for response (ProfileSummaryDto[])
+   - ProfileSummaryDto: { profileId, profileName }
+
+2. **Application Service Updates** (Config Service - ApplicationService.cs):
+   - On Create/Update: Validate all profileIds exist
+   - Delete existing ApplicationProfile entries for this application
+   - Insert new ApplicationProfile entries based on profileIds array
+   - Wrap in transaction for atomicity
+   - Query and populate profiles array on GET operations
+
+3. **ApplicationProfile Repository** (Config Service - ApplicationProfileRepository.cs):
+   - DeleteByApplicationId(applicationId) - removes all assignments
+   - CreateBatch(applicationId, profileIds) - bulk insert assignments
+   - GetProfilesByApplicationId(applicationId) - returns assigned profiles with names
+   - GetApplicationIdsByProfileId(profileId) - for filtering applications
+
+4. **API Controller Updates** (Config API - ApplicationsController.cs):
+   - Accept profileIds in POST/PUT request body
+   - Return profiles array in GET responses
+   - Support profileId query parameter in GET list
+
+**Example Request/Response**:
+
+```json
+// POST /v2/applications
+{
+  "applicationName": "Student Information System",
+  "claimSetName": "SIS Vendor",
+  "educationOrganizationIds": [255901],
+  "vendorId": 1,
+  "profileIds": [1, 2]
+}
+
+// Response
+{
+  "id": 12345,
+  "applicationName": "Student Information System",
+  "profileIds": [1, 2],
+  "profiles": [
+    {"profileId": 1, "profileName": "Student-Read-Only"},
+    {"profileId": 2, "profileName": "Assessment-Limited"}
+  ]
+}
+```
+
+**Dependencies**:
+
+- Ticket 1 (Profile and ApplicationProfile tables)
+- Existing Applications API infrastructure
+
+**Component**: Config Service
+
+**Reference**: [API Profiles Design Document](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/Profiles/API-PROFILES-DESIGN.md)
+
+---
+
+### Ticket 8: API Profile Selection Mechanism (DMS)
 
 **Epic**: Profile Runtime Features
 
-**User Story**: As an API client, I can specify which Profile to use for data requests using HTTP headers, or rely on default profile assignment, giving me control over data access patterns.
+**User Story**: As an API client, I can specify which Profile to use for data requests using HTTP headers, or rely on application-assigned profiles or default profiles, giving me control over data access patterns.
 
 **Acceptance Criteria**:
 
 - [ ] `Accept` header parsing for GET operations
 - [ ] `Content-Type` header parsing for POST/PUT operations
 - [ ] Profile name extraction from media type parameters
-- [ ] Default profile resolution when header absent
+- [ ] Application-based profile resolution when header absent (via Ticket 3)
+- [ ] Default profile resolution when no header and no application profiles
 - [ ] Support for multiple profiles per consumer (future)
-- [ ] Profile precedence rules documented
+- [ ] Profile precedence rules documented (header → application → default → none)
 - [ ] Error handling for ambiguous profiles
 - [ ] Profile selection works for all HTTP methods
 - [ ] Selection logic handles edge cases (OPTIONS, HEAD)
 - [ ] Documentation includes header format examples
+- [ ] Documentation includes application-based profile assignment examples
 - [ ] Client libraries updated with profile support
 - [ ] Unit tests for header parsing
-- [ ] Integration tests for all selection scenarios
+- [ ] Integration tests for all selection scenarios (including application-based)
 - [ ] Performance tests validate selection overhead
 
 **Technical Implementation Details**:
@@ -1669,10 +2160,15 @@ Ticket 11 (Migration Guide)
    - Validate profile name format
 
 2. **Profile Selection Service** (ProfileSelectionService.cs):
-   - Determine effective profile for request
+   - Determine effective profile for request using priority chain:
+     1. Profile from HTTP header (highest priority)
+     2. Profile from application assignment (via application ID in JWT)
+     3. Default profile from configuration (lowest priority)
+     4. No profile (no filtering applied)
    - Apply default profile rules
    - Handle profile conflicts
    - Support profile hierarchy (future)
+   - Coordinate with ProfileResolutionMiddleware (Ticket 3)
 
 3. **Configuration** (appsettings.json):
 
@@ -1681,7 +2177,8 @@ Ticket 11 (Migration Guide)
      "Profiles": {
        "DefaultProfile": "standard",
        "EnableMultipleProfiles": false,
-       "RequireProfileForWrites": true
+       "RequireProfileForWrites": true,
+       "EnableApplicationProfiles": true
      }
    }
    ```
@@ -1689,18 +2186,33 @@ Ticket 11 (Migration Guide)
 4. **Client Examples**:
 
    ```http
+   # Explicit profile via header (priority 1)
    GET /data/v3/ed-fi/students
    Accept: application/json;profile=read-only
+   Authorization: Bearer <token>
    
+   # Explicit profile for writes
    POST /data/v3/ed-fi/students
    Content-Type: application/json;profile=write-limited
+   Authorization: Bearer <token>
+   
+   # Application-based profile (priority 2 - no header, uses application assignment)
+   GET /data/v3/ed-fi/students
+   Accept: application/json
+   Authorization: Bearer <token>  # token contains application_id claim
+   
+   # Default profile (priority 3 - no header, no application profiles)
+   GET /data/v3/ed-fi/students
+   Accept: application/json
+   # No Authorization header or application without assigned profiles
    ```
 
 5. **Documentation Updates**:
-   - Profile selection guide
+   - Profile selection guide with priority chain
    - Header format specification
-   - Example requests with profiles
+   - Example requests with profiles (header-based and application-based)
    - Profile naming conventions
+   - Application profile assignment workflow
 
 **Error Scenarios**:
 
@@ -1710,8 +2222,11 @@ Ticket 11 (Migration Guide)
 
 **Dependencies**:
 
-- Profile resolution middleware (Ticket 3)
+- Profile resolution middleware (Ticket 3 - handles application-based resolution)
 - HTTP header parsing utilities
+- Application profile assignment API (Ticket 7a - provides application-to-profile mappings)
+
+**Component**: DMS
 
 **Reference**: [API Profiles Design Document](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/Profiles/API-PROFILES-DESIGN.md)
 
@@ -1870,12 +2385,15 @@ Ticket 11 (Migration Guide)
 **Acceptance Criteria**:
 
 - [ ] In-memory cache implementation for profiles in DMS
+- [ ] In-memory cache for application-to-profile mappings
 - [ ] Configurable cache duration (default: 5-15 minutes)
-- [ ] Cache key strategy: `profile:{profileName}`
+- [ ] Cache key strategy for profiles: `profile:{profileName}`
+- [ ] Cache key strategy for applications: `app-profiles:{applicationId}`
 - [ ] Cache stores complete parsed profile objects (not JSON strings)
+- [ ] Cache stores application profile assignments (profile IDs and names)
 - [ ] Time-based cache expiration (eventual consistency acceptable)
-- [ ] Cache miss triggers HTTP call to Config API
-- [ ] Cache statistics tracked (hits, misses, evictions)
+- [ ] Cache miss triggers HTTP call to Config API (profiles or applications)
+- [ ] Cache statistics tracked (hits, misses, evictions) for both caches
 - [ ] Configuration options for cache behavior
 - [ ] Cache warming for frequently-used profiles (optional)
 - [ ] Metrics exposed for monitoring cache effectiveness
@@ -1886,11 +2404,14 @@ Ticket 11 (Migration Guide)
 
 1. **Cache Implementation** (DMS - ProfileCacheService.cs):
    - In-memory cache using `IMemoryCache`
-   - Cache key format: `profile:{profileName}`
-   - Store parsed `ProfileContext` objects
+   - Cache key format for profiles: `profile:{profileName}`
+   - Cache key format for applications: `app-profiles:{applicationId}`
+   - Store parsed `ProfileContext` objects (profile cache)
+   - Store application profile arrays (application cache)
    - Time-based expiration (sliding or absolute)
    - Thread-safe operations
    - Cache size limits to prevent memory issues
+   - Separate cache regions for profiles vs. application mappings
 
 2. **Cache Configuration** (appsettings.json):
 
@@ -1902,40 +2423,52 @@ Ticket 11 (Migration Guide)
          "ExpirationMinutes": 10,
          "MaxCacheSize": 1000,
          "PreloadProfiles": ["default", "student-read-only"],
-         "SlidingExpiration": true
+         "SlidingExpiration": true,
+         "ApplicationMappingCache": {
+           "Enabled": true,
+           "ExpirationMinutes": 15,
+           "MaxCacheSize": 5000
+         }
        }
      }
    }
    ```
 
 3. **Profile Resolution with Cache** (ProfileResolutionMiddleware.cs):
-   - Check cache first before calling Config API
+   - For header-based: Check profile cache first before calling Config API
+   - For application-based: Check app-profiles cache first, then GET /v2/applications/{id}
    - On cache miss: fetch from Config API and populate cache
-   - On cache hit: return cached profile object
+   - On cache hit: return cached profile object or application profiles
    - Handle cache failures gracefully (fallback to Config API)
+   - Support both profile cache and application mapping cache
 
 4. **Cache Metrics** (ProfileCacheMetrics.cs):
-   - Track cache hit rate
-   - Monitor cache miss count
+   - Track cache hit rate for profiles and application mappings separately
+   - Monitor cache miss count for both caches
    - Record eviction statistics
    - Expose via metrics endpoint
    - Alert on low hit rate (<90%)
 
 5. **Cache Warming** (ProfileCacheWarmer.cs - Optional):
    - Preload frequently-used profiles on startup
+   - Preload application mappings for active applications
    - Background refresh before expiration
    - Configurable preload list
 
 **Considerations**:
 
-- **Eventual Consistency**: Profile updates will have propagation delay (cache TTL)
-- **Memory Usage**: ~50KB per cached profile × max cache size
+- **Eventual Consistency**: Profile and application assignment updates will have propagation delay (cache TTL)
+- **Memory Usage**:
+  - ~50KB per cached profile × max cache size (profiles)
+  - ~1KB per application mapping × max cache size (applications)
 - **Cache Invalidation**: Consider adding cache invalidation API for immediate updates
+- **Application Cache**: Higher cache size needed due to more applications than profiles
 
 **Dependencies**:
 
-- Ticket 3 (Profile Resolution Infrastructure)
-- Profile resolution middleware must be refactored to support caching
+- Ticket 3 (Profile Resolution Infrastructure - includes application-based resolution)
+- Ticket 7a (Application Profile Assignment - provides application mappings)
+- Profile resolution middleware must be refactored to support dual caching (profiles + applications)
 
 **Component**: DMS
 

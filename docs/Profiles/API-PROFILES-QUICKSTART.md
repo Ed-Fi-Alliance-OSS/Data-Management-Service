@@ -300,6 +300,20 @@ When profiles are stored in the Config Service or retrieved via the API, they us
    </Reference>
    ```
 
+4. **Filter**: Filter collection items by descriptor/type values
+
+   ```xml
+   <Collection name="Addresses" memberSelection="IncludeOnly">
+     <Property name="StreetNumberName" />
+     <Property name="City" />
+     <!-- Only include Physical and Mailing addresses -->
+     <Filter propertyName="AddressTypeDescriptor" filterMode="IncludeOnly">
+       <Value>Physical</Value>
+       <Value>Mailing</Value>
+     </Filter>
+   </Collection>
+   ```
+
 ## Common Patterns
 
 ### Pattern 1: Read-Only Access
@@ -376,6 +390,62 @@ Control access to multiple resources:
   </Resource>
 </Profile>
 ```
+
+### Pattern 5: Collection Item Filtering
+
+Filter collection items based on descriptor or type values:
+
+```xml
+<Profile name="School-FilteredAddresses">
+  <Resource name="School">
+    <ReadContentType memberSelection="IncludeOnly">
+      <Property name="SchoolId" />
+      <Property name="NameOfInstitution" />
+      
+      <!-- Only show Physical and Mailing addresses -->
+      <Collection name="EducationOrganizationAddresses" memberSelection="IncludeOnly">
+        <Property name="AddressTypeDescriptor" />
+        <Property name="StreetNumberName" />
+        <Property name="City" />
+        <Property name="StateAbbreviationDescriptor" />
+        <Property name="PostalCode" />
+        
+        <!-- Filter: Include only specific address types -->
+        <Filter propertyName="AddressTypeDescriptor" filterMode="IncludeOnly">
+          <Value>Physical</Value>
+          <Value>Mailing</Value>
+        </Filter>
+      </Collection>
+      
+      <!-- Exclude emergency telephone numbers -->
+      <Collection name="EducationOrganizationInstitutionTelephones" memberSelection="IncludeOnly">
+        <Property name="TelephoneNumber" />
+        <Property name="TelephoneNumberTypeDescriptor" />
+        
+        <!-- Filter: Exclude specific types -->
+        <Filter propertyName="TelephoneNumberTypeDescriptor" filterMode="ExcludeOnly">
+          <Value>Emergency 1</Value>
+          <Value>Emergency 2</Value>
+        </Filter>
+      </Collection>
+    </ReadContentType>
+  </Resource>
+</Profile>
+```
+
+**Use Cases for Filters**:
+
+- Show only certain address types in public directories
+- Filter assessment accommodations by type
+- Restrict telephone numbers to business hours contacts
+- Limit any collection items based on descriptor values
+
+**Important Notes**:
+
+- Filters apply to `GET` requests to filter response data
+- If applied to `WriteContentType`, filters validate that POST/PUT requests only contain allowed items
+- `filterMode="IncludeOnly"`: Only items matching the specified values are included
+- `filterMode="ExcludeOnly"`: All items except those matching the specified values are included
 
 ## Testing Your Profile
 

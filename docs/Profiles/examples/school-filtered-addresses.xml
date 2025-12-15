@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Profile: School-Filtered-Addresses
+  Purpose: Provides access to school information with filtered address collections
+  Use Case: Public-facing directory that only shows physical and mailing addresses
+  Version: 1.0
+  Created: 2025-12-15
+
+  This profile demonstrates collection item filtering using Filter elements.
+  Only Physical and Mailing addresses are included from the EducationOrganizationAddresses collection.
+  This prevents exposure of sensitive address types (e.g., Temporary, Confidential).
+-->
+<Profile name="School-Filtered-Addresses">
+  <Resource name="School">
+    <ReadContentType memberSelection="IncludeOnly">
+      <!-- Basic School Information -->
+      <Property name="SchoolId" />
+      <Property name="NameOfInstitution" />
+      <Property name="OperationalStatusDescriptor" />
+      <Property name="SchoolTypeDescriptor" />
+
+      <!-- LEA Reference -->
+      <Reference name="LocalEducationAgencyReference">
+        <Property name="LocalEducationAgencyId" />
+      </Reference>
+
+      <!-- Filtered Address Collection -->
+      <!-- Only Physical and Mailing addresses are included -->
+      <Collection name="EducationOrganizationAddresses" memberSelection="IncludeOnly">
+        <Property name="AddressTypeDescriptor" />
+        <Property name="StreetNumberName" />
+        <Property name="ApartmentRoomSuiteNumber" />
+        <Property name="City" />
+        <Property name="StateAbbreviationDescriptor" />
+        <Property name="PostalCode" />
+        <Property name="CountryDescriptor" />
+
+        <!-- Filter: Only include Physical and Mailing addresses -->
+        <Filter propertyName="AddressTypeDescriptor" filterMode="IncludeOnly">
+          <Value>Physical</Value>
+          <Value>Mailing</Value>
+        </Filter>
+      </Collection>
+
+      <!-- Filtered Telephone Numbers -->
+      <!-- Exclude emergency contact numbers -->
+      <Collection name="EducationOrganizationInstitutionTelephones" memberSelection="IncludeOnly">
+        <Property name="TelephoneNumber" />
+        <Property name="TelephoneNumberTypeDescriptor" />
+
+        <!-- Filter: Exclude emergency contact numbers -->
+        <Filter propertyName="TelephoneNumberTypeDescriptor" filterMode="ExcludeOnly">
+          <Value>Emergency 1</Value>
+          <Value>Emergency 2</Value>
+        </Filter>
+      </Collection>
+    </ReadContentType>
+
+    <!-- No write access with this profile -->
+  </Resource>
+</Profile>

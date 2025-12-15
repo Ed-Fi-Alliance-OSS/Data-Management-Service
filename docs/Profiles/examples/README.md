@@ -39,6 +39,14 @@ This directory contains example API Profile XML documents that demonstrate commo
 **Includes**: All descriptor fields (read and write)  
 **Excludes**: None  
 
+### 6. school-filtered-addresses.xml
+
+**Purpose**: School information with filtered address collections  
+**Use Case**: Public-facing directory showing only physical and mailing addresses  
+**Includes**: Basic school info, filtered addresses (Physical and Mailing only)  
+**Excludes**: Other address types (Temporary, Confidential, etc.)  
+**Demonstrates**: Collection item filtering using Filter elements  
+
 ## Testing Profiles
 
 Each profile can be tested using the provided test scripts and data:

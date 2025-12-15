@@ -2,11 +2,11 @@
 <!--
   Ed-Fi API Profile XML Schema Definition
   Version: 1.0
-  
+
   This schema defines the structure for Ed-Fi API Profile documents.
-  Profiles control resource visibility and update paths via explicit 
+  Profiles control resource visibility and update paths via explicit
   inclusion/exclusion rules.
-  
+
   Usage:
     xmllint -schema profile-schema.xsd your-profile.xml
 -->
@@ -18,7 +18,7 @@
   <xs:element name="Profile">
     <xs:annotation>
       <xs:documentation>
-        Root element for an API Profile definition. A Profile contains one or more 
+        Root element for an API Profile definition. A Profile contains one or more
         Resource definitions that specify access rules.
       </xs:documentation>
     </xs:annotation>
@@ -114,13 +114,14 @@
     <xs:annotation>
       <xs:documentation>
         Represents an array/collection on a resource (e.g., "Addresses", "ElectronicMails").
-        Can contain nested Property, Collection, and Reference elements.
+        Can contain nested Property, Collection, Reference, and Filter elements.
       </xs:documentation>
     </xs:annotation>
     <xs:choice minOccurs="0" maxOccurs="unbounded">
       <xs:element name="Property" type="PropertyElement" />
       <xs:element name="Collection" type="CollectionElement" />
       <xs:element name="Reference" type="ReferenceElement" />
+      <xs:element name="Filter" type="FilterElement" />
     </xs:choice>
     <xs:attribute name="name" type="xs:string" use="required">
       <xs:annotation>
@@ -166,6 +167,69 @@
       </xs:annotation>
     </xs:attribute>
   </xs:complexType>
+
+  <!-- FilterElement Complex Type -->
+  <xs:complexType name="FilterElement">
+    <xs:annotation>
+      <xs:documentation>
+        Filters collection items based on Type or Descriptor values.
+        Allows including or excluding specific collection items based on a property's value.
+        Example: Only include Physical and Mailing addresses from the Addresses collection.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element name="Value" type="xs:string" maxOccurs="unbounded">
+        <xs:annotation>
+          <xs:documentation>
+            One or more values to match against the filter property.
+            Example: "Physical", "Mailing", "Shipping"
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="propertyName" type="xs:string" use="required">
+      <xs:annotation>
+        <xs:documentation>
+          The name of the property to filter on (typically a Type or Descriptor field).
+          Example: "AddressTypeDescriptor", "TelephoneNumberTypeDescriptor"
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="filterMode" type="FilterModeType" use="required">
+      <xs:annotation>
+        <xs:documentation>
+          Strategy for filtering collection items:
+          - IncludeOnly: Only items matching the specified values are included
+          - ExcludeOnly: All items except those matching the specified values are included
+        </xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:complexType>
+
+  <!-- FilterModeType Enumeration -->
+  <xs:simpleType name="FilterModeType">
+    <xs:annotation>
+      <xs:documentation>
+        Enumeration of valid filter modes for collection item filtering.
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="IncludeOnly">
+        <xs:annotation>
+          <xs:documentation>
+            Only collection items with property values matching the specified values are included.
+          </xs:documentation>
+        </xs:annotation>
+      </xs:enumeration>
+      <xs:enumeration value="ExcludeOnly">
+        <xs:annotation>
+          <xs:documentation>
+            All collection items except those with property values matching the specified values are included.
+          </xs:documentation>
+        </xs:annotation>
+      </xs:enumeration>
+    </xs:restriction>
+  </xs:simpleType>
 
   <!-- MemberSelectionType Enumeration -->
   <xs:simpleType name="MemberSelectionType">
