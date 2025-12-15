@@ -130,7 +130,7 @@ jobs:
       - name: Verify SDK Generation
         run: |
           Write-Host "Checking SDK generation results..."
-          $sdkPath = "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net10.0/EdFi.DmsApi.TestSdk.dll"
+          $sdkPath = "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll"
           Write-Host "Expected SDK path: $sdkPath"
 
           if (Test-Path $sdkPath) {
@@ -158,12 +158,12 @@ jobs:
 
       - name: Run NonDestructive DMS SDK Tests
         run: |
-          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net10.0/EdFi.DmsApi.TestSdk.dll"
+          ./Invoke-NonDestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll"
         working-directory: eng/smoke_test/
 
       - name: Run Destructive DMS SDK Tests
         run: |
-          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net10.0/EdFi.DmsApi.TestSdk.dll"
+          ./Invoke-DestructiveSdkTests.ps1 -BaseUrl "http://localhost:8080" -Key "$env:SMOKE_TEST_KEY" -Secret "$env:SMOKE_TEST_SECRET" -SdkPath "${{ github.workspace }}/eng/sdkGen/csharp/src/EdFi.DmsApi.TestSdk/bin/Release/net8.0/EdFi.DmsApi.TestSdk.dll"
         working-directory: eng/smoke_test/
 
       - name: Run NonDestructive ODS SDK Tests

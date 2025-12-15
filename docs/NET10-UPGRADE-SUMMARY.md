@@ -317,6 +317,7 @@ private async Task<IResult> RegisterClient(
 
 **Files Changed:**
 - `build-sdk.ps1`
+- `.github/workflows/scheduled-smoke-test.yml`
 
 **Problem:**
 The OpenAPI Generator CLI (version 7.9.0) does not support .NET 10 as a target framework. It only supports: netstandard1.3-2.1, net47, net48, net6.0, net7.0, net8.0.
@@ -332,7 +333,32 @@ Changed the SDK generation target framework from `net10.0` to `net8.0`:
 --additional-properties "packageName=$PackageName,targetFramework=net8.0,netCoreProjectFile=true"
 ```
 
+Also updated the SDK DLL paths in the smoke test workflow to use `net8.0` instead of `net10.0`.
+
 **Reason:** The generated SDK is a separate client library that doesn't need to target the same framework as the main DMS application. It can safely target `net8.0` while the main application targets `net10.0`. When OpenAPI Generator adds support for .NET 10, this can be updated.
+
+---
+
+### 10. Smoke Test Tool Target Framework
+
+**Files Changed:**
+- `eng/smoke_test/modules/SmokeTest.psm1`
+
+**Problem:**
+The `EdFi.Suite3.SmokeTest.Console` NuGet package (version 7.2.413) does not include a .NET 10 build. The package only contains builds for earlier target frameworks (net8.0).
+
+**Solution:**
+Changed the tool path from `net10.0` to `net8.0`:
+
+```powershell
+# Before
+$path = (Join-Path -Path ($ToolPath).Trim() -ChildPath "tools/net10.0/any/EdFi.SmokeTest.Console.dll")
+
+# After
+$path = (Join-Path -Path ($ToolPath).Trim() -ChildPath "tools/net8.0/any/EdFi.SmokeTest.Console.dll")
+```
+
+**Reason:** The smoke test console is an external Ed-Fi package published to Azure Artifacts. It's a separate tool that runs against the DMS API and does not need to target the same framework. The .NET 8.0 build runs correctly on a system with .NET 10 installed.
 
 ---
 
@@ -359,3 +385,4 @@ The .NET 10 upgrade is complete. Both solutions build successfully without any w
 5. **Middleware Rewrite** - `DuplicatePropertiesMiddleware` rewritten to use `Utf8JsonReader` for .NET 10 compatibility
 6. **Minimal API Binding** - `[FromForm]` removed, form data read manually from `HttpContext.Request`
 7. **SDK Generation** - Target framework kept at `net8.0` (OpenAPI Generator doesn't support .NET 10 yet)
+8. **Smoke Test Tool** - Tool path kept at `net8.0` (external package doesn't have .NET 10 build)
