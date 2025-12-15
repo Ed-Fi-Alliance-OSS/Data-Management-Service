@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using Flurl.Http;
 using Keycloak.Net;
 using Keycloak.Net.Models.Clients;
@@ -105,7 +106,8 @@ public class KeycloakClientRepository(
             }
 
             logger.LogError(
-                $"Error while creating the client: {clientId}. CreateClientAndRetrieveClientIdAsync returned empty string with no exception."
+                "Error while creating the client: {ClientId}. CreateClientAndRetrieveClientIdAsync returned empty string with no exception.",
+                LoggingUtility.SanitizeForLog(clientId)
             );
             return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
         }
@@ -319,7 +321,7 @@ public class KeycloakClientRepository(
             else
             {
                 var scopeNotFound = $"Scope {scope} not found";
-                logger.LogError(message: scopeNotFound);
+                logger.LogError("Scope {Scope} not found", LoggingUtility.SanitizeForLog(scope));
                 return new ClientUpdateResult.FailureIdentityProvider(
                     new IdentityProviderError(scopeNotFound)
                 );
