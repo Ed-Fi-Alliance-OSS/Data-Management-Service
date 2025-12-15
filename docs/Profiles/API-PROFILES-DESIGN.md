@@ -133,8 +133,8 @@ graph TB
     AUTH -->|2b. Extract App ID| C
     C -->|3a. Fetch by Name| D
     C -->|3b. Fetch by App ID| D
-    D -->|4a. GET /profiles?name=| M
-    D -->|4b. GET /applications/{id}| APPS
+    D -->|4a. GET profiles by name| M
+    D -->|4b. GET applications by id| APPS
     M -->|5a. Query Profile| N
     APPS -->|5b. Query App Profiles| APPREPO
     N -->|6a. Load JSONB| O
