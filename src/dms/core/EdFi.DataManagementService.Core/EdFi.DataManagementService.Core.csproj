@@ -53,6 +53,7 @@
         </None>
     </ItemGroup>
     <ItemGroup>
+      <PackageReference Include="System.Text.Json" />
         <None Update="ApiSchema\ApiSchema.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>

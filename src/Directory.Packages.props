@@ -90,5 +90,6 @@
     <PackageVersion Include="Reqnroll" Version="2.1.0" />
     <PackageVersion Include="Reqnroll.NUnit" Version="2.1.0" />
     <PackageVersion Include="Confluent.Kafka" Version="2.6.1" />
+    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 </Project>

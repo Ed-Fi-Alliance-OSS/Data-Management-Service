@@ -36,6 +36,7 @@
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
     </ItemGroup>
     <ItemGroup>
+      <PackageReference Include="System.Formats.Asn1" />
         <None Update="appsettings.Test.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>
