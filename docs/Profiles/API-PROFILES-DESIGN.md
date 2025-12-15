@@ -1237,6 +1237,14 @@ Content-Disposition: attachment; filename="Student-Read-Only.xml"
 
 Profile assignment to applications is managed through the existing **Applications API** with an enhanced request body that includes profile assignments.
 
+> **Note**: These endpoints extend the existing `/v2/applications` API. The current implementation (without profiles support) has the following structure:
+>
+> - **POST Request**: `vendorId`, `applicationName`, `claimSetName`, `educationOrganizationIds`, `dmsInstanceIds`
+> - **POST Response**: `id`, `key`, `secret` (API credentials)
+> - **GET Response**: `id`, `applicationName`, `vendorId`, `claimSetName`, `educationOrganizationIds`, `dmsInstanceIds`, plus audit fields (`createdAt`, `createdBy`, `lastModifiedAt`, `modifiedBy`)
+>
+> The specifications below show the **enhanced version with profile support** (to be implemented in Ticket 7a).
+
 #### Create/Update Application with Profile Assignment
 
 ```http
@@ -1249,15 +1257,16 @@ Authorization: Bearer {token}
 
 ```json
 {
+  "vendorId": 1,
   "applicationName": "Student Information System",
   "claimSetName": "SIS Vendor",
   "educationOrganizationIds": [255901],
-  "vendorId": 1,
+  "dmsInstanceIds": [1],
   "profileIds": [67890, 67891]
 }
 ```
 
-**Description**: Creates or updates an application/client. The `profileIds` array assigns profiles to the application. When this application makes API requests without explicit profile headers, the assigned profiles will be considered for automatic application. The endpoint manages the `ApplicationProfile` table entries automatically.
+**Description**: Creates a new application/client. The `profileIds` array (optional, new field) assigns profiles to the application. When this application makes API requests without explicit profile headers, the assigned profiles will be considered for automatic application. The endpoint manages the `ApplicationProfile` table entries automatically.
 
 - If `profileIds` is empty or omitted: No profiles assigned (removes all existing assignments on update)
 - If `profileIds` has one profile: That profile is automatically applied to requests
@@ -1273,17 +1282,18 @@ Location: /v2/applications/12345
 ```json
 {
   "id": 12345,
-  "applicationName": "Student Information System",
-  "claimSetName": "SIS Vendor",
-  "profileIds": [67890, 67891]
+  "key": "applicationKey_abc123",
+  "secret": "applicationSecret_xyz789"
 }
 ```
 
+> **Note**: The current implementation returns `id`, `key`, and `secret` for newly created applications. The `key` and `secret` are the OAuth client credentials. This response format will be maintained for backward compatibility when profile support is added.
+
 **Error Responses**:
 
-- `400 Bad Request` - Invalid request body or profile IDs don't exist
+- `400 Bad Request` - Invalid request body, missing required fields, or profile IDs don't exist
 - `401 Unauthorized` - Missing or invalid authorization token
-- `404 Not Found` - Vendor or ClaimSet does not exist
+- `404 Not Found` - Vendor does not exist
 - `409 Conflict` - Application name already exists
 
 **Implementation Notes**:
@@ -1300,9 +1310,9 @@ GET /v2/applications/{id}
 Authorization: Bearer {token}
 ```
 
-**Description**: Retrieves application details including assigned profiles.
+**Description**: Retrieves application details including assigned profiles. The current implementation returns the base application fields plus audit metadata. The enhanced version will add profile-related fields.
 
-**Response**:
+**Response** (Enhanced with Profile Support):
 
 ```http
 200 OK
@@ -1313,24 +1323,19 @@ Content-Type: application/json
 {
   "id": 12345,
   "applicationName": "Student Information System",
+  "vendorId": 1,
   "claimSetName": "SIS Vendor",
   "educationOrganizationIds": [255901],
-  "vendorId": 1,
+  "dmsInstanceIds": [1],
   "profileIds": [67890, 67891],
-  "profiles": [
-    {
-      "profileId": 67890,
-      "profileName": "Student-Read-Only"
-    },
-    {
-      "profileId": 67891,
-      "profileName": "Assessment-Limited"
-    }
-  ]
+  "createdAt": "2024-01-15T10:30:00Z",
+  "createdBy": "admin@example.com",
+  "lastModifiedAt": "2024-01-20T14:45:00Z",
+  "modifiedBy": "admin@example.com"
 }
 ```
 
-**Note**: The `profiles` array includes profile names for convenience. This is the endpoint DMS calls during profile resolution to get the application's assigned profiles.
+> **Note**: The `profiles` array (new field) includes profile names for convenience. This is the endpoint DMS calls during profile resolution to get the application's assigned profiles. The audit fields (`createdAt`, `createdBy`, `lastModifiedAt`, `modifiedBy`) match the existing implementation.
 
 #### List Applications with Profile Filter
 
@@ -2158,11 +2163,7 @@ Ticket 11 (Migration Guide)
 {
   "id": 12345,
   "applicationName": "Student Information System",
-  "profileIds": [1, 2],
-  "profiles": [
-    {"profileId": 1, "profileName": "Student-Read-Only"},
-    {"profileId": 2, "profileName": "Assessment-Limited"}
-  ]
+  "profileIds": [1, 2]
 }
 ```
 
