@@ -1553,7 +1553,7 @@ Authorization: Bearer {token}
 - [Data Management Service Repository](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service)
 - [Project Tanager Documentation](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager)
 - [Ed-Fi Documentation](https://docs.ed-fi.org/)
-- [Ed-Fi API Profiles Specification](https://edfi.atlassian.net/wiki/spaces/EDFICERT/pages/20874540/Profiles)
+- [Ed-Fi API Profiles Specification](https://edfi.atlassian.net/wiki/spaces/ODSAPIS3V71/pages/25493665/API+Profiles)
 
 ## Glossary
 
