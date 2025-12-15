@@ -1908,7 +1908,6 @@ Ticket 11 (Migration Guide)
 - [ ] Collection item filter evaluation implemented (Filter elements)
 - [ ] Reference rule evaluation implemented
 - [ ] Nested property filtering supported
-- [ ] Performance optimizations applied (compiled expressions)
 - [ ] Unit tests for all rule types including filters
 
 **Technical Implementation Details**:
@@ -1918,7 +1917,6 @@ Ticket 11 (Migration Guide)
    - Include/exclude logic resolution (IncludeOnly, ExcludeOnly, IncludeAll, ExcludeAll)
    - Collection item filtering (evaluate Filter elements with propertyName and values)
    - Reference filtering
-   - Performance optimizations (compiled expressions, cached lookups)
 
 2. **Rule Models** (ProfileRule.cs, PropertyRule.cs, CollectionRule.cs, ReferenceRule.cs, FilterRule.cs):
    - Strongly-typed rule representations
@@ -1944,7 +1942,7 @@ Ticket 11 (Migration Guide)
 
 **Epic**: Profile Enforcement
 
-**User Story**: When a user submits write operations (POST/PUT/PATCH) through the DMS, the system validates the request against profile rules and rejects requests that violate the profile.
+**User Story**: When a user submits write operations (POST/PUT) through the DMS, the system validates the request against profile rules and rejects requests that violate the profile.
 
 **Acceptance Criteria**:
 
@@ -2055,7 +2053,6 @@ Ticket 11 (Migration Guide)
 - [ ] Exported XML is compatible with AdminAPI-2.x format
 - [ ] Profile update endpoint available in Config API (`PUT /v2/profiles/{id}`)
 - [ ] Profile delete endpoint available in Config API (`DELETE /v2/profiles/{id}`)
-- [ ] Profile activation/deactivation supported
 - [ ] Profile duplication endpoint (`POST /v2/profiles/{id}/duplicate`)
 - [ ] XML format is human-readable with proper indentation
 - [ ] Bulk export capability (multiple profiles)
@@ -2080,8 +2077,7 @@ Ticket 11 (Migration Guide)
 
 3. **Management API Extensions** (Config API - ProfileManagementController.cs):
    - Export endpoint with XML file download
-   - Update/delete endpoints with authorization
-   - Activation toggle endpoint
+   - Update/delete endpoints with authorizationActivation toggle endpoint
    - Duplication endpoint (clones JSONB)
    - Bulk export endpoint (exports multiple profiles as ZIP)
 
@@ -2114,7 +2110,7 @@ Ticket 11 (Migration Guide)
 - [ ] ApplicationProfile table automatically managed (insert/delete entries)
 - [ ] Transaction ensures atomic updates (application + profile assignments)
 - [ ] Profile ID validation ensures referenced profiles exist
-- [ ] GET /v2/applications/{id} returns assigned profiles (IDs and names)
+- [ ] GET /v2/applications/{id} returns assigned profiles (IDs)
 - [ ] GET /v2/applications supports `profileId` query parameter for filtering
 - [ ] Previous profile assignments replaced when updating profileIds array
 - [ ] Empty/omitted profileIds removes all assignments
@@ -2495,25 +2491,9 @@ Ticket 11 (Migration Guide)
    - Handle cache failures gracefully (fallback to Config API)
    - Support both profile cache and application mapping cache
 
-4. **Cache Metrics** (ProfileCacheMetrics.cs):
-   - Track cache hit rate for profiles and application mappings separately
-   - Monitor cache miss count for both caches
-   - Record eviction statistics
-   - Expose via metrics endpoint
-   - Alert on low hit rate (<90%)
-
-5. **Cache Warming** (ProfileCacheWarmer.cs - Optional):
-   - Preload frequently-used profiles on startup
-   - Preload application mappings for active applications
-   - Background refresh before expiration
-   - Configurable preload list
-
 **Considerations**:
 
 - **Eventual Consistency**: Profile and application assignment updates will have propagation delay (cache TTL)
-- **Memory Usage**:
-  - ~50KB per cached profile × max cache size (profiles)
-  - ~1KB per application mapping × max cache size (applications)
 - **Cache Invalidation**: Consider adding cache invalidation API for immediate updates
 - **Application Cache**: Higher cache size needed due to more applications than profiles
 
