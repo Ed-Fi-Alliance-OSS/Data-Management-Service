@@ -31,7 +31,7 @@ COPY datamodel/EdFi.DmsConfigurationService.DataModel/ ./datamodel/EdFi.DmsConfi
 RUN dotnet publish frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj \
     -c Release --no-restore --self-contained false -o /app/Frontend
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine3.23 AS runtimebase
 
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness

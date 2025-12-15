@@ -40,7 +40,7 @@ RUN dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.
     dotnet publish clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj \
     -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine3.23 AS runtimebase
 
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
