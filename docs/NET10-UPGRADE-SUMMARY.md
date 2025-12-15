@@ -313,6 +313,29 @@ private async Task<IResult> RegisterClient(
 
 ---
 
+### 9. SDK Generation Target Framework
+
+**Files Changed:**
+- `build-sdk.ps1`
+
+**Problem:**
+The OpenAPI Generator CLI (version 7.9.0) does not support .NET 10 as a target framework. It only supports: netstandard1.3-2.1, net47, net48, net6.0, net7.0, net8.0.
+
+**Solution:**
+Changed the SDK generation target framework from `net10.0` to `net8.0`:
+
+```powershell
+# Before
+--additional-properties "packageName=$PackageName,targetFramework=net10.0,netCoreProjectFile=true"
+
+# After
+--additional-properties "packageName=$PackageName,targetFramework=net8.0,netCoreProjectFile=true"
+```
+
+**Reason:** The generated SDK is a separate client library that doesn't need to target the same framework as the main DMS application. It can safely target `net8.0` while the main application targets `net10.0`. When OpenAPI Generator adds support for .NET 10, this can be updated.
+
+---
+
 ## Build Results
 
 Both solutions build successfully with **0 warnings** and **0 errors**:
@@ -334,4 +357,5 @@ The .NET 10 upgrade is complete. Both solutions build successfully without any w
 3. **Package Removals** - `Microsoft.Extensions.Configuration.EnvironmentVariables` removed (now in framework)
 4. **Analyzer Fixes** - S3236 CallerArgumentExpression, IDE0011 braces, IDE0040 accessibility modifiers
 5. **Middleware Rewrite** - `DuplicatePropertiesMiddleware` rewritten to use `Utf8JsonReader` for .NET 10 compatibility
-6. **Minimal API Binding** - `[FromForm]` parameters made nullable to handle .NET 10 binding behavior change
+6. **Minimal API Binding** - `[FromForm]` removed, form data read manually from `HttpContext.Request`
+7. **SDK Generation** - Target framework kept at `net8.0` (OpenAPI Generator doesn't support .NET 10 yet)
