@@ -38,12 +38,25 @@ public class IdentityModule : IEndpointModule
 
     private async Task<IResult> RegisterClient(
         RegisterRequest.Validator validator,
-        [FromForm] RegisterRequest model,
         IIdentityProviderRepository clientRepository,
         IOptions<IdentitySettings> identitySettings,
         HttpContext httpContext
     )
     {
+        // Manually read form data to handle empty form bodies in .NET 10
+        // (Minimal API [FromForm] binding returns 400 with empty body before handler is invoked)
+        RegisterRequest model = new();
+        if (httpContext.Request.HasFormContentType)
+        {
+            var form = await httpContext.Request.ReadFormAsync();
+            model = new RegisterRequest
+            {
+                ClientId = form["ClientId"].ToString(),
+                ClientSecret = form["ClientSecret"].ToString(),
+                DisplayName = form["DisplayName"].ToString(),
+            };
+        }
+
         bool allowRegistration = identitySettings.Value.AllowRegistration;
         if (allowRegistration)
         {
@@ -117,7 +130,6 @@ public class IdentityModule : IEndpointModule
 
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
-        [FromForm] TokenRequest model,
         [FromServices] ITokenManager tokenManager,
         [FromServices] IConfiguration configuration,
         [FromServices] ILogger<IdentityModule> logger,
@@ -128,15 +140,16 @@ public class IdentityModule : IEndpointModule
             configuration.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant()
             ?? "self-contained";
 
-        // For self-contained mode, support both form and HTTP Basic authentication
+        // Manually read form data to handle empty form bodies in .NET 10
+        // (Minimal API [FromForm] binding returns 400 with empty body before handler is invoked)
+        string clientId = string.Empty;
+        string clientSecret = string.Empty;
+        string grantType = string.Empty;
+        string scope = string.Empty;
+
+        // For self-contained mode, support HTTP Basic authentication
         if (string.Equals(identityProvider, "self-contained", StringComparison.OrdinalIgnoreCase))
         {
-            // Extract client credentials from either form body or Authorization header
-            string clientId = model.client_id ?? string.Empty;
-            string clientSecret = model.client_secret ?? string.Empty;
-            string grantType = model.grant_type ?? string.Empty;
-            string scope = model.scope ?? string.Empty;
-
             // Check for Authorization header (HTTP Basic auth) - only for self-contained
             httpContext.Request.Headers.TryGetValue("Authorization", out var authHeader);
             if (
@@ -162,41 +175,40 @@ public class IdentityModule : IEndpointModule
                     logger.LogWarning("Failed to parse Basic Auth credentials: {Exception}", ex);
                 }
             }
+        }
 
-            // Read form data for other parameters (and as fallback for credentials)
-            if (httpContext.Request.HasFormContentType)
+        // Read form data for all parameters (and as fallback for credentials in self-contained mode)
+        if (httpContext.Request.HasFormContentType)
+        {
+            var form = await httpContext.Request.ReadFormAsync();
+
+            // Use form credentials if Basic auth didn't provide them
+            if (string.IsNullOrEmpty(clientId))
             {
-                var form = await httpContext.Request.ReadFormAsync();
-
-                // Use form credentials if Basic auth didn't provide them
-                if (string.IsNullOrEmpty(clientId))
-                {
-                    clientId = form["client_id"].ToString();
-                }
-                if (string.IsNullOrEmpty(clientSecret))
-                {
-                    clientSecret = form["client_secret"].ToString();
-                }
-
-                if (string.IsNullOrEmpty(grantType))
-                {
-                    grantType = form["grant_type"].ToString();
-                }
-                if (string.IsNullOrEmpty(scope))
-                {
-                    scope = form["scope"].ToString();
-                }
+                clientId = form["client_id"].ToString();
+            }
+            if (string.IsNullOrEmpty(clientSecret))
+            {
+                clientSecret = form["client_secret"].ToString();
             }
 
-            // Create updated model for self-contained validation
-            model = new TokenRequest
+            if (string.IsNullOrEmpty(grantType))
             {
-                client_id = clientId,
-                client_secret = clientSecret,
-                grant_type = grantType,
-                scope = scope,
-            };
+                grantType = form["grant_type"].ToString();
+            }
+            if (string.IsNullOrEmpty(scope))
+            {
+                scope = form["scope"].ToString();
+            }
         }
+
+        var model = new TokenRequest
+        {
+            client_id = clientId,
+            client_secret = clientSecret,
+            grant_type = grantType,
+            scope = scope,
+        };
 
         await validator.GuardAsync(model);
 
@@ -258,11 +270,22 @@ public class IdentityModule : IEndpointModule
     }
 
     private static async Task<IResult> IntrospectToken(
-        [FromForm] IntrospectionRequest model,
         [FromServices] IEnhancedTokenValidator? tokenValidator,
         HttpContext httpContext
     )
     {
+        // Manually read form data to handle empty form bodies in .NET 10
+        IntrospectionRequest model = new();
+        if (httpContext.Request.HasFormContentType)
+        {
+            var form = await httpContext.Request.ReadFormAsync();
+            model = new IntrospectionRequest
+            {
+                Token = form["token"].ToString(),
+                Token_Type_Hint = form["token_type_hint"].ToString(),
+            };
+        }
+
         if (string.IsNullOrEmpty(model.Token))
         {
             return Results.Json(
@@ -305,11 +328,22 @@ public class IdentityModule : IEndpointModule
     }
 
     private static async Task<IResult> RevokeToken(
-        [FromForm] RevocationRequest model,
         [FromServices] ITokenManager tokenManager,
         HttpContext httpContext
     )
     {
+        // Manually read form data to handle empty form bodies in .NET 10
+        RevocationRequest model = new();
+        if (httpContext.Request.HasFormContentType)
+        {
+            var form = await httpContext.Request.ReadFormAsync();
+            model = new RevocationRequest
+            {
+                Token = form["token"].ToString(),
+                Token_Type_Hint = form["token_type_hint"].ToString(),
+            };
+        }
+
         if (string.IsNullOrEmpty(model.Token))
         {
             return Results.Json(

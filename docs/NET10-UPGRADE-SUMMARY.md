@@ -246,6 +246,73 @@ This would reduce the work to a single pass for valid JSON (the common case) and
 
 ---
 
+### 8. Minimal API [FromForm] Binding Behavior Change
+
+**Files Changed:**
+- `src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/Modules/IdentityModule.cs`
+- `src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/TokenEndpointModule.cs`
+
+**Problem:**
+In .NET 10, Minimal APIs return an empty 400 response when `[FromForm]` binding fails with an empty request body, rather than passing through to the endpoint handler. This caused the `/connect/register` endpoint (and other form-based endpoints) to return an empty response body instead of the expected validation error messages.
+
+Making the `[FromForm]` parameter nullable was insufficient because .NET 10 still attempts form binding and fails with an empty body before invoking the handler.
+
+**Solution:**
+Removed `[FromForm]` parameters entirely and manually read form data from `HttpContext.Request`:
+
+```csharp
+// Before (.NET 8)
+private async Task<IResult> RegisterClient(
+    RegisterRequest.Validator validator,
+    [FromForm] RegisterRequest model,  // Binding fails with empty body in .NET 10
+    ...
+)
+{
+    await validator.GuardAsync(model);
+}
+
+// After (.NET 10)
+private async Task<IResult> RegisterClient(
+    RegisterRequest.Validator validator,
+    // [FromForm] removed - binding fails before handler invoked with empty body
+    IIdentityProviderRepository clientRepository,
+    IOptions<IdentitySettings> identitySettings,
+    HttpContext httpContext
+)
+{
+    // Manually read form data to handle empty form bodies in .NET 10
+    RegisterRequest model = new();
+    if (httpContext.Request.HasFormContentType)
+    {
+        var form = await httpContext.Request.ReadFormAsync();
+        model = new RegisterRequest
+        {
+            ClientId = form["ClientId"].ToString(),
+            ClientSecret = form["ClientSecret"].ToString(),
+            DisplayName = form["DisplayName"].ToString(),
+        };
+    }
+
+    await validator.GuardAsync(model);
+    // Now validation errors are properly returned even with empty form body
+}
+```
+
+**Endpoints Updated:**
+
+*IdentityModule.cs (Configuration Service):*
+- `RegisterClient` - Removed `[FromForm] RegisterRequest`, manually reads form data
+- `GetClientAccessToken` - Removed `[FromForm] TokenRequest`, refactored to always read form manually
+- `IntrospectToken` - Removed `[FromForm] IntrospectionRequest`, manually reads form data
+- `RevokeToken` - Removed `[FromForm] RevocationRequest`, manually reads form data
+
+*TokenEndpointModule.cs (DMS):*
+- `HandleFormData` - Removed `[FromForm] TokenRequest`, manually reads form data
+
+**Reason:** This is a behavioral change in .NET 10's Minimal API model binding. When form data is empty or cannot be bound, .NET 10 returns an immediate 400 response without invoking the endpoint handler - even with nullable parameters. The only solution is to bypass `[FromForm]` binding entirely and read form data directly from `HttpContext.Request`.
+
+---
+
 ## Build Results
 
 Both solutions build successfully with **0 warnings** and **0 errors**:
@@ -260,10 +327,11 @@ Build succeeded.
 
 ## Conclusion
 
-The .NET 10 upgrade is complete. Both solutions build successfully without any warnings or errors, and all tests pass. All breaking changes have been addressed:
+The .NET 10 upgrade is complete. Both solutions build successfully without any warnings or errors. All breaking changes have been addressed:
 
 1. **API Renames** - `KnownNetworks` → `KnownIPNetworks`, `X509Certificate2` → `X509CertificateLoader`
 2. **Package Updates** - All Microsoft.Extensions.* packages updated to 10.0.1, Respawn updated to 7.0.0
 3. **Package Removals** - `Microsoft.Extensions.Configuration.EnvironmentVariables` removed (now in framework)
 4. **Analyzer Fixes** - S3236 CallerArgumentExpression, IDE0011 braces, IDE0040 accessibility modifiers
 5. **Middleware Rewrite** - `DuplicatePropertiesMiddleware` rewritten to use `Utf8JsonReader` for .NET 10 compatibility
+6. **Minimal API Binding** - `[FromForm]` parameters made nullable to handle .NET 10 binding behavior change
