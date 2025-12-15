@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0.401-alpine3.20@sha256:658c93223111638f9bb54746679e554b2cf0453d8fb7b9fed32c3c0726c210fe AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 
 WORKDIR /source
 
@@ -34,7 +34,7 @@ RUN export NUGET_FALLBACK_PACKAGES="" && \
     dotnet publish EdFi.DataManagementService.SchemaGenerator.Cli/EdFi.DataManagementService.SchemaGenerator.Cli.csproj \
     -c Release --self-contained false -o /app/cli --disable-parallel --verbosity normal
 
-FROM mcr.microsoft.com/dotnet/runtime:8.0.12-alpine3.21 AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:10.0-alpine AS runtime
 
 WORKDIR /app
 

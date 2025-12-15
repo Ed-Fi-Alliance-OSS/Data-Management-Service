@@ -64,7 +64,7 @@ function Invoke-SmokeTestUtility {
     Write-Output $ToolPath $options
     $host.UI.RawUI.ForegroundColor = $previousForegroundColor
 
-    $path = (Join-Path -Path ($ToolPath).Trim() -ChildPath "tools/net8.0/any/EdFi.SmokeTest.Console.dll")
+    $path = (Join-Path -Path ($ToolPath).Trim() -ChildPath "tools/net10.0/any/EdFi.SmokeTest.Console.dll")
     &dotnet $path $options
 }
 

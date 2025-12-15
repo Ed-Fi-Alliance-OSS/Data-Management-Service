@@ -349,7 +349,7 @@ internal static class JsonObjectExtensions
         var remainingSegments = segments.Skip(1).ToArray();
         var node = jsonObject[currentSegment];
 
-        Trace.Assert(node != null, $"PointerSegment '{currentSegment}' not found on JsonObject");
+        Trace.Assert(node != null, $"PointerSegment '{currentSegment}' not found on JsonObject", "");
 
         if (node is JsonObject nodeObj)
         {
@@ -367,14 +367,15 @@ internal static class JsonObjectExtensions
             }
             else
             {
-                Trace.Assert(false, $"Index '{index}' out of bounds for JsonArray");
+                Trace.Assert(false, $"Index '{index}' out of bounds for JsonArray", "");
             }
         }
         else
         {
             Trace.Assert(
                 false,
-                $"Node is not a JsonObject or JsonArray or invalid index for array: {currentSegment}"
+                $"Node is not a JsonObject or JsonArray or invalid index for array: {currentSegment}",
+                ""
             );
         }
 

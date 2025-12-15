@@ -43,11 +43,13 @@ internal class EqualityConstraintValidator : IEqualityConstraintValidator
 
             Trace.Assert(
                 sourcePathResult.Matches != null,
-                "Evaluation of sourcePathResult.Matches resulted in unexpected null"
+                "Evaluation of sourcePathResult.Matches resulted in unexpected null",
+                ""
             );
             Trace.Assert(
                 targetPathResult.Matches != null,
-                "Evaluation of targetPathResult.Matches resulted in unexpected null"
+                "Evaluation of targetPathResult.Matches resulted in unexpected null",
+                ""
             );
 
             var combinedValues = new HashSet<JsonNode?>(

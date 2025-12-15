@@ -40,7 +40,7 @@ if (useReverseProxyHeaders)
             | ForwardedHeaders.XForwardedProto;
 
         // Accept forwarded headers from any network and proxy
-        options.KnownNetworks.Clear();
+        options.KnownIPNetworks.Clear();
         options.KnownProxies.Clear();
     });
 }
