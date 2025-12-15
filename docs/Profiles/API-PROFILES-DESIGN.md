@@ -105,12 +105,16 @@ graph TB
     subgraph "API Client"
         A[Data API Request]
         B[HTTP Headers<br/>Accept/Content-Type]
+        AUTH[Auth Token<br/>Application ID]
     end
     
     subgraph "Config Service"
         M[Config API<br/>/v2/profiles/*]
+        APPS[Config API<br/>/v2/applications/*]
         N[Profile Repository]
+        APPREPO[ApplicationProfile<br/>Repository]
         O[Profile Storage<br/>dmscs.Profile JSONB]
+        APPTBL[ApplicationProfile<br/>Junction Table]
         P[Profile Import/Export]
     end
     
@@ -124,12 +128,20 @@ graph TB
     end
     
     A -->|1. Data Request| B
-    B -->|2. Extract Profile Name| C
-    C -->|3. Fetch Profile| D
-    D -->|4. HTTP GET| M
-    M -->|5. Query| N
-    N -->|6. Load JSONB| O
-    M -->|7. Return JSON| D
+    A -->|1a. With Token| AUTH
+    B -->|2a. Extract Profile Name| C
+    AUTH -->|2b. Extract App ID| C
+    C -->|3a. Fetch by Name| D
+    C -->|3b. Fetch by App ID| D
+    D -->|4a. GET /profiles?name=| M
+    D -->|4b. GET /applications/{id}| APPS
+    M -->|5a. Query Profile| N
+    APPS -->|5b. Query App Profiles| APPREPO
+    N -->|6a. Load JSONB| O
+    APPREPO -->|6b. Join| APPTBL
+    APPREPO -->|6c. Load Profile| O
+    M -->|7a. Return Profile JSON| D
+    APPS -->|7b. Return Profiles Array| D
     D -->|8. Profile Rules| E
     E -->|9a. Validate Write| F
     E -->|9b. Filter Read| G
@@ -139,12 +151,14 @@ graph TB
     P -.->|Manage| M
     
     style M fill:#e1f5ff
+    style APPS fill:#e1f5ff
     style O fill:#e1f5ff
+    style APPTBL fill:#e1f5ff
     style C fill:#fff4e1
     style E fill:#fff4e1
     
     Note1[Config Service owns<br/>profile storage & API]
-    Note2[DMS fetches profiles<br/>via HTTP calls]
+    Note2[DMS fetches profiles via:<br/>1. Header name or<br/>2. Application assignment]
 ```
 
 ## Integration Strategy
@@ -177,16 +191,29 @@ The Profiles feature is split across **Config Service** and **DMS**:
 sequenceDiagram
     participant Client
     participant DMS as DMS API
+    participant Auth as Auth Middleware
     participant Resolver as Profile Resolver
     participant ConfigAPI as Config API
     participant ConfigDB as Config DB
     participant Pipeline as DMS Pipeline
     participant Backend as Document Store
     
-    Client->>DMS: HTTP Request + Profile Header
-    DMS->>Resolver: Extract Profile Name
-    Resolver->>ConfigAPI: GET /v2/profiles/{name}
-    ConfigAPI->>ConfigDB: Query Profile
+    Client->>DMS: HTTP Request (+ optional Profile Header)
+    DMS->>Auth: Authenticate
+    Auth-->>DMS: Token Claims (ApplicationId)
+    
+    alt Profile from Header
+        DMS->>Resolver: Extract Profile Name from Header
+        Resolver->>ConfigAPI: GET /v2/profiles?name={name}
+        ConfigAPI->>ConfigDB: Query Profile by Name
+    else Profile from Application
+        DMS->>Resolver: Extract ApplicationId from Token
+        Resolver->>ConfigAPI: GET /v2/applications/{applicationId}
+        ConfigAPI->>ConfigDB: Query Application + Join ApplicationProfile
+        ConfigDB-->>ConfigAPI: Application with ProfileIds
+        ConfigAPI->>ConfigDB: Query Profiles by ProfileIds
+    end
+    
     ConfigDB-->>ConfigAPI: Profile Data (JSONB)
     ConfigAPI-->>Resolver: Profile JSON
     Resolver->>Pipeline: Attach Profile Context
@@ -200,7 +227,7 @@ sequenceDiagram
         Pipeline-->>Client: Filtered Response
     end
     
-    Note over Resolver,ConfigAPI: Future: Add local cache in DMS<br/>to reduce Config API calls
+    Note over Resolver,ConfigAPI: Priority: Header > Application > Default > None<br/>Future: Add local cache in DMS to reduce Config API calls
 ```
 
 ### Pipeline Integration Points
@@ -414,6 +441,7 @@ Profile rules are stored in JSONB format, converted from the canonical XML forma
 For SQL Server deployments, the schema uses `NVARCHAR(MAX)` with JSON validation:
 
 ```sql
+-- Profile table
 CREATE TABLE dmscs.Profile (
     ProfileId BIGINT IDENTITY(1,1) PRIMARY KEY,
     ProfileName NVARCHAR(255) NOT NULL,
@@ -430,6 +458,29 @@ CREATE TABLE dmscs.Profile (
 
 CREATE UNIQUE INDEX idx_profile_name 
     ON dmscs.Profile (ProfileName);
+
+-- ApplicationProfile junction table
+CREATE TABLE dmscs.ApplicationProfile (
+    ApplicationId BIGINT NOT NULL,
+    ProfileId BIGINT NOT NULL,
+    CreatedAt DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    CreatedBy NVARCHAR(256),
+    LastModifiedAt DATETIME2,
+    ModifiedBy NVARCHAR(256),
+    
+    -- Composite primary key
+    PRIMARY KEY (ApplicationId, ProfileId),
+    
+    -- Foreign key to Profile table
+    CONSTRAINT fk_applicationprofile_profile 
+        FOREIGN KEY (ProfileId) 
+        REFERENCES dmscs.Profile(ProfileId) 
+        ON DELETE CASCADE
+);
+
+-- Index for reverse lookup (find apps using a profile)
+CREATE INDEX idx_applicationprofile_profileid 
+    ON dmscs.ApplicationProfile (ProfileId);
 ```
 
 ## Profile Resolution Flow
@@ -1554,6 +1605,7 @@ Authorization: Bearer {token}
 - [Project Tanager Documentation](https://github.com/Ed-Fi-Alliance-OSS/Project-Tanager)
 - [Ed-Fi Documentation](https://docs.ed-fi.org/)
 - [Ed-Fi API Profiles Specification](https://edfi.atlassian.net/wiki/spaces/ODSAPIS3V71/pages/25493665/API+Profiles)
+- [How To: Add Profiles to the Ed-Fi ODS / API](https://edfi.atlassian.net/wiki/spaces/ODSAPIS3V71/pages/25493741/How+To+Add+Profiles+to+the+Ed-Fi+ODS+API)
 
 ## Glossary
 
@@ -1662,7 +1714,7 @@ Ticket 11 (Migration Guide)
 2. **Profile Models** (Config Service - ProfileEntity.cs, ProfileDto.cs):
    - ProfileEntity: Database entity with JSONB definition
    - ProfileDto: API data transfer object
-   - ApplicationProfileEntity: Links ApplicationId to ProfileId
+   - ApplicationProfileEntity: Composite key entity (ApplicationId, ProfileId) with audit fields
    - Mapping between entity and DTO
 
 3. **Repository Layer** (Config Service - IProfileRepository.cs, ProfileRepository.cs, IApplicationProfileRepository.cs):
