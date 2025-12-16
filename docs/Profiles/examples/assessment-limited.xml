@@ -5,13 +5,13 @@
   Use Case: Assessment vendor integration with need-to-know access restrictions
   Version: 1.0
   Created: 2025-12-09
-  
+
   This profile provides read access to basic assessment results while excluding:
   - Student accommodations (privacy concern)
   - Detailed objective assessments (proprietary)
   - Performance level descriptors (detailed scoring)
   - Student assessment extensions (custom fields)
-  
+
   Write access is completely restricted for this profile.
 -->
 <Profile name="Assessment-Limited">
@@ -30,7 +30,7 @@
     </ReadContentType>
     <!-- No WriteContentType = Read-only access -->
   </Resource>
-  
+
   <Resource name="Assessment">
     <ReadContentType memberSelection="IncludeOnly">
       <!-- Basic Assessment Metadata Only -->
@@ -38,9 +38,9 @@
       <Property name="AssessmentTitle" />
       <Property name="AssessmentVersion" />
       <Property name="MaxRawScore" />
-      <Reference name="EducationOrganizationReference">
+      <Object name="EducationOrganizationReference" memberSelection="IncludeOnly">
         <Property name="EducationOrganizationId" />
-      </Reference>
+      </Object>
     </ReadContentType>
   </Resource>
 </Profile>

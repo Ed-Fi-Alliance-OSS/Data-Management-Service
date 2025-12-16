@@ -5,13 +5,13 @@
   Use Case: Student information system integration for basic data synchronization
   Version: 1.0
   Created: 2025-12-09
-  
+
   This profile enables API consumers to create and update:
   - Core demographic information
   - Address information
   - Electronic mail addresses
   - Telephone numbers
-  
+
   Excluded from write access:
   - Assessment data
   - Program associations
@@ -32,12 +32,12 @@
       <Property name="BirthCity" />
       <Property name="BirthStateAbbreviation" />
       <Property name="BirthCountryDescriptor" />
-      
+
       <!-- School Reference -->
-      <Reference name="SchoolReference">
+      <Object name="SchoolReference" memberSelection="IncludeOnly">
         <Property name="SchoolId" />
-      </Reference>
-      
+      </Object>
+
       <!-- Address Information -->
       <Collection name="Addresses" memberSelection="IncludeOnly">
         <Property name="AddressTypeDescriptor" />
@@ -48,12 +48,12 @@
         <Property name="PostalCode" />
         <Property name="CountryDescriptor" />
       </Collection>
-      
+
       <!-- Contact Information -->
       <Collection name="ElectronicMails" memberSelection="IncludeAll" />
       <Collection name="Telephones" memberSelection="IncludeAll" />
     </ReadContentType>
-    
+
     <WriteContentType memberSelection="IncludeOnly">
       <!-- Core Identity Fields (Required for Updates) -->
       <Property name="StudentUniqueId" />
@@ -65,12 +65,12 @@
       <Property name="BirthCity" />
       <Property name="BirthStateAbbreviation" />
       <Property name="BirthCountryDescriptor" />
-      
+
       <!-- School Reference (Required) -->
-      <Reference name="SchoolReference">
+      <Object name="SchoolReference" memberSelection="IncludeOnly">
         <Property name="SchoolId" />
-      </Reference>
-      
+      </Object>
+
       <!-- Updatable Address Information -->
       <Collection name="Addresses" memberSelection="IncludeOnly">
         <Property name="AddressTypeDescriptor" />
@@ -81,7 +81,7 @@
         <Property name="PostalCode" />
         <Property name="CountryDescriptor" />
       </Collection>
-      
+
       <!-- Updatable Contact Information -->
       <Collection name="ElectronicMails" memberSelection="IncludeAll" />
       <Collection name="Telephones" memberSelection="IncludeAll" />

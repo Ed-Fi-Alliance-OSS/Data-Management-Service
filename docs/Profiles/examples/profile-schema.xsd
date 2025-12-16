@@ -7,270 +7,144 @@
   Profiles control resource visibility and update paths via explicit
   inclusion/exclusion rules.
 
-  Usage:
-    xmllint -schema profile-schema.xsd your-profile.xml
--->
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
-           elementFormDefault="qualified"
-           attributeFormDefault="unqualified">
 
-  <!-- Root Element: Profile -->
-  <xs:element name="Profile">
-    <xs:annotation>
-      <xs:documentation>
-        Root element for an API Profile definition. A Profile contains one or more
-        Resource definitions that specify access rules.
-      </xs:documentation>
-    </xs:annotation>
+  Note: This schema matches the design specification in Appendix B of the
+  API Profiles Design Document.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <!-- Root element containing multiple profiles -->
+  <xs:element name="Profiles">
     <xs:complexType>
       <xs:sequence>
-        <xs:element name="Resource" maxOccurs="unbounded">
-          <xs:annotation>
-            <xs:documentation>
-              Defines access rules for a specific Ed-Fi resource (e.g., Student, School).
-            </xs:documentation>
-          </xs:annotation>
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="ReadContentType" minOccurs="0" type="ContentType">
-                <xs:annotation>
-                  <xs:documentation>
-                    Specifies which elements are accessible for read operations (GET requests).
-                  </xs:documentation>
-                </xs:annotation>
-              </xs:element>
-              <xs:element name="WriteContentType" minOccurs="0" type="ContentType">
-                <xs:annotation>
-                  <xs:documentation>
-                    Specifies which elements are accessible for write operations (POST/PUT requests).
-                  </xs:documentation>
-                </xs:annotation>
-              </xs:element>
-            </xs:sequence>
-            <xs:attribute name="name" type="xs:string" use="required">
-              <xs:annotation>
-                <xs:documentation>
-                  The name of the Ed-Fi resource (e.g., "Student", "School", "Assessment").
-                </xs:documentation>
-              </xs:annotation>
-            </xs:attribute>
-          </xs:complexType>
-        </xs:element>
+        <xs:element name="Profile" type="ProfileDefinition" maxOccurs="unbounded"/>
       </xs:sequence>
-      <xs:attribute name="name" type="xs:string" use="required">
-        <xs:annotation>
-          <xs:documentation>
-            Unique name for this profile (e.g., "Student-ReadOnly", "Assessment-Limited").
-          </xs:documentation>
-        </xs:annotation>
-      </xs:attribute>
     </xs:complexType>
   </xs:element>
 
-  <!-- ContentType Complex Type -->
-  <xs:complexType name="ContentType">
-    <xs:annotation>
-      <xs:documentation>
-        Defines the filtering rules for read or write operations.
-        Contains properties, collections, and references that should be included or excluded.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:choice minOccurs="0" maxOccurs="unbounded">
-      <xs:element name="Property" type="PropertyElement" />
-      <xs:element name="Collection" type="CollectionElement" />
-      <xs:element name="Reference" type="ReferenceElement" />
-    </xs:choice>
-    <xs:attribute name="memberSelection" type="MemberSelectionType" use="required">
-      <xs:annotation>
-        <xs:documentation>
-          Strategy for including/excluding elements:
-          - IncludeOnly: Only listed elements are accessible (whitelist)
-          - ExcludeOnly: All elements except listed are accessible (blacklist)
-          - IncludeAll: All elements are accessible (no filtering)
-          - ExcludeAll: No elements are accessible
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-  </xs:complexType>
-
-  <!-- PropertyElement Simple Type -->
-  <xs:complexType name="PropertyElement">
-    <xs:annotation>
-      <xs:documentation>
-        Represents a simple property/field on a resource (e.g., "FirstName", "BirthDate").
-      </xs:documentation>
-    </xs:annotation>
-    <xs:attribute name="name" type="xs:string" use="required">
-      <xs:annotation>
-        <xs:documentation>
-          The name of the property as defined in the Ed-Fi resource schema.
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-  </xs:complexType>
-
-  <!-- CollectionElement Complex Type -->
-  <xs:complexType name="CollectionElement">
-    <xs:annotation>
-      <xs:documentation>
-        Represents an array/collection on a resource (e.g., "Addresses", "ElectronicMails").
-        Can contain nested Property, Collection, Reference, and Filter elements.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:choice minOccurs="0" maxOccurs="unbounded">
-      <xs:element name="Property" type="PropertyElement" />
-      <xs:element name="Collection" type="CollectionElement" />
-      <xs:element name="Reference" type="ReferenceElement" />
-      <xs:element name="Filter" type="FilterElement" />
-    </xs:choice>
-    <xs:attribute name="name" type="xs:string" use="required">
-      <xs:annotation>
-        <xs:documentation>
-          The name of the collection as defined in the Ed-Fi resource schema.
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="memberSelection" type="MemberSelectionType">
-      <xs:annotation>
-        <xs:documentation>
-          Optional member selection strategy for items within the collection.
-          If not specified, inherits from parent ContentType.
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-  </xs:complexType>
-
-  <!-- ReferenceElement Complex Type -->
-  <xs:complexType name="ReferenceElement">
-    <xs:annotation>
-      <xs:documentation>
-        Represents a reference to another resource (e.g., "SchoolReference", "StudentReference").
-        Can contain Property elements to filter which reference fields are accessible.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:choice minOccurs="0" maxOccurs="unbounded">
-      <xs:element name="Property" type="PropertyElement" />
-    </xs:choice>
-    <xs:attribute name="name" type="xs:string" use="required">
-      <xs:annotation>
-        <xs:documentation>
-          The name of the reference as defined in the Ed-Fi resource schema.
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="memberSelection" type="MemberSelectionType">
-      <xs:annotation>
-        <xs:documentation>
-          Optional member selection strategy for properties within the reference.
-          If not specified, inherits from parent ContentType.
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-  </xs:complexType>
-
-  <!-- FilterElement Complex Type -->
-  <xs:complexType name="FilterElement">
-    <xs:annotation>
-      <xs:documentation>
-        Filters collection items based on Type or Descriptor values.
-        Allows including or excluding specific collection items based on a property's value.
-        Example: Only include Physical and Mailing addresses from the Addresses collection.
-      </xs:documentation>
-    </xs:annotation>
+  <!-- Profile definition -->
+  <xs:complexType name="ProfileDefinition">
     <xs:sequence>
-      <xs:element name="Value" type="xs:string" maxOccurs="unbounded">
-        <xs:annotation>
-          <xs:documentation>
-            One or more values to match against the filter property.
-            Example: "Physical", "Mailing", "Shipping"
-          </xs:documentation>
-        </xs:annotation>
-      </xs:element>
+      <xs:element name="Resource" type="ResourceDefinition" maxOccurs="unbounded"/>
     </xs:sequence>
-    <xs:attribute name="propertyName" type="xs:string" use="required">
-      <xs:annotation>
-        <xs:documentation>
-          The name of the property to filter on (typically a Type or Descriptor field).
-          Example: "AddressTypeDescriptor", "TelephoneNumberTypeDescriptor"
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="filterMode" type="FilterModeType" use="required">
-      <xs:annotation>
-        <xs:documentation>
-          Strategy for filtering collection items:
-          - IncludeOnly: Only items matching the specified values are included
-          - ExcludeOnly: All items except those matching the specified values are included
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
+    <xs:attribute name="name" type="xs:string" use="required"/>
   </xs:complexType>
 
-  <!-- FilterModeType Enumeration -->
-  <xs:simpleType name="FilterModeType">
-    <xs:annotation>
-      <xs:documentation>
-        Enumeration of valid filter modes for collection item filtering.
-      </xs:documentation>
-    </xs:annotation>
+  <!-- Resource definition with optional logicalSchema -->
+  <xs:complexType name="ResourceDefinition">
+    <xs:sequence>
+      <xs:element name="ReadContentType" type="ContentTypeDefinition" minOccurs="0"/>
+      <xs:element name="WriteContentType" type="ContentTypeDefinition" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Content type definition (ReadContentType or WriteContentType) -->
+  <xs:complexType name="ContentTypeDefinition">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="Property" type="PropertyDefinition"/>
+      <xs:element name="Object" type="ClassDefinition"/>
+      <xs:element name="Collection" type="CollectionDefinition"/>
+      <xs:element name="Extension" type="ExtensionDefinition"/>
+    </xs:choice>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+  </xs:complexType>
+
+  <!-- Property definition -->
+  <xs:complexType name="PropertyDefinition">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Class definition (for embedded objects) with optional logicalSchema -->
+  <xs:complexType name="ClassDefinition">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="Property" type="PropertyDefinition"/>
+      <xs:element name="Object" type="ClassDefinition"/>
+      <xs:element name="Collection" type="CollectionDefinition"/>
+    </xs:choice>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Collection definition with filters -->
+  <xs:complexType name="CollectionDefinition">
+    <xs:sequence>
+      <xs:choice maxOccurs="unbounded" minOccurs="0">
+        <xs:element name="Property" type="PropertyDefinition"/>
+        <xs:element name="Object" type="ClassDefinition"/>
+        <xs:element name="Collection" type="CollectionDefinition"/>
+      </xs:choice>
+      <xs:element name="Filter" type="FilterDefinition" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Extension definition -->
+  <xs:complexType name="ExtensionDefinition">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="Property" type="PropertyDefinition"/>
+      <xs:element name="Object" type="ExtensionClassDefinition"/>
+      <xs:element name="Collection" type="ExtensionCollectionDefinition"/>
+    </xs:choice>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+  </xs:complexType>
+
+  <!-- Extension class definition with optional logicalSchema -->
+  <xs:complexType name="ExtensionClassDefinition">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="Property" type="PropertyDefinition"/>
+      <xs:element name="Object" type="ExtensionClassDefinition"/>
+      <xs:element name="Collection" type="ExtensionCollectionDefinition"/>
+    </xs:choice>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Extension collection definition with filters -->
+  <xs:complexType name="ExtensionCollectionDefinition">
+    <xs:sequence>
+      <xs:choice maxOccurs="unbounded" minOccurs="0">
+        <xs:element name="Property" type="PropertyDefinition"/>
+        <xs:element name="Object" type="ExtensionClassDefinition"/>
+        <xs:element name="Collection" type="ExtensionCollectionDefinition"/>
+      </xs:choice>
+      <xs:element name="Filter" type="FilterDefinition" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Filter definition with property name, filter mode, and values -->
+  <xs:complexType name="FilterDefinition">
+    <xs:sequence>
+      <xs:element name="Value" type="xs:string" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="propertyName" type="xs:string" use="required"/>
+    <xs:attribute name="filterMode" type="FilterMode" use="required"/>
+  </xs:complexType>
+
+  <!-- Member selection mode enumeration -->
+  <xs:simpleType name="MemberSelectionMode">
     <xs:restriction base="xs:string">
-      <xs:enumeration value="IncludeOnly">
-        <xs:annotation>
-          <xs:documentation>
-            Only collection items with property values matching the specified values are included.
-          </xs:documentation>
-        </xs:annotation>
-      </xs:enumeration>
-      <xs:enumeration value="ExcludeOnly">
-        <xs:annotation>
-          <xs:documentation>
-            All collection items except those with property values matching the specified values are included.
-          </xs:documentation>
-        </xs:annotation>
-      </xs:enumeration>
+      <xs:enumeration value="IncludeOnly"/>
+      <xs:enumeration value="ExcludeOnly"/>
+      <xs:enumeration value="IncludeAll"/>
+      <xs:enumeration value="ExcludeAll"/>
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- MemberSelectionType Enumeration -->
-  <xs:simpleType name="MemberSelectionType">
-    <xs:annotation>
-      <xs:documentation>
-        Enumeration of valid member selection strategies for filtering elements.
-      </xs:documentation>
-    </xs:annotation>
+  <!-- Filter mode enumeration -->
+  <xs:simpleType name="FilterMode">
     <xs:restriction base="xs:string">
-      <xs:enumeration value="IncludeOnly">
-        <xs:annotation>
-          <xs:documentation>
-            Only the explicitly listed elements are accessible (whitelist approach).
-            Most secure option for sensitive data.
-          </xs:documentation>
-        </xs:annotation>
-      </xs:enumeration>
-      <xs:enumeration value="ExcludeOnly">
-        <xs:annotation>
-          <xs:documentation>
-            All elements except the explicitly listed ones are accessible (blacklist approach).
-            Use when most fields should be available with few exceptions.
-          </xs:documentation>
-        </xs:annotation>
-      </xs:enumeration>
-      <xs:enumeration value="IncludeAll">
-        <xs:annotation>
-          <xs:documentation>
-            All elements are accessible (no filtering applied).
-            Use for full access scenarios.
-          </xs:documentation>
-        </xs:annotation>
-      </xs:enumeration>
-      <xs:enumeration value="ExcludeAll">
-        <xs:annotation>
-          <xs:documentation>
-            No elements are accessible (complete restriction).
-            Use with caution, typically for denying access to entire collections.
-          </xs:documentation>
-        </xs:annotation>
-      </xs:enumeration>
+      <xs:enumeration value="IncludeOnly"/>
+      <xs:enumeration value="ExcludeOnly"/>
     </xs:restriction>
   </xs:simpleType>
 

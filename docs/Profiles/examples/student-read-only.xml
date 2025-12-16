@@ -5,12 +5,12 @@
   Use Case: External reporting systems that need basic student information without modification rights
   Version: 1.0
   Created: 2025-12-09
-  
+
   This profile restricts API consumers to reading only essential student information:
   - Basic identification (StudentUniqueId, names, birth date)
   - School enrollment reference
   - Education organization associations
-  
+
   Write operations are not permitted with this profile.
   Sensitive data like identification codes, contact information, and program associations are excluded.
 -->
@@ -24,19 +24,19 @@
       <Property name="LastSurname" />
       <Property name="BirthDate" />
       <Property name="BirthSex" />
-      
+
       <!-- School Reference -->
-      <Reference name="SchoolReference">
+      <Object name="SchoolReference" memberSelection="IncludeOnly">
         <Property name="SchoolId" />
-      </Reference>
-      
+      </Object>
+
       <!-- Education Organization Associations (Limited Fields) -->
       <Collection name="StudentEducationOrganizationAssociations" memberSelection="IncludeOnly">
         <Property name="EducationOrganizationId" />
         <Property name="StudentEducationOrganizationAssociationId" />
-        <Reference name="EducationOrganizationReference">
+        <Object name="EducationOrganizationReference" memberSelection="IncludeOnly">
           <Property name="EducationOrganizationId" />
-        </Reference>
+        </Object>
         <Collection name="StudentEducationOrganizationAssociationGradeLevels" memberSelection="IncludeOnly">
           <Property name="GradeLevel" />
         </Collection>

@@ -20,9 +20,9 @@
       <Property name="SchoolTypeDescriptor" />
 
       <!-- LEA Reference -->
-      <Reference name="LocalEducationAgencyReference">
+      <Object name="LocalEducationAgencyReference" memberSelection="IncludeOnly">
         <Property name="LocalEducationAgencyId" />
-      </Reference>
+      </Object>
 
       <!-- Filtered Address Collection -->
       <!-- Only Physical and Mailing addresses are included -->

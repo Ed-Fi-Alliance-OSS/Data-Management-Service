@@ -5,13 +5,13 @@
   Use Case: School finder applications, public directories, maps
   Version: 1.0
   Created: 2025-12-09
-  
+
   This profile exposes only publicly available school information:
   - School identification and name
   - Operational status (Open, Closed, Future)
   - School type and categories
   - Local Education Agency association
-  
+
   Excluded information:
   - Internal administrative details
   - Staff assignments
@@ -26,26 +26,26 @@
       <Property name="SchoolId" />
       <Property name="NameOfInstitution" />
       <Property name="ShortNameOfInstitution" />
-      
+
       <!-- Operational Status -->
       <Property name="OperationalStatusDescriptor" />
-      
+
       <!-- School Type and Categories -->
       <Property name="SchoolTypeDescriptor" />
       <Collection name="SchoolCategories" memberSelection="IncludeOnly">
         <Property name="SchoolCategoryDescriptor" />
       </Collection>
-      
+
       <!-- Grade Levels Offered -->
       <Collection name="GradeLevels" memberSelection="IncludeOnly">
         <Property name="GradeLevelDescriptor" />
       </Collection>
-      
+
       <!-- LEA Association -->
-      <Reference name="LocalEducationAgencyReference">
+      <Object name="LocalEducationAgencyReference" memberSelection="IncludeOnly">
         <Property name="LocalEducationAgencyId" />
-      </Reference>
-      
+      </Object>
+
       <!-- Basic Address (Optional) -->
       <Collection name="Addresses" memberSelection="IncludeOnly">
         <Property name="AddressTypeDescriptor" />
@@ -54,7 +54,7 @@
         <Property name="PostalCode" />
         <!-- Exclude StreetNumberName for privacy if needed -->
       </Collection>
-      
+
       <!-- Contact Information (Optional) -->
       <Collection name="InstitutionTelephones" memberSelection="IncludeOnly">
         <Property name="InstitutionTelephoneNumberTypeDescriptor" />
