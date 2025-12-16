@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:0fba99926e4f12405c78f37941312f00c1aadb178bd63616f5d96fc2af5a26a9 AS build
 
 WORKDIR /source
 
@@ -40,7 +40,7 @@ RUN dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.
     dotnet publish clis/EdFi.DataManagementService.ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.csproj \
     -c Release --no-restore --self-contained false -o /app/ApiSchemaDownloader
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine3.23 AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine3.23@sha256:900e8fc49fe97a7a8d9134612438d33c5c0e943dae8081b060054093d16e6ab4 AS runtimebase
 
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
