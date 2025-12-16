@@ -45,7 +45,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine3.23@sha256:900e8fc49fe97a7a8d91
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
 # jq: used to parse plugins defined in JSON env variable
-RUN apk --no-cache add bash postgresql16-client jq
+RUN apk --no-cache add bash=~5 postgresql16-client=~16 jq=~1.8
 
 FROM runtimebase AS setup
 
