@@ -88,10 +88,10 @@ Moving this capability into DMS will provide:
    - Both read and write operations are subject to profile enforcement
 
 4. **Header-Based Selection**
-   - Clients specify profiles via HTTP headers
-   - `Accept` header for GET operations (response filtering)
-   - `Content-Type` header for POST/PUT operations (request validation)
-   - Default profile assignment when header is not specified
+   - Clients specify profiles via Ed-Fi vendor-specific media types in HTTP headers
+   - `Accept` header for GET operations: `application/vnd.ed-fi.{resource}.{profile}.readable+json`
+   - `Content-Type` header for POST/PUT operations: `application/vnd.ed-fi.{resource}.{profile}.writable+json`
+   - Profile name and resource must be embedded in the media type (not as parameters)
 
 5. **Legacy Compatibility**
    - XML remains the canonical format for profile definition
@@ -227,7 +227,7 @@ sequenceDiagram
         Pipeline-->>Client: Filtered Response
     end
     
-    Note over Resolver,ConfigAPI: Priority: Header > Application > Default > None<br/>Future: Add local cache in DMS to reduce Config API calls
+    Note over Resolver,ConfigAPI: Priority: Header > Application > None<br/>Future: Add local cache in DMS to reduce Config API calls
 ```
 
 ### Pipeline Integration Points
@@ -305,12 +305,12 @@ CREATE TABLE IF NOT EXISTS dmscs.ApplicationProfile (
         REFERENCES dmscs.Profile(ProfileId) 
         ON DELETE CASCADE
     
-    -- Foreign key to Application/Client table (assumes existence in auth system)
-    -- Note: ApplicationId references the client/application in the auth/admin system
-    -- CONSTRAINT fk_applicationprofile_application 
-    --     FOREIGN KEY (ApplicationId) 
-    --     REFERENCES auth.Application(ApplicationId) 
-    --     ON DELETE CASCADE
+    -- Foreign key to Application table
+    -- Note: ApplicationId references the application table
+    CONSTRAINT fk_applicationprofile_application 
+         FOREIGN KEY (ApplicationId) 
+         REFERENCES dmscs.Application(ApplicationId) 
+         ON DELETE CASCADE
 );
 
 -- Index for profile lookups (reverse lookup: find apps using a profile)
@@ -326,8 +326,6 @@ COMMENT ON COLUMN dmscs.ApplicationProfile.CreatedBy IS 'User or client ID who c
 COMMENT ON COLUMN dmscs.ApplicationProfile.LastModifiedAt IS 'Timestamp when the assignment was last modified (UTC)';
 COMMENT ON COLUMN dmscs.ApplicationProfile.ModifiedBy IS 'User or client ID who last modified the assignment';
 ```
-
-**Note**: The `ApplicationId` should reference the client/application table in your authentication/authorization system (e.g., OAuth clients, API keys table). The exact foreign key constraint depends on your auth implementation. The composite primary key `(ApplicationId, ProfileId)` ensures each application-profile relationship is unique and eliminates the need for a surrogate key.
 
 ### JSONB Structure
 
@@ -496,7 +494,7 @@ flowchart TD
     CheckHeader -->|No| CheckAssignment{Application Has<br/>Assigned Profiles?}
     
     CheckAssignment -->|Yes| LoadAssigned[Load Assigned Profiles<br/>from ApplicationProfile]
-    CheckAssignment -->|No| UseDefault{Default Profile<br/>Configured?}
+    CheckAssignment -->|No| NoProfile[No Profile Applied]
     
     LoadAssigned --> SingleProfile{Single Profile<br/>Assigned?}
     SingleProfile -->|Yes| ExtractName
@@ -505,12 +503,10 @@ flowchart TD
     RequireHeader --> Error400[400 Multiple Profiles,<br/>Header Required]
     
     ExtractName --> CallConfigAPI[HTTP GET to Config API<br/>/v2/profiles?name=...]
-    UseDefault -->|Yes| ExtractName
-    UseDefault -->|No| NoProfile[No Profile Applied]
     
     CallConfigAPI --> ProfileExists{Profile Exists?}
     ProfileExists -->|Yes| LoadProfile[Parse Profile JSON & Rules]
-    ProfileExists -->|No| Error404[404 Profile Not Found]
+    ProfileExists -->|No| Error406[406 Profile Not Found]
     
     LoadProfile --> BuildContext[Build Profile Context]
     
@@ -520,7 +516,7 @@ flowchart TD
     Continue --> End([Pipeline Processing])
     
     Error400 --> End
-    Error404 --> End
+    Error406 --> End
     
     style CallConfigAPI fill:#bbdefb
     style BuildContext fill:#fff9c4
@@ -533,11 +529,16 @@ flowchart TD
 flowchart TD
     Start([Incoming Request]) --> CheckHeader{Profile Header<br/>Present?}
     CheckHeader -->|Yes| ExtractName[Extract Profile Name]
-    CheckHeader -->|No| UseDefault{Default Profile<br/>Configured?}
+    CheckHeader -->|No| CheckApp{Application Has<br/>Assigned Profiles?}
+    
+    CheckApp -->|Yes| LoadApp[Load Application Profiles]
+    CheckApp -->|No| NoProfile[No Profile Applied]
+    
+    LoadApp --> SingleProfile{Single Profile?}
+    SingleProfile -->|Yes| ExtractName
+    SingleProfile -->|No| NoProfile
     
     ExtractName --> LookupCache{Profile in Cache?}
-    UseDefault -->|Yes| ExtractName
-    UseDefault -->|No| NoProfile[No Profile Applied]
     
     LookupCache -->|Yes| ValidateCache{Cache Valid?}
     LookupCache -->|No| CallConfigAPI[HTTP GET to Config API]
@@ -547,7 +548,7 @@ flowchart TD
     
     CallConfigAPI --> ProfileExists{Profile Exists?}
     ProfileExists -->|Yes| LoadProfile[Parse Profile JSON & Rules]
-    ProfileExists -->|No| Error404[404 Profile Not Found]
+    ProfileExists -->|No| Error406[406 Profile Not Found]
     
     LoadProfile --> UpdateCache[Update Cache]
     UpdateCache --> BuildContext[Build Profile Context]
@@ -558,7 +559,7 @@ flowchart TD
     AttachToPipeline --> Continue
     Continue --> End([Pipeline Processing])
     
-    Error404 --> End
+    Error406 --> End
     
     style LookupCache fill:#e1bee7
     style UpdateCache fill:#e1bee7
@@ -571,8 +572,7 @@ flowchart TD
 
 1. **Explicit Header** - Profile specified in HTTP header (Accept/Content-Type)
 2. **Application Assignment** - Profile(s) assigned to the authenticated client/application
-3. **Default Profile** - System-wide default profile from configuration
-4. **No Profile** - Request proceeds without profile enforcement
+3. **No Profile** - Request proceeds without profile enforcement
 
 **Application-Based Profile Assignment:**
 
@@ -581,8 +581,9 @@ When no explicit profile header is provided, DMS:
 1. Identifies the authenticated application/client from the auth token
 2. Queries assigned profiles from `ApplicationProfile` table via Config API
 3. If single profile assigned: automatically applies that profile
-4. If multiple profiles assigned: returns 400 error requiring explicit header
-5. If no profiles assigned: falls back to default profile or no profile
+4. If multiple profiles assigned and you send a request without a specific profile header: Status Code: 403 Forbidden (The API views this as a Security Policy Failure, not a "Bad Request" (syntax error). Because it cannot determine which security restrictions to apply)
+5. If no profiles assigned: request proceeds without profile enforcement
+6. If profile name is a typo / doesn't exist in the system: 415 Unsupported Media Type (POST/PUT) or 406 Not Acceptable (GET).
 
 This matches Ed-Fi ODS API behavior where profiles can be pre-assigned to API consumers.
 
@@ -634,7 +635,7 @@ graph LR
 
 For POST/PUT operations:
 
-1. **Profile Resolution**: Extract profile from `Content-Type` header
+1. **Profile Resolution**: Extract profile from `Content-Type` header (Ed-Fi vendor media type format: `application/vnd.ed-fi.{resource}.{profile}.writable+json`)
 2. **Rule Evaluation**: Load property/collection/reference/filter rules
 3. **Input Validation**:
    - Check for excluded properties in request body
@@ -653,7 +654,7 @@ If a profile specifies a filter on `AddressTypeDescriptor` with `filterMode="Inc
 
 For GET operations:
 
-1. **Profile Resolution**: Extract profile from `Accept` header
+1. **Profile Resolution**: Extract profile from `Accept` header (Ed-Fi vendor media type format: `application/vnd.ed-fi.{resource}.{profile}.readable+json`)
 2. **Rule Loading**: Retrieve filtering rules for resource
 3. **Data Retrieval**: Fetch data from backend (unfiltered)
 4. **Response Filtering**:
@@ -670,7 +671,7 @@ If a profile specifies a filter on `AddressTypeDescriptor` with `filterMode="Inc
 
 ### Error Handling
 
-- **Profile Not Found**: HTTP 404 with descriptive error message
+- **Profile Not Found**: HTTP 406 with descriptive error message
 - **Invalid Profile Rules**: HTTP 500 with error details logged
 - **Validation Failures**: HTTP 400 with specific rule violations
 - **Ambiguous Profile**: HTTP 400 when multiple profiles match
@@ -790,14 +791,241 @@ JSONB Storage → JSON Loader → XML Converter → XML Validator → XML File
 }
 ```
 
+**XML Input with Object (Embedded Reference):**
+
+```xml
+<Profile name="Student-With-School">
+  <Resource name="Student">
+    <ReadContentType memberSelection="IncludeOnly">
+      <Property name="studentUniqueId" />
+      <Property name="firstName" />
+      <Property name="lastName" />
+      <Object name="schoolYearTypeReference" memberSelection="IncludeOnly">
+        <Property name="schoolYear" />
+      </Object>
+    </ReadContentType>
+  </Resource>
+</Profile>
+```
+
+**JSONB Storage with Object:**
+
+```json
+{
+  "profileName": "Student-With-School",
+  "resources": [
+    {
+      "resourceName": "Student",
+      "readContentType": {
+        "memberSelection": "IncludeOnly",
+        "properties": [
+          { "name": "studentUniqueId" },
+          { "name": "firstName" },
+          { "name": "lastName" }
+        ],
+        "objects": [
+          {
+            "name": "schoolYearTypeReference",
+            "memberSelection": "IncludeOnly",
+            "properties": [
+              { "name": "schoolYear" }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+**XML Input with Extension:**
+
+```xml
+<Profile name="Student-With-Extension">
+  <Resource name="Student" logicalSchema="edfi">
+    <ReadContentType memberSelection="IncludeOnly">
+      <Property name="studentUniqueId" />
+      <Property name="firstName" />
+      <Extension name="Sample" memberSelection="IncludeOnly">
+        <Property name="graduationYear" />
+        <Object name="petPreference" memberSelection="IncludeOnly" logicalSchema="sample">
+          <Property name="petType" />
+          <Property name="petName" />
+        </Object>
+      </Extension>
+    </ReadContentType>
+  </Resource>
+</Profile>
+```
+
+**JSONB Storage with Extension:**
+
+```json
+{
+  "profileName": "Student-With-Extension",
+  "resources": [
+    {
+      "resourceName": "Student",
+      "logicalSchema": "edfi",
+      "readContentType": {
+        "memberSelection": "IncludeOnly",
+        "properties": [
+          { "name": "studentUniqueId" },
+          { "name": "firstName" }
+        ],
+        "extensions": [
+          {
+            "name": "Sample",
+            "memberSelection": "IncludeOnly",
+            "properties": [
+              { "name": "graduationYear" }
+            ],
+            "objects": [
+              {
+                "name": "petPreference",
+                "memberSelection": "IncludeOnly",
+                "logicalSchema": "sample",
+                "properties": [
+                  { "name": "petType" },
+                  { "name": "petName" }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+**XML Input with Complex Nested Structure:**
+
+```xml
+<Profile name="School-Complex">
+  <Resource name="School" logicalSchema="edfi">
+    <ReadContentType memberSelection="IncludeOnly">
+      <Property name="schoolId" />
+      <Property name="nameOfInstitution" />
+      <Collection name="schoolCategories" memberSelection="IncludeOnly">
+        <Property name="schoolCategoryDescriptor" />
+      </Collection>
+      <Collection name="educationOrganizationAddresses" memberSelection="IncludeOnly">
+        <Property name="streetNumberName" />
+        <Property name="city" />
+        <Property name="stateAbbreviationDescriptor" />
+        <Object name="periods" memberSelection="ExcludeOnly">
+          <Property name="beginDate" />
+          <Property name="endDate" />
+        </Object>
+        <Filter propertyName="addressTypeDescriptor" filterMode="IncludeOnly">
+          <Value>Physical</Value>
+          <Value>Mailing</Value>
+        </Filter>
+      </Collection>
+      <Extension name="Sample" memberSelection="IncludeOnly">
+        <Property name="accreditationStatus" />
+        <Collection name="programs" memberSelection="IncludeAll" logicalSchema="sample">
+          <Filter propertyName="programType" filterMode="ExcludeOnly">
+            <Value>Archived</Value>
+          </Filter>
+        </Collection>
+      </Extension>
+    </ReadContentType>
+  </Resource>
+</Profile>
+```
+
+**JSONB Storage with Complex Nested Structure:**
+
+```json
+{
+  "profileName": "School-Complex",
+  "resources": [
+    {
+      "resourceName": "School",
+      "logicalSchema": "edfi",
+      "readContentType": {
+        "memberSelection": "IncludeOnly",
+        "properties": [
+          { "name": "schoolId" },
+          { "name": "nameOfInstitution" }
+        ],
+        "collections": [
+          {
+            "name": "schoolCategories",
+            "memberSelection": "IncludeOnly",
+            "properties": [
+              { "name": "schoolCategoryDescriptor" }
+            ]
+          },
+          {
+            "name": "educationOrganizationAddresses",
+            "memberSelection": "IncludeOnly",
+            "properties": [
+              { "name": "streetNumberName" },
+              { "name": "city" },
+              { "name": "stateAbbreviationDescriptor" }
+            ],
+            "objects": [
+              {
+                "name": "periods",
+                "memberSelection": "ExcludeOnly",
+                "properties": [
+                  { "name": "beginDate" },
+                  { "name": "endDate" }
+                ]
+              }
+            ],
+            "filters": [
+              {
+                "propertyName": "addressTypeDescriptor",
+                "filterMode": "IncludeOnly",
+                "values": ["Physical", "Mailing"]
+              }
+            ]
+          }
+        ],
+        "extensions": [
+          {
+            "name": "Sample",
+            "memberSelection": "IncludeOnly",
+            "properties": [
+              { "name": "accreditationStatus" }
+            ],
+            "collections": [
+              {
+                "name": "programs",
+                "memberSelection": "IncludeAll",
+                "logicalSchema": "sample",
+                "filters": [
+                  {
+                    "propertyName": "programType",
+                    "filterMode": "ExcludeOnly",
+                    "values": ["Archived"]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
 ### Conversion Rules
 
 1. **Element to Object**: XML elements become JSON objects
-2. **Attributes to Properties**: XML attributes become JSON properties
-3. **Repeated Elements to Arrays**: Multiple same-named elements become arrays
+2. **Attributes to Properties**: XML attributes become JSON properties (e.g., `name`, `memberSelection`, `logicalSchema`, `propertyName`, `filterMode`)
+3. **Repeated Elements to Arrays**: Multiple same-named elements become arrays (e.g., `Property` → `properties[]`, `Object` → `objects[]`, `Collection` → `collections[]`, `Extension` → `extensions[]`)
 4. **Case Normalization**: XML PascalCase → JSON camelCase (internally)
 5. **Null Handling**: Empty XML elements → null in JSON (or omitted)
-6. **Filter Elements**: `<Filter>` elements with `<Value>` children convert to filter objects with values arrays
+6. **Filter Elements**: `<Filter>` elements with `<Value>` children convert to filter objects with `propertyName`, `filterMode`, and `values` array
+7. **Object Elements**: `<Object>` elements (embedded objects/references) convert to objects with nested structure
+8. **Extension Elements**: `<Extension>` elements convert to extension objects containing properties, objects, and collections
+9. **LogicalSchema Attribute**: Preserved on resources and class definitions to maintain Ed-Fi extension namespace context
 
 ### Validation Strategy
 
@@ -811,7 +1039,7 @@ JSONB Storage → JSON Loader → XML Converter → XML Validator → XML File
 
 The profile management endpoints are hosted by the **Config API** (not DMS API) and follow the Config API pattern with AdminAPI-2.x compatibility.
 
-**Base URL**: Config API service (e.g., `https://config-api.example.com`)
+**Base URL**: Config API service (e.g., `https://config-api`)
 
 **Implementation Note for Tickets**: Each endpoint specification below includes:
 
@@ -839,23 +1067,30 @@ These specifications should be used as the contract definition when implementing
 | Endpoint | Method | Purpose | Format |
 |----------|--------|---------|--------|
 | `/v2/profiles/xml` | POST | **AdminAPI-2.x compatible creation** | Plain XML in request body |
+| `/v2/profiles/xml/{id}` | GET | **Get profile with XML string** | Returns JSON with XML string definition |
 | `/v2/profiles/import` | POST | **File upload** for bulk migration | Multipart form-data with XML file |
 | `/v2/profiles/{id}/export` | GET | **Download as XML file** | Returns XML file |
 
 **Key Points:**
 
-- **Modern API**: Core endpoints (`POST`, `GET`, `PUT`, `DELETE` on `/v2/profiles` and `/v2/profiles/{id}`) use **JSON objects** for profile definitions
-- **AdminAPI-2.x Compatibility**: Use `/v2/profiles/xml` and `/v2/profiles/import` for XML-based profile management (backward compatibility)
+- **Modern API**: Core endpoints (`POST`, `GET`, `PUT`, `DELETE` on `/v2/profiles` and `/v2/profiles/{id}`) use **JSON objects** for profile definitions and include audit fields
+- **AdminAPI-2.x Compatibility**: Use `/v2/profiles/xml`, `/v2/profiles/xml/{id}`, `/v2/profiles/import`, and `/v2/profiles/{id}/export` for XML-based profile management (backward compatibility, no audit fields)
 - **Internal Storage**: All profiles are stored as JSONB internally
 - **Transparent Conversion**: XML ↔ JSONB conversion happens automatically for XML endpoints
 - **Export**: Use `/v2/profiles/{id}/export` to download profiles as XML files
 
 **Which endpoint should you use?**
 
-- Use standard `POST /v2/profiles` for modern JSON-based profile creation
-- Use `POST /v2/profiles/xml` for AdminAPI-2.x compatibility (XML format)
-- Use `POST /v2/profiles/import` if you're migrating existing XML files
-- Use `GET /v2/profiles/{id}/export` to download profiles as XML files
+- **DMS-native (JSON + audit fields)**:
+  - Use `POST /v2/profiles` for modern JSON-based profile creation
+  - Use `GET /v2/profiles/{id}` to retrieve profile with JSON definition and audit fields
+  - Use `PUT /v2/profiles/{id}` to update profile with JSON definition
+  
+- **AdminAPI-2.x compatible (XML string, no audit fields)**:
+  - Use `POST /v2/profiles/xml` for AdminAPI-2.x compatible creation (XML format)
+  - Use `GET /v2/profiles/xml/{id}` to retrieve profile with XML string definition (no audit fields)
+  - Use `POST /v2/profiles/import` if you're migrating existing XML files
+  - Use `GET /v2/profiles/{id}/export` to download profiles as XML files
 
 #### Create Profile
 
@@ -865,7 +1100,7 @@ Content-Type: application/json
 Authorization: Bearer {token}
 ```
 
-**Request Body** (JSON format):
+**Request Body** (DMS JSON format):
 
 ```json
 {
@@ -900,7 +1135,9 @@ Authorization: Bearer {token}
 }
 ```
 
-**Description**: Creates a profile with a JSON definition. The definition is stored as JSONB internally. Returns 201 Created with the Location header pointing to the newly created profile.
+> **Note**: This is the DMS-native endpoint that uses **JSON definition format**. For AdminAPI 2.x XML compatibility, use `/v2/profiles/xml` or `/v2/profiles/import` endpoints instead.
+
+**Description**: Creates a profile with a JSON definition. The definition is stored as JSONB internally for efficient querying and manipulation. Returns 201 Created with the Location header pointing to the newly created profile.
 
 **Important**: The `name` field must match the `profileName` in the `definition` object. If they don't match, the request will be rejected with a 400 Bad Request error.
 
@@ -969,7 +1206,7 @@ Authorization: Bearer {token}
 
 **Description**: Retrieves a specific profile based on the identifier, including the full profile definition as a JSON object.
 
-**Response**:
+**Response** (DMS JSON format with audit fields):
 
 ```http
 200 OK
@@ -1014,9 +1251,15 @@ Content-Type: application/json
         }
       }
     ]
-  }
+  },
+  "createdAt": "2024-01-15T10:30:00Z",
+  "createdBy": "admin@example.com",
+  "lastModifiedAt": "2024-01-20T14:45:00Z",
+  "modifiedBy": "admin@example.com"
 }
 ```
+
+> **Note**: This is the DMS-native response format with **JSON definition** and **audit fields**. For AdminAPI 2.x XML compatibility, use `/v2/profiles/{id}/export` endpoint instead.
 
 **Error Responses**:
 
@@ -1031,7 +1274,7 @@ Content-Type: application/json
 Authorization: Bearer {token}
 ```
 
-**Request Body** (JSON format):
+**Request Body** (DMS JSON format):
 
 ```json
 {
@@ -1132,7 +1375,6 @@ Location: /v2/profiles/12345
 - `400 Bad Request` - Invalid XML format or schema validation failed
 - `401 Unauthorized` - Missing or invalid authorization token
 - `409 Conflict` - Profile with same name already exists
-- `413 Payload Too Large` - File size exceeds maximum allowed
 
 #### Create Profile from XML (Extended Endpoint)
 
@@ -1189,6 +1431,37 @@ Location: /v2/profiles/12345
 - `401 Unauthorized` - Missing or invalid authorization token
 - `409 Conflict` - Profile with same name already exists
 
+#### Get Profile XML (AdminAPI 2.x Compatibility Endpoint)
+
+```http
+GET /v2/profiles/xml/{id}
+Authorization: Bearer {token}
+```
+
+**Description**: Retrieves a profile in AdminAPI 2.x XML string format (no audit fields). This is the XML counterpart to `GET /v2/profiles/{id}` and provides the same response structure as AdminAPI 2.x.
+
+**Response** (AdminAPI 2.x XML string format):
+
+```http
+200 OK
+Content-Type: application/json
+```
+
+```json
+{
+  "id": 12345,
+  "name": "Student-Read-Only",
+  "definition": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Profile name=\"Student-Read-Only\"><Resource name=\"Student\"><ReadContentType memberSelection=\"IncludeOnly\"><Property name=\"StudentUniqueId\" /><Property name=\"FirstName\" /><Property name=\"LastSurname\" /><Property name=\"BirthDate\" /><Reference name=\"SchoolReference\"><Property name=\"SchoolId\" /></Reference><Collection name=\"StudentEducationOrganizationAssociations\" memberSelection=\"IncludeOnly\"><Property name=\"EducationOrganizationId\" /><Property name=\"GradeLevel\" /></Collection></ReadContentType></Resource></Profile>"
+}
+```
+
+> **Note**: This endpoint returns the profile definition as an **XML string** (AdminAPI 2.x format) without audit fields. Use `GET /v2/profiles/{id}` for the DMS-native JSON definition format with audit fields.
+
+**Error Responses**:
+
+- `404 Not Found` - Profile with specified ID does not exist
+- `401 Unauthorized` - Missing or invalid authorization token
+
 #### Export Profile (Extended Endpoint)
 
 ```http
@@ -1237,13 +1510,15 @@ Content-Disposition: attachment; filename="Student-Read-Only.xml"
 
 Profile assignment to applications is managed through the existing **Applications API** with an enhanced request body that includes profile assignments.
 
-> **Note**: These endpoints extend the existing `/v2/applications` API. The current implementation (without profiles support) has the following structure:
+> **Architecture Note**: These endpoints are **DMS-native** and extend beyond AdminAPI 2.x compatibility:
 >
-> - **POST Request**: `vendorId`, `applicationName`, `claimSetName`, `educationOrganizationIds`, `dmsInstanceIds`
-> - **POST Response**: `id`, `key`, `secret` (API credentials)
-> - **GET Response**: `id`, `applicationName`, `vendorId`, `claimSetName`, `educationOrganizationIds`, `dmsInstanceIds`, plus audit fields (`createdAt`, `createdBy`, `lastModifiedAt`, `modifiedBy`)
+> - **DMS-native features**: Includes audit fields (`createdAt`, `createdBy`, `lastModifiedAt`, `modifiedBy`), uses `dmsInstanceIds` internally
+> - **AdminAPI 2.x compatibility**: The `profileIds` field structure aligns with AdminAPI 2.x v2.2.1+ for interoperability
+> - **POST Request**: `vendorId`, `applicationName`, `claimSetName`, `educationOrganizationIds`, `dmsInstanceIds`, `profileIds` (optional)
+> - **POST Response**: `id`, `key`, `secret` (OAuth client credentials)
+> - **GET Response**: Includes all POST request fields plus audit metadata
 >
-> The specifications below show the **enhanced version with profile support** (to be implemented in Ticket 7a).
+> For strict AdminAPI 2.x compatibility endpoints (XML-based, no audit fields), use `/v2/profiles/xml`, `/v2/profiles/import`, and `/v2/profiles/{id}/export`.
 
 #### Create/Update Application with Profile Assignment
 
@@ -1312,7 +1587,7 @@ Authorization: Bearer {token}
 
 **Description**: Retrieves application details including assigned profiles. The current implementation returns the base application fields plus audit metadata. The enhanced version will add profile-related fields.
 
-**Response** (Enhanced with Profile Support):
+**Response** (DMS format with audit fields):
 
 ```http
 200 OK
@@ -1323,11 +1598,11 @@ Content-Type: application/json
 {
   "id": 12345,
   "applicationName": "Student Information System",
-  "vendorId": 1,
   "claimSetName": "SIS Vendor",
   "educationOrganizationIds": [255901],
-  "dmsInstanceIds": [1],
+  "vendorId": 1,
   "profileIds": [67890, 67891],
+  "dmsInstanceIds": [1],
   "createdAt": "2024-01-15T10:30:00Z",
   "createdBy": "admin@example.com",
   "lastModifiedAt": "2024-01-20T14:45:00Z",
@@ -1335,7 +1610,7 @@ Content-Type: application/json
 }
 ```
 
-> **Note**: The `profiles` array (new field) includes profile names for convenience. This is the endpoint DMS calls during profile resolution to get the application's assigned profiles. The audit fields (`createdAt`, `createdBy`, `lastModifiedAt`, `modifiedBy`) match the existing implementation.
+> **Note**: This is the DMS-native response format with **audit fields** (`createdAt`, `createdBy`, `lastModifiedAt`, `modifiedBy`). This is the endpoint DMS calls during profile resolution to get the application's assigned profiles. The `profileIds` field is compatible with AdminAPI 2.x v2.2.1+ structure but DMS uses `dmsInstanceIds` internally instead of `odsInstanceIds`.
 
 #### List Applications with Profile Filter
 
@@ -1371,23 +1646,42 @@ Content-Type: application/json
 
 ### Data API with Profiles
 
+> **Important**: Profile specification follows the Ed-Fi standard vendor-specific media type format. The profile name and read/write intent must be embedded in the Content-Type/Accept header as: `application/vnd.ed-fi.{resource}.{profile-name}.{readable|writable}+json`
+>
+> This differs from simpler parameter-based formats (e.g., `application/json;profile=name`) and ensures compatibility with Ed-Fi ODS/API standards.
+
 #### Read with Profile
 
 ```http
 GET /data/v3/ed-fi/students/{id}
-Accept: application/json;profile=student-read-only
+Accept: application/vnd.ed-fi.student.student-read-only.readable+json
 Authorization: Bearer {token}
 ```
+
+**Media Type Format**: `application/vnd.ed-fi.{resource}.{profile-name}.readable+json`
+
+- `vnd.ed-fi` - Vendor prefix (Ed-Fi Alliance)
+- `{resource}` - Resource name in lowercase (e.g., `student`, `school`, `assessment`)
+- `{profile-name}` - Profile name as defined in the profile XML
+- `readable` - Indicates read operations (GET)
+- `+json` - JSON content format
 
 #### Write with Profile
 
 ```http
 POST /data/v3/ed-fi/students
-Content-Type: application/json;profile=student-write-limited
+Content-Type: application/vnd.ed-fi.student.student-write-limited.writable+json
 Authorization: Bearer {token}
 
 {student-data}
 ```
+
+**Media Type Format**: `application/vnd.ed-fi.{resource}.{profile-name}.writable+json`
+
+- `writable` - Indicates write operations (POST/PUT)
+- All other components same as readable format
+
+> **Note**: The profile MUST be specified in BOTH the Content-Type header AND match the resource being accessed. For example, when posting to `/ed-fi/students`, you must use `application/vnd.ed-fi.student.{profile}.writable+json`. If you have a profile that covers multiple resources, the Content-Type must change for each resource endpoint.
 
 ## Example Profiles
 
@@ -1750,7 +2044,7 @@ Ticket 11 (Migration Guide)
 
 - [ ] XML to JSON converter implemented in Config Service
 - [ ] JSON schema validation for profile structure
-- [ ] XML format validation (schema compliance)
+- [ ] XML format validation
 - [ ] Profiles correctly converted from XML and stored as JSONB in `dmscs.Profile`
 - [ ] Support for all rule types: properties, collections, references, descriptors
 - [ ] Profile import endpoint created in Config API (`POST /v2/profiles/import`)
@@ -1789,7 +2083,6 @@ Ticket 11 (Migration Guide)
    - POST /v2/profiles/xml - Create profile with XML string
    - GET /v2/profiles - List profiles with pagination
    - GET /v2/profiles/{id} - Get profile details
-   - Authorization (admin only)
    - Request/response DTOs
 
 **Dependencies**:
@@ -1817,24 +2110,20 @@ Ticket 11 (Migration Guide)
 - [ ] Profile resolution from application assignment (via GET /v2/applications/{id}) - secondary priority
 - [ ] HTTP client to fetch profiles from Config API (`GET /v2/profiles?name={name}`)
 - [ ] HTTP client to fetch application profiles from Config API (`GET /v2/applications/{id}`)
-- [ ] Extract application ID from authentication context (JWT claims)
-- [ ] Support for default profile assignment (lowest priority)
-- [ ] Implement profile resolution priority: header → application → default → none
+- [ ] Extract application ID from authentication context
+- [ ] Implement profile resolution priority: header → application → none
 - [ ] Error responses for profile not found (404 from Config API)
-- [ ] Profile context attached to HttpContext
-- [ ] Retry logic for Config API calls (with circuit breaker)
-- [ ] Unit tests for resolution logic (all priority levels)
-- [ ] Integration tests for header parsing, application resolution, and Config API integration
-- [ ] Performance tests validate acceptable latency
+- [ ] Unit tests
+- [ ] Integration tests
 
-**Technical Implementation Details**:
+**Reference Technical Implementation Details**:
 
 1. **Profile Resolution Middleware** (DMS - ProfileResolutionMiddleware.cs):
    - Extract profile name from Accept/Content-Type headers (priority 1)
    - If no header, extract application ID from auth context
    - If application ID present, call GET /v2/applications/{id} to get assigned profiles
-   - If application has profiles, use first assigned profile (priority 2)
-   - If no header and no application profiles, use default profile (priority 3)
+   - If application has single profile assigned, use that profile (priority 2)
+   - If no header and no application profiles, proceed without profile (priority 3)
    - Call Config API to fetch profile by name
    - Attach profile context to HttpContext
    - Handle missing/invalid profiles
@@ -1843,7 +2132,6 @@ Ticket 11 (Migration Guide)
 2. **Config API Client** (DMS - IConfigApiClient.cs, ConfigApiClient.cs):
    - HTTP client to fetch profiles: `GET /v2/profiles?name={profileName}`
    - HTTP client to fetch applications: `GET /v2/applications/{id}` (returns profiles array)
-   - Resilience patterns (retry, circuit breaker, timeout)
    - Deserialization of profile JSON
    - Error handling for API failures
 
@@ -1852,12 +2140,12 @@ Ticket 11 (Migration Guide)
    - Efficient rule lookup structures (dictionaries/sets)
    - Immutable design for thread safety
    - Parsed from Config API JSON response
-   - Include profile source metadata (header/application/default)
+   - Include profile source metadata (header/application/none)
 
 4. **Application Context Extraction**:
    - Extract application ID from JWT claims (e.g., "application_id" claim)
    - Cache application-to-profile mapping to reduce Config API calls
-   - Handle missing application ID gracefully (proceed to default profile)
+   - Handle missing application ID gracefully (proceed without profile)
 
 **Pipeline Integration**:
 
@@ -1872,9 +2160,9 @@ Ticket 11 (Migration Guide)
    - If found: resolve by name and use
 2. If no header, extract application ID from JWT claims
    - If found: call GET /v2/applications/{id}
-   - If application has profiles: use first profile
-3. If no header and no application profiles, use default profile (if configured)
-4. If no profile resolved, proceed without profile (no filtering)
+   - If application has single profile assigned: use that profile
+   - If application has multiple profiles: return 400 error
+3. If no header and no application profiles, proceed without profile (no filtering)
 ```
 
 **Dependencies**:
@@ -2049,6 +2337,7 @@ Ticket 11 (Migration Guide)
 **Acceptance Criteria**:
 
 - [ ] Profile export endpoint implemented in Config API (`GET /v2/profiles/{id}/export`)
+- [ ] Profile retrieval in XML format endpoint (`GET /v2/profiles/xml/{id}`)
 - [ ] XML generation produces valid, well-formed documents
 - [ ] Exported XML is compatible with AdminAPI-2.x format
 - [ ] Profile update endpoint available in Config API (`PUT /v2/profiles/{id}`)
@@ -2057,7 +2346,7 @@ Ticket 11 (Migration Guide)
 - [ ] XML format is human-readable with proper indentation
 - [ ] Bulk export capability (multiple profiles)
 - [ ] Export includes profile metadata (name, description, dates)
-- [ ] Unit tests for XML serialization
+- [ ] Unit tests
 - [ ] Integration tests for all management endpoints
 
 **Technical Implementation Details**:
@@ -2178,7 +2467,7 @@ Ticket 11 (Migration Guide)
 
 **Epic**: Profile Runtime Features
 
-**User Story**: As an API client, I can specify which Profile to use for data requests using HTTP headers, or rely on application-assigned profiles or default profiles, giving me control over data access patterns.
+**User Story**: As an API client, I can specify which Profile to use for data requests using HTTP headers, or rely on application-assigned profiles, giving me control over data access patterns.
 
 **Acceptance Criteria**:
 
@@ -2186,10 +2475,9 @@ Ticket 11 (Migration Guide)
 - [ ] `Content-Type` header parsing for POST/PUT operations
 - [ ] Profile name extraction from media type parameters
 - [ ] Application-based profile resolution when header absent (via Ticket 3)
-- [ ] Default profile resolution when no header and no application profiles
 - [ ] Support for multiple profiles per consumer (future)
-- [ ] Profile precedence rules documented (header → application → default → none)
-- [ ] Error handling for ambiguous profiles
+- [ ] Profile precedence rules documented (header → application → none)
+- [ ] Error handling for ambiguous profiles (multiple profiles assigned)
 - [ ] Profile selection works for all HTTP methods
 - [ ] Selection logic handles edge cases (OPTIONS, HEAD)
 - [ ] Documentation includes header format examples
@@ -2202,61 +2490,55 @@ Ticket 11 (Migration Guide)
 **Technical Implementation Details**:
 
 1. **Header Parser** (ProfileHeaderParser.cs):
-   - Parse `Accept` header: `application/json;profile=student-read-only`
-   - Parse `Content-Type` header: `application/json;profile=student-write-limited`
-   - Extract profile name from media type parameters
-   - Handle multiple profiles (priority order)
-   - Validate profile name format
+   - Parse `Accept` header with Ed-Fi vendor media type format:
+     - Example: `application/vnd.ed-fi.student.student-read-only.readable+json`
+     - Extract profile name from middle segment (between resource and readable/writable)
+   - Parse `Content-Type` header with Ed-Fi vendor media type format:
+     - Example: `application/vnd.ed-fi.student.student-write-limited.writable+json`
+     - Extract profile name from middle segment
+   - Validate media type structure:
+     - Must start with `application/vnd.ed-fi.`
+     - Must include resource name (lowercase)
+     - Must include profile name
+     - Must end with `.readable+json` or `.writable+json`
+   - Extract resource name for validation (must match endpoint resource)
+   - Handle edge cases (malformed headers, missing components)
 
 2. **Profile Selection Service** (ProfileSelectionService.cs):
    - Determine effective profile for request using priority chain:
-     1. Profile from HTTP header (highest priority)
+     1. Profile from HTTP header (highest priority) - extracted via ProfileHeaderParser
      2. Profile from application assignment (via application ID in JWT)
-     3. Default profile from configuration (lowest priority)
-     4. No profile (no filtering applied)
-   - Apply default profile rules
-   - Handle profile conflicts
+     3. No profile (no filtering applied)
+   - Validate resource name matches endpoint (e.g., `student` header for `/ed-fi/students`)
+   - Handle profile conflicts (multiple profiles assigned to application)
    - Support profile hierarchy (future)
    - Coordinate with ProfileResolutionMiddleware (Ticket 3)
 
-3. **Configuration** (appsettings.json):
-
-   ```json
-   {
-     "Profiles": {
-       "DefaultProfile": "standard",
-       "EnableMultipleProfiles": false,
-       "RequireProfileForWrites": true,
-       "EnableApplicationProfiles": true
-     }
-   }
-   ```
-
-4. **Client Examples**:
+3. **Client Examples**:
 
    ```http
-   # Explicit profile via header (priority 1)
+   # Explicit profile via header (priority 1) - Ed-Fi vendor media type format
    GET /data/v3/ed-fi/students
-   Accept: application/json;profile=read-only
+   Accept: application/vnd.ed-fi.student.student-read-only.readable+json
    Authorization: Bearer <token>
    
-   # Explicit profile for writes
+   # Explicit profile for writes - Ed-Fi vendor media type format
    POST /data/v3/ed-fi/students
-   Content-Type: application/json;profile=write-limited
+   Content-Type: application/vnd.ed-fi.student.student-write-limited.writable+json
    Authorization: Bearer <token>
    
    # Application-based profile (priority 2 - no header, uses application assignment)
    GET /data/v3/ed-fi/students
    Accept: application/json
-   Authorization: Bearer <token>  # token contains application_id claim
+   Authorization: Bearer <token>  # token contains application_id with single profile assigned
    
-   # Default profile (priority 3 - no header, no application profiles)
+   # No profile (priority 3 - no header, no application profiles)
    GET /data/v3/ed-fi/students
    Accept: application/json
-   # No Authorization header or application without assigned profiles
+   Authorization: Bearer <token>  # token contains application_id with no profiles assigned
    ```
 
-5. **Documentation Updates**:
+4. **Documentation Updates**:
    - Profile selection guide with priority chain
    - Header format specification
    - Example requests with profiles (header-based and application-based)
@@ -2445,7 +2727,6 @@ Ticket 11 (Migration Guide)
 - [ ] Cache statistics tracked (hits, misses, evictions) for both caches
 - [ ] Configuration options for cache behavior
 - [ ] Cache warming for frequently-used profiles (optional)
-- [ ] Metrics exposed for monitoring cache effectiveness
 - [ ] Unit tests for cache operations
 - [ ] Documentation updated with caching behavior
 
@@ -2471,7 +2752,6 @@ Ticket 11 (Migration Guide)
          "Enabled": true,
          "ExpirationMinutes": 10,
          "MaxCacheSize": 1000,
-         "PreloadProfiles": ["default", "student-read-only"],
          "SlidingExpiration": true,
          "ApplicationMappingCache": {
            "Enabled": true,
@@ -2514,40 +2794,142 @@ Ticket 11 (Migration Guide)
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-  <xs:element name="Profile">
+  
+  <!-- Root element containing multiple profiles -->
+  <xs:element name="Profiles">
     <xs:complexType>
       <xs:sequence>
-        <xs:element name="Resource" maxOccurs="unbounded">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="ReadContentType" minOccurs="0">
-                <xs:complexType>
-                  <xs:sequence>
-                    <xs:element name="Property" maxOccurs="unbounded" minOccurs="0"/>
-                    <xs:element name="Collection" maxOccurs="unbounded" minOccurs="0"/>
-                    <xs:element name="Reference" maxOccurs="unbounded" minOccurs="0"/>
-                  </xs:sequence>
-                  <xs:attribute name="memberSelection" type="xs:string"/>
-                </xs:complexType>
-              </xs:element>
-              <xs:element name="WriteContentType" minOccurs="0">
-                <xs:complexType>
-                  <xs:sequence>
-                    <xs:element name="Property" maxOccurs="unbounded" minOccurs="0"/>
-                    <xs:element name="Collection" maxOccurs="unbounded" minOccurs="0"/>
-                    <xs:element name="Reference" maxOccurs="unbounded" minOccurs="0"/>
-                  </xs:sequence>
-                  <xs:attribute name="memberSelection" type="xs:string"/>
-                </xs:complexType>
-              </xs:element>
-            </xs:sequence>
-            <xs:attribute name="name" type="xs:string" use="required"/>
-          </xs:complexType>
-        </xs:element>
+        <xs:element name="Profile" type="ProfileDefinition" maxOccurs="unbounded"/>
       </xs:sequence>
-      <xs:attribute name="name" type="xs:string" use="required"/>
     </xs:complexType>
   </xs:element>
+
+  <!-- Profile definition -->
+  <xs:complexType name="ProfileDefinition">
+    <xs:sequence>
+      <xs:element name="Resource" type="ResourceDefinition" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Resource definition with optional logicalSchema -->
+  <xs:complexType name="ResourceDefinition">
+    <xs:sequence>
+      <xs:element name="ReadContentType" type="ContentTypeDefinition" minOccurs="0"/>
+      <xs:element name="WriteContentType" type="ContentTypeDefinition" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Content type definition (ReadContentType or WriteContentType) -->
+  <xs:complexType name="ContentTypeDefinition">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="Property" type="PropertyDefinition"/>
+      <xs:element name="Object" type="ClassDefinition"/>
+      <xs:element name="Collection" type="CollectionDefinition"/>
+      <xs:element name="Extension" type="ExtensionDefinition"/>
+    </xs:choice>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+  </xs:complexType>
+
+  <!-- Property definition -->
+  <xs:complexType name="PropertyDefinition">
+    <xs:attribute name="name" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <!-- Class definition (for embedded objects) with optional logicalSchema -->
+  <xs:complexType name="ClassDefinition">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="Property" type="PropertyDefinition"/>
+      <xs:element name="Object" type="ClassDefinition"/>
+      <xs:element name="Collection" type="CollectionDefinition"/>
+    </xs:choice>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Collection definition with filters -->
+  <xs:complexType name="CollectionDefinition">
+    <xs:sequence>
+      <xs:choice maxOccurs="unbounded" minOccurs="0">
+        <xs:element name="Property" type="PropertyDefinition"/>
+        <xs:element name="Object" type="ClassDefinition"/>
+        <xs:element name="Collection" type="CollectionDefinition"/>
+      </xs:choice>
+      <xs:element name="Filter" type="FilterDefinition" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Extension definition -->
+  <xs:complexType name="ExtensionDefinition">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="Property" type="PropertyDefinition"/>
+      <xs:element name="Object" type="ExtensionClassDefinition"/>
+      <xs:element name="Collection" type="ExtensionCollectionDefinition"/>
+    </xs:choice>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+  </xs:complexType>
+
+  <!-- Extension class definition with optional logicalSchema -->
+  <xs:complexType name="ExtensionClassDefinition">
+    <xs:choice maxOccurs="unbounded" minOccurs="0">
+      <xs:element name="Property" type="PropertyDefinition"/>
+      <xs:element name="Object" type="ExtensionClassDefinition"/>
+      <xs:element name="Collection" type="ExtensionCollectionDefinition"/>
+    </xs:choice>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Extension collection definition with filters -->
+  <xs:complexType name="ExtensionCollectionDefinition">
+    <xs:sequence>
+      <xs:choice maxOccurs="unbounded" minOccurs="0">
+        <xs:element name="Property" type="PropertyDefinition"/>
+        <xs:element name="Object" type="ExtensionClassDefinition"/>
+        <xs:element name="Collection" type="ExtensionCollectionDefinition"/>
+      </xs:choice>
+      <xs:element name="Filter" type="FilterDefinition" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="memberSelection" type="MemberSelectionMode" use="required"/>
+    <xs:attribute name="logicalSchema" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <!-- Filter definition with property name, filter mode, and values -->
+  <xs:complexType name="FilterDefinition">
+    <xs:sequence>
+      <xs:element name="Value" type="xs:string" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="propertyName" type="xs:string" use="required"/>
+    <xs:attribute name="filterMode" type="FilterMode" use="required"/>
+  </xs:complexType>
+
+  <!-- Member selection mode enumeration -->
+  <xs:simpleType name="MemberSelectionMode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="IncludeOnly"/>
+      <xs:enumeration value="ExcludeOnly"/>
+      <xs:enumeration value="IncludeAll"/>
+      <xs:enumeration value="ExcludeAll"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Filter mode enumeration -->
+  <xs:simpleType name="FilterMode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="IncludeOnly"/>
+      <xs:enumeration value="ExcludeOnly"/>
+    </xs:restriction>
+  </xs:simpleType>
+
 </xs:schema>
 ```
 
