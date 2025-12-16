@@ -671,10 +671,11 @@ If a profile specifies a filter on `AddressTypeDescriptor` with `filterMode="Inc
 
 ### Error Handling
 
-- **Profile Not Found**: HTTP 406 with descriptive error message
+- **Profile Not Found (GET)**: HTTP 406 Not Acceptable - when profile specified in Accept header does not exist
+- **Profile Not Found (POST/PUT)**: HTTP 415 Unsupported Media Type - when profile specified in Content-Type header does not exist
 - **Invalid Profile Rules**: HTTP 500 with error details logged
 - **Validation Failures**: HTTP 400 with specific rule violations
-- **Ambiguous Profile**: HTTP 400 when multiple profiles match
+- **Ambiguous Profile**: HTTP 400 when multiple profiles match (application has multiple profiles assigned and no explicit header provided)
 
 ## XML to JSON Conversion Strategy
 
@@ -706,7 +707,7 @@ JSONB Storage → JSON Loader → XML Converter → XML Validator → XML File
     <ReadContentType memberSelection="IncludeOnly">
       <Property name="studentUniqueId" />
       <Property name="firstName" />
-      <Collection name="addresses" memberSelection="Exclude" />
+      <Collection name="addresses" memberSelection="ExcludeAll" />
     </ReadContentType>
   </Resource>
 </Profile>
@@ -727,7 +728,7 @@ JSONB Storage → JSON Loader → XML Converter → XML Validator → XML File
           { "name": "firstName" }
         ],
         "collections": [
-          { "name": "addresses", "memberSelection": "Exclude" }
+          { "name": "addresses", "memberSelection": "ExcludeAll" }
         ]
       }
     }
@@ -1152,6 +1153,7 @@ Location: /v2/profiles/12345
 
 - `400 Bad Request` - Invalid JSON structure, missing required fields, or invalid profile definition
 - `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to create profiles
 - `409 Conflict` - Profile with same name already exists
 
 #### List Profiles
@@ -1194,8 +1196,9 @@ Content-Type: application/json
 
 **Error Responses**:
 
-- `401 Unauthorized` - Missing or invalid authorization token
 - `400 Bad Request` - Invalid query parameters
+- `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to list profiles
 
 #### Get Profile Details
 
@@ -1263,8 +1266,9 @@ Content-Type: application/json
 
 **Error Responses**:
 
-- `404 Not Found` - Profile with specified ID does not exist
 - `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to view profile
+- `404 Not Found` - Profile with specified ID does not exist
 
 #### Update Profile
 
@@ -1310,9 +1314,10 @@ Authorization: Bearer {token}
 
 **Error Responses**:
 
-- `404 Not Found` - Profile with specified ID does not exist
 - `400 Bad Request` - Invalid JSON structure, missing required fields, or invalid profile definition
 - `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to update profile
+- `404 Not Found` - Profile with specified ID does not exist
 
 #### Delete Profile
 
@@ -1331,8 +1336,9 @@ Authorization: Bearer {token}
 
 **Error Responses**:
 
-- `404 Not Found` - Profile with specified ID does not exist
 - `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to delete profile
+- `404 Not Found` - Profile with specified ID does not exist
 
 #### Import Profile from XML File (Extended Endpoint)
 
@@ -1374,6 +1380,7 @@ Location: /v2/profiles/12345
 
 - `400 Bad Request` - Invalid XML format or schema validation failed
 - `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to import profiles
 - `409 Conflict` - Profile with same name already exists
 
 #### Create Profile from XML (Extended Endpoint)
@@ -1429,6 +1436,7 @@ Location: /v2/profiles/12345
 
 - `400 Bad Request` - Invalid XML format or schema validation failed
 - `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to create profiles
 - `409 Conflict` - Profile with same name already exists
 
 #### Get Profile XML (AdminAPI 2.x Compatibility Endpoint)
@@ -1459,8 +1467,9 @@ Content-Type: application/json
 
 **Error Responses**:
 
-- `404 Not Found` - Profile with specified ID does not exist
 - `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to view profile
+- `404 Not Found` - Profile with specified ID does not exist
 
 #### Export Profile (Extended Endpoint)
 
@@ -1502,8 +1511,9 @@ Content-Disposition: attachment; filename="Student-Read-Only.xml"
 
 **Error Responses**:
 
-- `404 Not Found` - Profile with specified ID does not exist
 - `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to export profile
+- `404 Not Found` - Profile with specified ID does not exist
 - `500 Internal Server Error` - XML generation failed
 
 ### Application Profile Assignment (Config Service)
@@ -1568,6 +1578,7 @@ Location: /v2/applications/12345
 
 - `400 Bad Request` - Invalid request body, missing required fields, or profile IDs don't exist
 - `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to create applications
 - `404 Not Found` - Vendor does not exist
 - `409 Conflict` - Application name already exists
 
@@ -1612,6 +1623,12 @@ Content-Type: application/json
 
 > **Note**: This is the DMS-native response format with **audit fields** (`createdAt`, `createdBy`, `lastModifiedAt`, `modifiedBy`). This is the endpoint DMS calls during profile resolution to get the application's assigned profiles. The `profileIds` field is compatible with AdminAPI 2.x v2.2.1+ structure but DMS uses `dmsInstanceIds` internally instead of `odsInstanceIds`.
 
+**Error Responses**:
+
+- `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to view application
+- `404 Not Found` - Application with specified ID does not exist
+
 #### List Applications with Profile Filter
 
 ```http
@@ -1644,6 +1661,12 @@ Content-Type: application/json
 ]
 ```
 
+**Error Responses**:
+
+- `400 Bad Request` - Invalid query parameters
+- `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to list applications
+
 ### Data API with Profiles
 
 > **Important**: Profile specification follows the Ed-Fi standard vendor-specific media type format. The profile name and read/write intent must be embedded in the Content-Type/Accept header as: `application/vnd.ed-fi.{resource}.{profile-name}.{readable|writable}+json`
@@ -1666,6 +1689,13 @@ Authorization: Bearer {token}
 - `readable` - Indicates read operations (GET)
 - `+json` - JSON content format
 
+**Error Responses**:
+
+- `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to access resource
+- `404 Not Found` - Resource with specified ID does not exist
+- `406 Not Acceptable` - Profile specified in Accept header does not exist or is invalid
+
 #### Write with Profile
 
 ```http
@@ -1680,6 +1710,13 @@ Authorization: Bearer {token}
 
 - `writable` - Indicates write operations (POST/PUT)
 - All other components same as readable format
+
+**Error Responses**:
+
+- `400 Bad Request` - Request body violates profile rules (excluded properties present or required properties missing)
+- `401 Unauthorized` - Missing or invalid authorization token
+- `403 Forbidden` - Insufficient permissions to create/update resource
+- `415 Unsupported Media Type` - Profile specified in Content-Type header does not exist or is invalid
 
 > **Note**: The profile MUST be specified in BOTH the Content-Type header AND match the resource being accessed. For example, when posting to `/ed-fi/students`, you must use `application/vnd.ed-fi.student.{profile}.writable+json`. If you have a profile that covers multiple resources, the Content-Type must change for each resource endpoint.
 
@@ -1696,9 +1733,9 @@ Authorization: Bearer {token}
       <Property name="FirstName" />
       <Property name="LastSurname" />
       <Property name="BirthDate" />
-      <Reference name="SchoolReference">
+      <Object name="SchoolReference" memberSelection="IncludeOnly">
         <Property name="SchoolId" />
-      </Reference>
+      </Object>
       <Collection name="StudentEducationOrganizationAssociations" memberSelection="IncludeOnly">
         <Property name="EducationOrganizationId" />
         <Property name="GradeLevel" />
@@ -1724,9 +1761,9 @@ Authorization: Bearer {token}
       <Property name="BirthDate" />
       <Property name="BirthCity" />
       <Property name="BirthStateAbbreviation" />
-      <Reference name="SchoolReference">
+      <Object name="SchoolReference" memberSelection="IncludeOnly">
         <Property name="SchoolId" />
-      </Reference>
+      </Object>
       <Collection name="Addresses" memberSelection="IncludeOnly">
         <Property name="AddressType" />
         <Property name="StreetNumberName" />
@@ -1768,9 +1805,9 @@ Authorization: Bearer {token}
       <Property name="NameOfInstitution" />
       <Property name="OperationalStatus" />
       <Property name="SchoolType" />
-      <Reference name="LocalEducationAgencyReference">
+      <Object name="LocalEducationAgencyReference" memberSelection="IncludeOnly">
         <Property name="LocalEducationAgencyId" />
-      </Reference>
+      </Object>
     </ReadContentType>
   </Resource>
 </Profile>
@@ -1804,9 +1841,9 @@ Authorization: Bearer {token}
       <Property name="OperationalStatusDescriptor" />
       <Property name="SchoolTypeDescriptor" />
       
-      <Reference name="LocalEducationAgencyReference">
+      <Object name="LocalEducationAgencyReference" memberSelection="IncludeOnly">
         <Property name="LocalEducationAgencyId" />
-      </Reference>
+      </Object>
       
       <!-- Only show Physical and Mailing addresses -->
       <Collection name="EducationOrganizationAddresses" memberSelection="IncludeOnly">
@@ -1999,9 +2036,11 @@ Ticket 11 (Migration Guide)
 - [ ] Unit tests for repository layer
 - [ ] Integration tests for database operations
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **Database Migration Script** (Config Service - Create_Profile_Tables.sql):
+```
+1. Database Migration Script (Config Service - Create_Profile_Tables.sql):
    - Create Profile table with JSONB column in `dmscs` schema
    - Create ApplicationProfile table for application-to-profile assignments
    - Composite primary key on (ApplicationId, ProfileId) for ApplicationProfile
@@ -2010,18 +2049,21 @@ Ticket 11 (Migration Guide)
    - Constraints for data integrity and foreign keys
    - Audit columns (CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy) on both tables
 
-2. **Profile Models** (Config Service - ProfileEntity.cs, ProfileDto.cs):
+2. Profile Models (Config Service - ProfileEntity.cs, ProfileDto.cs):
    - ProfileEntity: Database entity with JSONB definition
    - ProfileDto: API data transfer object
    - ApplicationProfileEntity: Composite key entity (ApplicationId, ProfileId) with audit fields
    - Mapping between entity and DTO
 
-3. **Repository Layer** (Config Service - IProfileRepository.cs, ProfileRepository.cs, IApplicationProfileRepository.cs):
+3. Repository Layer (Config Service - IProfileRepository.cs, ProfileRepository.cs, IApplicationProfileRepository.cs):
    - Profile CRUD operations: Create, Read, Update, Delete
    - ApplicationProfile operations: Create, Delete, GetByApplicationId, GetByProfileId
    - GetByName, GetById, GetAll with pagination
    - Transaction support for atomic updates (especially when managing profile assignments)
    - JSONB serialization/deserialization
+```
+
+</details>
 
 **Dependencies**:
 
@@ -2056,34 +2098,39 @@ Ticket 11 (Migration Guide)
 - [ ] Unit tests for XML→JSON conversion
 - [ ] Integration tests for import API
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **XML to JSON Converter** (Config Service - ProfileXmlToJsonConverter.cs):
+```
+1. XML to JSON Converter (Config Service - ProfileXmlToJsonConverter.cs):
    - Parse XML using System.Xml.Linq
    - Transform to JSON structure matching JSONB schema
    - Preserve all rule semantics (properties, collections, references)
    - Validate against JSON schema
    - Handle all member selection types
 
-2. **JSON to XML Converter** (Config Service - ProfileJsonToXmlConverter.cs):
+2. JSON to XML Converter (Config Service - ProfileJsonToXmlConverter.cs):
    - Convert internal JSONB back to XML format
    - Required for validation and export functionality
    - Ensure round-trip conversion accuracy
 
-3. **Service Layer** (Config Service - ProfileImportService.cs):
+3. Service Layer (Config Service - ProfileImportService.cs):
    - Orchestrate XML parsing and JSON conversion
    - Store JSONB in `dmscs.Profile` via repository
    - Transaction management
    - Validation and error handling
    - Duplicate profile checking
 
-4. **API Endpoints** (Config API - ProfileController.cs):
+4. API Endpoints (Config API - ProfileController.cs):
    - POST /v2/profiles/import - File upload endpoint (accepts XML)
    - POST /v2/profiles - Create profile with JSON
    - POST /v2/profiles/xml - Create profile with XML string
    - GET /v2/profiles - List profiles with pagination
    - GET /v2/profiles/{id} - Get profile details
    - Request/response DTOs
+```
+
+</details>
 
 **Dependencies**:
 
@@ -2116,9 +2163,11 @@ Ticket 11 (Migration Guide)
 - [ ] Unit tests
 - [ ] Integration tests
 
-**Reference Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **Profile Resolution Middleware** (DMS - ProfileResolutionMiddleware.cs):
+```
+1. Profile Resolution Middleware (DMS - ProfileResolutionMiddleware.cs):
    - Extract profile name from Accept/Content-Type headers (priority 1)
    - If no header, extract application ID from auth context
    - If application ID present, call GET /v2/applications/{id} to get assigned profiles
@@ -2129,25 +2178,40 @@ Ticket 11 (Migration Guide)
    - Handle missing/invalid profiles
    - Error handling with appropriate HTTP status codes
 
-2. **Config API Client** (DMS - IConfigApiClient.cs, ConfigApiClient.cs):
-   - HTTP client to fetch profiles: `GET /v2/profiles?name={profileName}`
-   - HTTP client to fetch applications: `GET /v2/applications/{id}` (returns profiles array)
+2. Config API Client (DMS - IConfigApiClient.cs, ConfigApiClient.cs):
+   - HTTP client to fetch profiles: GET /v2/profiles?name={profileName}
+   - HTTP client to fetch applications: GET /v2/applications/{id} (returns profiles array)
    - Deserialization of profile JSON
    - Error handling for API failures
 
-3. **Profile Context** (DMS - ProfileContext.cs):
+3. Profile Context (DMS - ProfileContext.cs):
    - Container for profile metadata and rules
    - Efficient rule lookup structures (dictionaries/sets)
    - Immutable design for thread safety
    - Parsed from Config API JSON response
    - Include profile source metadata (header/application/none)
 
-4. **Application Context Extraction**:
+4. Application Context Extraction:
    - Extract application ID from JWT claims (e.g., "application_id" claim)
    - Cache application-to-profile mapping to reduce Config API calls
    - Handle missing application ID gracefully (proceed without profile)
 
-**Pipeline Integration**:
+Pipeline Integration:
+[Auth] -> [ProfileResolution] -> [ParsePath] -> [BuildResourceInfo] -> [ParseBody] -> ...
+
+Profile Resolution Algorithm:
+1. Check Accept/Content-Type header for profile parameter
+   - If found: resolve by name and use
+2. If no header, Get the application ID from JWT context
+   - If found: call GET /v2/applications/{id}
+   - If application has single profile assigned: use that profile
+   - If application has multiple profiles: return 400 error
+3. If no header and no application profiles, proceed without profile (no filtering)
+```
+
+</details>
+
+**Dependencies**:
 
 ```
 [Auth] -> [ProfileResolution] -> [ParsePath] -> [BuildResourceInfo] -> [ParseBody] -> ...
@@ -2185,7 +2249,9 @@ Ticket 11 (Migration Guide)
 
 **Epic**: Profile Enforcement
 
-**User Story**: As the enforcement pipeline, I need a rule evaluation engine that can efficiently determine which properties, collections, and references are allowed or excluded based on profile rules.
+**User Story**: As a DMS developer, I need a rule evaluation engine that determines whether properties, collections, and references are allowed or excluded based on profile rules. The engine evaluates member selection modes (IncludeOnly, ExcludeOnly, IncludeAll, ExcludeAll), handles nested structures, and applies collection item filters. This engine is used by both write validation (Ticket 5) and read filtering (Ticket 6).
+
+**Purpose**: Provides the core logic to interpret profile rules and decide what data is allowed. Tickets 5 and 6 depend on this engine to enforce profiles.
 
 **Acceptance Criteria**:
 
@@ -2198,24 +2264,29 @@ Ticket 11 (Migration Guide)
 - [ ] Nested property filtering supported
 - [ ] Unit tests for all rule types including filters
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **Rule Evaluation Engine** (ProfileRuleEvaluator.cs):
+```
+1. Rule Evaluation Engine (ProfileRuleEvaluator.cs):
    - Recursive property path matching
    - Include/exclude logic resolution (IncludeOnly, ExcludeOnly, IncludeAll, ExcludeAll)
    - Collection item filtering (evaluate Filter elements with propertyName and values)
    - Reference filtering
 
-2. **Rule Models** (ProfileRule.cs, PropertyRule.cs, CollectionRule.cs, ReferenceRule.cs, FilterRule.cs):
+2. Rule Models (ProfileRule.cs, PropertyRule.cs, CollectionRule.cs, ReferenceRule.cs, FilterRule.cs):
    - Strongly-typed rule representations
    - FilterRule: propertyName, filterMode (IncludeOnly/ExcludeOnly), values array
    - Rule validation logic
    - Rule comparison and matching
 
-3. **Path Resolver** (PropertyPathResolver.cs):
+3. Path Resolver (PropertyPathResolver.cs):
    - Parse JSON paths (e.g., "student.addresses[0].city")
    - Navigate nested structures
    - Handle array indexing
+```
+
+</details>
 
 **Dependencies**:
 
@@ -2245,9 +2316,11 @@ Ticket 11 (Migration Guide)
 - [ ] Unit tests for validation logic
 - [ ] Integration tests for write operations with profiles
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **Write Enforcement Middleware** (ProfileWriteValidationMiddleware.cs):
+```
+1. Write Enforcement Middleware (ProfileWriteValidationMiddleware.cs):
    - Integrate after ParseBodyMiddleware
    - Traverse JSON document against profile rules
    - Check for excluded properties in request body
@@ -2255,16 +2328,16 @@ Ticket 11 (Migration Guide)
    - Verify reference compliance
    - Build detailed violation messages
 
-2. **Validation Result** (ProfileValidationResult.cs):
+2. Validation Result (ProfileValidationResult.cs):
    - Container for validation errors
    - Property path to violation message mapping
    - HTTP response formatting
 
-**Pipeline Integration**:
-
-```
+Pipeline Integration:
 [ParseBody] -> [ProfileWriteValidation] -> [SchemaValidation] -> [Handler]
 ```
+
+</details>
 
 **Dependencies**:
 
@@ -2295,9 +2368,11 @@ Ticket 11 (Migration Guide)
 - [ ] Unit tests for filtering logic including filter elements
 - [ ] Integration tests for read operations with profiles
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **Read Enforcement Middleware** (ProfileReadFilteringMiddleware.cs):
+```
+1. Read Enforcement Middleware (ProfileReadFilteringMiddleware.cs):
    - Integrate before response serialization
    - Filter response JSON based on rules
    - Remove excluded properties
@@ -2305,18 +2380,18 @@ Ticket 11 (Migration Guide)
    - Apply reference filters
    - Maintain JSON structure integrity
 
-2. **JSON Filter** (JsonProfileFilter.cs):
+2. JSON Filter (JsonProfileFilter.cs):
    - In-place JSON modification
    - Efficient property removal
    - Array filtering (remove items not matching Filter criteria)
    - Collection item filter evaluation (check descriptor/type values)
    - Nested object traversal
 
-**Pipeline Integration**:
-
-```
+Pipeline Integration:
 [Handler] -> [ProfileReadFiltering] -> [ResponseSerialization]
 ```
+
+</details>
 
 **Dependencies**:
 
@@ -2349,31 +2424,36 @@ Ticket 11 (Migration Guide)
 - [ ] Unit tests
 - [ ] Integration tests for all management endpoints
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **JSON to XML Converter** (Config Service - ProfileJsonToXmlConverter.cs):
+```
+1. JSON to XML Converter (Config Service - ProfileJsonToXmlConverter.cs):
    - Load JSONB from `dmscs.Profile` table
    - Transform JSON structure back to XML format
    - Generate well-formed XML with proper namespaces
    - Format output for readability
    - Preserve all rule semantics
 
-2. **Export Service** (Config Service - ProfileExportService.cs):
+2. Export Service (Config Service - ProfileExportService.cs):
    - Load profile JSONB from database (single query)
    - Convert JSON to XML using converter
    - Validate exported XML against schema
    - Return XML string or file
 
-3. **Management API Extensions** (Config API - ProfileManagementController.cs):
+3. Management API Extensions (Config API - ProfileManagementController.cs):
    - Export endpoint with XML file download
    - Update/delete endpoints with authorizationActivation toggle endpoint
    - Duplication endpoint (clones JSONB)
    - Bulk export endpoint (exports multiple profiles as ZIP)
 
-4. **Validation Service** (Config Service - ProfileValidationService.cs):
+4. Validation Service (Config Service - ProfileValidationService.cs):
    - Validate JSONB structure before export
    - Check for required fields
    - Ensure XML conversion will succeed
+```
+
+</details>
 
 **Dependencies**:
 
@@ -2407,34 +2487,35 @@ Ticket 11 (Migration Guide)
 - [ ] Unit tests for profile assignment logic
 - [ ] Integration tests for application-profile management
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **Application DTO Enhancement** (Config Service - ApplicationDto.cs):
+```
+1. Application DTO Enhancement (Config Service - ApplicationDto.cs):
    - Add `profileIds` array property (long[])
    - Add `profiles` array property for response (ProfileSummaryDto[])
    - ProfileSummaryDto: { profileId, profileName }
 
-2. **Application Service Updates** (Config Service - ApplicationService.cs):
+2. Application Service Updates (Config Service - ApplicationService.cs):
    - On Create/Update: Validate all profileIds exist
    - Delete existing ApplicationProfile entries for this application
    - Insert new ApplicationProfile entries based on profileIds array
    - Wrap in transaction for atomicity
    - Query and populate profiles array on GET operations
 
-3. **ApplicationProfile Repository** (Config Service - ApplicationProfileRepository.cs):
+3. ApplicationProfile Repository (Config Service - ApplicationProfileRepository.cs):
    - DeleteByApplicationId(applicationId) - removes all assignments
    - CreateBatch(applicationId, profileIds) - bulk insert assignments
    - GetProfilesByApplicationId(applicationId) - returns assigned profiles with names
    - GetApplicationIdsByProfileId(profileId) - for filtering applications
 
-4. **API Controller Updates** (Config API - ApplicationsController.cs):
+4. API Controller Updates (Config API - ApplicationsController.cs):
    - Accept profileIds in POST/PUT request body
    - Return profiles array in GET responses
    - Support profileId query parameter in GET list
 
-**Example Request/Response**:
+Example Request/Response:
 
-```json
 // POST /v2/applications
 {
   "applicationName": "Student Information System",
@@ -2450,7 +2531,10 @@ Ticket 11 (Migration Guide)
   "applicationName": "Student Information System",
   "profileIds": [1, 2]
 }
+
 ```
+
+</details>
 
 **Dependencies**:
 
@@ -2487,63 +2571,72 @@ Ticket 11 (Migration Guide)
 - [ ] Integration tests for all selection scenarios (including application-based)
 - [ ] Performance tests validate selection overhead
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **Header Parser** (ProfileHeaderParser.cs):
+```
+
+1. Header Parser (ProfileHeaderParser.cs):
    - Parse `Accept` header with Ed-Fi vendor media type format:
-     - Example: `application/vnd.ed-fi.student.student-read-only.readable+json`
+     - Example: application/vnd.ed-fi.student.student-read-only.readable+json
      - Extract profile name from middle segment (between resource and readable/writable)
    - Parse `Content-Type` header with Ed-Fi vendor media type format:
-     - Example: `application/vnd.ed-fi.student.student-write-limited.writable+json`
+     - Example: application/vnd.ed-fi.student.student-write-limited.writable+json
      - Extract profile name from middle segment
    - Validate media type structure:
-     - Must start with `application/vnd.ed-fi.`
+     - Must start with application/vnd.ed-fi.
      - Must include resource name (lowercase)
      - Must include profile name
-     - Must end with `.readable+json` or `.writable+json`
+     - Must end with .readable+json or .writable+json
    - Extract resource name for validation (must match endpoint resource)
    - Handle edge cases (malformed headers, missing components)
 
-2. **Profile Selection Service** (ProfileSelectionService.cs):
+2. Profile Selection Service (ProfileSelectionService.cs):
    - Determine effective profile for request using priority chain:
      1. Profile from HTTP header (highest priority) - extracted via ProfileHeaderParser
      2. Profile from application assignment (via application ID in JWT)
      3. No profile (no filtering applied)
-   - Validate resource name matches endpoint (e.g., `student` header for `/ed-fi/students`)
+   - Validate resource name matches endpoint (e.g., student header for /ed-fi/students)
    - Handle profile conflicts (multiple profiles assigned to application)
    - Support profile hierarchy (future)
    - Coordinate with ProfileResolutionMiddleware (Ticket 3)
 
-3. **Client Examples**:
+3. Client Examples:
 
-   ```http
    # Explicit profile via header (priority 1) - Ed-Fi vendor media type format
+
    GET /data/v3/ed-fi/students
    Accept: application/vnd.ed-fi.student.student-read-only.readable+json
    Authorization: Bearer <token>
-   
+
    # Explicit profile for writes - Ed-Fi vendor media type format
+
    POST /data/v3/ed-fi/students
    Content-Type: application/vnd.ed-fi.student.student-write-limited.writable+json
    Authorization: Bearer <token>
-   
+
    # Application-based profile (priority 2 - no header, uses application assignment)
+
    GET /data/v3/ed-fi/students
    Accept: application/json
    Authorization: Bearer <token>  # token contains application_id with single profile assigned
-   
+
    # No profile (priority 3 - no header, no application profiles)
+
    GET /data/v3/ed-fi/students
    Accept: application/json
    Authorization: Bearer <token>  # token contains application_id with no profiles assigned
-   ```
 
-4. **Documentation Updates**:
+4. Documentation Updates:
    - Profile selection guide with priority chain
    - Header format specification
    - Example requests with profiles (header-based and application-based)
    - Profile naming conventions
    - Application profile assignment workflow
+
+```
+
+</details>
 
 **Error Scenarios**:
 
@@ -2581,26 +2674,33 @@ Ticket 11 (Migration Guide)
 - [ ] Security considerations documented
 - [ ] Documentation reviewed by technical writers
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **Core Documentation** (docs/API-PROFILES-DESIGN.md):
+```
+
+1. Core Documentation (docs/API-PROFILES-DESIGN.md):
    - Feature overview
    - Use cases and scenarios
    - Architecture and integration
    - Configuration options
    - Performance considerations
 
-2. **API Reference** (OpenAPI specification):
+2. API Reference (OpenAPI specification):
    - Profile management endpoints
    - Request/response schemas
    - Example requests
    - Error responses
 
-3. **Mermaid Diagrams**:
+3. Mermaid Diagrams:
    - Integration architecture
    - Profile resolution flow
    - Database schema
    - Request pipeline
+
+```
+
+</details>
 
 **Dependencies**:
 
@@ -2629,27 +2729,34 @@ Ticket 11 (Migration Guide)
 - [ ] All examples validated against live system
 - [ ] Documentation published to Ed-Fi documentation site
 
-**Technical Implementation Details**:
+<details>
+<summary><strong>Technical Implementation Details</strong> (Reference)</summary>
 
-1. **Example Profiles** (examples/profiles/*.xml):
+```
+
+1. Example Profiles (examples/profiles/*.xml):
    - student-read-only.xml - Basic read-only student data
    - student-write-limited.xml - Limited write access
    - assessment-limited.xml - Assessment data with restrictions
    - school-minimal.xml - Minimal school information
    - descriptor-full-access.xml - Full descriptor access
 
-2. **Tutorial Series** (docs/API-PROFILES-QUICKSTART.md):
+2. Tutorial Series (docs/API-PROFILES-QUICKSTART.md):
    - Getting started with profiles
    - Creating custom profiles
    - Testing profile rules locally
    - Deploying profiles to production
    - Monitoring profile usage
 
-3. **Best Practices Guide**:
+3. Best Practices Guide:
    - Profile naming conventions
    - Granularity recommendations
    - Performance optimization tips
    - Security considerations
+
+```
+
+</details>
 
 **Dependencies**:
 
