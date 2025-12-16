@@ -160,7 +160,7 @@ flowchart LR
     }
   ],
   "assigned_profiles": [
-    "Assessment-Profile-Read-Only"
+    "Test-Profile-Student-Read-Only"
   ],
   "claim_set": {
     "name": "E2E-RelationshipsWithEdOrgsOnlyClaimSet"
@@ -169,10 +169,6 @@ flowchart LR
     {
       "resource": "/ed-fi/students",
       "operations": ["Create", "Read", "Update", "Delete", "ReadChanges"]
-    },
-    {
-      "resource": "/ed-fi/assessments",
-      "operations": ["Create", "Read", "Update", "Delete"]
     },
     {
       "resource": "/ed-fi/schools",
@@ -549,4 +545,4 @@ ORDER BY eb.EducationOrganizationId;
 
 ---
 
-**Related Ticket**: [DMS-902](hhttps://edfi.atlassian.net/browse/DMS-902)
+**Related Ticket**: [DMS-902](https://edfi.atlassian.net/browse/DMS-902)
