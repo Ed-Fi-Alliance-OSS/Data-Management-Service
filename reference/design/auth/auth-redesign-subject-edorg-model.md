@@ -523,7 +523,7 @@ A new service encapsulates write‑side maintenance:
     - Delete `dms.Document`.
     - Delete related `DocumentSubject` rows (cascade or explicit).
     - For relationship resources, recompute memberships for affected subjects
-      via `SubjectEdOrg` (see §6).
+      via `SubjectEdOrg` (see section 6).
 
 All membership updates are done within the same transaction as the document
 write.
@@ -565,30 +565,58 @@ The existing `AddAuthorizationFilters` is reworked to target `DocumentIndex` plu
    Students via StudentSchool and/or StudentResponsibility, Contacts via
    ContactStudentSchool, Staff via StaffEdOrg).
 
-4. **EXISTS predicate over DocumentSubject + SubjectEdOrg**  
-   Inject a single authorization predicate into the `WHERE` over `dms.DocumentIndex`
-   (aliased `di`):
+4. **Per‑strategy predicates over DocumentSubject + SubjectEdOrg**  
+   Inject authorization predicates into the `WHERE` over `dms.DocumentIndex`
+   (aliased `di`) that preserve ODS semantics:
+   - Within a strategy, required securable dimensions are combined with
+     AND (e.g., Student *and* EdOrg must both authorize when both are
+     securable for the resource).
+   - Across strategies, `AuthorizationStrategyEvaluator.Operator` controls
+     composition (all AND strategies must succeed; OR strategies form an
+     alternative group, like ODS).
+
+   Concretely, this usually means building one predicate per strategy, where the
+   predicate itself may contain multiple `EXISTS (...)` clauses (one per
+   required subject/pathway segment), ANDed together.
 
    ```sql
-   AND EXISTS (
-       SELECT 1
-      FROM dms.DocumentSubject s
-      JOIN dms.SubjectEdOrg se
-        ON se.SubjectType       = s.SubjectType
-       AND se.SubjectIdentifier = s.SubjectIdentifier
-       WHERE s.ProjectName          = di.ProjectName
-         AND s.ResourceName         = di.ResourceName
-         AND s.DocumentPartitionKey = di.DocumentPartitionKey
-         AND s.DocumentId           = di.DocumentId
-         -- Optional subject/pathway filters:
-         -- AND s.SubjectType IN (...)
-         -- AND se.Pathway   IN (...)
-         AND se.EducationOrganizationId = ANY ($N::bigint[])
+   -- Strategy predicate (example only): RelationshipsWithEdOrgsAndPeople
+   -- for a resource that is securable by both Student and EdOrg.
+   AND (
+       EXISTS ( -- Student segment
+           SELECT 1
+           FROM dms.DocumentSubject s
+           JOIN dms.SubjectEdOrg se
+             ON se.SubjectType       = s.SubjectType
+            AND se.SubjectIdentifier = s.SubjectIdentifier
+           WHERE s.ProjectName          = di.ProjectName
+             AND s.ResourceName         = di.ResourceName
+             AND s.DocumentPartitionKey = di.DocumentPartitionKey
+             AND s.DocumentId           = di.DocumentId
+             AND s.SubjectType          = 1         -- Student
+             AND se.Pathway             IN (10, 11) -- StudentSchool, StudentResponsibility
+             AND se.EducationOrganizationId = ANY ($N::bigint[])
+       )
+       AND
+       EXISTS ( -- EdOrg segment
+           SELECT 1
+           FROM dms.DocumentSubject s
+           JOIN dms.SubjectEdOrg se
+             ON se.SubjectType       = s.SubjectType
+            AND se.SubjectIdentifier = s.SubjectIdentifier
+           WHERE s.ProjectName          = di.ProjectName
+             AND s.ResourceName         = di.ResourceName
+             AND s.DocumentPartitionKey = di.DocumentPartitionKey
+             AND s.DocumentId           = di.DocumentId
+             AND s.SubjectType          = 4  -- EdOrg
+             AND se.Pathway             = 40 -- EdOrgDirect
+             AND se.EducationOrganizationId = ANY ($N::bigint[])
+       )
    )
    ```
 
 The rest of the query continues to use `DocumentIndex.QueryFields` and the
-paging index as described in §7.
+paging index as described in section 7.
 
 ---
 
@@ -873,7 +901,7 @@ WITH page AS (
             AND s.DocumentPartitionKey = di.DocumentPartitionKey
             AND s.DocumentId           = di.DocumentId
             AND se.EducationOrganizationId = ANY($4::bigint[])
-            -- Optional: subject/type pathway predicates
+            -- NOTE: This is a simplified shape. See section 7.1.1 for details.
       )
     ORDER BY di.CreatedAt
     OFFSET $5
@@ -896,6 +924,27 @@ Notes:
   enabling fast existence checks.
 - `totalCount` requests use the same `WHERE` (including the `EXISTS`)
   against `DocumentIndex`
+
+#### 7.1.1 Segment semantics
+
+In practice, query authorization must preserve the same semantics as instance-based authorization:
+
+- Within a single strategy, segments are ANDed. A segment corresponds to
+  a required securable dimension for the resource under that strategy (e.g.,
+  Student, EdOrg, Staff, Contact). If a resource is securable by both Student
+  and EdOrg under a single strategy, the caller must satisfy both.
+- Across strategies, `AuthorizationStrategyEvaluator.Operator` drives
+  composition, analogous to ODS: all AND strategies must succeed. OR
+  strategies are grouped so that at least one OR-strategy predicate succeeds.
+
+This matters for resources like `StudentAcademicRecord` under
+`RelationshipsWithEdOrgsAndPeople`: the resource includes both a
+`studentReference` and an `educationOrganizationReference`, and the caller must
+be authorized for both securables (see E2E Scenario 46 in RelationshipsWithEdOrgsAndPeople.feature).
+
+Accordingly, the SQL injected into the `WHERE` over `dms.DocumentIndex` should
+use multiple `EXISTS (...)` checks, ANDed together for the segments required
+by that strategy (and further filtered by `SubjectType` and `Pathway`).
 
 ### 7.2 Namespace‑Based and Other Non‑Relationship Auth
 
