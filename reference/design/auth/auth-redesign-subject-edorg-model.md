@@ -198,7 +198,7 @@ Notes:
   - Future pathways (e.g., ProgramParticipation) can be added by introducing new
     enum values.
 - The combination `(SubjectType, SubjectIdentifier, Pathway)` can always be recomputed
-  from the corresponding relationship documents, see synchronization design is section 6.
+  from the corresponding relationship documents, see synchronization design in section 6.
 - `Pathway` is a `smallint` with a locked mapping in `dms.AuthorizationPathway` (section 4.3).
 
 ### 3.4 EducationOrganization Hierarchy
@@ -326,7 +326,7 @@ responsibility”).
 ### 4.3 Locking Down `SubjectType` and `Pathway` Identifiers
 
 This design stores `SubjectType` and `Pathway` as `smallint` for compact keys
-and fast joins. However, using ad-hoc numeric enums is fragile: if the numeric
+and fast joins. However, using ad hoc numeric enums is fragile: if the numeric
 values drift between deployments (or between C# code and database seed data),
 authorization can silently misbehave.
 
@@ -894,7 +894,7 @@ Notes:
 - GIN on `QueryFields` filters by query parameters before paging.
 - `DocumentSubject` + `SubjectEdOrg` joins are backed by narrow B‑tree indexes,
   enabling fast existence checks.
-- `totalCount` requests uses the same `WHERE` (including the `EXISTS`)
+- `totalCount` requests use the same `WHERE` (including the `EXISTS`)
   against `DocumentIndex`
 
 ### 7.2 Namespace‑Based and Other Non‑Relationship Auth
@@ -925,7 +925,7 @@ either as:
    used in the write pipeline over `EdfiDoc` and the resource schema.
 3. Invoke `ResourceAuthorizationHandler` for the `ExistingData` phase with the
    appropriate strategies and the in‑memory `DocumentSecurityElements`.
-3. Validators use `IAuthorizationRepository` (which now reads `SubjectEdOrg`)
+4. Validators use `IAuthorizationRepository` (which now reads `SubjectEdOrg`)
    to ensure at least one relevant subject membership intersects the caller’s
    EdOrg filters.
 
@@ -1031,7 +1031,7 @@ All **database‑level** authorization logic that previously relied on
 
 ---
 
-## 12. Open Questions and Future Enhancements
+## 10. Open Questions and Future Enhancements
 
 Areas for future refinement include:
 
