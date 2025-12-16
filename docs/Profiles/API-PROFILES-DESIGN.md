@@ -506,7 +506,10 @@ flowchart TD
     
     CallConfigAPI --> ProfileExists{Profile Exists?}
     ProfileExists -->|Yes| LoadProfile[Parse Profile JSON & Rules]
-    ProfileExists -->|No| Error406[406 Profile Not Found]
+    ProfileExists -->|No| CheckMethod{Request<br/>Method?}
+    
+    CheckMethod -->|GET| Error406[406 Not Acceptable<br/>Profile Not Found]
+    CheckMethod -->|POST/PUT| Error415[415 Unsupported Media Type<br/>Profile Not Found]
     
     LoadProfile --> BuildContext[Build Profile Context]
     
@@ -517,6 +520,7 @@ flowchart TD
     
     Error400 --> End
     Error406 --> End
+    Error415 --> End
     
     style CallConfigAPI fill:#bbdefb
     style BuildContext fill:#fff9c4
@@ -548,7 +552,10 @@ flowchart TD
     
     CallConfigAPI --> ProfileExists{Profile Exists?}
     ProfileExists -->|Yes| LoadProfile[Parse Profile JSON & Rules]
-    ProfileExists -->|No| Error406[406 Profile Not Found]
+    ProfileExists -->|No| CheckMethod{Request<br/>Method?}
+    
+    CheckMethod -->|GET| Error406[406 Not Acceptable<br/>Profile Not Found]
+    CheckMethod -->|POST/PUT| Error415[415 Unsupported Media Type<br/>Profile Not Found]
     
     LoadProfile --> UpdateCache[Update Cache]
     UpdateCache --> BuildContext[Build Profile Context]
@@ -560,6 +567,7 @@ flowchart TD
     Continue --> End([Pipeline Processing])
     
     Error406 --> End
+    Error415 --> End
     
     style LookupCache fill:#e1bee7
     style UpdateCache fill:#e1bee7
@@ -2222,7 +2230,7 @@ Profile Resolution Algorithm:
 ```
 1. Check Accept/Content-Type header for profile parameter
    - If found: resolve by name and use
-2. If no header, extract application ID from JWT claims
+2. If no header, extract application ID from JWT context
    - If found: call GET /v2/applications/{id}
    - If application has single profile assigned: use that profile
    - If application has multiple profiles: return 400 error
