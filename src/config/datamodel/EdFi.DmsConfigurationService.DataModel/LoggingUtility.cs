@@ -14,6 +14,7 @@ public static class LoggingUtility
     /// Sanitizes a string for safe logging by allowing only safe characters.
     /// Uses a whitelist approach to prevent log injection and log forging attacks.
     /// Allows: letters, digits, spaces, and safe punctuation (_-.:/)
+    /// Explicitly excludes all control characters (ASCII &lt; 32, including \r, \n, \t, etc.)
     /// </summary>
     /// <param name="input">The input string to sanitize</param>
     /// <returns>A sanitized string containing only safe characters</returns>
@@ -24,16 +25,20 @@ public static class LoggingUtility
             return string.Empty;
         }
         // Whitelist approach: only allow alphanumeric characters and specific safe symbols
+        // Explicitly reject control characters for defense in depth
         return new string(
             input
                 .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
+                    !char.IsControl(c)
+                    && (
+                        char.IsLetterOrDigit(c)
+                        || c == ' '
+                        || c == '_'
+                        || c == '-'
+                        || c == '.'
+                        || c == ':'
+                        || c == '/'
+                    )
                 )
                 .ToArray()
         );

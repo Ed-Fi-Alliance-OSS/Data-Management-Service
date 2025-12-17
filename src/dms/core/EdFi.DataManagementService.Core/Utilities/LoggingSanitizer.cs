@@ -13,6 +13,7 @@ public static class LoggingSanitizer
     /// <summary>
     /// Sanitizes input strings to prevent log injection attacks using a whitelist approach.
     /// Only allows alphanumeric characters, spaces, and safe punctuation (_-.:/).
+    /// Explicitly excludes all control characters (ASCII &lt; 32, including \r, \n, \t, etc.)
     /// This prevents log forging, template injection, and other log-based attacks.
     /// </summary>
     /// <param name="input">The input string to sanitize</param>
@@ -71,6 +72,7 @@ public static class LoggingSanitizer
 #pragma warning restore S3267
     }
 
+    // Explicitly reject control characters for defense in depth
     private static bool IsAllowedChar(char c) =>
-        char.IsLetterOrDigit(c) || c is ' ' or '_' or '-' or '.' or ':' or '/';
+        !char.IsControl(c) && (char.IsLetterOrDigit(c) || c is ' ' or '_' or '-' or '.' or ':' or '/');
 }
