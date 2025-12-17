@@ -142,6 +142,14 @@ public static class WebApplicationBuilderExtensions
 
             return new ClaimSetsCache(memoryCache, defaultExpiration);
         });
+        webAppBuilder.Services.AddSingleton(serviceProvider =>
+        {
+            var memoryCache = serviceProvider.GetRequiredService<IMemoryCache>();
+            var cacheExpiration = configServiceSettings.CacheExpirationMinutes;
+            var defaultExpiration = TimeSpan.FromMinutes(cacheExpiration);
+
+            return new ApplicationContextCache(memoryCache, defaultExpiration);
+        });
         webAppBuilder.Services.AddTransient<
             IConfigurationServiceTokenHandler,
             ConfigurationServiceTokenHandler
