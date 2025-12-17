@@ -77,7 +77,9 @@ Each client's `DmsInstanceIds` determine which data they can access.
 | Set       | `CacheApplicationContext()`   | Stores context with TTL |
 | Get       | `GetCachedApplicationContext` | Retrieves cached ctx    |
 | Remove    | `ClearCacheForClient()`       | Removes specific client |
-| Clear All | `ClearAllCache()`             | No-op (entries expire)  |
+
+Note: Bulk cache clearing is not supported. Individual entries expire via TTL
+or can be cleared per-client. For emergency clearing, restart the service.
 
 **Invalidation Strategy:**
 
