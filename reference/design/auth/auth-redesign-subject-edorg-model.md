@@ -1091,3 +1091,12 @@ Areas for future refinement include:
 - **Ownership and other advanced strategies**
   - Determine whether ownership‑style and additional advanced strategies are
     better modelled as subjects/pathways or as `QueryFields`.
+
+- **Add relationship endpoint indexing in `DocumentSubject`**
+  - Problem: Recomputation functions like `RecomputeStudentSchoolMembership(studentUniqueId)` must find all relationship documents for a subject, either by `DocumentIndex` or (ugh) `Document`.
+  - Approach: Treat `DocumentSubject` as a shared "document endpoint index". Relationship resources (e.g., `StudentSchoolAssociation`) insert multiple `DocumentSubject` rows per relationship document, one per relevant endpoint.
+    - Because relationship resources can have role named EdOrgs, add a `SubjectPropertyName` column. Example for `StudentSchoolAssociation`:
+      - `(SubjectType=Student, SubjectIdentifier=<StudentUniqueId>, SubjectPropertyName='StudentUniqueId')`
+      - `(SubjectType=EdOrg, SubjectIdentifier=<SchoolId>, SubjectPropertyName='SchoolId')`
+  - Recomputation becomes: find relationship docs for subject X via `DocumentSubject`, self-join to the paired endpoint rows for those docs (filter by `SubjectPropertyName` when needed), derive base EdOrgIds, expand ancestors, and rewrite `SubjectEdOrg`.
+  - Add an index for relationship-doc lookups e.g. `(ProjectName, ResourceName, SubjectType, SubjectIdentifier, SubjectPropertyName)` and include `DocumentPartitionKey, DocumentId`. Maybe it's also a partial index only on the list of relationship resources (ResourceName IN 'SSA', etc)
