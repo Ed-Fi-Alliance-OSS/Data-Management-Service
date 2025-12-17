@@ -63,7 +63,7 @@ information) retrieved from the Configuration Service.
 
 **Cache Key Pattern:** `ApplicationContext_{clientId}`
 
-**TTL:** 10 minutes (hard-coded in `DmsCoreServiceExtensions.cs`)
+**TTL:** 10 minutes (configurable via `CacheExpirationMinutes`)
 
 **Cache Operations:**
 
@@ -76,7 +76,7 @@ information) retrieved from the Configuration Service.
 
 **Invalidation Strategy:**
 
-- TTL-based expiration after 10 minutes
+- TTL-based expiration after configured minutes
 - Manual invalidation via `ReloadApplicationByClientIdAsync()`
 - Follows cache-aside pattern with fallback to Configuration Service
 
@@ -483,11 +483,12 @@ schemas on-demand only when first requested.
 
 ### Hard-Coded Defaults
 
-| Setting         | Value        | Location                         |
-| --------------- | ------------ | -------------------------------- |
-| App Context TTL | 10 minutes   | `DmsCoreServiceExtensions.cs:86` |
-| CMS Token TTL   | 1800 seconds | `ConfigurationServiceToken...:45`|
-| Schema Cache    | No TTL       | Version-based invalidation       |
+| Setting         | Value        | Location                           |
+| --------------- | ------------ | ---------------------------------- |
+| CMS Token TTL   | 1800 seconds | `ConfigurationServiceToken...:45`  |
+| Schema Cache    | No TTL       | Version-based invalidation         |
+
+Note: App Context TTL is now configurable via `CacheExpirationMinutes` setting.
 
 ## Operational Considerations
 

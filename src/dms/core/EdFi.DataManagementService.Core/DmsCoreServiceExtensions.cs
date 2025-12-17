@@ -81,10 +81,6 @@ public static class DmsCoreServiceExtensions
             .AddScoped<IDmsInstanceSelection, DmsInstanceSelection>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<ConfigurationServiceApplicationProvider>()
-            .AddSingleton<ApplicationContextCache>(sp => new ApplicationContextCache(
-                sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
-                TimeSpan.FromMinutes(10)
-            ))
             .AddScoped<ResolveDmsInstanceMiddleware>();
 
         return services;
