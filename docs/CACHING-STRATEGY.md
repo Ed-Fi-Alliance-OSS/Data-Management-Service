@@ -45,8 +45,8 @@ Only per-client and per-connection caches remain cold:
 
 ### 1. Application Context Cache
 
-**Purpose:** Caches application context data (client authentication, tenant
-information) retrieved from the Configuration Service.
+**Purpose:** Caches application context data retrieved from the Configuration
+Service, mapping API clients to their authorized DMS instances.
 
 **Location:**
 
@@ -55,13 +55,18 @@ information) retrieved from the Configuration Service.
 
 **Implementation:** `IMemoryCache` (Microsoft.Extensions.Caching.Memory)
 
-**What is Cached:**
+**Cache Structure:**
 
-- ApplicationId
-- Client credentials
-- Associated tenant information
+- **Key:** `ApplicationContext_{clientId}` (e.g., `ApplicationContext_my-api-client`)
+- **Value:** Single `ApplicationContext` record containing:
+  - `Id` - API client database ID
+  - `ApplicationId` - Parent application ID
+  - `ClientId` - Client identifier string
+  - `ClientUuid` - Client UUID
+  - `DmsInstanceIds` - List of authorized DMS instance IDs
 
-**Cache Key Pattern:** `ApplicationContext_{clientId}`
+**Multi-Tenancy Support:** No - one cache entry per API client, not per tenant.
+Each client's `DmsInstanceIds` determine which data they can access.
 
 **TTL:** 10 minutes (configurable via `CacheExpirationMinutes`)
 
@@ -94,11 +99,15 @@ resource access permissions from the Configuration Service.
 
 **Implementation:** `IMemoryCache` (Microsoft.Extensions.Caching.Memory)
 
-**What is Cached:**
+**Cache Structure:**
 
-- Authorization claim sets
-- Resource access permissions
-- Action rights (Create, Read, Update, Delete)
+- **Key:** `ClaimSetsCache` (single-tenant) or `ClaimSetsCache:{tenant}` (multi-tenant)
+- **Value:** `IList<ClaimSet>` - list of claim set records, each containing:
+  - `Name` - Claim set name (e.g., "SIS Vendor", "Ed-Fi Sandbox")
+  - `ResourceClaims` - List of `ResourceClaim` records, each containing:
+    - `Name` - Resource name (e.g., "students", "educationOrganizations")
+    - `Action` - Allowed action (Create, Read, Update, Delete)
+    - `AuthorizationStrategies` - Array of authorization strategy configurations
 
 **Configuration:**
 
@@ -110,14 +119,9 @@ resource access permissions from the Configuration Service.
 }
 ```
 
-**Cache Key Pattern:**
-
-- Single-tenant: `ClaimSetsCache`
-- Multi-tenant: `ClaimSetsCache:{tenant}`
-
 **TTL:** 10 minutes (configurable via `CacheExpirationMinutes`)
 
-**Multi-Tenancy Support:** Yes - cache keys are tenant-aware
+**Multi-Tenancy Support:** Yes - one cache entry per tenant
 
 **Warm-up:** Loaded on startup via `RetrieveAndCacheClaimSets()` in `Program.cs`
 
@@ -148,23 +152,16 @@ avoiding expensive schema compilation on every request.
 
 **Implementation:** `ConcurrentDictionary<SchemaCacheKey, JsonSchema>` (custom)
 
-**What is Cached:**
+**Cache Structure:**
 
-- Pre-compiled `JsonSchema` objects for POST and PUT request validation
-- Keyed by project name, resource name, HTTP method, and reload ID
+- **Key:** `SchemaCacheKey` record struct containing:
+  - `ProjectName` - API project name (e.g., "Ed-Fi")
+  - `ResourceName` - Resource name (e.g., "students", "schools")
+  - `Method` - HTTP method (POST or PUT)
+  - `ReloadId` - GUID that changes on schema reload
+- **Value:** `JsonSchema` - pre-compiled JSON schema for request validation
 
 **Configuration:** None required - cache lifetime is managed internally
-
-**Cache Key Structure:**
-
-```csharp
-record struct SchemaCacheKey(
-    string ProjectName,
-    string ResourceName,
-    RequestMethod Method,  // POST or PUT
-    Guid ReloadId
-);
-```
 
 **TTL:** Infinite (until schema reload)
 
@@ -207,13 +204,12 @@ Configuration Management Service (CMS).
 
 **Implementation:** `IMemoryCache` (Microsoft.Extensions.Caching.Memory)
 
-**What is Cached:**
+**Cache Structure:**
 
-- OAuth access token for CMS API calls
+- **Key:** `ConfigServiceToken` (static string, single entry)
+- **Value:** `string` - the OAuth access token (e.g., `"eyJhbGciOiJSUzI1NiIs..."`)
 
-**Cache Key:** `ConfigServiceToken` (static)
-
-**TTL:** Dynamic - based on token `expires_in` value (default: 30 minutes)
+**TTL:** Dynamic - based on token `expires_in` value from OAuth response (default: 1800 seconds / 30 minutes)
 
 **Cache Operations:**
 
@@ -242,10 +238,10 @@ connection pooling and avoid connection string parsing overhead.
 
 **Implementation:** `ConcurrentDictionary<string, NpgsqlDataSource>` (singleton)
 
-**What is Cached:**
+**Cache Structure:**
 
-- `NpgsqlDataSource` instances keyed by connection string
-- Each data source manages its own internal connection pool
+- **Key:** Database connection string (e.g., `"Host=localhost;Database=edfi;..."`)
+- **Value:** `NpgsqlDataSource` instance - manages its own internal connection pool
 
 **Connection Pool Settings:**
 
@@ -289,20 +285,20 @@ contexts) from the Configuration Service for multi-instance routing.
 
 **Implementation:** `ConcurrentDictionary<string, IList<DmsInstance>>` (custom)
 
-**What is Cached:**
+**Cache Structure:**
 
-- DMS instance ID, name, and type
-- Connection strings per instance
-- Route context mappings for URL-based routing
-
-**Cache Key Pattern:**
-
-- Default tenant: empty string `""`
-- Named tenant: tenant identifier
+- **Key:** Tenant identifier (empty string `""` for default/single-tenant, or tenant name)
+- **Value:** `IList<DmsInstance>` - list of DMS instance records, each containing:
+  - `Id` - Unique instance identifier
+  - `InstanceType` - Type/category of the instance
+  - `InstanceName` - Display name
+  - `ConnectionString` - Database connection string (nullable)
+  - `RouteContext` - Dictionary mapping route qualifier names to values
+    (e.g., `{"schoolYear": "2024", "district": "255901"}`)
 
 **TTL:** Application lifetime (no automatic expiration)
 
-**Multi-Tenancy Support:** Yes - separate cache entries per tenant
+**Multi-Tenancy Support:** Yes - one cache entry per tenant
 
 **Warm-up:** Loaded on startup via `InitializeDmsInstances()` in `Program.cs`
 
@@ -339,12 +335,15 @@ keys for token validation.
 **Implementation:** `ConfigurationManager<OpenIdConnectConfiguration>`
 (Microsoft.IdentityModel.Protocols)
 
-**What is Cached:**
+**Cache Structure:**
 
-- OIDC discovery document
-- JWT signing keys (JWKS)
-- Token endpoint URLs
-- Issuer information
+- **Key:** Implicit - singleton instance bound to configured `MetadataAddress`
+- **Value:** `OpenIdConnectConfiguration` object containing:
+  - `Issuer` - Token issuer identifier
+  - `TokenEndpoint` - URL for token requests
+  - `AuthorizationEndpoint` - URL for authorization
+  - `JsonWebKeySet` - JWT signing keys (JWKS) for signature validation
+  - Additional OIDC metadata fields
 
 **Configuration:**
 
