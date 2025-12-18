@@ -1,4 +1,4 @@
-# API Profiles High-Level Design
+# API Profiles Overview
 
 ## 1. Scope
 
