@@ -178,6 +178,54 @@ For each JSON array of objects/scalars under the resource:
 
 Nested collections create additional tables referencing the parent child table’s `Id`.
 
+#### PostgreSQL examples (Student, School, StudentSchoolAssociation)
+
+```sql
+CREATE SCHEMA IF NOT EXISTS edfi;
+
+CREATE TABLE IF NOT EXISTS edfi.Student (
+    DocumentId       bigint PRIMARY KEY
+                     REFERENCES dms.Document(DocumentId) ON DELETE CASCADE,
+
+    StudentUniqueId  varchar(32)  NOT NULL,
+    FirstName        varchar(75)  NOT NULL,
+    LastSurname      varchar(75)  NOT NULL,
+    BirthDate        date         NULL,
+
+    CONSTRAINT UX_Student_StudentUniqueId UNIQUE (StudentUniqueId)
+);
+
+CREATE TABLE IF NOT EXISTS edfi.School (
+    DocumentId             bigint PRIMARY KEY
+                           REFERENCES dms.Document(DocumentId) ON DELETE CASCADE,
+
+    SchoolId               int          NOT NULL,
+    NameOfInstitution      varchar(255) NOT NULL,
+    ShortNameOfInstitution varchar(75)  NULL,
+
+    CONSTRAINT UX_School_SchoolId UNIQUE (SchoolId)
+);
+
+CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
+    DocumentId         bigint PRIMARY KEY
+                       REFERENCES dms.Document(DocumentId) ON DELETE CASCADE,
+
+    Student_DocumentId bigint NOT NULL
+                       REFERENCES edfi.Student(DocumentId),
+
+    School_DocumentId  bigint NOT NULL
+                       REFERENCES edfi.School(DocumentId),
+
+    EntryDate          date   NOT NULL,
+    ExitWithdrawDate   date   NULL,
+
+    CONSTRAINT UX_StudentSchoolAssociation UNIQUE (Student_DocumentId, School_DocumentId, EntryDate)
+);
+
+CREATE INDEX IF NOT EXISTS IX_SSA_StudentDocumentId ON edfi.StudentSchoolAssociation(Student_DocumentId);
+CREATE INDEX IF NOT EXISTS IX_SSA_SchoolDocumentId  ON edfi.StudentSchoolAssociation(School_DocumentId);
+```
+
 ### Extensions
 
 Extension projects and resource extensions should follow a consistent 1:1 and 1:N pattern without merging extension columns into the core resource table:
