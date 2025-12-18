@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using System.Threading;
 using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
@@ -272,9 +271,6 @@ public static class DmsCoreServiceExtensions
                 RefreshInterval = TimeSpan.FromMinutes(options.RefreshIntervalMinutes),
                 AutomaticRefreshInterval = TimeSpan.FromHours(options.AutomaticRefreshIntervalHours),
             };
-
-            // Warm up the cache on startup
-            _ = configManager.GetConfigurationAsync(CancellationToken.None);
 
             return configManager;
         });

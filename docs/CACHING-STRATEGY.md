@@ -34,7 +34,7 @@ Only per-client and per-connection caches remain cold:
 | Cache            | Strategy | Behavior                       |
 | ---------------- | -------- | ------------------------------ |
 | Compiled Schemas | Warm     | Pre-compiled on startup        |
-| OIDC Metadata    | Async    | Background fetch during DI     |
+| OIDC Metadata    | Warm     | Loaded during startup          |
 | DMS Instances    | Warm     | Loaded from CMS on startup     |
 | ClaimSets        | Warm     | Loaded from CMS on startup     |
 | CMS Token        | Warm     | Fetched as startup dependency  |
@@ -364,10 +364,10 @@ keys for token validation.
 - **RefreshInterval:** 60 minutes (minimum time between forced refreshes)
 - **AutomaticRefreshInterval:** 24 hours (background refresh interval)
 
-**Warm-up:** A background fetch is initiated during DI registration via
-`GetConfigurationAsync()`, but the call is fire-and-forget (not awaited).
-The first request may still trigger a synchronous fetch if the background
-operation hasn't completed.
+**Warm-up:** Loaded on startup via `WarmUpOidcMetadataCache()` in `Program.cs`.
+The startup will fail if OIDC metadata cannot be retrieved from the identity
+provider, ensuring DMS doesn't accept requests until JWT authentication is
+fully functional. When `BypassAuthorization` is enabled, the warm-up is skipped.
 
 **Invalidation Strategy:**
 
@@ -517,7 +517,7 @@ DMS warms most caches during startup (see `Program.cs`):
 - **ClaimSets** - Retrieved and cached for all tenants on startup
 - **CMS Token** - Fetched as a dependency of the above operations
 - **Compiled Schemas** - Primed via `ProvideApiSchemaMiddleware`
-- **OIDC Metadata** - Background fetch initiated during DI (fire-and-forget)
+- **OIDC Metadata** - Fetched from identity provider on startup (fails fast if unavailable)
 
 Only **Application Context** (per-client) and **NpgsqlDataSource**
 (per-connection-string) remain cold, populated on first use.
