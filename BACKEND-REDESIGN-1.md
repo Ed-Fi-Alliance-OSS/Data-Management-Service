@@ -95,7 +95,9 @@ Descriptors are still documents, but we maintain a unified descriptor table keye
 - `Discriminator VARCHAR(128)` (e.g., `GradeLevelDescriptor`)
 - `Uri VARCHAR(306)` (computed or stored)
 
-Descriptor FKs in resource tables should reference `dms.Descriptor(DocumentId)` (not merely `dms.Document`) to guarantee “this is a descriptor” at the DB level.
+Descriptor references can be enforced two ways:
+- **Preferred (type-safe)**: FK to the specific descriptor resource root table (e.g., `edfi.GradeLevelDescriptor(DocumentId)`), which is itself keyed to `dms.Descriptor(DocumentId)`.
+- **Simpler (descriptor-only)**: FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor”, but without enforcing the specific descriptor type at the DB level.
 
 #### 4) `dms.SchemaInfo`
 
@@ -158,8 +160,9 @@ Typical structure:
 - Natural key columns (from `identityJsonPaths`) → unique constraint
 - Scalar columns for top-level non-collection properties
 - Reference FK columns:
-  - Non-descriptor references: `..._DocumentId BIGINT` FK → `dms.Document(DocumentId)` (type enforced in DMS, not DB)
-  - Descriptor references: `..._DescriptorId BIGINT` FK → `dms.Descriptor(DocumentId)`
+  - Non-descriptor references (concrete target): `..._DocumentId BIGINT` FK → `{schema}.{TargetResource}(DocumentId)` to enforce existence *and* resource type
+  - Non-descriptor references (polymorphic/abstract target): `..._DocumentId BIGINT` FK → `dms.Document(DocumentId)` plus optional discriminator/membership enforcement (see Reference Validation)
+  - Descriptor references: `..._DescriptorId BIGINT` FK → `{schema}.{DescriptorResource}(DocumentId)` (preferred) or `dms.Descriptor(DocumentId)`
 
 #### Child tables for collections
 
@@ -181,6 +184,38 @@ Extension projects and resource extensions should follow a consistent 1:1 and 1:
 
 - For `isResourceExtension: true` resources, create `{schema}.{BaseResource}Extension_{Project}` tables keyed by `DocumentId` (1:1) and child tables for extension collections.
 - This prevents core schema churn and keeps SQL Server row width/column count manageable.
+
+## Reference Validation
+
+Reference validation is provided by **two layers** (mirroring what the current `Reference` table + FK does, but in a relational way):
+
+### 1) Write-time validation (application-level)
+
+During POST/PUT processing, the backend:
+- Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) from `ReferentialId` → `DocumentId` using `dms.Identity`.
+- Fails the request if any referenced identity does not exist (same semantics as today: descriptor failures vs resource reference failures).
+
+This is required because the relational tables store **`DocumentId` foreign keys**, and we cannot write those without resolving them.
+
+### 2) Database enforcement (FKs)
+
+Relational tables store references as FKs so the database enforces referential integrity:
+
+- **Concrete non-descriptor references**: FK to the **target resource table**, e.g. `FK(StudentSchoolAssociation.School_DocumentId → edfi.School.DocumentId)`. This validates both existence and type.
+- **Descriptor references**: FK to the **target descriptor resource table** (preferred) or to `dms.Descriptor`. This validates existence, and optionally the descriptor type.
+- **Polymorphic references** (e.g., `EducationOrganization`): a single FK to a concrete table is not possible. Baseline enforcement is:
+  - FK to `dms.Document(DocumentId)` (existence)
+  - Application validation ensures the referenced `DocumentId` is one of the allowed concrete types
+
+If DB-level enforcement of polymorphic membership is required, add one of:
+- A `...Discriminator` column + trigger that checks `dms.Document.ResourceName` for the referenced `DocumentId`
+- A small membership table per abstract type (e.g., `edfi.EducationOrganizationMembership(DocumentId)`), maintained by triggers on the concrete resource tables, and FK to the membership table
+
+### Delete conflicts
+
+Deletes rely on the same FK graph:
+- If a document is referenced, `DELETE` fails with an FK violation; DMS maps that to a `409` conflict.
+- Because FK names are deterministic, DMS can map the violated constraint back to a resource/table to report “what is referencing me” without a separate `Reference` edge table.
 
 ## Naming Rules (Deterministic, Cross-DB Safe)
 
@@ -364,4 +399,3 @@ Migration scope:
 4. **Generalize mapping**: make mapping derivation generic from ApiSchema + conventions; add minimal `relational` overrides.
 5. **Migration tool**: derive/apply DDL and record `SchemaInfo`.
 6. **Optional cache + integration**: `dms.DocumentCache` and any required event/materialization paths.
-
