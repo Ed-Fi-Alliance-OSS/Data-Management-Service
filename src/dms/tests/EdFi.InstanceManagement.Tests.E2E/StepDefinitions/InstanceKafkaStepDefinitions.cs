@@ -229,7 +229,9 @@ public class InstanceKafkaStepDefinitions(InstanceManagementContext context) : I
         var messagesWithDeletedFlag = allMessages.Where(m =>
         {
             if (m.ValueAsJson == null)
+            {
                 return false;
+            }
 
             var deletedField = m.ValueAsJson["__deleted"];
             string expectedValue = shouldBeDeleted ? "true" : "false";

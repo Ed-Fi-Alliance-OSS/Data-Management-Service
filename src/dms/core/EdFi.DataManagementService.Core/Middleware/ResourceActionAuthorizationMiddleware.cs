@@ -55,7 +55,8 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
 
             Debug.Assert(
                 requestInfo.PathComponents != null,
-                "ResourceActionAuthorizationMiddleware: There should be PathComponents"
+                "ResourceActionAuthorizationMiddleware: There should be PathComponents",
+                ""
             );
 
             if (!ValidateResourceClaims(requestInfo, claimSet))

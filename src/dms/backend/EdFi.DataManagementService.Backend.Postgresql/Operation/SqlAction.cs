@@ -703,7 +703,8 @@ public partial class SqlAction() : ISqlAction
     {
         Trace.Assert(
             bulkReferences.ReferentialIds.Length == bulkReferences.ReferentialPartitionKeys.Length,
-            "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
+            "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length",
+            ""
         );
 
         // Ensure we do not send redundant referential rows to the database.
@@ -757,7 +758,8 @@ public partial class SqlAction() : ISqlAction
     {
         Trace.Assert(
             referentialIds.Length == referentialPartitionKeys.Length,
-            "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length"
+            "Arrays of ReferentialIds and ReferentialPartitionKeys must be the same length",
+            ""
         );
 
         if (referentialIds.Length == 0)

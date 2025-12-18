@@ -26,13 +26,15 @@ internal class DescriptorDocument(JsonNode _document)
         string? namespaceName = _document["namespace"]?.GetValue<string>();
         Debug.Assert(
             namespaceName != null,
-            "Failed getting namespace field, JSON schema validation not in pipeline?"
+            "Failed getting namespace field, JSON schema validation not in pipeline?",
+            ""
         );
 
         string? codeValue = _document["codeValue"]?.GetValue<string>();
         Debug.Assert(
             codeValue != null,
-            "Failed getting codeValue field, JSON schema validation not in pipeline?"
+            "Failed getting codeValue field, JSON schema validation not in pipeline?",
+            ""
         );
 
         DocumentIdentityElement[] descriptorElement =

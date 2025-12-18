@@ -11,6 +11,7 @@ using Keycloak.Net.Models.ClientScopes;
 using Keycloak.Net.Models.ProtocolMappers;
 using Keycloak.Net.Models.Roles;
 using Microsoft.Extensions.Logging;
+using static EdFi.DmsConfigurationService.DataModel.LoggingUtility;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
@@ -105,7 +106,8 @@ public class KeycloakClientRepository(
             }
 
             logger.LogError(
-                $"Error while creating the client: {clientId}. CreateClientAndRetrieveClientIdAsync returned empty string with no exception."
+                "Error while creating the client {ClientId}. CreateClientAndRetrieveClientIdAsync returned empty string with no exception.",
+                SanitizeForLog(clientId)
             );
             return new ClientCreateResult.FailureUnknown($"Error while creating the client: {clientId}");
         }
@@ -319,7 +321,7 @@ public class KeycloakClientRepository(
             else
             {
                 var scopeNotFound = $"Scope {scope} not found";
-                logger.LogError(message: scopeNotFound);
+                logger.LogError("Specified scope {Scope} not found", SanitizeForLog(scope));
                 return new ClientUpdateResult.FailureIdentityProvider(
                     new IdentityProviderError(scopeNotFound)
                 );

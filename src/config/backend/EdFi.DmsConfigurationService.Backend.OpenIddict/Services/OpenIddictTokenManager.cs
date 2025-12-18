@@ -109,7 +109,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 }
                 else
                 {
-                    cert = new X509Certificate2(certPath, certPassword);
+                    cert = X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
                 }
                 var signingKey = new X509SecurityKey(cert);
                 return await Task.FromResult(
@@ -128,11 +128,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     );
                 }
                 var cert = string.IsNullOrEmpty(certPassword)
-                    ? new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath)
-                    : new System.Security.Cryptography.X509Certificates.X509Certificate2(
-                        certPath,
-                        certPassword
-                    );
+                    ? X509CertificateLoader.LoadCertificateFromFile(certPath)
+                    : X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
                 var signingKey = new X509SecurityKey(cert);
                 return await Task.FromResult(
                     new SigningKeyResult { SecurityKey = signingKey, KeyId = cert.Thumbprint }
@@ -464,7 +461,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 }
                 else
                 {
-                    cert = new X509Certificate2(certPath, certPassword);
+                    cert = X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
                 }
                 using var pubRsa = cert.GetRSAPublicKey();
                 return await Task.FromResult(new[] { (pubRsa!.ExportParameters(false), cert.Thumbprint) });
@@ -480,11 +477,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     );
                 }
                 var cert = string.IsNullOrEmpty(certPassword)
-                    ? new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath)
-                    : new System.Security.Cryptography.X509Certificates.X509Certificate2(
-                        certPath,
-                        certPassword
-                    );
+                    ? X509CertificateLoader.LoadCertificateFromFile(certPath)
+                    : X509CertificateLoader.LoadPkcs12FromFile(certPath, certPassword);
                 using var pubRsa = cert.GetRSAPublicKey();
                 return await Task.FromResult(new[] { (pubRsa!.ExportParameters(false), cert.Thumbprint) });
             }
