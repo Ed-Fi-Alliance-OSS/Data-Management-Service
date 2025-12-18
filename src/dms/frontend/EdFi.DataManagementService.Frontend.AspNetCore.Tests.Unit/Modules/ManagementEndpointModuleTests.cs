@@ -70,19 +70,20 @@ public class ManagementEndpointModuleTests
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, config) =>
+                    {
+                        config.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                { "AppSettings:EnableManagementEndpoints", "true" },
+                            }
+                        );
+                    }
+                );
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        // Override configuration
-                        var configurationValues = new Dictionary<string, string?>
-                        {
-                            { "AppSettings:EnableManagementEndpoints", "true" },
-                        };
-                        var configuration = new ConfigurationBuilder()
-                            .AddInMemoryCollection(configurationValues)
-                            .Build();
-                        collection.AddSingleton<IConfiguration>(configuration);
-
                         // Add essential mocks to prevent startup crashes
                         TestMockHelper.AddEssentialMocks(collection);
 
@@ -114,19 +115,21 @@ public class ManagementEndpointModuleTests
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, config) =>
+                    {
+                        // EnableManagementEndpoints is false by default
+                        config.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                { "AppSettings:EnableManagementEndpoints", "false" },
+                            }
+                        );
+                    }
+                );
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        // Override configuration - EnableManagementEndpoints is false by default
-                        var configurationValues = new Dictionary<string, string?>
-                        {
-                            { "AppSettings:EnableManagementEndpoints", "false" },
-                        };
-                        var configuration = new ConfigurationBuilder()
-                            .AddInMemoryCollection(configurationValues)
-                            .Build();
-                        collection.AddSingleton<IConfiguration>(configuration);
-
                         // Add essential mocks to prevent startup crashes
                         TestMockHelper.AddEssentialMocks(collection);
 
@@ -301,19 +304,20 @@ public class ManagementEndpointModuleTests
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, config) =>
+                    {
+                        config.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                { "AppSettings:EnableManagementEndpoints", "true" },
+                            }
+                        );
+                    }
+                );
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        // Override configuration
-                        var configurationValues = new Dictionary<string, string?>
-                        {
-                            { "AppSettings:EnableManagementEndpoints", "true" },
-                        };
-                        var configuration = new ConfigurationBuilder()
-                            .AddInMemoryCollection(configurationValues)
-                            .Build();
-                        collection.AddSingleton<IConfiguration>(configuration);
-
                         // Add essential mocks to prevent startup crashes
                         TestMockHelper.AddEssentialMocks(collection);
 
@@ -361,19 +365,20 @@ public class ManagementEndpointModuleTests
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
+                builder.ConfigureAppConfiguration(
+                    (context, config) =>
+                    {
+                        config.AddInMemoryCollection(
+                            new Dictionary<string, string?>
+                            {
+                                { "AppSettings:EnableManagementEndpoints", "true" },
+                            }
+                        );
+                    }
+                );
                 builder.ConfigureServices(
                     (collection) =>
                     {
-                        // Override configuration
-                        var configurationValues = new Dictionary<string, string?>
-                        {
-                            { "AppSettings:EnableManagementEndpoints", "true" },
-                        };
-                        var configuration = new ConfigurationBuilder()
-                            .AddInMemoryCollection(configurationValues)
-                            .Build();
-                        collection.AddSingleton<IConfiguration>(configuration);
-
                         // Add essential mocks to prevent startup crashes
                         TestMockHelper.AddEssentialMocks(collection);
 
