@@ -445,7 +445,7 @@ async Task WarmUpOidcMetadataCache(WebApplication app)
             ex,
             "Critical failure: Unable to retrieve OIDC metadata from identity provider. JWT authentication will not function correctly."
         );
-        Environment.Exit(-1);
+        Environment.Exit(1);
     }
 }
 
