@@ -8,23 +8,6 @@ The `/oauth/token_info` endpoint provides comprehensive information about an OAu
 **Authentication**: Requires valid Bearer token in Authorization header  
 **Content-Type**: `application/x-www-form-urlencoded`
 
-## Request/Response Flow
-
-```mermaid
-flowchart LR
-    A[Client Request<br/>JWT Token Bearer<br/>+ token parameter] --> B[Token Info Processing]
-    B --> B1[1. Validate Token]
-    B1 --> B2[2. Extract Claims]
-    B2 --> B3[3. Query Database]
-    B3 --> B4[4. Enrich Data]
-    B4 --> B5[5. Build Response]
-    B5 --> C[Token Info Response<br/>JSON]
-    
-    style A fill:#e1f5ff
-    style C fill:#e1ffe1
-    style B fill:#fff4e1
-```
-
 ## Token Info Response Structure
 
 ```json
@@ -88,7 +71,7 @@ flowchart LR
 | `assigned_profiles[]`* | Database | - | Profile + ApplicationProfile tables |
 | `claim_set.name` | JWT Token | `scope` claim | - |
 | `resources[]` | Database + Metadata API | - | ClaimsHierarchy → AuthorizationMetadata → ClaimSet claims |
-| `services[]` | Hardcoded | - | Ed-Fi special services (e.g., Identity API) - separate from CRUD resources |
+| `services[]` | Database (ResourceClaims) | - | Claims filtered by service prefix pattern (e.g., `http://ed-fi.org/identity/claims/services/*`) |
 
 **Notes**:
 
@@ -105,8 +88,14 @@ flowchart LR
   matching) that are separate from standard CRUD resources. According to
   [Ed-Fi documentation](https://docs.ed-fi.org/reference/ods-api/client-developers-guide/authorization/#token-info),
   services are distinct from resources and typically include specialized
-  operations. Currently hardcoded to return the Identity service, but could be
-  extended to include other special services in the future.
+  operations. **Note: The proposed design retrieves services from the
+  ResourceClaims authorization metadata, filtered by a service-specific claim
+  name prefix pattern (e.g., `http://ed-fi.org/identity/claims/services/*`).
+  This filtering logic is not yet implemented in the DMS codebase.** This
+  approach would align with the Ed-Fi ODS/API authorization
+  model where services are stored as ResourceClaims in the security database alongside
+  regular resource claims. See the [Ed-Fi ODS Implementation repository](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS-Implementation)
+  for reference implementations.
 
 ## Example 1: OpenIddict Token (DMS Config Service)
 
@@ -203,7 +192,7 @@ flowchart LR
 | `assigned_profiles[0]` | `"Assessment-Profile-Read-Only"` | ApplicationProfile query | Queried from Profile tables |
 | `claim_set.name` | `"E2E-RelationshipsWithEdOrgsOnlyClaimSet"` | JWT `scope` claim | Direct extraction |
 | `resources[]` | Array of resources | ClaimSet hierarchy query | Built from claim set configuration |
-| `services[]` | Array of services | Configuration | Hardcoded or configured |
+| `services[]` | Array of services | ResourceClaims query | Filtered by service claim name prefix |
 
 ## Example 2: Keycloak Token
 
@@ -313,73 +302,24 @@ flowchart LR
 | `assigned_profiles[0]` | `"Student-Profile-Full-Access"` | ApplicationProfile query | Queried from Profile tables |
 | `claim_set.name` | `"EdFiSandbox"` | JWT `scope` claim | Direct extraction |
 | `resources[]` | Array of resources | ClaimSet hierarchy query | Built from EdFiSandbox claim set |
-| `services[]` | Array of services | Configuration | Hardcoded or configured |
-
-## Key Differences Between Providers
-
-| Aspect | OpenIddict (DMS Config) | Keycloak |
-|--------|------------------------|----------|
-| **Token Format** | Custom DMS claims | Standard OAuth + custom |
-| **Exp Claim** | String format (`"1765572094"`) | Numeric format (`1765572891`) |
-| **Client Identification** | Uses `client_id` claim | Uses `client_id` claim |
-| **Scope Claim** | Single claim set name | Claim set name or standard scopes |
-| **Custom Claims** | `client_name`, `permission` | `clientHost`, `clientAddress` |
-| **Role Claims** | Simple array | Multiple standard roles included |
-| **Issuer** | DMS Config Service URL | Keycloak realm URL |
-
-## Data Enrichment Process
-
-```mermaid
-flowchart LR
-    subgraph JWT["JWT Token Claims"]
-        A1[client_id]
-        A2[exp]
-        A3[scope]
-        A4[namespacePrefixes]
-        A5[educationOrganizationIds]
-        A6[not in token]
-        A7[configuration]
-    end
-    
-    subgraph DB["Database Queries"]
-        B1[ApiClient → Application → Vendor]
-        B2[ClaimSet → ResourceClaim → Actions]
-        B4[DMS Document<br/>EdfiDoc JSON, ResourceName]
-        B5[ApplicationProfile → Profile]
-        B6[Service Config]
-    end
-    
-    subgraph RESP["Final Response"]
-        C1[client_id<br/>exp<br/>namespace_prefixes]
-        C2[claim_set<br/>resources]
-        C3[education_organizations]
-        C4[assigned_profiles]
-        C5[services]
-    end
-    
-    A1 --> B1 --> C1
-    A2 --> B1
-    A3 --> B2 --> C2
-    A4 --> C1
-    A5 --> B4 --> C3
-    A6 --> B5 --> C4
-    A7 --> B6 --> C5
-    
-    style JWT fill:#e1f5ff
-    style DB fill:#fff4e1
-    style RESP fill:#e1ffe1
-```
+| `services[]` | Array of services | ResourceClaims query | Filtered by service claim name prefix |
 
 ## Implementation Notes
 
 ### ✅ Currently Implemented
 
 - JWT token validation and claims extraction
-- Basic response fields: `active`, `client_id`, `exp`, `namespace_prefixes`, `claim_set`, `resources`, `services`
+- Basic response fields: `active`, `client_id`, `exp`, `namespace_prefixes`,
+  `claim_set`, `resources`
 - Education organization IDs from token (without enrichment)
-- Claim set resource mapping from database or `/metadata/dependencies` endpoint
 
-### ❌ Pending Implementation (DMS-885)
+### ❌ Pending Implementation
+
+- **Services Support** - PROPOSED FEATURE
+  - Populate `services[]` array from ResourceClaims table
+  - Implement filtering by service-specific claim name prefix pattern
+    (e.g., `http://ed-fi.org/identity/claims/services/*`)
+  - Distinguish services from standard CRUD resources
 
 - **Profile Support** - NEW FEATURE
   - Database tables: `Profile`, `ApplicationProfile`
@@ -423,121 +363,6 @@ Content-Type: application/json
   "services": [...]
 }
 ```
-
-## SQL Query Examples for Education Organizations
-
-### Get Education Organization Document from DMS Database
-
-```sql
--- Get education organization document and hierarchy information
-SELECT 
-    d.Id as DocumentId,
-    d.DocumentPartitionKey,
-    d.ResourceName,
-    d.EdfiDoc,
-    eoh.EducationOrganizationId,
-    eoh.ParentId,
-    parent_eoh.EducationOrganizationId as ParentEducationOrganizationId
-FROM dms.Document d
-INNER JOIN dms.EducationOrganizationHierarchy eoh 
-    ON d.Id = eoh.DocumentId 
-    AND d.DocumentPartitionKey = eoh.DocumentPartitionKey
-LEFT JOIN dms.EducationOrganizationHierarchy parent_eoh
-    ON eoh.ParentId = parent_eoh.Id
-WHERE eoh.EducationOrganizationId = @EducationOrganizationId;
-```
-
-### Extract Name from Education Organization JSON
-
-```sql
--- Extract nameOfInstitution from EdfiDoc JSON for multiple education organizations
-SELECT 
-    eoh.EducationOrganizationId,
-    d.ResourceName as OrganizationType,
-    d.EdfiDoc->>'nameOfInstitution' as NameOfInstitution,
-    d.EdfiDoc
-FROM dms.Document d
-INNER JOIN dms.EducationOrganizationHierarchy eoh 
-    ON d.Id = eoh.DocumentId 
-    AND d.DocumentPartitionKey = eoh.DocumentPartitionKey
-WHERE eoh.EducationOrganizationId IN (255, 255901);
-```
-
-### Get Education Organization Ancestors (LEA, ESC)
-
-```sql
--- Use the built-in function to get all ancestor organizations
-SELECT 
-    eoh.EducationOrganizationId,
-    d.ResourceName as OrganizationType,
-    d.EdfiDoc->>'nameOfInstitution' as NameOfInstitution
-FROM dms.GetEducationOrganizationAncestors(255) ancestors
-INNER JOIN dms.EducationOrganizationHierarchy eoh
-    ON ancestors.EducationOrganizationId = eoh.EducationOrganizationId
-INNER JOIN dms.Document d
-    ON eoh.DocumentId = d.Id
-    AND eoh.DocumentPartitionKey = d.DocumentPartitionKey
-ORDER BY 
-    CASE d.ResourceName
-        WHEN 'EducationServiceCenter' THEN 1
-        WHEN 'LocalEducationAgency' THEN 2
-        WHEN 'School' THEN 3
-        ELSE 4
-    END;
-```
-
-### Complete Education Organization Enrichment Query
-
-```sql
--- Get enriched education organization data with parent relationships
-WITH EdOrgBase AS (
-    SELECT 
-        eoh.EducationOrganizationId,
-        d.ResourceName as OrganizationType,
-        d.EdfiDoc->>'nameOfInstitution' as NameOfInstitution,
-        eoh.ParentId
-    FROM dms.EducationOrganizationHierarchy eoh
-    INNER JOIN dms.Document d
-        ON eoh.DocumentId = d.Id
-        AND eoh.DocumentPartitionKey = d.DocumentPartitionKey
-    WHERE eoh.EducationOrganizationId IN (255, 255901)
-),
-ParentData AS (
-    SELECT 
-        child.EducationOrganizationId as ChildEdOrgId,
-        parent_eoh.EducationOrganizationId as ParentEdOrgId,
-        parent_doc.ResourceName as ParentType
-    FROM EdOrgBase child
-    INNER JOIN dms.EducationOrganizationHierarchy parent_eoh
-        ON child.ParentId = parent_eoh.Id
-    LEFT JOIN dms.Document parent_doc
-        ON parent_eoh.DocumentId = parent_doc.Id
-        AND parent_eoh.DocumentPartitionKey = parent_doc.DocumentPartitionKey
-)
-SELECT 
-    eb.EducationOrganizationId,
-    eb.NameOfInstitution,
-    'edfi.' || eb.OrganizationType as Type,
-    CASE 
-        WHEN eb.OrganizationType = 'School' THEN 
-            (SELECT ParentEdOrgId FROM ParentData WHERE ChildEdOrgId = eb.EducationOrganizationId AND ParentType = 'LocalEducationAgency')
-        ELSE NULL 
-    END as LocalEducationAgencyId,
-    CASE 
-        WHEN eb.OrganizationType = 'LocalEducationAgency' THEN 
-            (SELECT ParentEdOrgId FROM ParentData WHERE ChildEdOrgId = eb.EducationOrganizationId AND ParentType = 'EducationServiceCenter')
-        ELSE NULL 
-    END as EducationServiceCenterId
-FROM EdOrgBase eb
-ORDER BY eb.EducationOrganizationId;
-```
-
-**Example Result:**
-
-| EducationOrganizationId | NameOfInstitution | Type | LocalEducationAgencyId | EducationServiceCenterId |
-|------------------------|-------------------|------|------------------------|--------------------------|
-| 255 | Grand Bend Elementary School | edfi.School | 255901 | NULL |
-| 255901 | Grand Bend ISD | edfi.LocalEducationAgency | NULL | 255950 |
 
 ## References
 
