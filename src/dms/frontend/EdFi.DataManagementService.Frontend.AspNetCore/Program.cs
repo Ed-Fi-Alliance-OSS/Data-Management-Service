@@ -17,6 +17,8 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using AppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 using ResponseCompressionDefaults = Microsoft.AspNetCore.ResponseCompression.ResponseCompressionDefaults;
 
@@ -119,6 +121,7 @@ if (!ReportInvalidConfiguration(app))
     await InitializeDmsInstances(app);
     InitializeDatabase(app);
     await RetrieveAndCacheClaimSets(app);
+    await WarmUpOidcMetadataCache(app);
 
     if (enableAspNetCompression)
     {
@@ -411,6 +414,38 @@ void LogInstanceDetails(WebApplication app, IList<DmsInstance> instances)
             instance.InstanceType,
             hasConnectionString
         );
+    }
+}
+
+async Task WarmUpOidcMetadataCache(WebApplication app)
+{
+    var bypassAuthorizationEnabled = app.Configuration.GetValue<bool>("AppSettings:BypassAuthorization");
+    if (bypassAuthorizationEnabled)
+    {
+        app.Logger.LogInformation("BypassAuthorization is enabled, skipping OIDC metadata cache warm-up");
+        return;
+    }
+
+    app.Logger.LogInformation("Warming up OIDC metadata cache");
+    try
+    {
+        var configManager = app.Services.GetRequiredService<
+            IConfigurationManager<OpenIdConnectConfiguration>
+        >();
+        var config = await configManager.GetConfigurationAsync(CancellationToken.None);
+        app.Logger.LogInformation(
+            "OIDC metadata cache warmed up successfully. Issuer: {Issuer}, SigningKeys: {SigningKeyCount}",
+            config.Issuer,
+            config.SigningKeys.Count
+        );
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogCritical(
+            ex,
+            "Critical failure: Unable to retrieve OIDC metadata from identity provider. JWT authentication will not function correctly."
+        );
+        Environment.Exit(-1);
     }
 }
 
