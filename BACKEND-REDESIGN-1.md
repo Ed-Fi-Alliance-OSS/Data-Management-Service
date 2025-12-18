@@ -195,6 +195,18 @@ CREATE TABLE IF NOT EXISTS edfi.Student (
     CONSTRAINT UX_Student_StudentUniqueId UNIQUE (StudentUniqueId)
 );
 
+-- Descriptor resource tables can be "thin" when all core descriptor fields
+-- are centralized in dms.Descriptor; their main purpose is type-safe FKs.
+CREATE TABLE IF NOT EXISTS edfi.SchoolTypeDescriptor (
+    DocumentId bigint PRIMARY KEY
+               REFERENCES dms.Descriptor(DocumentId) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS edfi.GradeLevelDescriptor (
+    DocumentId bigint PRIMARY KEY
+               REFERENCES dms.Descriptor(DocumentId) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS edfi.School (
     DocumentId             bigint PRIMARY KEY
                            REFERENCES dms.Document(DocumentId) ON DELETE CASCADE,
@@ -202,9 +214,30 @@ CREATE TABLE IF NOT EXISTS edfi.School (
     SchoolId               int          NOT NULL,
     NameOfInstitution      varchar(255) NOT NULL,
     ShortNameOfInstitution varchar(75)  NULL,
+    SchoolTypeDescriptor_DescriptorId bigint NULL
+                           REFERENCES edfi.SchoolTypeDescriptor(DocumentId),
 
     CONSTRAINT UX_School_SchoolId UNIQUE (SchoolId)
 );
+
+-- Example collection table: School has a collection of GradeLevelDescriptor values
+-- (e.g., 1st, 2nd, 3rd, ...) stored as rows. Ordinal preserves client order.
+CREATE TABLE IF NOT EXISTS edfi.SchoolGradeLevel (
+    Id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+
+    School_DocumentId bigint NOT NULL
+                      REFERENCES edfi.School(DocumentId) ON DELETE CASCADE,
+
+    Ordinal int NOT NULL,
+
+    GradeLevelDescriptor_DescriptorId bigint NOT NULL
+                      REFERENCES edfi.GradeLevelDescriptor(DocumentId),
+
+    CONSTRAINT UX_SchoolGradeLevel UNIQUE (School_DocumentId, GradeLevelDescriptor_DescriptorId)
+);
+
+CREATE INDEX IF NOT EXISTS IX_SchoolGradeLevel_SchoolDocumentId
+    ON edfi.SchoolGradeLevel(School_DocumentId);
 
 CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
     DocumentId         bigint PRIMARY KEY
