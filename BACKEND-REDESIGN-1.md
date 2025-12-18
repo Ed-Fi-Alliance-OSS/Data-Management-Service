@@ -58,34 +58,9 @@ CREATE TABLE dms.Document (
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
     ResourceVersion varchar(64) NOT NULL,
+    Etag varchar(128) NOT NULL,
     CreatedAt timestamp without time zone NOT NULL DEFAULT now(),
     LastModifiedAt timestamp without time zone NOT NULL DEFAULT now(),
-    LastModifiedTraceId varchar(128) NOT NULL,
-    Etag varchar(128) NOT NULL,
-    -- Optional: store the exact API string; otherwise derive from LastModifiedAt in C#
-    LastModifiedDateUtc varchar(32) NULL,
-    CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
-);
-
-CREATE INDEX IX_Document_ProjectName_ResourceName_CreatedAt
-    ON dms.Document (ProjectName, ResourceName, CreatedAt, DocumentId);
-```
-
-**SQL Server**
-
-```sql
-CREATE TABLE dms.Document (
-    DocumentId bigint IDENTITY(1,1) NOT NULL CONSTRAINT PK_Document PRIMARY KEY,
-    DocumentUuid uniqueidentifier NOT NULL,
-    ProjectName nvarchar(256) NOT NULL,
-    ResourceName nvarchar(256) NOT NULL,
-    ResourceVersion nvarchar(64) NOT NULL,
-    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_CreatedAt DEFAULT sysutcdatetime(),
-    LastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_LastModifiedAt DEFAULT sysutcdatetime(),
-    LastModifiedTraceId nvarchar(128) NOT NULL,
-    Etag nvarchar(128) NOT NULL,
-    -- Optional: store the exact API string; otherwise derive from LastModifiedAt in C#
-    LastModifiedDateUtc nvarchar(32) NULL,
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
 );
 
@@ -110,24 +85,6 @@ CREATE TABLE dms.Identity (
     IdentityRole smallint NOT NULL,
     ProjectName varchar(256) NULL,
     ResourceName varchar(256) NULL,
-    CONSTRAINT PK_Identity PRIMARY KEY (ReferentialId),
-    CONSTRAINT FK_Identity_Document FOREIGN KEY (DocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT UX_Identity_DocumentId_IdentityRole UNIQUE (DocumentId, IdentityRole)
-);
-
-CREATE INDEX IX_Identity_DocumentId ON dms.Identity (DocumentId);
-```
-
-**SQL Server**
-
-```sql
-CREATE TABLE dms.Identity (
-    ReferentialId uniqueidentifier NOT NULL,
-    DocumentId bigint NOT NULL,
-    IdentityRole smallint NOT NULL,
-    ProjectName nvarchar(256) NULL,
-    ResourceName nvarchar(256) NULL,
     CONSTRAINT PK_Identity PRIMARY KEY (ReferentialId),
     CONSTRAINT FK_Identity_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
@@ -169,26 +126,6 @@ CREATE TABLE dms.Descriptor (
 CREATE INDEX IX_Descriptor_Uri_Discriminator ON dms.Descriptor (Uri, Discriminator);
 ```
 
-**SQL Server**
-
-```sql
-CREATE TABLE dms.Descriptor (
-    DocumentId bigint NOT NULL,
-    [Namespace] nvarchar(255) NOT NULL,
-    CodeValue nvarchar(50) NOT NULL,
-    ShortDescription nvarchar(75) NOT NULL,
-    [Description] nvarchar(1024) NULL,
-    Discriminator nvarchar(128) NOT NULL,
-    Uri nvarchar(306) NOT NULL,
-    CONSTRAINT PK_Descriptor PRIMARY KEY (DocumentId),
-    CONSTRAINT FK_Descriptor_Document FOREIGN KEY (DocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT UX_Descriptor_Uri_Discriminator UNIQUE (Uri, Discriminator)
-);
-
-CREATE INDEX IX_Descriptor_Uri_Discriminator ON dms.Descriptor (Uri, Discriminator);
-```
-
 Descriptor references can be enforced two ways:
 - **Preferred (type-safe)**: FK to the specific descriptor resource root table (e.g., `edfi.GradeLevelDescriptor(DocumentId)`), which is itself keyed to `dms.Descriptor(DocumentId)`.
 - **Simpler (descriptor-only)**: FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor”, but without enforcing the specific descriptor type at the DB level.
@@ -210,19 +147,6 @@ CREATE TABLE dms.SchemaInfo (
 );
 ```
 
-**SQL Server**
-
-```sql
-CREATE TABLE dms.SchemaInfo (
-    SchemaInfoId bigint IDENTITY(1,1) NOT NULL CONSTRAINT PK_SchemaInfo PRIMARY KEY,
-    ApiSchemaReloadId nvarchar(128) NOT NULL,
-    ApiSchemaVersion nvarchar(64) NULL,
-    ApiSchemaHash nvarchar(64) NULL,
-    AppliedAt datetime2(7) NOT NULL CONSTRAINT DF_SchemaInfo_AppliedAt DEFAULT sysutcdatetime(),
-    CONSTRAINT UX_SchemaInfo_ApiSchemaReloadId UNIQUE (ApiSchemaReloadId)
-);
-```
-
 #### 5) Optional: `dms.DocumentCache`
 
 Full JSON cache of the reconstituted document. **Not required for correctness**.
@@ -239,109 +163,11 @@ CREATE TABLE dms.DocumentCache (
 );
 ```
 
-**SQL Server**
-
-```sql
-CREATE TABLE dms.DocumentCache (
-    DocumentId bigint NOT NULL CONSTRAINT PK_DocumentCache PRIMARY KEY,
-    DocumentJson nvarchar(max) NOT NULL,
-    ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT sysutcdatetime(),
-    CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT CK_DocumentCache_IsJson CHECK (ISJSON(DocumentJson) = 1)
-);
-```
-
 Uses:
 - Faster GET/query responses (skip reconstitution)
 - Easier CDC / OpenSearch indexing / external integrations
 
 When disabled, DMS must reconstitute JSON from relational tables.
-
-#### 6) Optional/Recommended: `dms.QueryIndex`
-
-A cross-resource, typed index of `queryFieldMapping` values to keep query execution metadata-driven without generating complex per-resource join SQL.
-
-ValueType convention (example):
-- `1=string`, `2=number`, `3=date`, `4=date-time`, `5=boolean`
-
-**PostgreSQL**
-
-```sql
-CREATE TABLE dms.QueryIndex (
-    QueryIndexId bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    DocumentId bigint NOT NULL
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    FieldName varchar(128) NOT NULL,
-    ValueType smallint NOT NULL,
-    ValueString varchar(450) NULL,
-    ValueNumber numeric(38, 10) NULL,
-    ValueDate date NULL,
-    ValueDateTime timestamp without time zone NULL,
-    ValueBoolean boolean NULL,
-    CONSTRAINT CK_QueryIndex_ValueTypeMatchesColumn CHECK (
-        (ValueType = 1 AND ValueString IS NOT NULL) OR
-        (ValueType = 2 AND ValueNumber IS NOT NULL) OR
-        (ValueType = 3 AND ValueDate IS NOT NULL) OR
-        (ValueType = 4 AND ValueDateTime IS NOT NULL) OR
-        (ValueType = 5 AND ValueBoolean IS NOT NULL)
-    )
-);
-
-CREATE INDEX IX_QueryIndex_String ON dms.QueryIndex (FieldName, ValueString, DocumentId) WHERE ValueType = 1;
-CREATE INDEX IX_QueryIndex_Number ON dms.QueryIndex (FieldName, ValueNumber, DocumentId) WHERE ValueType = 2;
-CREATE INDEX IX_QueryIndex_Date ON dms.QueryIndex (FieldName, ValueDate, DocumentId) WHERE ValueType = 3;
-CREATE INDEX IX_QueryIndex_DateTime ON dms.QueryIndex (FieldName, ValueDateTime, DocumentId) WHERE ValueType = 4;
-CREATE INDEX IX_QueryIndex_Boolean ON dms.QueryIndex (FieldName, ValueBoolean, DocumentId) WHERE ValueType = 5;
-
-CREATE UNIQUE INDEX UX_QueryIndex_String ON dms.QueryIndex (DocumentId, FieldName, ValueString) WHERE ValueType = 1;
-CREATE UNIQUE INDEX UX_QueryIndex_Number ON dms.QueryIndex (DocumentId, FieldName, ValueNumber) WHERE ValueType = 2;
-CREATE UNIQUE INDEX UX_QueryIndex_Date ON dms.QueryIndex (DocumentId, FieldName, ValueDate) WHERE ValueType = 3;
-CREATE UNIQUE INDEX UX_QueryIndex_DateTime ON dms.QueryIndex (DocumentId, FieldName, ValueDateTime) WHERE ValueType = 4;
-CREATE UNIQUE INDEX UX_QueryIndex_Boolean ON dms.QueryIndex (DocumentId, FieldName, ValueBoolean) WHERE ValueType = 5;
-```
-
-**SQL Server**
-
-```sql
-CREATE TABLE dms.QueryIndex (
-    QueryIndexId bigint IDENTITY(1,1) NOT NULL CONSTRAINT PK_QueryIndex PRIMARY KEY,
-    DocumentId bigint NOT NULL,
-    FieldName varchar(128) NOT NULL,
-    ValueType smallint NOT NULL,
-    ValueString varchar(450) NULL,
-    ValueNumber decimal(38, 10) NULL,
-    ValueDate date NULL,
-    ValueDateTime datetime2(7) NULL,
-    ValueBoolean bit NULL,
-    CONSTRAINT FK_QueryIndex_Document FOREIGN KEY (DocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT CK_QueryIndex_ValueTypeMatchesColumn CHECK (
-        (ValueType = 1 AND ValueString IS NOT NULL) OR
-        (ValueType = 2 AND ValueNumber IS NOT NULL) OR
-        (ValueType = 3 AND ValueDate IS NOT NULL) OR
-        (ValueType = 4 AND ValueDateTime IS NOT NULL) OR
-        (ValueType = 5 AND ValueBoolean IS NOT NULL)
-    )
-);
-
-CREATE INDEX IX_QueryIndex_String ON dms.QueryIndex (FieldName, ValueString, DocumentId) WHERE ValueType = 1;
-CREATE INDEX IX_QueryIndex_Number ON dms.QueryIndex (FieldName, ValueNumber, DocumentId) WHERE ValueType = 2;
-CREATE INDEX IX_QueryIndex_Date ON dms.QueryIndex (FieldName, ValueDate, DocumentId) WHERE ValueType = 3;
-CREATE INDEX IX_QueryIndex_DateTime ON dms.QueryIndex (FieldName, ValueDateTime, DocumentId) WHERE ValueType = 4;
-CREATE INDEX IX_QueryIndex_Boolean ON dms.QueryIndex (FieldName, ValueBoolean, DocumentId) WHERE ValueType = 5;
-
-CREATE UNIQUE INDEX UX_QueryIndex_String ON dms.QueryIndex (DocumentId, FieldName, ValueString) WHERE ValueType = 1;
-CREATE UNIQUE INDEX UX_QueryIndex_Number ON dms.QueryIndex (DocumentId, FieldName, ValueNumber) WHERE ValueType = 2;
-CREATE UNIQUE INDEX UX_QueryIndex_Date ON dms.QueryIndex (DocumentId, FieldName, ValueDate) WHERE ValueType = 3;
-CREATE UNIQUE INDEX UX_QueryIndex_DateTime ON dms.QueryIndex (DocumentId, FieldName, ValueDateTime) WHERE ValueType = 4;
-CREATE UNIQUE INDEX UX_QueryIndex_Boolean ON dms.QueryIndex (DocumentId, FieldName, ValueBoolean) WHERE ValueType = 5;
-```
-
-This provides:
-- SQL Server parity (no reliance on Postgres GIN/jsonb operators)
-- Stable performance for common equality-based Ed-Fi queries
-- Minimal coupling (only to declared query fields, not full document shape)
 
 ### Resource tables (schema per project)
 
@@ -567,7 +393,6 @@ Intent:
    - `dms.Identity` upsert (primary + superclass aliases)
    - Resource root + child tables (replace strategy for collections)
    - `dms.Descriptor` upsert if the resource is a descriptor
-   - Optional: recompute/refresh `dms.QueryIndex`
    - Optional: refresh `dms.DocumentCache`
 
 ### Insert vs update detection
@@ -606,18 +431,44 @@ Reconstitution must preserve:
 
 ### Query
 
-For v1, prefer `dms.QueryIndex` for filtering:
+Filter directly on **resource root table columns** and (when needed) resolve reference/descriptor query terms to `DocumentId`s.
 
-1. Translate query parameters to typed filters using Core’s canonicalization rules.
-2. Find matching `DocumentId`s:
-   - Filter `dms.Document` by `ProjectName` + `ResourceName`
-   - Apply `QueryIndex` filters (intersection across fields)
-   - Order by `CreatedAt` (or `DocumentId`) for stable paging; apply OFFSET/LIMIT
-3. Fetch documents:
+1. Translate query parameters to typed filters using Core’s canonicalization rules (`ValidateQueryMiddleware` → `QueryElement[]`).
+2. Build a SQL predicate plan from `ApiSchema`:
+   - **Scalar query fields**: `queryFieldMapping` JSON path → derived root-table column → `r.Column = @value`
+   - **Descriptor query fields** (e.g., `schoolTypeDescriptor`): resolve `Uri` → `DescriptorId` via `dms.Descriptor(Uri, Discriminator)` → `r.DescriptorIdColumn = @descriptorId`
+   - **Document reference query fields** (e.g., `studentUniqueId` on `StudentSchoolAssociation`): resolve the referenced resource identity → referenced `DocumentId` (or set of `DocumentId`s) → `r.Student_DocumentId = @documentId` (or `IN (...)`)
+3. Execute a `DocumentId` page query:
+   - `SELECT r.DocumentId FROM {schema}.{Resource} r`
+   - Apply compiled predicates (intersection/AND across query terms; OR within a single query field if it maps to multiple JSON paths/columns)
+   - Apply stable ordering and paging (`ORDER BY r.DocumentId OFFSET @offset LIMIT @limit`)
+
+Example (PostgreSQL) - filter Students by `lastSurname`, return the page starting at offset 50:
+
+```sql
+SELECT r.DocumentId
+FROM edfi.Student AS r
+WHERE r.LastSurname = @LastSurname
+ORDER BY r.DocumentId
+OFFSET 50
+LIMIT 10;
+```
+
+Join to `dms.Document` only when you need cross-cutting metadata (e.g., `CreatedAt`/`LastModifiedAt` ordering, `DocumentUuid`/ETag selection) or filters that live in `dms.Document`.
+
+4. Fetch documents:
    - If cache enabled, return cached JSON for the page
    - Else, reconstitute for each `DocumentId` (batching table reads per resource)
 
-This keeps query logic engine-agnostic and avoids Postgres-only JSON indexes.
+Reference/descriptor resolution is metadata-driven (no per-resource code):
+- For **descriptor** query params: the descriptor URI string is directly resolvable via `dms.Descriptor`.
+- For **document reference** query params: use `documentPathsMapping.referenceJsonPaths` to group query terms by reference, and:
+  - If all referenced identity components are present, compute the referenced `ReferentialId` and resolve a single `DocumentId` via `dms.Identity`.
+  - If only a subset is present, resolve a *set* of referenced `DocumentId`s by querying the referenced root table’s identity columns, then filter the FK column with `IN (subquery)` (or an equivalent join).
+
+Indexing:
+- Create B-tree indexes on the resource root columns used by `queryFieldMapping` (scalar columns and FK columns).
+- Rely on existing unique/identity indexes on referenced resource natural-key columns (and on `dms.Identity.ReferentialId`) to make reference resolution fast.
 
 ## Delete Path (DELETE by id)
 
@@ -674,7 +525,7 @@ Migration scope:
 
 1. **Foundational tables**: `dms.Document`, `dms.Identity`, `dms.Descriptor`, `dms.SchemaInfo`.
 2. **One resource end-to-end**: implement relational mapping + CRUD + reconstitution for a small resource (and descriptors).
-3. **QueryIndex**: implement `dms.QueryIndex` population and query execution for that resource.
+3. **Column-based query**: build SQL query predicates from `ApiSchema` and execute paging queries directly on the resource root table (with reference/descriptor resolution).
 4. **Generalize mapping**: make mapping derivation generic from ApiSchema + conventions; add minimal `relational` overrides.
 5. **Migration tool**: derive/apply DDL and record `SchemaInfo`.
 6. **Optional cache + integration**: `dms.DocumentCache` and any required event/materialization paths.
