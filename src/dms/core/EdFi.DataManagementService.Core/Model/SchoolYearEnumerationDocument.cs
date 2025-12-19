@@ -26,7 +26,8 @@ internal record SchoolYearEnumerationDocument(JsonNode _document)
 
         Debug.Assert(
             schoolYearNode != null,
-            "Failed getting schoolYear field, JSON schema validation not in pipeline?"
+            "Failed getting schoolYear field, JSON schema validation not in pipeline?",
+            ""
         );
 
         DocumentIdentityElement[] schoolYearEnumerationElement =

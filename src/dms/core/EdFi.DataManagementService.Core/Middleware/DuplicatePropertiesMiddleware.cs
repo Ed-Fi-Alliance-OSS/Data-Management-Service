@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
+using System.Text;
+using System.Text.Json;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using Microsoft.Extensions.Logging;
@@ -12,14 +12,13 @@ using static EdFi.DataManagementService.Core.Response.FailureResponse;
 
 namespace EdFi.DataManagementService.Core.Middleware;
 
-/// Parse did not find errors in repeated values, it is identified until an attempt is made to use the JsonNode
-/// Please see https://github.com/dotnet/runtime/issues/70604 for information on the JsonNode bug this code is working-around.
+/// <summary>
+/// Middleware that detects duplicate property names in JSON request bodies.
+/// This uses Utf8JsonReader to scan the raw JSON and detect duplicates with their exact paths,
+/// which is necessary because System.Text.Json's JsonNode silently overwrites duplicate properties.
+/// </summary>
 internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
 {
-    // This key should never exist in the document
-    private const string TestForDuplicateObjectKeyWorkaround = "x";
-    private const string Pattern = @"Key: (.*?) \((.*?)\)\.(.*?)$";
-
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
@@ -27,51 +26,20 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        if (requestInfo.ParsedBody != null)
+        if (!string.IsNullOrEmpty(requestInfo.FrontendRequest.Body))
         {
-            try
+            string? duplicatePath = FindDuplicatePropertyPath(requestInfo.FrontendRequest.Body);
+
+            if (duplicatePath != null)
             {
-                if (requestInfo.ParsedBody is JsonObject jsonObject)
-                {
-                    // This validation will identify if the problem is at the first level. It does not identify if it is at a second or third level.
-                    _ = requestInfo.ParsedBody[TestForDuplicateObjectKeyWorkaround];
-
-                    // If you are in this line there are no First level exceptions, recursively check the rest of the body to find the first exception
-                    CheckForDuplicateProperties(jsonObject, "$");
-                }
-            }
-            catch (ArgumentException ae)
-            {
-                // This match works when the error is after the first level of node
-                //  e.g. An item with the same key has already been added. Key: classPeriodName (Parameter 'propertyName').$.classPeriods[0].classPeriodReference
-                Match match = Regex.Match(ae.Message, Pattern);
-
-                string propertyName;
-                if (match.Success)
-                {
-                    string keyName = match.Groups[1].Value;
-                    string errorPath = match.Groups[3].Value;
-                    propertyName = $"{errorPath}.{keyName}";
-                }
-                else
-                {
-                    var propertyNameMatch = Regex.Match(
-                        ae.Message,
-                        @"Key: (\w+) \(Parameter 'propertyName'\)"
-                    );
-                    propertyName = propertyNameMatch.Success
-                        ? "$." + propertyNameMatch.Groups[1].Value
-                        : "unknown";
-                }
-
                 var validationErrors = new Dictionary<string, string[]>
                 {
-                    { $"{propertyName}", new[] { "An item with the same key has already been added." } },
+                    { duplicatePath, ["An item with the same key has already been added."] },
                 };
 
                 logger.LogDebug(
-                    ae,
-                    "Duplicate key found - {TraceId}",
+                    "Duplicate key found at {DuplicatePath} - {TraceId}",
+                    duplicatePath,
                     requestInfo.FrontendRequest.TraceId.Value
                 );
 
@@ -87,57 +55,148 @@ internal class DuplicatePropertiesMiddleware(ILogger logger) : IPipelineStep
                 );
                 return;
             }
-            catch (Exception e)
-            {
-                logger.LogDebug(
-                    e,
-                    "Unable to evaluate the request body - {TraceId}",
-                    requestInfo.FrontendRequest.TraceId.Value
-                );
-                return;
-            }
         }
 
         await next();
     }
 
-    private void CheckForDuplicateProperties(JsonNode node, string path)
+    /// <summary>
+    /// Scans the raw JSON string using Utf8JsonReader to find duplicate property names.
+    /// Returns the JSON path of the first duplicate found, or null if no duplicates exist.
+    /// </summary>
+    private static string? FindDuplicatePropertyPath(string json)
     {
-        if (node is JsonObject jsonObject)
+        var bytes = Encoding.UTF8.GetBytes(json);
+        var reader = new Utf8JsonReader(
+            bytes,
+            new JsonReaderOptions { CommentHandling = JsonCommentHandling.Skip }
+        );
+
+        // Stack to track the path to current location in the JSON
+        var pathStack = new Stack<PathSegment>();
+        // Stack to track property names seen at each object nesting level (for duplicate detection)
+        var propertyNamesStack = new Stack<HashSet<string>>();
+
+        while (reader.Read())
         {
-            foreach (var property in jsonObject)
+            switch (reader.TokenType)
             {
-                string propertyPath = $"{path}.{property.Key}";
-                try
-                {
-                    if (property.Value is JsonObject nestedObject)
+                case JsonTokenType.StartObject:
+                    propertyNamesStack.Push([]);
+                    break;
+
+                case JsonTokenType.EndObject:
+                    if (propertyNamesStack.Count > 0)
                     {
-                        CheckForDuplicateProperties(nestedObject, propertyPath);
+                        propertyNamesStack.Pop();
                     }
-                    else if (property.Value is JsonArray jsonArray)
+                    // Pop the property segment that led to this object (if any)
+                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
                     {
-                        for (int i = 0; i < jsonArray.Count; i++)
+                        pathStack.Pop();
+                    }
+                    break;
+
+                case JsonTokenType.StartArray:
+                    // Push an array segment to track indices
+                    pathStack.Push(new PathSegment(IsArray: true, PropertyName: null, ArrayIndex: 0));
+                    break;
+
+                case JsonTokenType.EndArray:
+                    // Pop the array segment
+                    if (pathStack.Count > 0 && pathStack.Peek().IsArray)
+                    {
+                        pathStack.Pop();
+                    }
+                    // Pop the property that led to this array (if any)
+                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
+                    {
+                        pathStack.Pop();
+                    }
+                    break;
+
+                case JsonTokenType.PropertyName:
+                    string propertyName = reader.GetString()!;
+
+                    // Check for duplicate in current object BEFORE adding to path
+                    if (propertyNamesStack.Count > 0)
+                    {
+                        var currentProperties = propertyNamesStack.Peek();
+                        if (!currentProperties.Add(propertyName))
                         {
-                            var itemPath = $"{propertyPath}[{i}]";
-                            var item = jsonArray[i];
-                            if (item is JsonObject)
-                            {
-                                CheckForDuplicateProperties(item, itemPath);
-                            }
+                            // Duplicate found! Build the path (don't include the duplicate itself in the stack)
+                            return BuildJsonPath(pathStack, propertyName);
                         }
                     }
-                }
-                catch (ArgumentException ex)
-                {
-                    string detailedPath = string.Empty;
-                    // To avoid when it enters more than one time and the path is modified
-                    if (!ex.Message.Contains(propertyPath))
+
+                    // Push this property onto the path stack (will be popped when its value ends)
+                    pathStack.Push(
+                        new PathSegment(IsArray: false, PropertyName: propertyName, ArrayIndex: 0)
+                    );
+                    break;
+
+                case JsonTokenType.String:
+                case JsonTokenType.Number:
+                case JsonTokenType.True:
+                case JsonTokenType.False:
+                case JsonTokenType.Null:
+                    // Primitive value encountered - pop the property that led here
+                    if (pathStack.Count > 0 && !pathStack.Peek().IsArray)
                     {
-                        detailedPath = "." + propertyPath;
+                        pathStack.Pop();
                     }
-                    throw new ArgumentException(ex.Message + detailedPath);
-                }
+                    // If we're in an array, increment the index for the next element
+                    if (pathStack.Count > 0 && pathStack.Peek().IsArray)
+                    {
+                        var arraySegment = pathStack.Pop();
+                        pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
+                    }
+                    break;
+            }
+
+            // After completing an object or array that was an array element, increment the array index
+            if (
+                (reader.TokenType == JsonTokenType.EndObject || reader.TokenType == JsonTokenType.EndArray)
+                && pathStack.Count > 0
+                && pathStack.Peek().IsArray
+            )
+            {
+                var arraySegment = pathStack.Pop();
+                pathStack.Push(arraySegment with { ArrayIndex = arraySegment.ArrayIndex + 1 });
             }
         }
+
+        return null;
     }
+
+    /// <summary>
+    /// Builds a JSON path string from the path stack and the duplicate property name.
+    /// </summary>
+    private static string BuildJsonPath(Stack<PathSegment> pathStack, string duplicatePropertyName)
+    {
+        var segments = pathStack.ToArray();
+        Array.Reverse(segments);
+
+        var pathBuilder = new StringBuilder("$");
+
+        foreach (var segment in segments)
+        {
+            if (segment.IsArray)
+            {
+                pathBuilder.Append($"[{segment.ArrayIndex}]");
+            }
+            else if (segment.PropertyName != null)
+            {
+                pathBuilder.Append($".{segment.PropertyName}");
+            }
+        }
+
+        pathBuilder.Append($".{duplicatePropertyName}");
+        return pathBuilder.ToString();
+    }
+
+    /// <summary>
+    /// Represents a segment in the JSON path being tracked.
+    /// </summary>
+    private sealed record PathSegment(bool IsArray, string? PropertyName, int ArrayIndex);
 }

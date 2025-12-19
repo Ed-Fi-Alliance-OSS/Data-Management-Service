@@ -34,7 +34,7 @@ internal class UpdateByIdHandler(
     public async Task Execute(RequestInfo requestInfo, Func<Task> next)
     {
         _logger.LogDebug("Entering UpdateByIdHandler - {TraceId}", requestInfo.FrontendRequest.TraceId.Value);
-        Trace.Assert(requestInfo.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT");
+        Trace.Assert(requestInfo.ParsedBody != null, "Unexpected null Body on Frontend Request from PUT", "");
 
         // Resolve repository from service provider within request scope
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();

@@ -70,7 +70,7 @@ namespace EdFi.DataManagementService.Core.Middleware
 
                 JsonNode? body = JsonNode.Parse(requestInfo.FrontendRequest.Body);
 
-                Trace.Assert(body != null, "Unable to parse JSON");
+                Trace.Assert(body != null, "Unable to parse JSON", "");
 
                 requestInfo.ParsedBody = body;
             }

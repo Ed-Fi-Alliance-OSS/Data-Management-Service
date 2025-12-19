@@ -33,7 +33,8 @@ internal class DecimalValidator : IDecimalValidator
 
             Trace.Assert(
                 result.Matches != null,
-                "Evaluation of decimalValidationInfos.Path.Matches resulted in unexpected null"
+                "Evaluation of decimalValidationInfos.Path.Matches resulted in unexpected null",
+                ""
             );
 
             foreach (var match in result.Matches)

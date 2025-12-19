@@ -64,7 +64,8 @@ internal static class ReferenceExtractor
             // Number of document values from resolved JsonPaths should all be the same, otherwise something is very wrong
             Trace.Assert(
                 Array.TrueForAll(intermediateReferenceElements, x => x.ValueSlice.Length == valueSliceLength),
-                "Length of document value slices are not equal"
+                "Length of document value slices are not equal",
+                ""
             );
 
             // If a JsonPath selection had no results, we can assume an optional reference wasn't there

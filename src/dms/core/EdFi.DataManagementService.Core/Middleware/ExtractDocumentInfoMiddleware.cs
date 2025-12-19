@@ -27,7 +27,7 @@ internal class ExtractDocumentInfoMiddleware(ILogger _logger) : IPipelineStep
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        Trace.Assert(requestInfo.ParsedBody != null, "Body was null, pipeline config invalid");
+        Trace.Assert(requestInfo.ParsedBody != null, "Body was null, pipeline config invalid", "");
 
         var (documentIdentity, superclassIdentity) = requestInfo.ResourceSchema.ExtractIdentities(
             requestInfo.ParsedBody,

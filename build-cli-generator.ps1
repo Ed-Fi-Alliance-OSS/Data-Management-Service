@@ -184,7 +184,7 @@ function RunTests {
         $Filter
     )
 
-    $testAssemblyPath = "$solutionRoot/$Filter/bin/$Configuration/net8.0/"
+    $testAssemblyPath = "$solutionRoot/$Filter/bin/$Configuration/net10.0/"
     $testAssemblies = Get-ChildItem -Path $testAssemblyPath -Filter "$Filter.dll" -ErrorAction SilentlyContinue |
     Sort-Object -Property { $_.Name.Length }
 
@@ -263,7 +263,7 @@ function RunSchemaGenerator {
         $Arguments
     )
 
-    $exePath = "$cliProjectRoot/bin/$Configuration/net8.0/$projectName.exe"
+    $exePath = "$cliProjectRoot/bin/$Configuration/net10.0/$projectName.exe"
 
     if (!(Test-Path $exePath)) {
         Write-Warning "Schema Generator CLI executable not found at $exePath"

@@ -8,7 +8,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
     /// <summary>
     /// Provides means of storing string variables in a Test Scenario.
     /// </summary>
-    class ScenarioVariables
+    internal class ScenarioVariables
     {
         private readonly Dictionary<string, string> _variableByName = [];
 

@@ -7,7 +7,6 @@ using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -28,13 +27,21 @@ public class TokenEndpointModule : IEndpointModule
 
     internal static async Task HandleFormData(
         HttpContext httpContext,
-        [FromForm] TokenRequest tokenRequest,
         IOptions<AppSettings> appSettings,
         IOAuthManager oAuthManager,
         ILogger<TokenEndpointModule> logger,
         IHttpClientFactory httpClientFactory
     )
     {
+        // Manually read form data to handle empty form bodies in .NET 10
+        // (Minimal API [FromForm] binding returns 400 with empty body before handler is invoked)
+        TokenRequest tokenRequest = new();
+        if (httpContext.Request.HasFormContentType)
+        {
+            var form = await httpContext.Request.ReadFormAsync();
+            tokenRequest = new TokenRequest { grant_type = form["grant_type"].ToString() };
+        }
+
         await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
     }
 
