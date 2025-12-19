@@ -14,12 +14,6 @@ using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// To be deleted, just a workaround for running locally
-builder.Host.UseDefaultServiceProvider(options =>
-{
-    options.ValidateScopes = false;
-});
-
 builder.AddServices();
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();

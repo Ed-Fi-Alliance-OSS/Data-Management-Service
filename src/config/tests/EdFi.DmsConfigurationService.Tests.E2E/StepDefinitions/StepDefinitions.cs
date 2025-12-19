@@ -666,7 +666,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         foreach (var key in _ids.Keys)
         {
             // Replace both formats {resourceId} and _resourceId
-            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_key", _ids[key]);
+            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_{key}", _ids[key]);
         }
 
         str = str.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString())
@@ -690,7 +690,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         foreach (var key in _ids.Keys)
         {
             // Replace both formats {resourceId} and _resourceId
-            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_key", _ids[key]);
+            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_{key}", _ids[key]);
         }
 
         str = str.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString())
