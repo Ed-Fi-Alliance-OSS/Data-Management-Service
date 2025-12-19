@@ -72,8 +72,11 @@ public class TokenInfoProvider(
                 educationOrganizationIds
             );
 
-            // Get authorized resources and services from claims hierarchy (single call)
-            var (resources, services) = await GetAuthorizedResourcesAndServicesAsync(claimSetName);
+            // Get authorized resources from claims hierarchy
+            var resources = await GetAuthorizedResourcesAsync(claimSetName);
+
+            // Get authorized services from claims hierarchy
+            var services = await GetAuthorizedServicesAsync(claimSetName);
 
             return new TokenInfoResponse
             {
@@ -117,31 +120,32 @@ public class TokenInfoProvider(
 
     private static IEnumerable<long> GetEducationOrganizationIds(List<Claim> claims)
     {
-        var values = GetClaimValues(claims, "educationOrganizationIds");
-        return values
+        var value = GetClaimValue(claims, "educationOrganizationIds");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Array.Empty<long>();
+        }
+
+        return value
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(id => long.TryParse(id, out var result) ? result : 0)
             .Where(id => id > 0);
     }
 
-    /// <summary>
-    /// Retrieves both authorized resources and services in a single call to avoid duplicate
-    /// database queries and processing for the claims hierarchy and authorization metadata.
-    /// </summary>
-    private async Task<(IReadOnlyList<TokenInfoResource> Resources, IReadOnlyList<TokenInfoService> Services)>
-        GetAuthorizedResourcesAndServicesAsync(string claimSetName)
+    private async Task<IReadOnlyList<TokenInfoResource>> GetAuthorizedResourcesAsync(string claimSetName)
     {
         try
         {
-            // Get claims hierarchy once
+            // Get claims hierarchy
             var claimsHierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
 
             if (claimsHierarchyResult is not ClaimsHierarchyGetResult.Success success)
             {
                 logger.LogWarning("Claims hierarchy not found");
-                return (Array.Empty<TokenInfoResource>(), Array.Empty<TokenInfoService>());
+                return Array.Empty<TokenInfoResource>();
             }
 
-            // Get authorization metadata once
+            // Get authorization metadata for the claim set
             var authorizationMetadata = await authorizationMetadataResponseFactory.Create(
                 claimSetName,
                 success.Claims
@@ -150,14 +154,13 @@ public class TokenInfoProvider(
             if (!authorizationMetadata.ClaimSets.Any())
             {
                 logger.LogWarning("No claim sets found for: {ClaimSetName}", claimSetName);
-                return (Array.Empty<TokenInfoResource>(), Array.Empty<TokenInfoService>());
+                return Array.Empty<TokenInfoResource>();
             }
 
             var claimSet = authorizationMetadata.ClaimSets.First();
             var resources = new List<TokenInfoResource>();
-            var services = new List<TokenInfoService>();
 
-            // Build resources and services from claims and authorizations
+            // Build resources from claims and authorizations
             foreach (var claim in claimSet.Claims)
             {
                 var authorization = claimSet.Authorizations.FirstOrDefault(a => a.Id == claim.AuthorizationId);
@@ -166,49 +169,109 @@ public class TokenInfoProvider(
                     continue;
                 }
 
+                // Convert claim name to resource path format
+                // Example: "http://ed-fi.org/ods/identity/claims/ed-fi/students" -> "/ed-fi/students"
+                var resourcePath = ConvertClaimNameToResourcePath(claim.Name);
+
                 var operations = authorization
                     .Actions.Select(a => a.Name)
                     .ToList();
 
-                if (!operations.Any())
+                if (operations.Any())
+                {
+                    resources.Add(
+                        new TokenInfoResource { Resource = resourcePath, Operations = operations }
+                    );
+                }
+            }
+
+            return resources;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error retrieving authorized resources for claim set: {ClaimSetName}", claimSetName);
+            return Array.Empty<TokenInfoResource>();
+        }
+    }
+
+    private async Task<IReadOnlyList<TokenInfoService>> GetAuthorizedServicesAsync(string claimSetName)
+    {
+        try
+        {
+            // Get claims hierarchy
+            var claimsHierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
+
+            if (claimsHierarchyResult is not ClaimsHierarchyGetResult.Success success)
+            {
+                logger.LogWarning("Claims hierarchy not found for services");
+                return Array.Empty<TokenInfoService>();
+            }
+
+            // Get authorization metadata for the claim set
+            var authorizationMetadata = await authorizationMetadataResponseFactory.Create(
+                claimSetName,
+                success.Claims
+            );
+
+            if (!authorizationMetadata.ClaimSets.Any())
+            {
+                logger.LogWarning("No claim sets found for services: {ClaimSetName}", claimSetName);
+                return Array.Empty<TokenInfoService>();
+            }
+
+            var claimSet = authorizationMetadata.ClaimSets.First();
+            var services = new List<TokenInfoService>();
+
+            // Filter claims for services (following Ed-Fi ODS pattern)
+            foreach (var claim in claimSet.Claims)
+            {
+                // Only process service claims
+                if (!claim.Name.StartsWith(ClaimConstants.ServicesPrefix, StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
                 }
 
-                // Check if this is a service claim
-                if (claim.Name.StartsWith(ClaimConstants.ServicesPrefix, StringComparison.OrdinalIgnoreCase))
+                var authorization = claimSet.Authorizations.FirstOrDefault(a => a.Id == claim.AuthorizationId);
+                if (authorization == null)
                 {
-                    var serviceName = claim.Name[ClaimConstants.ServicesPrefix.Length..];
-                    services.Add(new TokenInfoService { Service = serviceName, Operations = operations });
+                    continue;
                 }
-                else
+
+                // Extract service name by removing the prefix
+                var serviceName = claim.Name.Substring(ClaimConstants.ServicesPrefix.Length);
+
+                var operations = authorization
+                    .Actions.Select(a => a.Name)
+                    .ToList();
+
+                if (operations.Any())
                 {
-                    // It's a resource claim
-                    var resourcePath = ConvertClaimNameToResourcePath(claim.Name);
-                    resources.Add(new TokenInfoResource { Resource = resourcePath, Operations = operations });
+                    services.Add(
+                        new TokenInfoService { Service = serviceName, Operations = operations }
+                    );
                 }
             }
 
-            return (resources, services);
+            return services;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error retrieving authorized resources and services for claim set: {ClaimSetName}", claimSetName);
-            return (Array.Empty<TokenInfoResource>(), Array.Empty<TokenInfoService>());
+            logger.LogError(ex, "Error retrieving authorized services for claim set: {ClaimSetName}", claimSetName);
+            return Array.Empty<TokenInfoService>();
         }
     }
 
     private static string ConvertClaimNameToResourcePath(string claimName)
     {
         // Extract resource name from claim URI
-        // Example: "http://ed-fi.org/identity/claims/ed-fi/students" -> "/ed-fi/students"
-        // Example: "http://ed-fi.org/identity/claims/ed-fi/academicWeeks" -> "/ed-fi/academicWeeks"
-        // Example: "http://ed-fi.org/identity/claims/domains/edFiDescriptors" -> "/ed-fi/descriptors"
+        // Example: "http://ed-fi.org/ods/identity/claims/ed-fi/students" -> "/ed-fi/students"
+        // Example: "http://ed-fi.org/identity/claims/ed-fi/academicWeek" -> "/ed-fi/academicWeek"
+        // Example: "http://ed-fi.org/ods/identity/claims/domains/edFiDescriptors" -> "/ed-fi/descriptors"
 
         // Try the standard ODS prefix first
         if (claimName.StartsWith(ClaimConstants.OdsIdentityClaimsPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            var path = claimName[ClaimConstants.OdsIdentityClaimsPrefix.Length..];
+            var path = claimName.Substring(ClaimConstants.OdsIdentityClaimsPrefix.Length);
 
             // Handle special cases for domains
             if (path.StartsWith(ClaimConstants.DomainsPrefix, StringComparison.OrdinalIgnoreCase))
@@ -222,93 +285,17 @@ public class TokenInfoProvider(
                 }
             }
 
-            return "/" + PluralizePath(path);
+            return "/" + path;
         }
 
         // Try the alternate identity claims prefix (without "ods")
         if (claimName.StartsWith(ClaimConstants.IdentityClaimsPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            var path = claimName[ClaimConstants.IdentityClaimsPrefix.Length..];
-            return "/" + PluralizePath(path);
+            var path = claimName.Substring(ClaimConstants.IdentityClaimsPrefix.Length);
+            return "/" + path;
         }
 
         // Fallback: return claim name as-is
         return claimName;
-    }
-
-    /// <summary>
-    /// Pluralizes and converts the last segment of a resource path to camelCase
-    /// Example: "ed-fi/Student" -> "ed-fi/students"
-    /// Example: "ed-fi/AcademicWeek" -> "ed-fi/academicWeeks"
-    /// Example: "ed-fi/StudentSchoolAssociation" -> "ed-fi/studentSchoolAssociations"
-    /// Uses simple pluralization rules matching ClaimsFragmentComposer.PluralToSingular
-    /// and camelCase convention per Ed-Fi OpenAPI/REST standards
-    /// </summary>
-    private static string PluralizePath(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return path;
-        }
-
-        var lastSlashIndex = path.LastIndexOf('/');
-        if (lastSlashIndex == -1)
-        {
-            // No slash, pluralize and camelCase the whole path
-            return ToCamelCasePlural(path);
-        }
-
-        // Split into prefix and last segment
-        var prefix = path[..(lastSlashIndex + 1)];
-        var lastSegment = path[(lastSlashIndex + 1)..];
-
-        return prefix + ToCamelCasePlural(lastSegment);
-    }
-
-    /// <summary>
-    /// Converts a resource name to camelCase and pluralizes it
-    /// Example: "Student" -> "students"
-    /// Example: "AcademicWeek" -> "academicWeeks"
-    /// Example: "Category" -> "categories"
-    /// Example: "students" -> "students" (already plural/camelCase, no change)
-    /// Follows Ed-Fi REST API conventions: lowercase first letter + pluralization
-    /// </summary>
-    private static string ToCamelCasePlural(string word)
-    {
-        if (string.IsNullOrWhiteSpace(word))
-        {
-            return word;
-        }
-
-        // First, convert to camelCase (lowercase first letter, keep rest as-is)
-        string camelCase = word.Length switch
-        {
-            0 => word,
-            1 => word.ToLower(),
-            _ => char.ToLower(word[0]) + word[1..],
-        };
-
-        // If already ends with 's', assume it's already plural (e.g., "students")
-        // This handles claims that already have plural form in the claim URI
-        if (camelCase.EndsWith("s", StringComparison.OrdinalIgnoreCase))
-        {
-            return camelCase;
-        }
-
-        // Then pluralize
-        // Rule 1: Words ending in 'y' (not preceded by vowel) -> 'ies'
-        // Example: "category" -> "categories"
-        if (camelCase.EndsWith("y", StringComparison.OrdinalIgnoreCase) && camelCase.Length > 1)
-        {
-            char precedingChar = camelCase[^2];
-            if (!"aeiouAEIOU".Contains(precedingChar))
-            {
-                return camelCase[..^1] + "ies";
-            }
-        }
-
-        // Rule 2: All other words -> append 's'
-        // Example: "student" -> "students", "academicWeek" -> "academicWeeks"
-        return camelCase + "s";
     }
 }
