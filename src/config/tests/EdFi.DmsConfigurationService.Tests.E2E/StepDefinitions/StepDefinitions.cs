@@ -469,6 +469,10 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         };
 
         string replacedBody = await ReplaceIdsAsync(body);
+
+        // Handle {ignore} pattern - replace with actual value from response
+        var ignoreRegex = new Regex(@"\{ignore\}");
+
         foreach (var replacement in replacements)
         {
             if (replacedBody.TrimStart().StartsWith('['))
@@ -520,10 +524,79 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                     }
                 );
             }
-            replacedBody = replacedBody.Replace("{BASE_URL}/", playwrightContext.ApiUrl);
         }
 
+        // Replace {ignore} with actual values from response after processing other replacements
+        replacedBody = ReplaceIgnorePlaceholders(replacedBody, responseJson);
+        replacedBody = replacedBody.Replace("{BASE_URL}/", playwrightContext.ApiUrl);
+
         return replacedBody;
+    }
+
+    /// <summary>
+    /// Replaces {ignore} placeholders with actual values from the response JSON.
+    /// This allows test scenarios to ignore certain dynamic values while still validating the structure.
+    /// </summary>
+    private string ReplaceIgnorePlaceholders(string body, JsonNode responseJson)
+    {
+        try
+        {
+            var expectedJson = JsonNode.Parse(body);
+            if (expectedJson == null)
+            {
+                return body;
+            }
+
+            ReplaceIgnoreRecursive(expectedJson, responseJson);
+
+            return expectedJson.ToJsonString();
+        }
+        catch
+        {
+            // If parsing fails, return original body
+            return body;
+        }
+    }
+
+    /// <summary>
+    /// Recursively replaces {ignore} placeholders with actual values from response JSON
+    /// </summary>
+    private void ReplaceIgnoreRecursive(JsonNode? expected, JsonNode? actual)
+    {
+        if (expected == null || actual == null)
+        {
+            return;
+        }
+
+        if (expected is JsonObject expectedObj && actual is JsonObject actualObj)
+        {
+            foreach (var prop in expectedObj.ToList())
+            {
+                if (prop.Value?.GetValueKind() == System.Text.Json.JsonValueKind.String)
+                {
+                    var stringValue = prop.Value.GetValue<string>();
+                    if (
+                        stringValue == "{ignore}"
+                        && actualObj.TryGetPropertyValue(prop.Key, out var actualValue)
+                    )
+                    {
+                        // Replace with actual value
+                        expectedObj[prop.Key] = JsonNode.Parse(actualValue!.ToJsonString());
+                    }
+                }
+                else if (actualObj.TryGetPropertyValue(prop.Key, out var actualValue))
+                {
+                    ReplaceIgnoreRecursive(prop.Value, actualValue);
+                }
+            }
+        }
+        else if (expected is JsonArray expectedArr && actual is JsonArray actualArr)
+        {
+            for (int i = 0; i < Math.Min(expectedArr.Count, actualArr.Count); i++)
+            {
+                ReplaceIgnoreRecursive(expectedArr[i], actualArr[i]);
+            }
+        }
     }
 
     /// <summary>
@@ -593,7 +666,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         foreach (var key in _ids.Keys)
         {
             // Replace both formats {resourceId} and _resourceId
-            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_{key}", _ids[key]);
+            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_key", _ids[key]);
         }
 
         str = str.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString())
@@ -617,7 +690,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         foreach (var key in _ids.Keys)
         {
             // Replace both formats {resourceId} and _resourceId
-            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_{key}", _ids[key]);
+            str = str.Replace($"{{{key}}}", _ids[key]).Replace($"_key", _ids[key]);
         }
 
         str = str.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString())

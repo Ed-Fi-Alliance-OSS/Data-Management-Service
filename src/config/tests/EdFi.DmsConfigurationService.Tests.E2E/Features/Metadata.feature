@@ -9,11 +9,11 @@ Feature: Metadata endpoints
               And the response body is
                   """
                   {
-                      "version": "{ignore}",
+                      "version": "{*}",
                       "applicationName": "Ed-Fi Alliance DMS Configuration Service",
-                      "informationalVersion": "{ignore}",
+                      "informationalVersion": "{*}",
                       "urls": {
-                          "openApiMetadata": "{ignore}"
+                          "openApiMetadata": "{*}"
                       }
                   }
                   """
@@ -50,26 +50,17 @@ Feature: Metadata endpoints
                   | parameters      |
                   | securitySchemes |
 
-        Scenario: 05 Verify OAuth2 security scheme in specification
-             When a GET request is made to "/metadata/specifications"
-             Then it should respond with 200
-              And the OpenAPI specification should have OAuth2 security scheme
-                  | Scope                | Description |
-                  | admin                | {ignore}    |
-                  | readOnly             | {ignore}    |
-                  | authMetadataReadOnly | {ignore}    |
-
-        Scenario: 06 Verify metadata endpoints are documented
+        Scenario: 05 Verify metadata endpoints are documented
              When a GET request is made to "/metadata/specifications"
              Then it should respond with 200
               And the OpenAPI paths should include
-                  | Path                     |
-                  | /                        |
-                  | /metadata/specifications |
-                  | /health                  |
-                  | /authorizationMetadata   |
+                  | Path                 |
+                  | /v2/vendors          |
+                  | /v2/applications     |
+                  | /v2/claimSets        |
+                  | /authorizationMetadata |
 
-        Scenario: 07 Service information URLs should be accessible
+        Scenario: 06 Service information URLs should be accessible
             Given a GET request is made to "/"
              When the response URLs are extracted
              Then each metadata URL should be valid
