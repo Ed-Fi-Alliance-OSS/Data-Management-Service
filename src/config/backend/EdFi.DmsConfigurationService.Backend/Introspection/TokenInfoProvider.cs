@@ -117,14 +117,8 @@ public class TokenInfoProvider(
 
     private static IEnumerable<long> GetEducationOrganizationIds(List<Claim> claims)
     {
-        var value = GetClaimValue(claims, "educationOrganizationIds");
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return Array.Empty<long>();
-        }
-
-        return value
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        var values = GetClaimValues(claims, "educationOrganizationIds");
+        return values
             .Select(id => long.TryParse(id, out var result) ? result : 0)
             .Where(id => id > 0);
     }
@@ -207,9 +201,9 @@ public class TokenInfoProvider(
     private static string ConvertClaimNameToResourcePath(string claimName)
     {
         // Extract resource name from claim URI
-        // Example: "http://ed-fi.org/ods/identity/claims/ed-fi/students" -> "/ed-fi/students"
-        // Example: "http://ed-fi.org/identity/claims/ed-fi/academicWeek" -> "/ed-fi/academicWeek"
-        // Example: "http://ed-fi.org/ods/identity/claims/domains/edFiDescriptors" -> "/ed-fi/descriptors"
+        // Example: "http://ed-fi.org/identity/claims/ed-fi/students" -> "/ed-fi/students"
+        // Example: "http://ed-fi.org/identity/claims/ed-fi/academicWeeks" -> "/ed-fi/academicWeeks"
+        // Example: "http://ed-fi.org/identity/claims/domains/edFiDescriptors" -> "/ed-fi/descriptors"
 
         // Try the standard ODS prefix first
         if (claimName.StartsWith(ClaimConstants.OdsIdentityClaimsPrefix, StringComparison.OrdinalIgnoreCase))
@@ -228,17 +222,93 @@ public class TokenInfoProvider(
                 }
             }
 
-            return "/" + path;
+            return "/" + PluralizePath(path);
         }
 
         // Try the alternate identity claims prefix (without "ods")
         if (claimName.StartsWith(ClaimConstants.IdentityClaimsPrefix, StringComparison.OrdinalIgnoreCase))
         {
             var path = claimName[ClaimConstants.IdentityClaimsPrefix.Length..];
-            return "/" + path;
+            return "/" + PluralizePath(path);
         }
 
         // Fallback: return claim name as-is
         return claimName;
+    }
+
+    /// <summary>
+    /// Pluralizes and converts the last segment of a resource path to camelCase
+    /// Example: "ed-fi/Student" -> "ed-fi/students"
+    /// Example: "ed-fi/AcademicWeek" -> "ed-fi/academicWeeks"
+    /// Example: "ed-fi/StudentSchoolAssociation" -> "ed-fi/studentSchoolAssociations"
+    /// Uses simple pluralization rules matching ClaimsFragmentComposer.PluralToSingular
+    /// and camelCase convention per Ed-Fi OpenAPI/REST standards
+    /// </summary>
+    private static string PluralizePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        var lastSlashIndex = path.LastIndexOf('/');
+        if (lastSlashIndex == -1)
+        {
+            // No slash, pluralize and camelCase the whole path
+            return ToCamelCasePlural(path);
+        }
+
+        // Split into prefix and last segment
+        var prefix = path[..(lastSlashIndex + 1)];
+        var lastSegment = path[(lastSlashIndex + 1)..];
+
+        return prefix + ToCamelCasePlural(lastSegment);
+    }
+
+    /// <summary>
+    /// Converts a resource name to camelCase and pluralizes it
+    /// Example: "Student" -> "students"
+    /// Example: "AcademicWeek" -> "academicWeeks"
+    /// Example: "Category" -> "categories"
+    /// Example: "students" -> "students" (already plural/camelCase, no change)
+    /// Follows Ed-Fi REST API conventions: lowercase first letter + pluralization
+    /// </summary>
+    private static string ToCamelCasePlural(string word)
+    {
+        if (string.IsNullOrWhiteSpace(word))
+        {
+            return word;
+        }
+
+        // First, convert to camelCase (lowercase first letter, keep rest as-is)
+        string camelCase = word.Length switch
+        {
+            0 => word,
+            1 => word.ToLower(),
+            _ => char.ToLower(word[0]) + word[1..],
+        };
+
+        // If already ends with 's', assume it's already plural (e.g., "students")
+        // This handles claims that already have plural form in the claim URI
+        if (camelCase.EndsWith("s", StringComparison.OrdinalIgnoreCase))
+        {
+            return camelCase;
+        }
+
+        // Then pluralize
+        // Rule 1: Words ending in 'y' (not preceded by vowel) -> 'ies'
+        // Example: "category" -> "categories"
+        if (camelCase.EndsWith("y", StringComparison.OrdinalIgnoreCase) && camelCase.Length > 1)
+        {
+            char precedingChar = camelCase[^2];
+            if (!"aeiouAEIOU".Contains(precedingChar))
+            {
+                return camelCase[..^1] + "ies";
+            }
+        }
+
+        // Rule 2: All other words -> append 's'
+        // Example: "student" -> "students", "academicWeek" -> "academicWeeks"
+        return camelCase + "s";
     }
 }
