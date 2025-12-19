@@ -26,14 +26,13 @@ public class TokenInfoModule : IEndpointModule
     {
         // OAuth token introspection endpoint
         // Supports both JSON and form-encoded requests
-        //
         endpoints
             .MapPost("/oauth/token_info", HandleJsonRequest)
             .Accepts<TokenInfoRequest>(contentType: "application/json")
             .Produces<TokenInfoResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .RequireAuthorization()
+            .RequireAuthorization() // Requires authentication
             .DisableAntiforgery();
 
         endpoints
@@ -42,7 +41,7 @@ public class TokenInfoModule : IEndpointModule
             .Produces<TokenInfoResponse>(StatusCodes.Status200OK)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound)
-            .RequireAuthorization()
+            .RequireAuthorization() // Requires authentication
             .DisableAntiforgery();
     }
 

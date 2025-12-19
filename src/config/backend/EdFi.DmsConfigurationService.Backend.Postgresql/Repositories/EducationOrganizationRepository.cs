@@ -34,6 +34,7 @@ public class EducationOrganizationRepository(
         try
         {
             const string Sql = """
+                -- Get enriched education organization data with parent relationships
                 WITH EdOrgBase AS (
                     SELECT
                         eoh.EducationOrganizationId,
@@ -86,7 +87,7 @@ public class EducationOrganizationRepository(
         catch (Exception ex)
         {
             logger.LogError(ex, "Error retrieving education organizations for token info");
-            return Array.Empty<TokenInfoEducationOrganization>().ToList();
+            return null!;
         }
     }
 }

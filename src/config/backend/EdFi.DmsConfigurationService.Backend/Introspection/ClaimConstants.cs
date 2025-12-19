@@ -13,9 +13,9 @@ public static class ClaimConstants
 {
     /// <summary>
     /// The base prefix for Ed-Fi ODS identity claims.
-    /// Example: "http://ed-fi.org/identity/claims/ed-fi/students"
+    /// Example: "http://ed-fi.org/ods/identity/claims/ed-fi/students"
     /// </summary>
-    public const string OdsIdentityClaimsPrefix = "http://ed-fi.org/identity/claims/";
+    public const string OdsIdentityClaimsPrefix = "http://ed-fi.org/ods/identity/claims/";
 
     /// <summary>
     /// The base prefix for Ed-Fi identity claims (alternate format without "ods").
@@ -26,13 +26,13 @@ public static class ClaimConstants
     /// <summary>
     /// The prefix for service-level claims (as opposed to data resource claims).
     /// Service claims identify access to functional endpoints like identity or rostering services.
-    /// Example: "http://ed-fi.org/identity/claims/services/identity"
+    /// Example: "http://ed-fi.org/ods/identity/claims/services/identity"
     /// </summary>
-    public const string ServicesPrefix = "http://ed-fi.org/identity/claims/services/";
+    public const string ServicesPrefix = "http://ed-fi.org/ods/identity/claims/services/";
 
     /// <summary>
     /// The prefix for domain-level resource claims.
-    /// Example: "http://ed-fi.org/identity/claims/domains/edFiDescriptors"
+    /// Example: "http://ed-fi.org/ods/identity/claims/domains/edFiDescriptors"
     /// </summary>
     public const string DomainsPrefix = "domains/";
 }
