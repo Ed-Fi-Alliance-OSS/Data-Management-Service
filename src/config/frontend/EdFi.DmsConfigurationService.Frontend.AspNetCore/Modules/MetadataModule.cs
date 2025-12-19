@@ -12,6 +12,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndpointModule
 {
+    /// <summary>
+    /// Registers the OpenAPI specification endpoint with custom metadata and security scheme configuration.
+    /// </summary>
+    /// <param name="endpoints">The endpoint route builder.</param>
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet(

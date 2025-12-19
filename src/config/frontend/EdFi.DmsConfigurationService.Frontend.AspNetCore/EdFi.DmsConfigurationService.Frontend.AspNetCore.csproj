@@ -36,8 +36,4 @@
         <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj" />
         <ProjectReference Include="..\..\datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj" />
     </ItemGroup>
-    <ItemGroup>
-      <Folder Include="Infrastructure\OpenApi\" />
-      <Folder Include="logs\" />
-    </ItemGroup>
 </Project>

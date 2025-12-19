@@ -470,9 +470,6 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
 
         string replacedBody = await ReplaceIdsAsync(body);
 
-        // Handle {ignore} pattern - replace with actual value from response
-        var ignoreRegex = new Regex(@"\{ignore\}");
-
         foreach (var replacement in replacements)
         {
             if (replacedBody.TrimStart().StartsWith('['))
