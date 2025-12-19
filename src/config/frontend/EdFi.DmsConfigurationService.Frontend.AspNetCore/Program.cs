@@ -13,7 +13,6 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
-
 builder.AddServices();
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
