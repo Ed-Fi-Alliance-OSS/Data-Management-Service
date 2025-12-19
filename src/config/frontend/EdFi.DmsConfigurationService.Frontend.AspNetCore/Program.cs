@@ -22,6 +22,7 @@ builder.Host.UseDefaultServiceProvider(options =>
 
 builder.AddServices();
 builder.Services.AddHttpClient();
+builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
 // Add CORS policy to allow Swagger UI to access the Configuration Service
