@@ -100,7 +100,7 @@ CREATE TABLE dms.ReferentialIdentity (
 CREATE INDEX IX_ReferentialIdentity_DocumentId ON dms.ReferentialIdentity (DocumentId);
 ```
 
-Summary:
+Database Specific Differences:
 - The logical shape is identical across engines (UUID `ReferentialId` → BIGINT `DocumentId`).
 - The physical DDL will differ slightly for performance: SQL Server should not cluster on a randomly-distributed UUID.
 
