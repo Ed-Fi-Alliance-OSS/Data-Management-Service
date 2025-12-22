@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+<Project Sdk="Microsoft.NET.Sdk.Web">
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <Nullable>enable</Nullable>
@@ -10,15 +10,12 @@
         <InternalsVisibleTo Include="EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit" />
     </ItemGroup>
     <ItemGroup>
-        <Content
-            Include="EdFi.DmsConfigurationService.Frontend.AspNetCore.nuspec"
-            CopyToPublishDirectory="Always"
-            CopyToOutputDirectory="Never"
-        />
+        <Content Include="EdFi.DmsConfigurationService.Frontend.AspNetCore.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="FluentValidation.AspNetCore" />
         <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+        <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

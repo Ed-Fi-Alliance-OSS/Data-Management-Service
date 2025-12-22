@@ -15,9 +15,17 @@ public class InformationModule : IEndpointModule
         endpoints.MapGet("", GetInformation);
     }
 
-    private IResult GetInformation()
+    private IResult GetInformation(HttpContext httpContext)
     {
-        var response = new ApiInformation(ApiVersionDetails.Version, ApiVersionDetails.Build);
+        var baseUrl =
+            $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}";
+        var urls = new ApiUrls($"{baseUrl}/metadata/specifications");
+        var response = new ApiInformation(
+            ApiVersionDetails.Version,
+            ApiVersionDetails.ApplicationName,
+            ApiVersionDetails.InformationalVersion,
+            urls
+        );
         return Results.Ok(response);
     }
 }
