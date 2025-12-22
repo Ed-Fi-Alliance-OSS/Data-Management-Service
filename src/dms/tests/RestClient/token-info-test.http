@@ -1,0 +1,186 @@
+### OAuth Token Info Endpoint - Complete Test Flow
+### This file demonstrates the complete flow from API client creation to token introspection
+###
+### PREREQUISITES:
+### 1. Start local DMS environment with self-contained OpenIddict:
+###    cd eng/docker-compose
+###    .\start-local-dms.ps1 -EnableConfig -EnableSwaggerUI -r -IdentityProvider self-contained -EnvironmentFile .env -LoadSeedData
+###
+### 2. Wait for services to be ready (DMS on port 8080, Config on port 8081)
+###
+### 3. Run requests sequentially by clicking "Send Request" above each block
+
+# Configuration
+@dmsPort=8080
+@configPort=8081
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=s3creT@09
+
+###############################################################################
+### STEP 1: Authenticate as System Admin
+###############################################################################
+
+### Create Configuration Service admin token
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+### Extract the admin token
+@configToken={{configTokenRequest.response.body.access_token}}
+
+###############################################################################
+### STEP 2: Create Vendor
+###############################################################################
+
+### Create a new vendor for testing
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Token Info Test Vendor {{$randomInt 0 9999999}}",
+    "contactName": "Test User",
+    "contactEmailAddress": "test@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+### Extract vendor ID
+@vendorId={{createVendor.response.body.id}}
+
+###############################################################################
+### STEP 3: Create DMS Instance
+###############################################################################
+
+### Create a DMS instance for testing
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "Token Info Test Instance",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
+}
+
+### Extract DMS instance ID
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
+###############################################################################
+### STEP 4: Create API Client with Multiple Education Organizations
+###############################################################################
+
+### Create application with SIS Vendor claim set and multiple EdOrgs
+# @name createApplication
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Token Info Test App {{$randomInt 0 9999}}",
+    "claimSetName": "EdFiSandbox",
+    "educationOrganizationIds": [255901, 255902, 255950],
+    "dmsInstanceIds": [{{dmsInstanceId}}]
+}
+
+### Extract client credentials
+@clientId={{createApplication.response.body.key}}
+@clientSecret={{createApplication.response.body.secret}}
+
+###############################################################################
+### STEP 5: Verify Authorization Metadata
+###############################################################################
+
+### Check what the SIS Vendor claim set includes
+GET http://localhost:{{configPort}}/authorizationMetadata?claimSetName=EdFiSandbox
+Authorization: bearer {{configToken}}
+
+###############################################################################
+### STEP 6: Generate Access Token for API Client
+###############################################################################
+
+### Get access token for the API client
+# @name clientTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{clientId}}
+&client_secret={{clientSecret}}
+&grant_type=client_credentials
+
+### Extract the client access token
+@clientToken={{clientTokenRequest.response.body.access_token}}
+
+###############################################################################
+### STEP 7: Test Token Info Endpoint (JSON Format)
+###############################################################################
+
+### Call token_info endpoint with JSON body
+# @name tokenInfoJson
+POST http://localhost:{{configPort}}/oauth/token_info
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "token": "{{clientToken}}"
+}
+
+###############################################################################
+### STEP 8: Test Token Info Endpoint (Form-Encoded Format)
+###############################################################################
+
+### Call token_info endpoint with form-encoded body (RFC 7662 standard)
+# @name tokenInfoForm
+POST http://localhost:{{configPort}}/oauth/token_info
+Content-Type: application/x-www-form-urlencoded
+Authorization: bearer {{configToken}}
+
+token={{clientToken}}
+
+###############################################################################
+### STEP 9: Test with Different Claim Set (EdOrgs Only)
+###############################################################################
+
+### Create another application with a different claim set
+# @name createEdOrgApp
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "EdOrg Only App {{$randomInt 0 9999}}",
+    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "educationOrganizationIds": [255901],
+    "dmsInstanceIds": [{{dmsInstanceId}}]
+}
+###
+@edOrgClientId={{createEdOrgApp.response.body.key}}
+@edOrgClientSecret={{createEdOrgApp.response.body.secret}}
+
+### Get token for EdOrg-only client
+# @name edOrgTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{edOrgClientId}}
+&client_secret={{edOrgClientSecret}}
+&grant_type=client_credentials
+###
+@edOrgToken={{edOrgTokenRequest.response.body.access_token}}
+
+### Check token info for EdOrg-only client
+POST http://localhost:{{configPort}}/oauth/token_info
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "token": "{{edOrgToken}}"
+}
