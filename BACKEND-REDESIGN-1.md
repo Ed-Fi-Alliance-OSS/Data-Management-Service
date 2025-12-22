@@ -487,6 +487,191 @@ Indexing:
 - Create B-tree indexes on the resource root columns used by `queryFieldMapping` (scalar columns and FK columns).
 - Rely on existing unique/identity indexes on referenced resource natural-key columns (and on `dms.ReferentialIdentity.ReferentialId`) to make reference resolution fast.
 
+## Caching (Low-Complexity Options)
+
+This design is intentionally relational-first and correct without caching. Caches are optional optimizations; keep them small, bounded, and easy to invalidate.
+
+### Recommended cache targets
+
+1. **Derived relational mapping (from `ApiSchema`)**
+   - Cache the derived mapping per `(EffectiveSchemaHash, ProjectName, ResourceName)`.
+   - Includes: JsonPath→(table,column), collection table names, query param→column/type plan, and prepared SQL templates.
+   - Invalidation: schema migration + restart (natural).
+
+2. **`dms.ReferentialIdentity` lookups**
+   - Cache `ReferentialId → DocumentId` for:
+     - identity-based upsert detection
+     - resolving references on writes
+     - resolving reference-based query filters
+   - Invalidation:
+     - on insert: add cache entry after commit
+     - on identity update: remove old `ReferentialId` entry and add new entry after commit
+     - on delete: remove relevant entries (or rely on short TTL)
+
+3. **`dms.Descriptor` lookups**
+   - Cache `(Uri, Discriminator) → DescriptorDocumentId` for descriptor resolution/validation and query filters.
+   - Descriptors are typically append-mostly; short TTL is usually sufficient even without explicit invalidation.
+
+4. **`DocumentUuid → DocumentId`**
+   - Cache GET/PUT/DELETE resolution.
+   - Invalidation: add on insert, remove on delete (or rely on TTL).
+
+Avoid initially:
+- Query-result caching (authorization filters and paging make invalidation/keying complex).
+- Negative caching for missing identities/descriptors (can cause “false not found” after recent inserts unless TTL is tiny).
+
+### Cache keying strategy
+
+Prefer **versioned keys** so schema changes do not require distributed invalidation:
+
+- Always include `(DmsInstanceId, EffectiveSchemaHash)` in cache keys.
+- For local caches, treat `EffectiveSchemaHash` as part of the cache namespace.
+- For Redis, prefix keys with `dms:{DmsInstanceId}:{EffectiveSchemaHash}:...`.
+
+### Local-only (per-node) option
+
+Use an in-process `MemoryCache`:
+- Lowest complexity; no network hop.
+- Good for: derived mapping, `ReferentialId → DocumentId`, descriptor resolution.
+- Multi-node correctness: use TTL and commit-time updates; accept brief staleness windows unless identity updates are frequent.
+
+Suggested defaults:
+- derived mapping: no TTL (bounded by schema count; cleared on restart)
+- `ReferentialId → DocumentId`: sliding TTL (e.g., 5–30 minutes)
+- descriptor resolution: longer TTL (e.g., 30–120 minutes)
+- `DocumentUuid → DocumentId`: short TTL (e.g., 5–30 minutes)
+
+### Redis (distributed) option
+
+Add Redis as an optional L2 cache:
+- Reduces DB round-trips across nodes for hot lookups.
+- Keep it simple:
+  - cache-aside reads
+  - write-through updates after successful commit
+  - TTL everywhere
+  - versioned keys via `EffectiveSchemaHash` (no “flush all keys” needed on migration)
+
+Invalidation approaches (choose one):
+- **TTL-only** (simplest): accept brief staleness; mitigate with short TTL for identity-related keys if identity updates are enabled.
+- **Best-effort delete on writes**: on identity updates/deletes, delete affected Redis keys after commit.
+- Optional later: pub/sub “invalidate key” messages to reduce staleness for local L1 caches.
+
+### Invalidation rules (recommended)
+
+- **Schema migration**:
+  - migration writes a new `dms.EffectiveSchema` row (and `dms.SchemaComponent` rows)
+  - DMS restart is required; local caches are naturally cleared
+  - Redis keys are automatically isolated by new `EffectiveSchemaHash` prefix
+- **Successful write transaction commit**:
+  - update local/Redis caches for the touched identity/descriptor/uuid keys
+  - do not populate caches before commit
+- **Identity updates** (`AllowIdentityUpdates=true`):
+  - explicitly evict old `ReferentialId` keys and write the new mapping after commit
+  - if caching “reference identity fragments” (`DocumentId → natural key values`), evict those for the updated resource after commit or keep TTL short and skip explicit eviction
+
+### Pseudocode (cache-aside, versioned keys)
+
+```csharp
+// Cache key namespace: dms:{dmsInstanceId}:{effectiveSchemaHash}:{kind}:{key}
+string CacheKey(string kind, string key) =>
+    $"dms:{dmsInstanceId}:{effectiveSchemaHash}:{kind}:{key}";
+
+async Task<long?> ResolveReferentialIdAsync(Guid referentialId, CancellationToken ct)
+{
+    var cacheKey = CacheKey("refid", referentialId.ToString("N"));
+
+    if (localCache.TryGetValue<long>(cacheKey, out var documentId))
+        return documentId;
+
+    if (redis is not null && await redis.TryGetAsync<long>(cacheKey, ct) is { } redisDocId)
+    {
+        localCache.Set(cacheKey, redisDocId, ttl: TimeSpan.FromMinutes(10));
+        return redisDocId;
+    }
+
+    var dbDocId = await db.QuerySingleOrDefaultAsync<long?>(
+        "select DocumentId from dms.ReferentialIdentity where ReferentialId = @ReferentialId",
+        new { ReferentialId = referentialId },
+        ct);
+
+    if (dbDocId is null)
+        return null;
+
+    localCache.Set(cacheKey, dbDocId.Value, ttl: TimeSpan.FromMinutes(10));
+    if (redis is not null)
+        await redis.SetAsync(cacheKey, dbDocId.Value, ttl: TimeSpan.FromMinutes(10), ct);
+
+    return dbDocId.Value;
+}
+
+// After a successful commit:
+Task OnIdentityUpsertCommitted(Guid referentialId, long documentId) =>
+    CacheWriteThroughAsync(CacheKey("refid", referentialId.ToString("N")), documentId, ttl: TimeSpan.FromMinutes(10));
+
+Task OnIdentityUpdateCommitted(Guid oldReferentialId, Guid newReferentialId, long documentId) =>
+    Task.WhenAll(
+        CacheDeleteAsync(CacheKey("refid", oldReferentialId.ToString("N"))),
+        CacheWriteThroughAsync(CacheKey("refid", newReferentialId.ToString("N")), documentId, ttl: TimeSpan.FromMinutes(10))
+    );
+```
+
+### Mermaid diagrams
+
+**Write (Upsert) with reference + descriptor caches**
+
+```mermaid
+sequenceDiagram
+  participant Core as DMS Core
+  participant Backend as Backend Store
+  participant L1 as Local Cache (L1)
+  participant Redis as Redis (L2, optional)
+  participant DB as PostgreSQL/SQL Server
+
+  Core->>Backend: Upsert(resourceJson, extracted Referentials)
+  Backend->>L1: Resolve Referentials/Descriptors?
+  alt L1 hit
+    L1-->>Backend: DocumentId/DescriptorId
+  else L1 miss
+    Backend->>Redis: GET refid/descriptor (optional)
+    alt Redis hit
+      Redis-->>Backend: value
+      Backend->>L1: SET (ttl)
+    else Redis miss / disabled
+      Backend->>DB: SELECT dms.ReferentialIdentity / dms.Descriptor
+      DB-->>Backend: ids
+      Backend->>L1: SET (ttl)
+      Backend->>Redis: SET (ttl) (optional)
+    end
+  end
+  Backend->>DB: BEGIN; write dms.Document + resource tables; COMMIT
+  Backend->>L1: write-through identity/uuid/descriptor keys
+  Backend->>Redis: write-through keys (optional)
+  Backend-->>Core: success
+```
+
+**Read (GET by id) with minimal caches**
+
+```mermaid
+sequenceDiagram
+  participant API as API GET
+  participant Backend as Backend Store
+  participant L1 as Local Cache (L1)
+  participant DB as PostgreSQL/SQL Server
+
+  API->>Backend: GET /{resource}/{id}
+  Backend->>L1: DocumentUuid->DocumentId?
+  alt cache hit
+    L1-->>Backend: DocumentId
+  else miss
+    Backend->>DB: SELECT DocumentId FROM dms.Document WHERE DocumentUuid=@id
+    DB-->>Backend: DocumentId
+    Backend->>L1: SET (ttl)
+  end
+  Backend->>DB: SELECT from resource tables (+ children)
+  DB-->>Backend: rows
+  Backend-->>API: reconstituted JSON (or DocumentCache if enabled)
+```
+
 ## Delete Path (DELETE by id)
 
 1. Resolve `DocumentUuid` → `DocumentId`.
