@@ -713,8 +713,8 @@ internal class ApiService : IApiService
 
         try
         {
-            // Clear the existing cache
-            _claimSetsCache.ClearCache();
+            // Clear the existing cache for this tenant
+            _claimSetsCache.ClearCache(tenant);
             _logger.LogInformation("Claimsets cache cleared successfully");
 
             // Force immediate reload by calling GetAllClaimSets(), which will fetch from CMS and populate the cache
