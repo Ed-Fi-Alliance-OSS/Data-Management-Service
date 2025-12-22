@@ -56,8 +56,6 @@ Add an optional `relational` section to each `resourceSchema`:
 ```json
 {
   "relational": {
-    "mappingVersion": "1",
-
     "schemaNameOverride": "edfi",
     "rootTableNameOverride": "Student",
 
@@ -65,26 +63,17 @@ Add an optional `relational` section to each `resourceSchema`:
       "$.someVeryLongPropertyName...": "ShortColumnName",
       "$.addresses[*]": "Address",
       "$.addresses[*].periods[*]": "AddressPeriod"
-    },
-
-    "splitObjects": [
-      "$.someLargeNestedObject"
-    ],
-
-    "inlineObjectsMaxDepth": 8
+    }
   }
 }
 ```
 
 Semantics:
-- `mappingVersion`: a DMS-controlled mapping convention version; breaking mapping changes bump this.
 - `schemaNameOverride`: optional physical schema override for the project.
 - `rootTableNameOverride`: optional physical root table name override.
 - `nameOverrides`: maps a **JSONPath** (property/array path) to a stable physical base name (column or table suffix).
   - `$.x.y` targets a column base name (before suffixes like `_DocumentId`/`_DescriptorId`).
   - `$.arr[*]` targets a child-table base name.
-- `splitObjects`: JSONPaths of non-array objects that should be stored in a 1:1 split table instead of being inlined into the parent.
-- `inlineObjectsMaxDepth`: safety valve to prevent pathological deep inlining when resources contain deeply nested objects.
 
 ### 3.3 What we intentionally do *not* add
 

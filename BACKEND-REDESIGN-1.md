@@ -485,14 +485,7 @@ Add an optional `relational` section to each `resourceSchema` to keep the mappin
     "schemaNameOverride": "edfi",
     "nameOverrides": {
       "$.someVeryLongPropertyName...": "ShortColumnName"
-    },
-    "collectionNaming": {
-      "$.addresses[*]": "Address",
-      "$.addresses[*].periods[*]": "AddressPeriod"
-    },
-    "splitObjects": [
-      "$.someLargeNestedObject"
-    ]
+    }
   }
 }
 ```
