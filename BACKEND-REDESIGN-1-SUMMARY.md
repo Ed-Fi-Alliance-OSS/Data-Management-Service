@@ -10,7 +10,7 @@ This summarizes `BACKEND-REDESIGN-1.md` (Draft): a proposal to replace the curre
 - **No cascade updates** for identity changes: store references as `DocumentId` FKs so identity changes do not require rewriting referencing documents.
 - **SQL Server parity required**: avoid Postgres-only query/indexing as the only approach.
 - **Cached JSON optional**: relational tables are canonical; JSON cache exists only as an optimization/integration aid.
-- **Schema reload may require migration**: schema changes are applied via an explicit migrator step.
+- **Schema updates require migration + restart**: schema changes are applied via an explicit migrator step and a service restart (no in-process reload).
 - **Authorization out of scope**: ignore auth-related tables/columns; those will be redesigned separately.
 
 ## Core Database Model (schema: `dms`)
@@ -43,23 +43,17 @@ Descriptors remain documents, but descriptor FKs target a single table:
 
 Resource tables reference `dms.Descriptor(DocumentId)` to enforce “this FK is a descriptor” in the database.
 
-### `dms.SchemaInfo`
+### `dms.EffectiveSchema` + `dms.SchemaComponent`
 
-Records which `ApiSchema` reload/version the database is migrated to (ties migration state to `IApiSchemaProvider.ReloadId`).
+Records which **effective schema** (core + extensions) the database is migrated to, and the **exact versions** of each project schema in that set:
+- `dms.EffectiveSchema`: `ApiSchemaFormatVersion` + `EffectiveSchemaHash` + `AppliedAt`
+- `dms.SchemaComponent`: one row per `projectSchemas[ProjectNamespace]` with `ProjectName`, `ProjectVersion`, and `IsExtensionProject`
 
 ### Optional: `dms.DocumentCache`
 
 Optional cached full JSON (Postgres `JSONB`, SQL Server `NVARCHAR(MAX)` with JSON validity checks where available):
 - used for faster reads and integrations (CDC/OpenSearch)
 - not required for correctness
-
-### Optional/Recommended for parity: `dms.QueryIndex`
-
-Cross-DB query support without relying on Postgres JSONB+GIN:
-- one row per `(DocumentId, queryField, typedValue)` derived from `queryFieldMapping`
-- typed columns (`ValueString`, `ValueNumber`, `ValueDate`, etc.) with indexes for equality filtering
-
-This keeps query semantics metadata-driven and performant on both PostgreSQL and SQL Server.
 
 ## Resource Tables (schema per project)
 
@@ -111,14 +105,14 @@ Backend responsibilities (within a transaction):
 - insert/update `dms.Document` and `dms.ReferentialIdentity` (including superclass alias rows)
 - upsert resource root + child tables (replace strategy for arrays)
 - update `dms.Descriptor` for descriptors
-- optional: refresh `dms.QueryIndex` and `dms.DocumentCache`
+- optional: refresh `dms.DocumentCache`
 
 Identity updates are handled by changing `dms.ReferentialIdentity` mapping; no cascade rewrite is required because references are stored as `DocumentId` FKs.
 
 ### Reads (GET by id / query)
 
 - GET by id: `DocumentUuid` → `DocumentId` via `dms.Document`, then return cache if enabled; otherwise reconstitute from relational tables using the derived relational mapping.
-- Query (v1): filter/paginate using `dms.QueryIndex` + `dms.Document` (resource scoping), then return cache if enabled; otherwise batch reconstitute.
+- Query: filter/paginate directly on resource root table columns derived from `queryFieldMapping`, resolving descriptor/reference terms to `DocumentId`/`DescriptorId` using `dms.ReferentialIdentity`/`dms.Descriptor`.
 
 ### Deletes
 
@@ -127,8 +121,8 @@ Identity updates are handled by changing `dms.ReferentialIdentity` mapping; no c
 
 ## Migration Model
 
-Schema upload/reload is allowed to require explicit migration:
-- migrator loads `ApiSchema`, derives target model (tables/columns/indexes/FKs), diffs DB, applies DDL, records `dms.SchemaInfo`.
+Schema changes require explicit migration:
+- migrator loads the configured core + extension `ApiSchema.json` files, derives target model (tables/columns/indexes/FKs), diffs DB, applies DDL, records `dms.EffectiveSchema` and `dms.SchemaComponent`.
 - additive changes are straightforward; renames/removals require explicit operator intent.
 
 ## Key Implications vs Three-Table Design
@@ -146,9 +140,9 @@ Schema upload/reload is allowed to require explicit migration:
 
 ## Suggested Implementation Phases
 
-1. Build `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.SchemaInfo`.
+1. Build `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.EffectiveSchema`, `dms.SchemaComponent`.
 2. Implement end-to-end CRUD + reconstitution for one small resource + descriptors.
-3. Implement `dms.QueryIndex` population and query filtering/paging.
+3. Implement column-based query filtering/paging from `queryFieldMapping`.
 4. Generalize relational mapping derivation from ApiSchema + conventions; add minimal override support.
-5. Build the migrator to diff/apply DDL and track `SchemaInfo`.
+5. Build the migrator to diff/apply DDL and track the effective schema/version set.
 6. Add optional `dms.DocumentCache` and any required materialization/integration support.

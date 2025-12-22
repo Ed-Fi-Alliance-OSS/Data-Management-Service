@@ -17,9 +17,15 @@ Draft. This is an initial design proposal for replacing the current three-table 
 ### Constraints / Explicit Decisions
 
 - **Cached JSON is optional**: The relational representation is the canonical source of truth. A JSON cache may exist only as an optimization/integration aid.
-- **Schema upload/reload may require migration**: DMS does not need to be able to adapt online to a new schema without a migration step.
+- **Schema updates require migration + restart**: Applying a new `ApiSchema.json` requires migrating the relational schema and restarting DMS; in-process schema reload/hot-reload is out of scope for this design.
 - **Authorization is out of scope**: Ignore existing authorization-related tables/columns/scripts; authorization storage will be redesigned separately.
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource”. SQL may still be *produced and executed* by a migrator from metadata, but should not require generated source artifacts to compile/run DMS.
+
+## Related Changes Implied by This Redesign
+
+- **Remove schema reload/hot-reload**: The current reload behavior exists primarily for testing convenience. With relational-first storage, schema changes are operational events (migration + restart), not runtime toggles.
+- **E2E testing approach changes**: Instead of switching schemas in-place, E2E tests should provision separate databases/containers (or separate DMS instances) per schema/version under test.
+- **Fail-fast on schema mismatch**: DMS should verify on startup that the database schema matches the configured effective `ApiSchema.json` set (core + extensions) fingerprint (see `dms.EffectiveSchema`) and refuse to start/serve if it does not.
 
 ## Glossary (Current DMS Terms)
 
@@ -130,20 +136,31 @@ Descriptor references can be enforced two ways:
 - **Preferred (type-safe)**: FK to the specific descriptor resource root table (e.g., `edfi.GradeLevelDescriptor(DocumentId)`), which is itself keyed to `dms.Descriptor(DocumentId)`.
 - **Simpler (descriptor-only)**: FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor”, but without enforcing the specific descriptor type at the DB level.
 
-#### 4) `dms.SchemaInfo`
+#### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
-Tracks which `ApiSchema` reload/version the database is migrated to.
+Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database is migrated to, and records the **exact project versions** present in that effective schema.
 
 **PostgreSQL**
 
 ```sql
-CREATE TABLE dms.SchemaInfo (
-    SchemaInfoId bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    ApiSchemaReloadId varchar(128) NOT NULL,
-    ApiSchemaVersion varchar(64) NULL,
-    ApiSchemaHash varchar(64) NULL,
-    AppliedAt timestamp without time zone NOT NULL DEFAULT now(),
-    CONSTRAINT UX_SchemaInfo_ApiSchemaReloadId UNIQUE (ApiSchemaReloadId)
+CREATE TABLE dms.EffectiveSchema (
+    EffectiveSchemaId bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ApiSchemaFormatVersion varchar(64) NOT NULL,
+    EffectiveSchemaHash varchar(64) NOT NULL,
+    AppliedAt timestamp without time zone NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX UX_EffectiveSchema_EffectiveSchemaHash
+    ON dms.EffectiveSchema (EffectiveSchemaHash);
+
+CREATE TABLE dms.SchemaComponent (
+    EffectiveSchemaId bigint NOT NULL
+        REFERENCES dms.EffectiveSchema (EffectiveSchemaId) ON DELETE CASCADE,
+    ProjectNamespace varchar(128) NOT NULL,
+    ProjectName varchar(256) NOT NULL,
+    ProjectVersion varchar(64) NOT NULL,
+    IsExtensionProject boolean NOT NULL,
+    CONSTRAINT PK_SchemaComponent PRIMARY KEY (EffectiveSchemaId, ProjectNamespace)
 );
 ```
 
@@ -451,7 +468,7 @@ FROM edfi.Student AS r
 WHERE r.LastSurname = @LastSurname
 ORDER BY r.DocumentId
 OFFSET 50
-LIMIT 10;
+LIMIT @Limit;
 ```
 
 Join to `dms.Document` only when you need cross-cutting metadata (e.g., `CreatedAt`/`LastModifiedAt` ordering, `DocumentUuid`/ETag selection) or filters that live in `dms.Document`.
@@ -479,17 +496,18 @@ Indexing:
 Error reporting:
 - SQL Server and PostgreSQL will report FK constraint violations. DMS should map the violated constraint name back to the referencing resource (deterministic FK naming) to produce a conflict response comparable to today’s `DeleteFailureReference`.
 
-## Migration Strategy (Schema Upload/Reload)
+## Migration Strategy (Schema Changes)
 
-Because schema reload can require migration, the contract becomes:
+Because schema changes require migration, the contract becomes:
 
-- Schema upload/reload updates the `ApiSchema` available to DMS, but the database must be migrated before that schema is “active” for a given instance.
+- DMS loads `ApiSchema.json` at startup; **there is no in-process schema reload** for relational storage.
+- When `ApiSchema.json` changes, the database must be migrated and DMS must be restarted before the new schema is active.
 - A migrator tool (or admin endpoint) performs:
   1. Load ApiSchema
   2. Derive required relational model (tables/columns/indexes/FKs)
   3. Diff against current DB
   4. Apply DDL changes (or emit a script to be applied)
-  5. Record success in `dms.SchemaInfo`
+  5. Record success in `dms.EffectiveSchema` and `dms.SchemaComponent`
 
 Migration scope:
 - Additive changes (new properties/collections) are straightforward.
@@ -523,9 +541,9 @@ Migration scope:
 
 ## Suggested Implementation Phases
 
-1. **Foundational tables**: `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.SchemaInfo`.
+1. **Foundational tables**: `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.EffectiveSchema`, `dms.SchemaComponent`.
 2. **One resource end-to-end**: implement relational mapping + CRUD + reconstitution for a small resource (and descriptors).
 3. **Column-based query**: build SQL query predicates from `ApiSchema` and execute paging queries directly on the resource root table (with reference/descriptor resolution).
 4. **Generalize mapping**: make mapping derivation generic from ApiSchema + conventions; add minimal `relational` overrides.
-5. **Migration tool**: derive/apply DDL and record `SchemaInfo`.
+5. **Migration tool**: derive/apply DDL and record the effective schema/version set.
 6. **Optional cache + integration**: `dms.DocumentCache` and any required event/materialization paths.
