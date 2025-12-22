@@ -160,7 +160,7 @@ If DB-level enforcement of “descriptor must be of type X” becomes necessary 
 
 #### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
-Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database is migrated to, and records the **exact project versions** present in that effective schema. At startup, DMS will use this to validate consistency between the loaded ApiSchema.json files and the database.
+Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database is migrated to, and records the **exact project versions** present in that effective schema. At startup, DMS will use this to validate consistency between the loaded ApiSchema.json files and the database (see **EffectiveSchemaHash Calculation** below).
 
 **PostgreSQL**
 
@@ -184,6 +184,72 @@ CREATE TABLE dms.SchemaComponent (
     IsExtensionProject boolean NOT NULL,
     CONSTRAINT PK_SchemaComponent PRIMARY KEY (EffectiveSchemaId, ProjectNamespace)
 );
+```
+
+##### EffectiveSchemaHash Calculation
+
+`EffectiveSchemaHash` is a deterministic fingerprint of the configured schema set (core + extensions) as it affects relational mapping. It must be stable across file ordering, whitespace, and JSON property ordering.
+
+Recommendations:
+- Use `SHA-256` and store as lowercase hex (64 chars).
+- Require a single `ApiSchemaFormatVersion` across core + extensions (fail fast if they differ).
+- Validate that each configured `ApiSchema.json` file contributes exactly one `projectSchemas[ProjectNamespace]` entry.
+- Exclude OpenAPI payloads from hashing to avoid churn and reduce input size:
+  - `projectSchemas[*].openApiBaseDocuments`
+  - `projectSchemas[*].resourceSchemas[*].openApiFragments`
+- Keep arrays in-order (many arrays are semantically ordered), but sort objects by property name recursively.
+- Include a DMS-controlled constant “relational mapping version” so that a breaking change in mapping conventions forces a mismatch even if ApiSchema content is unchanged.
+
+Algorithm (suggested):
+1. Parse the configured core + extension ApiSchema files.
+2. For each file, extract:
+   - `ApiSchemaFormatVersion` (`apiSchemaVersion`)
+   - the single `projectSchemas[ProjectNamespace]` entry (after removing OpenAPI payloads)
+3. Sort projects by `ProjectNamespace`.
+4. Compute `ProjectHash = SHA-256(canonicalJson(projectSchema))` for each project.
+5. Compute `EffectiveSchemaHash = SHA-256(manifestString)` where `manifestString` is:
+   - a constant header (e.g., `dms-effective-schema-hash:v1`)
+   - a constant mapping version (e.g., `relational-mapping:v1`)
+   - `ApiSchemaFormatVersion`
+   - one line per project: `ProjectNamespace|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
+
+Pseudocode:
+
+```text
+const HashVersion = "dms-effective-schema-hash:v1"
+const RelationalMappingVersion = "relational-mapping:v1"
+
+projects = []
+apiSchemaFormatVersion = null
+for file in configuredApiSchemaFiles:
+  json = parse(file)
+  apiSchemaFormatVersion = apiSchemaFormatVersion ?? json.apiSchemaVersion
+  assert(apiSchemaFormatVersion == json.apiSchemaVersion)
+  (projectNamespace, projectSchema) = extractSingleProjectSchema(json.projectSchemas)
+  projectSchema = removeOpenApiPayloads(projectSchema)
+  projectHash = sha256hex(canonicalizeJson(projectSchema))
+  projects.add({
+    projectNamespace,
+    projectName: projectSchema.projectName,
+    projectVersion: projectSchema.projectVersion,
+    isExtensionProject: projectSchema.isExtensionProject,
+    projectHash
+  })
+
+projects = sortBy(projects, p => p.projectNamespace)
+
+manifest =
+  HashVersion + "\n" +
+  RelationalMappingVersion + "\n" +
+  "apiSchemaFormatVersion=" + apiSchemaFormatVersion + "\n" +
+  join(projects, "\n",
+    p.projectNamespace + "|" +
+    p.projectName + "|" +
+    p.projectVersion + "|" +
+    p.isExtensionProject + "|" +
+    p.projectHash)
+
+effectiveSchemaHash = sha256hex(utf8(manifest))
 ```
 
 #### 5) Optional: `dms.DocumentCache`
