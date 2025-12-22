@@ -69,29 +69,29 @@ CREATE INDEX IX_Document_ProjectName_ResourceName_CreatedAt
 ```
 
 Notes:
-- `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.Identity`.
+- `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity`.
 - Authorization-related columns are intentionally omitted here.
 
-#### 2) `dms.Identity`
+#### 2) `dms.ReferentialIdentity`
 
 Maps `ReferentialId` → `DocumentId` (replaces/absorbs today’s `dms.Alias`), including superclass aliases used for polymorphic references.
 
 **PostgreSQL**
 
 ```sql
-CREATE TABLE dms.Identity (
+CREATE TABLE dms.ReferentialIdentity (
     ReferentialId uuid NOT NULL,
     DocumentId bigint NOT NULL,
     IdentityRole smallint NOT NULL,
     ProjectName varchar(256) NULL,
     ResourceName varchar(256) NULL,
-    CONSTRAINT PK_Identity PRIMARY KEY (ReferentialId),
-    CONSTRAINT FK_Identity_Document FOREIGN KEY (DocumentId)
+    CONSTRAINT PK_ReferentialIdentity PRIMARY KEY (ReferentialId),
+    CONSTRAINT FK_ReferentialIdentity_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT UX_Identity_DocumentId_IdentityRole UNIQUE (DocumentId, IdentityRole)
+    CONSTRAINT UX_ReferentialIdentity_DocumentId_IdentityRole UNIQUE (DocumentId, IdentityRole)
 );
 
-CREATE INDEX IX_Identity_DocumentId ON dms.Identity (DocumentId);
+CREATE INDEX IX_ReferentialIdentity_DocumentId ON dms.ReferentialIdentity (DocumentId);
 ```
 
 Critical invariants:
@@ -297,7 +297,7 @@ Reference validation is provided by **two layers** (mirroring what the current `
 ### 1) Write-time validation (application-level)
 
 During POST/PUT processing, the backend:
-- Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) from `ReferentialId` → `DocumentId` using `dms.Identity`.
+- Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) from `ReferentialId` → `DocumentId` using `dms.ReferentialIdentity`.
 - Fails the request if any referenced identity does not exist (same semantics as today: descriptor failures vs resource reference failures).
 
 This is required because the relational tables store **`DocumentId` foreign keys**, and we cannot write those without resolving them.
@@ -386,11 +386,11 @@ Intent:
    - Document references (with `ReferentialId`s)
    - Descriptor references (with `ReferentialId`s, normalized URI)
 2. Backend resolves references in bulk:
-   - `dms.Identity` lookup for document refs → `DocumentId[]`
-   - `dms.Identity` + `dms.Descriptor` existence check for descriptor refs
+   - `dms.ReferentialIdentity` lookup for document refs → `DocumentId[]`
+   - `dms.ReferentialIdentity` + `dms.Descriptor` existence check for descriptor refs
 3. Backend writes within a single transaction:
    - `dms.Document` insert/update (sets `Etag`, `LastModifiedAt`, etc.)
-   - `dms.Identity` upsert (primary + superclass aliases)
+   - `dms.ReferentialIdentity` upsert (primary + superclass aliases)
    - Resource root + child tables (replace strategy for collections)
    - `dms.Descriptor` upsert if the resource is a descriptor
    - Optional: refresh `dms.DocumentCache`
@@ -398,14 +398,14 @@ Intent:
 ### Insert vs update detection
 
 - **Upsert (POST)**: detect by `ReferentialId`:
-  - Find `DocumentId` from `dms.Identity` where `IdentityRole=Primary` for that referential id.
+  - Find `DocumentId` from `dms.ReferentialIdentity` where `IdentityRole=Primary` for that referential id.
 - **Update by id (PUT)**: detect by `DocumentUuid`:
   - Find `DocumentId` from `dms.Document` by `DocumentUuid`.
 
 ### Identity updates (AllowIdentityUpdates)
 
 If identity changes on update:
-- Update `dms.Identity` by removing/replacing the primary `ReferentialId` mapping.
+- Update `dms.ReferentialIdentity` by removing/replacing the primary `ReferentialId` mapping.
 - References stored as FKs (`DocumentId`) remain valid; no cascading rewrite needed.
 
 ### Concurrency (ETag)
@@ -463,12 +463,12 @@ Join to `dms.Document` only when you need cross-cutting metadata (e.g., `Created
 Reference/descriptor resolution is metadata-driven (no per-resource code):
 - For **descriptor** query params: the descriptor URI string is directly resolvable via `dms.Descriptor`.
 - For **document reference** query params: use `documentPathsMapping.referenceJsonPaths` to group query terms by reference, and:
-  - If all referenced identity components are present, compute the referenced `ReferentialId` and resolve a single `DocumentId` via `dms.Identity`.
+  - If all referenced identity components are present, compute the referenced `ReferentialId` and resolve a single `DocumentId` via `dms.ReferentialIdentity`.
   - If only a subset is present, resolve a *set* of referenced `DocumentId`s by querying the referenced root table’s identity columns, then filter the FK column with `IN (subquery)` (or an equivalent join).
 
 Indexing:
 - Create B-tree indexes on the resource root columns used by `queryFieldMapping` (scalar columns and FK columns).
-- Rely on existing unique/identity indexes on referenced resource natural-key columns (and on `dms.Identity.ReferentialId`) to make reference resolution fast.
+- Rely on existing unique/identity indexes on referenced resource natural-key columns (and on `dms.ReferentialIdentity.ReferentialId`) to make reference resolution fast.
 
 ## Delete Path (DELETE by id)
 
@@ -510,7 +510,7 @@ Migration scope:
 
 - `dms.Reference` is no longer required for referential integrity; the database enforces integrity via FKs.
 - `UpdateCascadeHandler` becomes unnecessary for identity updates because references are stored as `DocumentId` FKs and reconstituted from current referenced identities.
-- Identity uniqueness is enforced in `dms.Identity` (and optionally in resource root unique constraints for direct human-debuggable keys).
+- Identity uniqueness is enforced in `dms.ReferentialIdentity` (and optionally in resource root unique constraints for direct human-debuggable keys).
 
 ## Risks / Open Questions
 
@@ -523,7 +523,7 @@ Migration scope:
 
 ## Suggested Implementation Phases
 
-1. **Foundational tables**: `dms.Document`, `dms.Identity`, `dms.Descriptor`, `dms.SchemaInfo`.
+1. **Foundational tables**: `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.SchemaInfo`.
 2. **One resource end-to-end**: implement relational mapping + CRUD + reconstitution for a small resource (and descriptors).
 3. **Column-based query**: build SQL query predicates from `ApiSchema` and execute paging queries directly on the resource root table (with reference/descriptor resolution).
 4. **Generalize mapping**: make mapping derivation generic from ApiSchema + conventions; add minimal `relational` overrides.

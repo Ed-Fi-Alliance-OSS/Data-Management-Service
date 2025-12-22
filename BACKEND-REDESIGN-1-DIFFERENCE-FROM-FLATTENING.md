@@ -49,7 +49,7 @@ This document summarizes how `BACKEND-REDESIGN-1.md` differs from the earlier pr
   - Resolving an Ed-Fi reference (natural key/URI) into that surrogate requires multi-step lookup (conceptually: `ReferentialId → Alias/Document → target table via Document_Id → surrogate Id`).
 - **Backend Redesign 1**
   - References are stored as `..._DocumentId BIGINT` FKs to the **target resource table’s `DocumentId`** (e.g., `SSA.Student_DocumentId → edfi.Student.DocumentId`).
-  - Reference resolution is direct: `ReferentialId → dms.Identity → DocumentId`, then insert the FK.
+  - Reference resolution is direct: `ReferentialId → dms.ReferentialIdentity → DocumentId`, then insert the FK.
   - This eliminates the extra “target surrogate Id” hop for most relationships.
 
 ### What enforces referential integrity
@@ -66,7 +66,7 @@ This document summarizes how `BACKEND-REDESIGN-1.md` differs from the earlier pr
 - **Flattening design**
   - Because the canonical representation is JSON and references are identity-based, identity changes can trigger cascade update behavior to keep embedded reference identities consistent.
 - **Backend Redesign 1**
-  - References are stored by `DocumentId`, so identity updates only require updating `dms.Identity` (and any unique natural-key columns); referencing rows remain valid without rewriting.
+  - References are stored by `DocumentId`, so identity updates only require updating `dms.ReferentialIdentity` (and any unique natural-key columns); referencing rows remain valid without rewriting.
   - Reconstitution always uses *current* referenced natural keys to rebuild reference objects.
 
 ### Polymorphic references
@@ -107,4 +107,3 @@ This document summarizes how `BACKEND-REDESIGN-1.md` differs from the earlier pr
 
 - **Backend Redesign 1 simplifies relationships** (one consistent key, fewer lookup hops) and **removes the need for `dms.Reference`** as a referential integrity mechanism.
 - It **increases the importance of reconstitution performance** when JSON cache is disabled, because GET/query responses must be assembled from relational rows.
-

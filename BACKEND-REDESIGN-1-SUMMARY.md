@@ -26,7 +26,7 @@ One row per resource instance/document across all resources:
 
 This table replaces “JSON-as-source-of-truth” with a minimal, shared metadata row for every resource.
 
-### `dms.Identity` (Alias replacement)
+### `dms.ReferentialIdentity` (Alias replacement)
 
 Maps deterministic `ReferentialId` → `DocumentId`:
 - `ReferentialId` unique/PK
@@ -107,13 +107,13 @@ Add only minimal optional `relational` overrides to handle:
 ### Writes (POST upsert / PUT)
 
 Backend responsibilities (within a transaction):
-- resolve references in bulk via `dms.Identity` (and `dms.Descriptor` checks)
-- insert/update `dms.Document` and `dms.Identity` (including superclass alias rows)
+- resolve references in bulk via `dms.ReferentialIdentity` (and `dms.Descriptor` checks)
+- insert/update `dms.Document` and `dms.ReferentialIdentity` (including superclass alias rows)
 - upsert resource root + child tables (replace strategy for arrays)
 - update `dms.Descriptor` for descriptors
 - optional: refresh `dms.QueryIndex` and `dms.DocumentCache`
 
-Identity updates are handled by changing `dms.Identity` mapping; no cascade rewrite is required because references are stored as `DocumentId` FKs.
+Identity updates are handled by changing `dms.ReferentialIdentity` mapping; no cascade rewrite is required because references are stored as `DocumentId` FKs.
 
 ### Reads (GET by id / query)
 
@@ -135,7 +135,7 @@ Schema upload/reload is allowed to require explicit migration:
 
 - `dms.Reference` is no longer the integrity mechanism; **DB FKs** enforce integrity.
 - `UpdateCascadeHandler` becomes unnecessary for identity changes because referencing rows hold `DocumentId` FKs and reconstitution uses current referenced identities.
-- `dms.Identity` becomes the central “natural key → document id” map, including superclass aliases.
+- `dms.ReferentialIdentity` becomes the central “natural key → document id” map, including superclass aliases.
 
 ## Risks / Open Questions (from the draft)
 
@@ -146,10 +146,9 @@ Schema upload/reload is allowed to require explicit migration:
 
 ## Suggested Implementation Phases
 
-1. Build `dms.Document`, `dms.Identity`, `dms.Descriptor`, `dms.SchemaInfo`.
+1. Build `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.SchemaInfo`.
 2. Implement end-to-end CRUD + reconstitution for one small resource + descriptors.
 3. Implement `dms.QueryIndex` population and query filtering/paging.
 4. Generalize relational mapping derivation from ApiSchema + conventions; add minimal override support.
 5. Build the migrator to diff/apply DDL and track `SchemaInfo`.
 6. Add optional `dms.DocumentCache` and any required materialization/integration support.
-
