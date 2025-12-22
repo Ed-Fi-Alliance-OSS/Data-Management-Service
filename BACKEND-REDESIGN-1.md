@@ -394,7 +394,7 @@ Reference validation is provided by **two layers** (mirroring what the current `
 
 During POST/PUT processing, the backend:
 - Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) from `ReferentialId` → `DocumentId` using `dms.ReferentialIdentity`.
-- Fails the request if any referenced identity does not exist (same semantics as today: descriptor failures vs resource reference failures).
+- Fails the request if any referenced identity does not exist (same semantics as today: d escriptor failures vs resource reference failures).
 
 This is required because the relational tables store **`DocumentId` foreign keys**, and we cannot write those without resolving them.
 
