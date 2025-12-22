@@ -152,13 +152,15 @@ CREATE TABLE dms.Descriptor (
 CREATE INDEX IX_Descriptor_Uri_Discriminator ON dms.Descriptor (Uri, Discriminator);
 ```
 
-Descriptor references can be enforced two ways:
-- **Preferred (type-safe)**: FK to the specific descriptor resource root table (e.g., `edfi.GradeLevelDescriptor(DocumentId)`), which is itself keyed to `dms.Descriptor(DocumentId)`.
-- **Simpler (descriptor-only)**: FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor”, but without enforcing the specific descriptor type at the DB level.
+Descriptor references (recommended base design):
+- Use an FK directly to `dms.Descriptor(DocumentId)` to guarantee “this is a descriptor” at the DB level.
+- Use `dms.Descriptor.Discriminator` as the descriptor type (e.g., `GradeLevelDescriptor`) for lookups (`Uri + Discriminator`) and application-level type validation.
+
+If DB-level enforcement of “descriptor must be of type X” becomes necessary later we can add checks that the referenced `dms.Descriptor.Discriminator` is the expected type for that FK column (derived from `ApiSchema`).
 
 #### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
-Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database is migrated to, and records the **exact project versions** present in that effective schema.
+Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database is migrated to, and records the **exact project versions** present in that effective schema. At startup, DMS will use this to validate consistency between the loaded ApiSchema.json files and the database.
 
 **PostgreSQL**
 
@@ -223,7 +225,7 @@ Typical structure:
 - Reference FK columns:
   - Non-descriptor references (concrete target): `..._DocumentId BIGINT` FK → `{schema}.{TargetResource}(DocumentId)` to enforce existence *and* resource type
   - Non-descriptor references (polymorphic/abstract target): `..._DocumentId BIGINT` FK → `dms.Document(DocumentId)` plus optional discriminator/membership enforcement (see Reference Validation)
-  - Descriptor references: `..._DescriptorId BIGINT` FK → `{schema}.{DescriptorResource}(DocumentId)` (preferred) or `dms.Descriptor(DocumentId)`
+  - Descriptor references: `..._DescriptorId BIGINT` FK → `dms.Descriptor(DocumentId)`
 
 #### Child tables for collections
 
@@ -256,17 +258,8 @@ CREATE TABLE IF NOT EXISTS edfi.Student (
     CONSTRAINT UX_Student_StudentUniqueId UNIQUE (StudentUniqueId)
 );
 
--- Descriptor resource tables can be "thin" when all core descriptor fields
--- are centralized in dms.Descriptor; their main purpose is type-safe FKs.
-CREATE TABLE IF NOT EXISTS edfi.SchoolTypeDescriptor (
-    DocumentId bigint PRIMARY KEY
-               REFERENCES dms.Descriptor(DocumentId) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS edfi.GradeLevelDescriptor (
-    DocumentId bigint PRIMARY KEY
-               REFERENCES dms.Descriptor(DocumentId) ON DELETE CASCADE
-);
+-- Descriptor references are stored as FKs directly to dms.Descriptor.
+-- The expected descriptor type is validated via dms.Descriptor.Discriminator (application-level, or triggers if desired).
 
 CREATE TABLE IF NOT EXISTS edfi.School (
     DocumentId             bigint PRIMARY KEY
@@ -276,7 +269,7 @@ CREATE TABLE IF NOT EXISTS edfi.School (
     NameOfInstitution      varchar(255) NOT NULL,
     ShortNameOfInstitution varchar(75)  NULL,
     SchoolTypeDescriptor_DescriptorId bigint NULL
-                           REFERENCES edfi.SchoolTypeDescriptor(DocumentId),
+                           REFERENCES dms.Descriptor(DocumentId),
 
     CONSTRAINT UX_School_SchoolId UNIQUE (SchoolId)
 );
@@ -292,7 +285,7 @@ CREATE TABLE IF NOT EXISTS edfi.SchoolGradeLevel (
     Ordinal int NOT NULL,
 
     GradeLevelDescriptor_DescriptorId bigint NOT NULL
-                      REFERENCES edfi.GradeLevelDescriptor(DocumentId),
+                      REFERENCES dms.Descriptor(DocumentId),
 
     CONSTRAINT UX_SchoolGradeLevel UNIQUE (School_DocumentId, GradeLevelDescriptor_DescriptorId)
 );
@@ -344,7 +337,7 @@ This is required because the relational tables store **`DocumentId` foreign keys
 Relational tables store references as FKs so the database enforces referential integrity:
 
 - **Concrete non-descriptor references**: FK to the **target resource table**, e.g. `FK(StudentSchoolAssociation.School_DocumentId → edfi.School.DocumentId)`. This validates both existence and type.
-- **Descriptor references**: FK to the **target descriptor resource table** (preferred) or to `dms.Descriptor`. This validates existence, and optionally the descriptor type.
+- **Descriptor references**: FK directly to `dms.Descriptor`. This validates existence (“is a descriptor”); `Discriminator` supports type validation in the application (or via optional triggers).
 - **Polymorphic references** (e.g., `EducationOrganization`): a single FK to a concrete table is not possible. Baseline enforcement is:
   - FK to `dms.Document(DocumentId)` (existence)
   - Application validation ensures the referenced `DocumentId` is one of the allowed concrete types
