@@ -25,7 +25,7 @@ internal class ExtractDocumentSecurityElementsMiddleware(ILogger _logger) : IPip
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        Trace.Assert(requestInfo.ParsedBody != null, "Body was null, pipeline config invalid");
+        Trace.Assert(requestInfo.ParsedBody != null, "Body was null, pipeline config invalid", "");
 
         requestInfo.DocumentSecurityElements = requestInfo.ResourceSchema.ExtractSecurityElements(
             requestInfo.ParsedBody,

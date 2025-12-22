@@ -5,7 +5,6 @@
 
 using System.Reflection;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
-using Microsoft.AspNetCore.Routing;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
@@ -43,7 +42,9 @@ public static class WebApplicationExtensions
                 continue;
             }
 
-            if (Activator.CreateInstance(moduleClass) is IEndpointModule module)
+            var module =
+                ActivatorUtilities.CreateInstance(application.Services, moduleClass) as IEndpointModule;
+            if (module != null)
             {
                 modules.Add(module);
             }

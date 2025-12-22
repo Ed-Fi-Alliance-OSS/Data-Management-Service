@@ -122,8 +122,8 @@ public class OAuthManagerTests
                             A<HttpRequestMessage>.That.Matches(m =>
                                 m.Content != null
                                 && m.Content.Headers.ContentType != null
-                                && m.Content!.Headers.ContentType!.ToString()
-                                    == "application/x-www-form-urlencoded; charset=utf-8"
+                                && m.Content!.Headers.ContentType!.MediaType
+                                    == "application/x-www-form-urlencoded"
                             )
                         )
                     )
