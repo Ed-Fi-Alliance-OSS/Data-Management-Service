@@ -100,6 +100,26 @@ CREATE TABLE dms.ReferentialIdentity (
 CREATE INDEX IX_ReferentialIdentity_DocumentId ON dms.ReferentialIdentity (DocumentId);
 ```
 
+Summary:
+- The logical shape is identical across engines (UUID `ReferentialId` → BIGINT `DocumentId`).
+- The physical DDL will differ slightly for performance: SQL Server should not cluster on a randomly-distributed UUID.
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.ReferentialIdentity (
+    ReferentialId uniqueidentifier NOT NULL,
+    DocumentId bigint NOT NULL,
+    IdentityRole smallint NOT NULL,
+    ProjectName nvarchar(256) NULL,
+    ResourceName nvarchar(256) NULL,
+    CONSTRAINT PK_ReferentialIdentity PRIMARY KEY NONCLUSTERED (ReferentialId),
+    CONSTRAINT FK_ReferentialIdentity_Document FOREIGN KEY (DocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT UX_ReferentialIdentity_DocumentId_IdentityRole UNIQUE CLUSTERED (DocumentId, IdentityRole)
+);
+```
+
 Critical invariants:
 - **Uniqueness** of `ReferentialId` enforces “one natural identity maps to one document”.
 - Subclass writes insert both:
@@ -732,3 +752,20 @@ Migration scope:
 4. **Generalize mapping**: make mapping derivation generic from ApiSchema + conventions; add minimal `relational` overrides.
 5. **Migration tool**: derive/apply DDL and record the effective schema/version set.
 6. **Optional cache + integration**: `dms.DocumentCache` and any required event/materialization paths.
+
+## Operational Considerations
+
+### Random UUID index behavior (`dms.ReferentialIdentity.ReferentialId`)
+
+`ReferentialId` is a UUID (deterministic UUIDv5) and is effectively randomly distributed for index insertion. The primary concern is **write amplification** (page splits, fragmentation/bloat), not point-lookup speed.
+
+**SQL Server guidance**
+- Use a sequential clustered key (recommended above: cluster on `(DocumentId, IdentityRole)`), and keep the UUID key as a **NONCLUSTERED** PK/unique index.
+- Consider a lower `FILLFACTOR` on the UUID index (e.g., 80–90) to reduce page splits; monitor fragmentation and rebuild/reorganize as needed.
+
+**PostgreSQL guidance**
+- B-tree point lookups on UUID are fine; manage bloat under high write rates with:
+  - index/table `fillfactor` (e.g., 80–90) if insert churn is high
+  - healthy autovacuum settings and monitoring
+  - periodic `REINDEX` when bloat warrants it
+- If sustained ingest is extreme, consider hash partitioning `dms.ReferentialIdentity` by `ReferentialId` (e.g., 8–32 partitions) to reduce contention and make maintenance cheaper.
