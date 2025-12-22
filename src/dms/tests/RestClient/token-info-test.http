@@ -2,62 +2,33 @@
 ### This file demonstrates the complete flow from API client creation to token introspection
 ###
 ### PREREQUISITES:
-### 1. Start local DMS environment with your preferred identity provider:
-###
-###    For SELF-CONTAINED OpenIddict:
+### 1. Start local DMS environment with self-contained OpenIddict:
 ###    cd eng/docker-compose
 ###    .\start-local-dms.ps1 -EnableConfig -EnableSwaggerUI -r -IdentityProvider self-contained -EnvironmentFile .env -LoadSeedData
 ###
-###    For KEYCLOAK:
-###    cd eng/docker-compose
-###    .\start-local-dms.ps1 -EnableConfig -EnableSwaggerUI -r -IdentityProvider keycloak -EnvironmentFile .env.keycloak -LoadSeedData
-###
 ### 2. Wait for services to be ready (DMS on port 8080, Config on port 8081)
 ###
-### 3. Set the identity provider below (comment/uncomment the appropriate section)
-###
-### 4. Run requests sequentially by clicking "Send Request" above each block
+### 3. Run requests sequentially by clicking "Send Request" above each block
 
-###############################################################################
-### IDENTITY PROVIDER CONFIGURATION
-### Uncomment ONE section below based on your environment
-###############################################################################
-
-### ----- OPTION 1: Self-Contained OpenIddict (DEFAULT) -----
-@identityProvider=self-contained
+# Configuration
 @dmsPort=8080
 @configPort=8081
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=s3creT@09
-@tokenEndpoint=http://localhost:{{configPort}}/connect/token
-@tokenScope=edfi_admin_api/full_access
-
-### ----- OPTION 2: Keycloak -----
-### Uncomment below and comment out Option 1 above to use Keycloak
-# @identityProvider=keycloak
-# @dmsPort=8080
-# @configPort=8081
-# @keycloakPort=8045
-# @keycloakRealm=edfi
-# @sysAdminId=DmsConfigurationService
-# @sysAdminSecret=s3creT@09
-# @tokenEndpoint=http://localhost:{{keycloakPort}}/realms/{{keycloakRealm}}/protocol/openid-connect/token
-# @tokenScope=edfi_admin_api/full_access
 
 ###############################################################################
 ### STEP 1: Authenticate as System Admin
 ###############################################################################
 
 ### Create Configuration Service admin token
-### This request works for both self-contained and Keycloak
 # @name configTokenRequest
-POST {{tokenEndpoint}}
+POST http://localhost:{{configPort}}/connect/token
 Content-Type: application/x-www-form-urlencoded
 
 client_id={{sysAdminId}}
 &client_secret={{sysAdminSecret}}
 &grant_type=client_credentials
-&scope={{tokenScope}}
+&scope=edfi_admin_api/full_access
 
 ### Extract the admin token
 @configToken={{configTokenRequest.response.body.access_token}}
@@ -137,7 +108,7 @@ Authorization: bearer {{configToken}}
 
 ### Get access token for the API client
 # @name clientTokenRequest
-POST {{tokenEndpoint}}
+POST http://localhost:{{configPort}}/connect/token
 Content-Type: application/x-www-form-urlencoded
 
 client_id={{clientId}}
@@ -196,7 +167,7 @@ Authorization: bearer {{configToken}}
 
 ### Get token for EdOrg-only client
 # @name edOrgTokenRequest
-POST {{tokenEndpoint}}
+POST http://localhost:{{configPort}}/connect/token
 Content-Type: application/x-www-form-urlencoded
 
 client_id={{edOrgClientId}}
