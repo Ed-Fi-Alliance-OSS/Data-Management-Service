@@ -298,14 +298,14 @@ Typical structure:
 For each JSON array of objects/scalars under the resource:
 
 `{schema}.{R}_{CollectionPath}` (name derived deterministically; see Naming Rules)
-- `Id BIGINT` identity **PK** (needed for deeper nesting)
-- `ParentDocumentId BIGINT` FK → `{schema}.{R}(DocumentId)` ON DELETE CASCADE
+- Parent key columns (for root-level arrays this is typically `<RootResource>_DocumentId BIGINT` FK → `{schema}.{R}(DocumentId)` ON DELETE CASCADE)
 - `Ordinal INT NOT NULL` (preserve array order for reconstitution)
+- Primary key is **composite** on parent key + ordinal (e.g., `PRIMARY KEY (School_DocumentId, Ordinal)`)
 - Scalar columns for the element object
 - Reference/descriptor FK columns as above
-- Unique constraints derived from `arrayUniquenessConstraints` when available
+- Unique constraints derived from `arrayUniquenessConstraints` when available (often separate from the PK)
 
-Nested collections create additional tables referencing the parent child table’s `Id`.
+Nested collections add the parent’s ordinal(s) into the key and FK, avoiding generated IDs and `RETURNING`/`OUTPUT` key-capture round trips.
 
 #### PostgreSQL examples (Student, School, StudentSchoolAssociation)
 
@@ -343,8 +343,6 @@ CREATE TABLE IF NOT EXISTS edfi.School (
 -- Example collection table: School has a collection of GradeLevelDescriptor values
 -- (e.g., 1st, 2nd, 3rd, ...) stored as rows. Ordinal preserves client order.
 CREATE TABLE IF NOT EXISTS edfi.SchoolGradeLevel (
-    Id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-
     School_DocumentId bigint NOT NULL
                       REFERENCES edfi.School(DocumentId) ON DELETE CASCADE,
 
@@ -353,11 +351,41 @@ CREATE TABLE IF NOT EXISTS edfi.SchoolGradeLevel (
     GradeLevelDescriptor_DescriptorId bigint NOT NULL
                       REFERENCES dms.Descriptor(DocumentId),
 
+    CONSTRAINT PK_SchoolGradeLevel PRIMARY KEY (School_DocumentId, Ordinal),
     CONSTRAINT UX_SchoolGradeLevel UNIQUE (School_DocumentId, GradeLevelDescriptor_DescriptorId)
 );
 
-CREATE INDEX IF NOT EXISTS IX_SchoolGradeLevel_SchoolDocumentId
-    ON edfi.SchoolGradeLevel(School_DocumentId);
+-- Example nested collection with composite keys:
+-- School -> addresses[*] -> periods[*]
+CREATE TABLE IF NOT EXISTS edfi.SchoolAddress (
+    School_DocumentId bigint NOT NULL
+                      REFERENCES edfi.School(DocumentId) ON DELETE CASCADE,
+
+    Ordinal int NOT NULL,
+
+    AddressTypeDescriptor_DescriptorId bigint NOT NULL
+                      REFERENCES dms.Descriptor(DocumentId),
+
+    StreetNumberName varchar(150) NULL,
+    City varchar(30) NULL,
+
+    CONSTRAINT PK_SchoolAddress PRIMARY KEY (School_DocumentId, Ordinal),
+    CONSTRAINT UX_SchoolAddress UNIQUE (School_DocumentId, AddressTypeDescriptor_DescriptorId)
+);
+
+CREATE TABLE IF NOT EXISTS edfi.SchoolAddressPeriod (
+    School_DocumentId bigint NOT NULL,
+    AddressOrdinal int NOT NULL,
+    Ordinal int NOT NULL,
+
+    BeginDate date NOT NULL,
+    EndDate date NULL,
+
+    CONSTRAINT PK_SchoolAddressPeriod PRIMARY KEY (School_DocumentId, AddressOrdinal, Ordinal),
+    CONSTRAINT FK_SchoolAddressPeriod_SchoolAddress FOREIGN KEY (School_DocumentId, AddressOrdinal)
+        REFERENCES edfi.SchoolAddress (School_DocumentId, Ordinal) ON DELETE CASCADE,
+    CONSTRAINT UX_SchoolAddressPeriod UNIQUE (School_DocumentId, AddressOrdinal, BeginDate)
+);
 
 CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
     DocumentId         bigint PRIMARY KEY
@@ -394,7 +422,7 @@ Reference validation is provided by **two layers** (mirroring what the current `
 
 During POST/PUT processing, the backend:
 - Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) from `ReferentialId` → `DocumentId` using `dms.ReferentialIdentity`.
-- Fails the request if any referenced identity does not exist (same semantics as today: d escriptor failures vs resource reference failures).
+- Fails the request if any referenced identity does not exist (same semantics as today: descriptor failures vs resource reference failures).
 
 This is required because the relational tables store **`DocumentId` foreign keys**, and we cannot write those without resolving them.
 
@@ -427,6 +455,7 @@ To keep migrations tractable and avoid rename cascades, physical names must be d
 - Column names: PascalCase of JSON property names, with suffixes:
   - `..._DocumentId` for non-descriptor references
   - `..._DescriptorId` for descriptor references
+  - `Ordinal` for the current collection level, and `<ParentCollectionBaseName>Ordinal` for ancestor ordinals in nested collections (e.g., `AddressOrdinal`)
 - Max identifier length handling:
   - PostgreSQL: 63 bytes; SQL Server: 128 chars
   - When exceeding, apply deterministic truncation + short hash suffix.

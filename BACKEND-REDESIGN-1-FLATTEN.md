@@ -137,9 +137,9 @@ Algorithm sketch:
    - collection uniqueness from `arrayUniquenessConstraints` → unique constraints on child tables
 6. Produce a **compiled read/write plan** (see sections 5–7).
 
-### 4.2 Key choice for child tables (avoiding RETURNING/OUTPUT)
+### 4.2 Child-table key strategy (avoid RETURNING/OUTPUT)
 
-To avoid round-trips and identity-capture complexity for nested collections, prefer **composite parent+ordinal keys** instead of surrogate `Id` keys:
+To avoid round-trips and identity-capture complexity for nested collections, use **composite parent+ordinal keys** instead of surrogate `Id` keys:
 
 - Level 1 child table key: `(ParentDocumentId, Ordinal)`
 - Level 2 child table key: `(ParentDocumentId, ParentOrdinal, Ordinal)`
@@ -150,7 +150,40 @@ This design:
 - makes nested deletes cascade naturally
 - remains portable across PostgreSQL and SQL Server
 
-If a surrogate key is still desired (for operational/debuggability), it can be added later, but the composite key should remain available for joins and FK relationships.
+Concrete example (PostgreSQL) - School `addresses[*]` and nested `periods[*]`:
+
+```sql
+CREATE TABLE IF NOT EXISTS edfi.SchoolAddress (
+    School_DocumentId bigint NOT NULL
+                      REFERENCES edfi.School(DocumentId) ON DELETE CASCADE,
+
+    Ordinal int NOT NULL,
+
+    AddressTypeDescriptor_DescriptorId bigint NOT NULL
+                      REFERENCES dms.Descriptor(DocumentId),
+
+    StreetNumberName varchar(150) NULL,
+
+    CONSTRAINT PK_SchoolAddress PRIMARY KEY (School_DocumentId, Ordinal),
+    CONSTRAINT UX_SchoolAddress UNIQUE (School_DocumentId, AddressTypeDescriptor_DescriptorId)
+);
+
+CREATE TABLE IF NOT EXISTS edfi.SchoolAddressPeriod (
+    School_DocumentId bigint NOT NULL,
+    AddressOrdinal int NOT NULL,
+    Ordinal int NOT NULL,
+
+    BeginDate date NOT NULL,
+    EndDate date NULL,
+
+    CONSTRAINT PK_SchoolAddressPeriod PRIMARY KEY (School_DocumentId, AddressOrdinal, Ordinal),
+    CONSTRAINT FK_SchoolAddressPeriod_SchoolAddress FOREIGN KEY (School_DocumentId, AddressOrdinal)
+        REFERENCES edfi.SchoolAddress (School_DocumentId, Ordinal) ON DELETE CASCADE,
+    CONSTRAINT UX_SchoolAddressPeriod UNIQUE (School_DocumentId, AddressOrdinal, BeginDate)
+);
+```
+
+If a surrogate key is still desired (for operational/debuggability), it can be added later, but the composite key should remain the one used for parent/child FKs to preserve the batching benefits.
 
 ---
 
@@ -554,9 +587,8 @@ Dapper is optional:
 
 ## 9. Next Steps (Design → Implementation)
 
-1. Decide child-table key strategy (composite parent+ordinal recommended).
+1. Use composite parent+ordinal keys for child tables (as described above) and reflect this in the migrator DDL rules.
 2. Define exact `relational` block JSON schema and add it to `JsonSchemaForApiSchema.json`.
 3. Implement a shared `RelationalResourceModelBuilder` (used by both migrator and runtime).
 4. Implement Postgres + SQL Server dialects for paging and bulk insert paths.
 5. Prototype end-to-end on one resource with nested collections (e.g., `School` addresses → periods).
-
