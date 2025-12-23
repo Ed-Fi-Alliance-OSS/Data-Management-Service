@@ -221,21 +221,16 @@ Before writing resource tables:
 
 Cache these lookups aggressively (L1/L2 optional), but only populate caches after commit.
 
-### 5.2.1 Document references inside nested collections (Option B)
+### 5.2.1 Document references inside nested collections
 
 When a document reference appears inside a collection (or nested collection), its FK is stored in a **child table row** whose key includes one or more **ordinals**. To set the correct FK column without per-row JSONPath evaluation and per-row referential id hashing, we need a stable way to answer:
 
 > For this `ReferenceBinding`, and for this row’s **ordinal path**, what is the referenced `DocumentId`?
 
-There are two approaches:
+DMS uses a single required approach: Core emits each reference instance *with its concrete JSON location (indices)* so the backend can address it by ordinal path.
 
-- **Option A**: backend flattener recomputes referential ids per row by reading identity fields from JSON at the row scope.
-  - Pros: no change to Core reference extraction shapes.
-  - Cons: repeats JSON reads + referential id hashing in hot loops; risks drifting from Core canonicalization; scales poorly for large nested arrays.
-
-- **Option B (preferred)**: Core emits each reference instance *with its concrete JSON location (indices)* so the backend can address it by ordinal path.
-  - Pros: referential id computation stays centralized in Core; flattening becomes pure lookup; nested collections work naturally with composite parent+ordinal keys.
-  - Cons: requires enhancing Core’s extracted reference model to carry location; backend builds a small per-request index.
+- Keeps referential id computation centralized in Core; flattening becomes pure lookup; nested collections work naturally with composite parent+ordinal keys.
+- Requires enhancing Core’s extracted reference model to carry location; backend builds a small per-request index.
 
 **What Core must provide (minimal enhancement)**
 
@@ -854,7 +849,7 @@ public abstract record WriteValueSource
     /// <summary>
     /// A document reference FK value.
     ///
-    /// With Option B (section 5.2.1), the referential id is computed by Core and emitted with concrete JSON location.
+    /// With the concrete-path approach (section 5.2.1), the referential id is computed by Core and emitted with concrete JSON location.
     /// The backend uses a per-request index keyed by:
     /// - this binding (which identifies the wildcard reference-object path and the FK column)
     /// - the current row's OrdinalPath (array indices from root to the current scope)
@@ -985,7 +980,7 @@ public readonly record struct DescriptorKey(string NormalizedUri, QualifiedResou
 /// <summary>
 /// Resolves extracted document-reference instances to referenced DocumentIds for a single write request.
 ///
-/// Key idea (Option B):
+/// Key idea:
 /// - Core extraction emits each reference instance with a concrete JSONPath including indices.
 /// - Backend resolves ReferentialId → DocumentId in bulk once.
 /// - This index maps the current row's OrdinalPath to the referenced DocumentId without per-row hashing or DB I/O.
@@ -1040,7 +1035,7 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
     /// - the Core-extracted reference instances (to know which reference occurs at which location)
     /// - the bulk-resolved mapping ReferentialId → DocumentId (to avoid any DB work here)
     ///
-    /// Required Core enhancement for Option B:
+    /// Required Core enhancement:
     /// - each <c>DocumentReference</c> must carry a concrete JSONPath to the reference object instance (including indices),
     ///   e.g. <c>"$.addresses[2].periods[0].calendarReference"</c>.
     /// </summary>
@@ -1301,7 +1296,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     var resolved = await _referenceResolver.ResolveAsync(request.DocumentInfo, connection, tx, ct);
 
     // 3b) Build a per-request index that maps (binding + ordinalPath) → referenced DocumentId.
-    //     This depends on Core emitting concrete JSON paths (including indices) for reference instances (Option B).
+    //     This depends on Core emitting concrete JSON paths (including indices) for reference instances.
     var documentReferences = DocumentReferenceInstanceIndex.Build(
         writePlan.Model.ReferenceBindings,
         request.DocumentInfo.DocumentReferenceArrays,
