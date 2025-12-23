@@ -35,7 +35,7 @@ For Ed-Fi resource documents, DMS can derive a complete relational mapping *dete
 
 So the only metadata that truly must be added is:
 - deterministic naming overrides (collisions/length/reserved words)
-- explicit split/inline decisions for exceptionally wide nested objects or other edge cases
+- optional naming tweaks for deeply nested collections/objects
 
 Everything else can be derived and compiled once at startup into a resource-specific plan.
 
@@ -113,10 +113,10 @@ Algorithm sketch:
      - parent key columns
      - `Ordinal` (order preservation)
      - derived element columns
-   - Each **object** node is either:
-     - *inlined* (default): its scalar descendant properties become columns on the current table (with a deterministic prefix), or
-     - *split* (if in `splitObjects`): create a 1:1 table keyed by the parent key and store its properties there
+   - Each **object** node is **inlined**: its scalar descendant properties become columns on the current table (with a deterministic prefix).
    - Each **scalar** node becomes a typed column on the current table.
+
+Note: this design intentionally does **not** support “split” tables for very wide objects. If MetaEd/ApiSchema ever produced a resource that would exceed engine limits (e.g., SQL Server column/row-size limits), migration should fail fast rather than silently changing storage shape.
 3. Overlay `documentPathsMapping` classification:
    - Any JSONPath that is a **document reference** becomes exactly one FK column (`..._DocumentId`) on the table that contains that reference object (root or child).
    - Any JSONPath that is a **descriptor reference** becomes exactly one FK column (`..._DescriptorId`) on the table that contains it.
