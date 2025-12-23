@@ -284,7 +284,7 @@ WritePlan should expose a `BatchSizer` that, given the table’s column count, y
 
 ---
 
-## 6. Reconstitution (GET by id / GET page) Design
+## 6. Reconstitution (GET by id / GET by query) Design
 
 Reconstitution should be written to support both:
 - **single document** (GET by id)
@@ -292,16 +292,67 @@ Reconstitution should be written to support both:
 
 The page case must not become “GET by id repeated N times”.
 
-### 6.1 Fetch strategy (batched, table-at-a-time)
+### 6.1 Fetch strategy (keyset-first, batched hydration)
 
-Given a list of `DocumentId`s:
-1. Load `dms.Document` rows for those ids (etag/lastModified/documentUuid)
-2. Load root resource rows: `SELECT ... FROM {schema}.{Resource} WHERE DocumentId IN (@ids)`
-3. For each child table, load rows with `ParentKey IN (@ids)` (or `(ParentDocumentId IN (@ids))`) and order by parent+ordinal.
+The API never supplies a “list of `DocumentId`s”. Reconstitution starts from a **page keyset**:
 
-To minimize network trips:
-- Use one command that contains multiple `SELECT` statements and iterate with `DbDataReader.NextResult()`, or
-- Use Dapper `QueryMultiple` for convenience (still no per-resource classes).
+- **GET by id**: resolve `DocumentUuid → DocumentId`, then the keyset is a single `DocumentId`.
+- **GET by query**: compile a parameterized SQL that selects the `DocumentId`s in the requested page (filters + stable ordering + paging).
+
+All subsequent reads “hydrate” root + child tables by joining to that keyset.
+
+#### Option A (preferred): single round-trip with a `page` CTE
+
+Build one command that returns multiple result sets, all keyed by the same `page` CTE:
+
+```sql
+WITH page AS (
+  -- GET by id:
+  SELECT @DocumentId AS DocumentId
+
+  -- GET by query (example shape):
+  -- SELECT r.DocumentId
+  -- FROM edfi.Student r
+  -- WHERE r.LastSurname = @LastSurname
+  -- ORDER BY r.DocumentId
+  -- PostgreSQL paging: OFFSET @Offset LIMIT @Limit
+  -- SQL Server paging: OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+)
+
+-- Optional (if totalCount=true): add an additional result set that uses the same filters
+-- without paging (OFFSET/LIMIT). The query builder can generate this alongside page SQL.
+-- SELECT COUNT(*) AS TotalCount FROM edfi.Student r WHERE r.LastSurname = @LastSurname;
+
+SELECT d.DocumentId, d.DocumentUuid, d.Etag, d.LastModifiedAt
+FROM dms.Document d
+JOIN page p ON p.DocumentId = d.DocumentId
+ORDER BY d.DocumentId;
+
+SELECT r.*
+FROM edfi.Student r
+JOIN page p ON p.DocumentId = r.DocumentId
+ORDER BY r.DocumentId;
+
+SELECT c.*
+FROM edfi.StudentAddress c
+JOIN page p ON p.DocumentId = c.Student_DocumentId
+ORDER BY c.Student_DocumentId, c.Ordinal;
+
+-- ...one SELECT per child table in the compiled plan...
+```
+
+Execute with a single `DbCommand` and read with `DbDataReader.NextResult()` (or Dapper `QueryMultiple`).
+
+Notes:
+- This avoids a second DB round-trip to “hydrate the page”.
+- The reconstituter can still materialize the page `DocumentId`s in memory (page-sized) as it reads the first result set for later descriptor/reference expansion.
+
+#### Option B: two-step (simpler fallback)
+
+1. Run the page query to get the `DocumentId`s for the current page (bounded by `limit`).
+2. Hydrate root + child tables using `WHERE ... IN (@ids)` (chunk if necessary).
+
+This still avoids N+1 behavior; the “id list” is an internal, page-bounded intermediate, not an API contract.
 
 ### 6.2 Descriptor expansion (batched)
 
@@ -501,8 +552,7 @@ public sealed record ResourceReadPlan(
 
 public sealed record TableReadPlan(
     DbTableModel TableModel,
-    string SelectByIdsSql,              // root: WHERE DocumentId IN (...)
-    string SelectByParentIdsSql         // child: WHERE ParentKey IN (...)
+    string SelectByKeysetSql            // expects a `page` keyset (CTE/temp table) and returns rows for that page
 );
 ```
 
@@ -557,12 +607,30 @@ public sealed record RowBuffer(IReadOnlyList<object?> Values);
 
 public interface IResourceReconstituter
 {
-    // Returns UTF-8 JSON payload(s) for a set of DocumentIds.
-    Task<IReadOnlyDictionary<long, byte[]>> ReconstituteAsync(
+    Task<ReconstitutedPage> ReconstituteAsync(
         ResourceReadPlan plan,
-        IReadOnlyList<long> documentIds,
+        PageKeysetSpec keyset,
         CancellationToken cancellationToken);
 }
+
+public abstract record PageKeysetSpec
+{
+    public sealed record Single(long DocumentId) : PageKeysetSpec;
+
+    /// <summary>
+     /// A parameterized SQL that selects DocumentIds for the requested page, in stable page order.
+     /// The reconstituter will use this as a CTE (`WITH page AS (...)`) and hydrate tables by joining to it.
+     /// </summary>
+    public sealed record Query(
+        string PageDocumentIdSql,
+        IReadOnlyDictionary<string, object?> Parameters,
+        string? TotalCountSql = null)
+        : PageKeysetSpec;
+}
+
+public sealed record ReconstitutedDocument(long DocumentId, byte[] Json);
+
+public sealed record ReconstitutedPage(IReadOnlyList<ReconstitutedDocument> Items, long? TotalCount = null);
 ```
 
 Database-specific execution (dialect + bulk):
